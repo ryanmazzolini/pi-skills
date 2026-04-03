@@ -1,0 +1,9 @@
+{
+  "name": "@ryanmazzolini/pi-skills",
+  "version": "1.0.0",
+  "description": "Personal pi skills — planning, git workflows, personas, and dev conventions",
+  "keywords": ["pi-package"],
+  "pi": {
+    "skills": ["./skills"]
+  }
+}
