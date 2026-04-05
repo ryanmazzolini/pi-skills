@@ -5,7 +5,13 @@ Personal [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agen
 ## Install
 
 ```bash
-pi install git:github.com/ryanmazzolini/pi-skills
+pi install https://github.com/ryanmazzolini/pi-skills
+```
+
+## Update
+
+```bash
+pi update
 ```
 
 ## Skills
