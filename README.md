@@ -18,8 +18,8 @@ pi update
 
 | Skill | Description |
 |-------|-------------|
-| `commit-simple` | Git workflow: branch creation, commits, PRs |
-| `commit-pr` | Create well-structured pull requests |
+| `commit-simple` | Branch, commit, and push changes |
+| `commit-pr` | Create or update draft pull requests |
 | `plan-research` | Research a problem space before planning |
 | `plan-create` | Distill research into an implementation plan |
 | `plan-implement` | Execute a plan adaptively |
@@ -36,3 +36,4 @@ pi update
 | `typescript` | TypeScript strict mode conventions |
 | `nextjs-app-router` | Next.js App Router patterns |
 | `hci` | Usability, accessibility, responsive design |
+| `humanlayer-thoughts` | Persist plans, research, and reviews with HumanLayer thoughts |
