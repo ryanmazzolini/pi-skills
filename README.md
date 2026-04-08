@@ -37,3 +37,10 @@ pi update
 | `nextjs-app-router` | Next.js App Router patterns |
 | `hci` | Usability, accessibility, responsive design |
 | `humanlayer-thoughts` | Persist plans, research, and reviews with HumanLayer thoughts |
+| `diffity-diff` | Open Diffity browser diff viewer |
+| `diffity-review` | AI code review with high-signal inline Diffity comments |
+| `diffity-resolve` | Resolve open Diffity diff comments by making code changes |
+| `diffity-tree` | Open Diffity file tree browser |
+| `diffity-resolve-tree` | Resolve open Diffity tree comments by making code changes |
+| `diffity-tour` | Create guided code tours with step-by-step walkthroughs |
+| `diffity-learn` | Interactive project-driven learning with Diffity tours and challenges |
