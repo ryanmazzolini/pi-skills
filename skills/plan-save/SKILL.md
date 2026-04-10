@@ -16,7 +16,7 @@ description: Checkpoint current session progress to plan doc. Use before pausing
 
 ### 1. Load Plan
 
-Find `thoughts/ryan/plans/YYYY-MM-DD-[slug].md` by date pattern. List available if ambiguous.
+If no argument is provided, default to the most recently touched plan, not the newest filename-dated plan. If those differ, mention both briefly and use the touched plan unless context clearly points elsewhere.
 
 ### 2. Capture Session State
 
