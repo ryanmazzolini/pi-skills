@@ -16,7 +16,9 @@ description: Run automated tests and walk through manual verification against a 
 
 ### 1. Load Plan
 
-Find `thoughts/ryan/plans/YYYY-MM-DD-[slug].md`. Read Verification and Deviations sections.
+If no argument is provided, default to the most recently touched plan, not the newest filename-dated plan. If those differ, mention both briefly and use the touched plan unless context clearly points elsewhere.
+
+Read Verification and Deviations sections.
 
 ### 2. Automated Tests
 

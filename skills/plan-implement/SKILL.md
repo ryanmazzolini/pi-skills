@@ -17,7 +17,7 @@ description: Execute an implementation plan adaptively — pick highest-value st
 
 ### 1. Load Plan
 
-Find `thoughts/ryan/plans/YYYY-MM-DD-[slug].md` by date pattern or argument. List available if ambiguous.
+If no argument is provided, default to the most recently touched plan, not the newest filename-dated plan. If those differ, mention both briefly and use the touched plan unless context clearly points elsewhere.
 
 Read plan doc. Extract: Status, Goal, Approach, Decisions, Done, Remaining Intent (with dependencies), Verification.
 
