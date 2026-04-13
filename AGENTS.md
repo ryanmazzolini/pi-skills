@@ -5,8 +5,9 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 ## Structure
 
 - Each skill lives in `skills/<name>/SKILL.md`
+- Extensions live in `extensions/*.ts`
 - Skills follow the [Agent Skills standard](https://agentskills.io/specification)
-- The `package.json` declares `pi.skills` pointing to `./skills`
+- The `package.json` declares `pi.skills` pointing to `./skills` and `pi.extensions` pointing to `./extensions`
 
 ## Conventions
 
@@ -20,3 +21,9 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 
 1. Create `skills/<name>/SKILL.md` with frontmatter and instructions
 2. Add an entry to the table in `README.md`
+
+## Adding an Extension
+
+1. Create `extensions/<name>.ts`
+2. Keep credentials out of the repo; prefer env vars or files under `~/.pi/agent/extensions/`
+3. Add an entry to the extensions section in `README.md`

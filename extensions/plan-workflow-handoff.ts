@@ -55,8 +55,6 @@ type MessageEntry = {
 	message: { role?: string; content?: unknown };
 };
 
-const MAX_CONTEXT_MESSAGES = 6;
-const MAX_CONTEXT_CHARS = 280;
 const WORKFLOW_DIR_PATTERN = /^\d{4}-\d{2}-\d{2}-.+/;
 
 const STAGES: Record<WorkflowStage, StageDefinition> = {
@@ -107,14 +105,6 @@ function slugify(value: string): string {
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "-")
 		.replace(/^-+|-+$/g, "");
-}
-
-function trimForPrompt(value: string, maxChars: number): string {
-	const normalized = value.replace(/\s+/g, " ").trim();
-	if (normalized.length <= maxChars) {
-		return normalized;
-	}
-	return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
 function fileExists(path: string | undefined): path is string {
@@ -551,53 +541,10 @@ function getPrimaryArgument(stage: WorkflowStage, target: WorkflowTarget): strin
 	return target.dir;
 }
 
-function getRecentConversationContext(entries: unknown[]): string[] {
-	return entries
-		.filter(isMessageEntry)
-		.filter((entry) => entry.message.role === "user" || entry.message.role === "assistant")
-		.slice(-MAX_CONTEXT_MESSAGES)
-		.map((entry) => {
-			const role = entry.message.role === "assistant" ? "assistant" : "user";
-			const text = trimForPrompt(getTextContent(entry.message.content), MAX_CONTEXT_CHARS);
-			return text ? `- ${role}: ${text}` : "";
-		})
-		.filter((line) => line.length > 0);
-}
-
-function buildStagePrompt(stage: WorkflowStage, target: WorkflowTarget, recentContext: string[]): string {
+function buildStagePrompt(stage: WorkflowStage, target: WorkflowTarget): string {
 	const command = `/skill:${STAGES[stage].skillName}`;
 	const primaryArg = getPrimaryArgument(stage, target).trim();
-	const lines = [`${command} ${primaryArg}`.trim(), "", "Workflow context:"];
-
-	if (target.kind === "directory") {
-		lines.push(`- Workflow directory: ${target.dir}`);
-		lines.push(`- Goal: ${target.goal}`);
-		lines.push("- Durable stage artifacts should live in this directory.");
-		if (target.artifacts.question || target.artifacts.research || target.artifacts.design || target.artifacts.structure || target.artifacts.plan) {
-			lines.push("- Existing artifacts:");
-			if (target.artifacts.question) lines.push(`  - Question: ${target.artifacts.question}`);
-			if (target.artifacts.research) lines.push(`  - Research: ${target.artifacts.research}`);
-			if (target.artifacts.design) lines.push(`  - Design: ${target.artifacts.design}`);
-			if (target.artifacts.structure) lines.push(`  - Structure: ${target.artifacts.structure}`);
-			if (target.artifacts.plan) {
-				const planSummary = readPlanSummary(target.artifacts.plan);
-				const suffix = planSummary.status ? ` (status: ${planSummary.status})` : "";
-				lines.push(`  - Plan: ${target.artifacts.plan}${suffix}`);
-			}
-		}
-	} else {
-		lines.push(`- Goal: ${target.goal}`);
-		lines.push(`- Legacy plan file: ${target.planPath}`);
-	}
-
-	lines.push(`- Routing stage: ${STAGES[stage].label}`);
-
-	if (recentContext.length > 0) {
-		lines.push("", "Recent context from the previous session:", ...recentContext);
-	}
-
-	lines.push("", "Continue from this handoff and keep the workflow artifacts as the source of truth.");
-	return lines.join("\n");
+	return `${command} ${primaryArg}`.trim();
 }
 
 export default function planWorkflowHandoffExtension(pi: ExtensionAPI) {
@@ -680,7 +627,7 @@ export default function planWorkflowHandoffExtension(pi: ExtensionAPI) {
 				mkdirSync(target.dir, { recursive: true });
 			}
 
-			const handoffPrompt = buildStagePrompt(selectedStage, target, getRecentConversationContext(branchEntries));
+			const handoffPrompt = buildStagePrompt(selectedStage, target);
 			const newSessionResult = await ctx.newSession({
 				parentSession: ctx.sessionManager.getSessionFile(),
 			});
@@ -689,7 +636,8 @@ export default function planWorkflowHandoffExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			pi.sendUserMessage(handoffPrompt);
+			ctx.ui.setEditorText(handoffPrompt);
+			ctx.ui.notify("Handoff ready in the editor. Submit to start the selected stage.", "info");
 		},
 	});
 }
