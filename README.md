@@ -31,6 +31,7 @@ pi update
 | `plan-task` | Focused planning for single-concern tasks |
 | `plan-verify` | Run verification against a plan |
 | `research` | Standalone technical research |
+| `thin-subagent` | Human-in-the-loop delegated research/review workflow via an installed subagent extension |
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance |
 | `architecture-review` | Architecture review lens for design tradeoffs and operability |
@@ -85,3 +86,23 @@ Status vs progression:
 - Use `/skill:plan-progress` to inspect `plan.md` without changing sessions or workflow state.
 
 `/plan-start` is not currently added; `/plan-next <goal>` remains the cold-start entry point until testing proves an alias is needed.
+
+## Thin Subagent Setup
+
+`thin-subagent` is a workflow skill, not an execution extension. It expects an installed subagent extension such as:
+
+```bash
+pi install npm:@mjakl/pi-subagent
+```
+
+Starter agent presets live in `skills/thin-subagent/agents/`:
+- `delegate.md` — generic read-mostly one-off delegation
+- `reviewer.md` — read-only code review
+- `researcher.md` — focused codebase context gathering
+
+Copy the ones you want into `~/.pi/agent/agents/`:
+
+```bash
+cp skills/thin-subagent/agents/*.md ~/.pi/agent/agents/
+```
+
