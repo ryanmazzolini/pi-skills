@@ -20,8 +20,11 @@ pi update
 |-------|-------------|
 | `commit-simple` | Branch, commit, and push changes |
 | `commit-pr` | Create or update draft pull requests |
+| `plan-question` | Frame the problem and surface the unknowns before research |
 | `plan-research` | Research a problem space before planning |
-| `plan-create` | Distill research into an implementation plan |
+| `plan-design` | Align on current state, target state, and key choices |
+| `plan-structure` | Turn aligned design into milestones, slices, and dependencies |
+| `plan-create` | Distill workflow artifacts into an implementation plan |
 | `plan-implement` | Execute a plan adaptively |
 | `plan-progress` | Check progress on a plan |
 | `plan-save` | Checkpoint session progress to plan doc |
@@ -44,3 +47,41 @@ pi update
 | `diffity-resolve-tree` | Resolve open Diffity tree comments by making code changes |
 | `diffity-tour` | Create guided code tours with step-by-step walkthroughs |
 | `diffity-learn` | Interactive project-driven learning with Diffity tours and challenges |
+
+## Extensions
+
+| Extension | Description |
+|-----------|-------------|
+| `plan-workflow-handoff` | Thin workflow orchestration layer with `/plan-next` for fresh-session staged planning |
+
+## Plan Workflow Handoff
+
+`/plan-next` is a thin handoff layer over the staged plan skills. The workflow state should live in durable markdown artifacts under a workflow directory, not in hidden session state.
+
+Recommended directory layout:
+
+```text
+thoughts/ryan/plans/YYYY-MM-DD-[slug]/
+  question.md
+  research.md
+  design.md
+  structure.md
+  plan.md
+```
+
+Recommended usage:
+1. Run `/plan-next <goal>` from a fresh session.
+2. Let it create or find the workflow directory.
+3. Work conversationally inside the selected stage and write the stage artifact.
+4. Run `/plan-next` again to move into a fresh session for the next stage.
+
+Stage mapping:
+- Dedicated QRSPI-inspired stages: `plan-question`, `plan-research`, `plan-design`, `plan-structure`
+- Final planning + execution stages: `plan-create`, `plan-implement`, `plan-verify`
+- Lighter single-concern off-ramp: `plan-task`
+
+Status vs progression:
+- Use `/plan-next` to advance to the next fresh-session stage.
+- Use `/skill:plan-progress` to inspect `plan.md` without changing sessions or workflow state.
+
+`/plan-start` is not currently added; `/plan-next <goal>` remains the cold-start entry point until testing proves an alias is needed.

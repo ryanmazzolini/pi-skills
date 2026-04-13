@@ -16,25 +16,29 @@ description: Check progress on a plan — what's done, what remains, and suggest
 
 ### 1. Load Plan
 
-If no argument is provided, default to the most recently touched plan, not the newest filename-dated plan. If those differ, mention both briefly and use the touched plan unless context clearly points elsewhere.
+Resolve the plan target in this order:
+1. If the argument is a workflow directory under `thoughts/ryan/plans/YYYY-MM-DD-[slug]/`, read `plan.md` inside it.
+2. If the argument is a `plan.md` path, use it directly.
+3. If the argument is a legacy flat plan file under `thoughts/ryan/plans/*.md`, use it directly.
+4. If no argument is provided, prefer the most recently touched `plan.md` in a workflow directory; if none exist, fall back to the most recently touched legacy flat plan.
 
 Read and extract: Status, Goal, Done, Remaining Intent, Deviations, Notes.
 
 ### 2. Assess Progress
 
 Count and categorize at milestone level:
-- **Done milestones**: Milestones fully completed
-- **In-progress milestones**: Milestones with some intents done
-- **Blocked milestones**: Milestones with unmet `_after:` dependencies
-- **Remaining milestones**: Not yet started
-- **Deviations**: Off-script changes tracked
-- **Blockers**: Any blockers mentioned in Notes
+- **Done milestones**
+- **In-progress milestones**
+- **Blocked milestones**
+- **Remaining milestones**
+- **Deviations**
+- **Blockers**
 
 Estimate completion: done milestones / total milestones.
 
 ### 3. Report
 
-```
+```text
 # [Plan Name] — Progress
 
 **Status**: [from plan doc]
@@ -61,9 +65,5 @@ Estimate completion: done milestones / total milestones.
 [or "None"]
 
 ## Suggested Next
-[One of:]
-- "Continue implementing — next milestone is [X]. Run `/skill:plan-implement [slug]`."
-- "All milestones addressed — verify with `/skill:plan-verify [slug]`."
-- "[Milestone] is blocked by [dependency] — resolve that first."
-- "Save progress first — run `/skill:plan-save [slug]`."
+- [Specific next command]
 ```

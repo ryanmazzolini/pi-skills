@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "description": "Personal pi skills — planning, git workflows, code review, and dev conventions",
   "keywords": ["pi-package"],
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  },
   "pi": {
-    "skills": ["./skills"]
+    "skills": ["./skills"],
+    "extensions": ["./extensions"]
   }
 }
