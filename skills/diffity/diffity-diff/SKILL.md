@@ -14,7 +14,8 @@ and guide the user to install it with `npm install -g diffity`.
 1. Start Diffity for the requested ref.
    - If no arguments were provided ask the user if they would like to review the staged
      changes/latest commit or whole feature.branch.
-   - Otherwise run `diffity <ref>` with the user's arguments.
+   - Otherwise run `diffity <ref>` with the user's arguments. eg. `diffity HEAD~1` or
+     `diffity main..feature` or `diffity work` (uncommitted changes)
    - Run in the background.
 2. Wait briefly, then run:
    - `git rev-parse --show-toplevel`
