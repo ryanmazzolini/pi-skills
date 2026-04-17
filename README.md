@@ -35,6 +35,7 @@ pi update
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance |
 | `architecture-review` | Architecture review lens for design tradeoffs and operability |
+| `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation |
 | `context-guidelines` | Context engineering principles for AI config |
 | `explain-code` | Code explanations with diagrams and analogies |
 | `typescript` | TypeScript strict mode conventions |
