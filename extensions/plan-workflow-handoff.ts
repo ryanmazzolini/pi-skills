@@ -1,4 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { complete } from "@mariozechner/pi-ai";
+import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
@@ -56,6 +57,76 @@ type MessageEntry = {
 };
 
 const WORKFLOW_DIR_PATTERN = /^\d{4}-\d{2}-\d{2}-.+/;
+const SLUG_MODEL_PROVIDER = "google";
+const SLUG_MODEL_ID = "gemini-2.5-flash";
+const SLUG_MAX_WORDS = 5;
+const SLUG_MAX_LENGTH = 48;
+const SLUG_STOP_WORDS = new Set([
+	"a",
+	"an",
+	"and",
+	"are",
+	"as",
+	"at",
+	"be",
+	"by",
+	"for",
+	"from",
+	"i",
+	"if",
+	"in",
+	"into",
+	"is",
+	"it",
+	"me",
+	"my",
+	"new",
+	"of",
+	"on",
+	"or",
+	"our",
+	"plan",
+	"please",
+	"replace",
+	"replacing",
+	"start",
+	"task",
+	"tool",
+	"that",
+	"the",
+	"this",
+	"to",
+	"update",
+	"updating",
+	"use",
+	"want",
+	"we",
+	"where",
+	"will",
+	"with",
+	"workflow",
+	"add",
+	"adding",
+	"fix",
+	"fixing",
+	"implement",
+	"implementing",
+]);
+const SLUG_SYSTEM_PROMPT = `You generate concise human-readable filesystem slugs for planning workflows.
+
+Rules:
+- Output lowercase kebab-case only
+- Use 2-5 concrete domain words
+- Prefer the core feature or system concern
+- Omit filler words like start, plan, workflow, add, update, fix
+- No dates, punctuation, prose, quotes, or explanation
+- Keep it understandable when seen later in a file path
+- Maximum 48 characters
+
+Examples:
+- invoice-artifact-storage
+- auth-session-hardening
+- admin-dark-mode`;
 
 const STAGES: Record<WorkflowStage, StageDefinition> = {
 	question: {
@@ -105,6 +176,96 @@ function slugify(value: string): string {
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "-")
 		.replace(/^-+|-+$/g, "");
+}
+
+function trimSlugParts(parts: string[]): string {
+	const trimmedParts: string[] = [];
+	let length = 0;
+
+	for (const part of parts) {
+		if (trimmedParts.length >= SLUG_MAX_WORDS) {
+			break;
+		}
+
+		const nextLength = length + (trimmedParts.length > 0 ? 1 : 0) + part.length;
+		if (nextLength > SLUG_MAX_LENGTH) {
+			break;
+		}
+
+		trimmedParts.push(part);
+		length = nextLength;
+	}
+
+	return trimmedParts.join("-");
+}
+
+function normalizeSlugCandidate(value: string): string {
+	const firstLine = value.trim().split(/\r?\n/, 1)[0] ?? "";
+	const unwrapped = firstLine.replace(/^slug:\s*/i, "").replace(/^`+|`+$/g, "").trim();
+	const parts = slugify(unwrapped).split("-").filter(Boolean);
+	const meaningfulParts = parts.filter((part) => !SLUG_STOP_WORDS.has(part));
+	return trimSlugParts(meaningfulParts.length >= 2 ? meaningfulParts : parts);
+}
+
+function createWorkflowSlug(value: string): string {
+	const normalized = value
+		.toLowerCase()
+		.replace(/['’]/g, "")
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
+
+	const words = normalized.split(/\s+/).filter(Boolean);
+	const meaningfulWords = words.filter((word) => !SLUG_STOP_WORDS.has(word));
+	const candidateWords = meaningfulWords.length >= 2 ? meaningfulWords : words;
+	const slug = trimSlugParts(candidateWords);
+	return slugify(slug) || "workflow";
+}
+
+async function generateWorkflowSlug(value: string, ctx: ExtensionCommandContext): Promise<string> {
+	const model = ctx.modelRegistry.find(SLUG_MODEL_PROVIDER, SLUG_MODEL_ID);
+	if (!model) {
+		return createWorkflowSlug(value);
+	}
+
+	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+	if (!auth.ok || !auth.apiKey) {
+		return createWorkflowSlug(value);
+	}
+
+	try {
+		const response = await complete(
+			model,
+			{
+				systemPrompt: SLUG_SYSTEM_PROMPT,
+				messages: [
+					{
+						role: "user",
+						content: [
+							{
+								type: "text",
+								text: `Goal: ${value}`,
+							},
+						],
+						timestamp: Date.now(),
+					},
+				],
+			},
+			{
+				apiKey: auth.apiKey,
+				headers: auth.headers,
+				maxTokens: 64,
+			},
+		);
+
+		const text = response.content
+			.filter((content): content is { type: "text"; text: string } => content.type === "text")
+			.map((content) => content.text)
+			.join("\n");
+		const slug = normalizeSlugCandidate(text);
+		return slug || createWorkflowSlug(value);
+	} catch {
+		return createWorkflowSlug(value);
+	}
 }
 
 function fileExists(path: string | undefined): path is string {
@@ -383,7 +544,12 @@ function readPlanSummary(planPath: string | undefined): PlanSummary {
 	};
 }
 
-function resolveWorkflowTarget(cwd: string, args: string, entries: unknown[]): ResolvedTarget | undefined {
+async function resolveWorkflowTarget(
+	cwd: string,
+	args: string,
+	entries: unknown[],
+	ctx: ExtensionCommandContext,
+): Promise<ResolvedTarget | undefined> {
 	const input = args.trim();
 
 	if (input) {
@@ -412,7 +578,7 @@ function resolveWorkflowTarget(cwd: string, args: string, entries: unknown[]): R
 			return { target: createLegacyPlanTarget(matchedPlan), source: "matched legacy plan" };
 		}
 
-		const name = `${new Date().toISOString().slice(0, 10)}-${slugify(input)}`;
+		const name = `${new Date().toISOString().slice(0, 10)}-${await generateWorkflowSlug(input, ctx)}`;
 		const dir = workflowDirPath(cwd, name);
 		return {
 			target: {
@@ -560,7 +726,7 @@ export default function planWorkflowHandoffExtension(pi: ExtensionAPI) {
 
 			const availableStages = getAvailableStages(pi);
 			const branchEntries = ctx.sessionManager.getBranch();
-			const resolved = resolveWorkflowTarget(ctx.cwd, args, branchEntries);
+			const resolved = await resolveWorkflowTarget(ctx.cwd, args, branchEntries, ctx);
 			if (!resolved) {
 				ctx.ui.notify(
 					"Usage: /plan-next <goal> to start a workflow, or run /plan-next from a session already tied to a workflow directory.",
