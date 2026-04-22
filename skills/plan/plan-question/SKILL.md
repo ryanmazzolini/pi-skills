@@ -18,7 +18,7 @@ description: Surface the highest-leverage unknowns and frame the workflow before
 ### 1. Load Context
 
 Treat the input as a workflow handoff. If it includes a workflow directory such as
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/`, use that directory.
+`{plans-root}/YYYY-MM-DD-[slug]/`, use that directory.
 
 Extract:
 - the workflow directory
@@ -43,7 +43,7 @@ If the handoff already answers most questions, do not ask redundant ones. Instea
 
 Write `question.md` into the workflow directory:
 
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/question.md`
+`{plans-root}/YYYY-MM-DD-[slug]/question.md`
 
 Use this shape:
 
@@ -87,7 +87,7 @@ After writing `question.md`, explain what was captured and suggest the next fres
 Question stage complete.
 
 Artifact written:
-- thoughts/ryan/plans/YYYY-MM-DD-[slug]/question.md
+- {plans-root}/YYYY-MM-DD-[slug]/question.md
 
 Next step:
 - Run /plan-next to continue in a fresh /skill:plan-research session

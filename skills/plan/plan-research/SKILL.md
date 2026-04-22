@@ -20,7 +20,7 @@ description: Research a problem space before planning. Explores prior art, codeb
 
 Treat the input as a workflow handoff. Prefer a workflow directory path such as:
 
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/`
+`{plans-root}/YYYY-MM-DD-[slug]/`
 
 If a workflow directory is provided:
 - read `question.md` if it exists
@@ -28,7 +28,7 @@ If a workflow directory is provided:
 - write research back into the same directory as `research.md`
 
 If the user gives only a feature description, derive a workflow directory under:
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/`
+`{plans-root}/YYYY-MM-DD-[slug]/`
 and continue there.
 
 Summarize the problem space in 2-3 sentences. Identify what needs researching.
@@ -51,7 +51,7 @@ For each research area:
 
 Write `research.md` in the workflow directory:
 
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/research.md`
+`{plans-root}/YYYY-MM-DD-[slug]/research.md`
 
 ```markdown
 ---
@@ -105,7 +105,7 @@ humanlayer thoughts sync
 Research stage complete.
 
 Artifact written:
-- thoughts/ryan/plans/YYYY-MM-DD-[slug]/research.md
+- {plans-root}/YYYY-MM-DD-[slug]/research.md
 
 Next steps:
 - Run /plan-next to continue in a fresh /skill:plan-design session

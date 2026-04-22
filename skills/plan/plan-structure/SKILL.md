@@ -36,7 +36,7 @@ Prefer slices that can be verified independently.
 
 Write `structure.md` into the workflow directory:
 
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/structure.md`
+`{plans-root}/YYYY-MM-DD-[slug]/structure.md`
 
 ```markdown
 ---
@@ -73,7 +73,7 @@ _after: [Dependency]_
 Structure stage complete.
 
 Artifact written:
-- thoughts/ryan/plans/YYYY-MM-DD-[slug]/structure.md
+- {plans-root}/YYYY-MM-DD-[slug]/structure.md
 
 Next step:
 - Run /plan-next to continue in a fresh /skill:plan-create session

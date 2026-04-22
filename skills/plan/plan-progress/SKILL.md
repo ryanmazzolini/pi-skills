@@ -17,9 +17,9 @@ description: Check progress on a plan — what's done, what remains, and suggest
 ### 1. Load Plan
 
 Resolve the plan target in this order:
-1. If the argument is a workflow directory under `thoughts/ryan/plans/YYYY-MM-DD-[slug]/`, read `plan.md` inside it.
+1. If the argument is a workflow directory under `{plans-root}/YYYY-MM-DD-[slug]/`, read `plan.md` inside it.
 2. If the argument is a `plan.md` path, use it directly.
-3. If the argument is a legacy flat plan file under `thoughts/ryan/plans/*.md`, use it directly.
+3. If the argument is a legacy flat plan file under `{plans-root}/*.md`, use it directly.
 4. If no argument is provided, prefer the most recently touched `plan.md` in a workflow directory; if none exist, fall back to the most recently touched legacy flat plan.
 
 Read and extract: Status, Goal, Done, Remaining Intent, Deviations, Notes.

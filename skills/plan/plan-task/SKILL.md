@@ -18,7 +18,7 @@ description: Focused planning and execution for single-concern tasks. Creates a 
 ### 1. Clarify Task
 
 Treat the input as a workflow handoff when possible. If a workflow directory path such as
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/` is provided, use it and write `plan.md` there.
+`{plans-root}/YYYY-MM-DD-[slug]/` is provided, use it and write `plan.md` there.
 
 If the directory does not exist yet, create it before writing the plan.
 
@@ -32,7 +32,7 @@ Identify 1-3 key decisions. Present tradeoffs and ask the user to pick, or confi
 
 Write `plan.md` to:
 
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/plan.md`
+`{plans-root}/YYYY-MM-DD-[slug]/plan.md`
 
 ```markdown
 ---
@@ -45,7 +45,7 @@ goal: [one sentence]
 # [Task Name]
 
 **Status**: In Progress | **Goal**: [one sentence]
-**Workflow**: thoughts/ryan/plans/YYYY-MM-DD-[slug]/
+**Workflow**: {plans-root}/YYYY-MM-DD-[slug]/
 
 ## Approach
 [Selected approach in 1-2 sentences]

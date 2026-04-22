@@ -45,10 +45,18 @@ type RouteDecision = {
 	reason: string;
 };
 
+type PlansRoot = {
+	path: string;
+	label: string;
+	description: string;
+	source: string;
+};
+
 type ResolvedTarget = {
 	target: WorkflowTarget;
 	source: string;
 	shouldCreateDirectory?: boolean;
+	plansRoot?: PlansRoot;
 };
 
 type MessageEntry = {
@@ -127,6 +135,31 @@ Examples:
 - invoice-artifact-storage
 - auth-session-hardening
 - admin-dark-mode`;
+const DEFAULT_THOUGHTS_PROFILE = "default";
+const PLANS_ROOT_ENV = "PI_SKILLS_PLANS_ROOT";
+const THOUGHTS_PROFILE_ENV = "PI_SKILLS_THOUGHTS_PROFILE";
+const DEFAULT_NEW_PLAN_ROOT_OPTIONS = [
+	{
+		relativePath: ".plans",
+		label: ".plans/",
+		description: "Hidden at the repo root",
+	},
+	{
+		relativePath: "docs/plans",
+		label: "docs/plans/",
+		description: "Checked in under product docs",
+	},
+	{
+		relativePath: "PRPs",
+		label: "PRPs/",
+		description: "Product Requirement Prompts convention",
+	},
+	{
+		relativePath: `thoughts/${DEFAULT_THOUGHTS_PROFILE}/plans`,
+		label: `thoughts/${DEFAULT_THOUGHTS_PROFILE}/plans/`,
+		description: "HumanLayer-style thoughts workflow",
+	},
+] as const;
 
 const STAGES: Record<WorkflowStage, StageDefinition> = {
 	question: {
@@ -292,12 +325,152 @@ function directoryExists(path: string | undefined): path is string {
 	}
 }
 
-function getPlansRoot(cwd: string): string {
-	return join(cwd, "thoughts", "ryan", "plans");
+function normalizeProfileName(value: string | undefined): string | undefined {
+	if (!value) {
+		return undefined;
+	}
+
+	const normalized = value
+		.trim()
+		.replace(/[^A-Za-z0-9_-]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+
+	return normalized || undefined;
 }
 
-function workflowDirPath(cwd: string, name: string): string {
-	return join(getPlansRoot(cwd), name);
+function formatRootLabel(path: string, cwd: string): string {
+	const relativePath = path.startsWith(`${cwd}/`) ? path.slice(cwd.length + 1) : path;
+	return relativePath.endsWith("/") ? relativePath : `${relativePath}/`;
+}
+
+function createPlansRoot(path: string, cwd: string, description: string, source: string, label?: string): PlansRoot {
+	return {
+		path,
+		label: label ?? formatRootLabel(path, cwd),
+		description,
+		source,
+	};
+}
+
+function listThoughtsProfiles(cwd: string): string[] {
+	const thoughtsRoot = join(cwd, "thoughts");
+	if (!directoryExists(thoughtsRoot)) {
+		return [];
+	}
+
+	return readdirSync(thoughtsRoot)
+		.filter((name) => !["global", "searchable"].includes(name))
+		.filter((name) => directoryExists(join(thoughtsRoot, name, "plans")))
+		.sort();
+}
+
+function getConfiguredPlansRoot(cwd: string): PlansRoot | undefined {
+	const explicitRoot = process.env[PLANS_ROOT_ENV]?.trim();
+	if (explicitRoot) {
+		const path = resolve(cwd, explicitRoot);
+		return createPlansRoot(path, cwd, `Explicit plans root from ${PLANS_ROOT_ENV}`, `${PLANS_ROOT_ENV} override`);
+	}
+
+	const profile = normalizeProfileName(process.env[THOUGHTS_PROFILE_ENV]);
+	if (!profile) {
+		return undefined;
+	}
+
+	return createPlansRoot(
+		join(cwd, "thoughts", profile, "plans"),
+		cwd,
+		`Thoughts profile from ${THOUGHTS_PROFILE_ENV}`,
+		`${THOUGHTS_PROFILE_ENV} override`,
+		`thoughts/${profile}/plans/`,
+	);
+}
+
+function listDetectedPlanRoots(cwd: string): PlansRoot[] {
+	const roots: PlansRoot[] = [];
+	const hiddenPlansRoot = join(cwd, ".plans");
+	if (directoryExists(hiddenPlansRoot)) {
+		roots.push(createPlansRoot(hiddenPlansRoot, cwd, "Hidden at the repo root", "detected .plans/", ".plans/"));
+	}
+
+	for (const profile of listThoughtsProfiles(cwd)) {
+		roots.push(
+			createPlansRoot(
+				join(cwd, "thoughts", profile, "plans"),
+				cwd,
+				`Thoughts profile \"${profile}\"`,
+				"detected thoughts profile",
+				`thoughts/${profile}/plans/`,
+			),
+		);
+	}
+
+	const docsPlansRoot = join(cwd, "docs", "plans");
+	if (directoryExists(docsPlansRoot)) {
+		roots.push(createPlansRoot(docsPlansRoot, cwd, "Checked in under product docs", "detected docs/plans/", "docs/plans/"));
+	}
+
+	const prpsRoot = join(cwd, "PRPs");
+	if (directoryExists(prpsRoot)) {
+		roots.push(createPlansRoot(prpsRoot, cwd, "Product Requirement Prompts convention", "detected PRPs/", "PRPs/"));
+	}
+
+	return roots;
+}
+
+function getPlanRoots(cwd: string): PlansRoot[] {
+	const configured = getConfiguredPlansRoot(cwd);
+	if (configured) {
+		return [configured];
+	}
+
+	return listDetectedPlanRoots(cwd);
+}
+
+async function choosePlansRoot(cwd: string, ctx: ExtensionCommandContext): Promise<PlansRoot | null> {
+	const configured = getConfiguredPlansRoot(cwd);
+	if (configured) {
+		return configured;
+	}
+
+	const detectedRoots = listDetectedPlanRoots(cwd);
+	if (detectedRoots.length === 1) {
+		return detectedRoots[0] ?? null;
+	}
+
+	if (detectedRoots.length > 1) {
+		const options = detectedRoots.map((root) => `${root.label} — ${root.description}`);
+		const selected = await ctx.ui.select("Choose where new plan artifacts should live", options);
+		if (!selected) {
+			return null;
+		}
+
+		const index = options.indexOf(selected);
+		return detectedRoots[index] ?? null;
+	}
+
+	const options = DEFAULT_NEW_PLAN_ROOT_OPTIONS.map((option) => `${option.label} — ${option.description}`);
+	const selected = await ctx.ui.select("No plans directory found. Where should plan artifacts live?", options);
+	if (!selected) {
+		return null;
+	}
+
+	const index = options.indexOf(selected);
+	const option = DEFAULT_NEW_PLAN_ROOT_OPTIONS[index];
+	if (!option) {
+		return null;
+	}
+
+	return createPlansRoot(
+		join(cwd, option.relativePath),
+		cwd,
+		option.description,
+		"selected new plans root",
+		option.label,
+	);
+}
+
+function workflowDirPath(root: PlansRoot, name: string): string {
+	return join(root.path, name);
 }
 
 function normalizePath(input: string, cwd: string): string {
@@ -395,27 +568,35 @@ function getWorkflowDirectoryMtime(dir: string): number {
 }
 
 function listWorkflowDirectories(cwd: string): string[] {
-	const root = getPlansRoot(cwd);
-	if (!directoryExists(root)) {
-		return [];
-	}
-
-	return readdirSync(root)
-		.filter((name) => WORKFLOW_DIR_PATTERN.test(name))
-		.map((name) => workflowDirPath(cwd, name))
+	return Array.from(
+		new Set(
+			getPlanRoots(cwd)
+				.map((root) => root.path)
+				.filter(directoryExists)
+				.flatMap((root) =>
+					readdirSync(root)
+						.filter((name) => WORKFLOW_DIR_PATTERN.test(name))
+						.map((name) => join(root, name)),
+				),
+		),
+	)
 		.filter(directoryExists)
 		.sort((a, b) => getWorkflowDirectoryMtime(b) - getWorkflowDirectoryMtime(a));
 }
 
 function listLegacyPlanFiles(cwd: string): string[] {
-	const root = getPlansRoot(cwd);
-	if (!directoryExists(root)) {
-		return [];
-	}
-
-	return readdirSync(root)
-		.filter((name) => name.endsWith(".md"))
-		.map((name) => join(root, name))
+	return Array.from(
+		new Set(
+			getPlanRoots(cwd)
+				.map((root) => root.path)
+				.filter(directoryExists)
+				.flatMap((root) =>
+					readdirSync(root)
+						.filter((name) => name.endsWith(".md"))
+						.map((name) => join(root, name)),
+				),
+		),
+	)
 		.filter(fileExists)
 		.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
 }
@@ -549,7 +730,7 @@ async function resolveWorkflowTarget(
 	args: string,
 	entries: unknown[],
 	ctx: ExtensionCommandContext,
-): Promise<ResolvedTarget | undefined> {
+): Promise<ResolvedTarget | null | undefined> {
 	const input = args.trim();
 
 	if (input) {
@@ -578,8 +759,13 @@ async function resolveWorkflowTarget(
 			return { target: createLegacyPlanTarget(matchedPlan), source: "matched legacy plan" };
 		}
 
+		const plansRoot = await choosePlansRoot(cwd, ctx);
+		if (!plansRoot) {
+			return null;
+		}
+
 		const name = `${new Date().toISOString().slice(0, 10)}-${await generateWorkflowSlug(input, ctx)}`;
-		const dir = workflowDirPath(cwd, name);
+		const dir = workflowDirPath(plansRoot, name);
 		return {
 			target: {
 				kind: "directory",
@@ -589,6 +775,7 @@ async function resolveWorkflowTarget(
 			},
 			source: "new workflow goal",
 			shouldCreateDirectory: true,
+			plansRoot,
 		};
 	}
 
@@ -727,15 +914,19 @@ export default function planWorkflowHandoffExtension(pi: ExtensionAPI) {
 			const availableStages = getAvailableStages(pi);
 			const branchEntries = ctx.sessionManager.getBranch();
 			const resolved = await resolveWorkflowTarget(ctx.cwd, args, branchEntries, ctx);
+			if (resolved === null) {
+				ctx.ui.notify("Cancelled", "info");
+				return;
+			}
 			if (!resolved) {
 				ctx.ui.notify(
-					"Usage: /plan-next <goal> to start a workflow, or run /plan-next from a session already tied to a workflow directory.",
+					"Usage: /plan-next <workflow-dir | slug | goal> to continue an existing workflow or start a new one.",
 					"info",
 				);
 				return;
 			}
 
-			const { target, source, shouldCreateDirectory } = resolved;
+			const { target, source, shouldCreateDirectory, plansRoot } = resolved;
 			const recommended = chooseRecommendedStage(target);
 			const optionStages = buildStageOptions(target, recommended.stage, availableStages);
 			if (optionStages.length === 0) {
@@ -770,6 +961,7 @@ export default function planWorkflowHandoffExtension(pi: ExtensionAPI) {
 				`Goal: ${target.goal}`,
 				targetDescription,
 				`Workflow source: ${source}`,
+				plansRoot ? `Plans root: ${plansRoot.label} (${plansRoot.source})` : undefined,
 				`Recommended route: ${STAGES[recommended.stage].label}`,
 				`Will invoke: /skill:${selectedSkill}`,
 				`Why: ${recommended.reason}`,
