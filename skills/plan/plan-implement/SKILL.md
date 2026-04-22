@@ -46,7 +46,7 @@ Before implementing, write one failing test per milestone in Remaining Intent.
    - Confirm the target milestone's test now passes (green)
    - Confirm all previously-green tests still pass — any regression is fixed before proceeding
    - Report ratchet progress: `M/N green`
-5. Spawn 4 parallel reviews (use whichever subagent or review mechanism the workspace provides). Each returns 1-3 focused bullets, or nothing if the dimension is clean. If a review fails or times out, omit its section silently — do not surface the error.
+5. Run 4 focused review passes using whatever delegated-agent or review mechanism the workspace provides. Each returns 1-3 focused bullets, or nothing if the dimension is clean. If a review fails or times out, omit its section silently — do not surface the error.
    - **Correctness** — does the code actually satisfy the milestone outcomes? (logic errors, off-by-one, unhandled edge cases, broken invariants, incorrect API usage)
    - **Robustness / Maintainability** — will this hold up under real-world conditions and future changes? (boundary error handling at trust boundaries, readable naming, coupling, testability — flag only plausible failures, not defensive code for impossible states)
    - **Simplicity** — is anything over-engineered? (unnecessary abstractions, dead code, missed reuse of existing utilities — three similar lines beat a premature abstraction)
