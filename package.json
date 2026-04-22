@@ -1,8 +1,17 @@
 {
   "name": "@ryanmazzolini/pi-skills",
   "version": "1.0.0",
-  "description": "Personal pi skills — planning, git workflows, code review, and dev conventions",
+  "description": "Opinionated pi skills — planning, git workflows, code review, and dev conventions",
   "keywords": ["pi-package"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryanmazzolini/pi-skills.git"
+  },
+  "homepage": "https://github.com/ryanmazzolini/pi-skills#readme",
+  "bugs": {
+    "url": "https://github.com/ryanmazzolini/pi-skills/issues"
+  },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
     "@sinclair/typebox": "*"
