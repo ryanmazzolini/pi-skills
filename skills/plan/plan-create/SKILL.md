@@ -20,7 +20,7 @@ description: Distill workflow artifacts into an implementation plan with options
 
 Prefer a workflow directory input such as:
 
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/`
+`{plans-root}/YYYY-MM-DD-[slug]/`
 
 When a workflow directory is available:
 - read `question.md`, `research.md`, `design.md`, and `structure.md` if they exist
@@ -61,7 +61,7 @@ Also define Verification with automated and manual checks.
 
 Write `plan.md` in the workflow directory:
 
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/plan.md`
+`{plans-root}/YYYY-MM-DD-[slug]/plan.md`
 
 ```markdown
 ---
@@ -74,7 +74,7 @@ goal: [one sentence outcome]
 # [Feature Name]
 
 **Status**: Planning | **Goal**: [one sentence outcome]
-**Workflow**: thoughts/ryan/plans/YYYY-MM-DD-[slug]/
+**Workflow**: {plans-root}/YYYY-MM-DD-[slug]/
 
 ## Artifacts
 - Question: ./question.md
@@ -120,7 +120,7 @@ humanlayer thoughts sync
 Plan stage complete.
 
 Artifact written:
-- thoughts/ryan/plans/YYYY-MM-DD-[slug]/plan.md
+- {plans-root}/YYYY-MM-DD-[slug]/plan.md
 
 Next step:
 - Run /plan-next to continue in a fresh /skill:plan-implement session

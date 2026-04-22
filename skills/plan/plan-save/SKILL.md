@@ -17,7 +17,7 @@ description: Checkpoint current session progress to `plan.md`. Use before pausin
 ### 1. Load Plan
 
 Resolve the plan target in this order:
-1. If the argument is a workflow directory under `thoughts/ryan/plans/YYYY-MM-DD-[slug]/`, update `plan.md` inside it.
+1. If the argument is a workflow directory under `{plans-root}/YYYY-MM-DD-[slug]/`, update `plan.md` inside it.
 2. If the argument is a `plan.md` path, use it directly.
 3. If the argument is a legacy flat plan file, use it directly.
 4. If no argument is provided, prefer the most recently touched workflow `plan.md`, then fall back to the most recently touched legacy flat plan.

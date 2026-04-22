@@ -40,7 +40,7 @@ Ask the user to choose when the direction is not already clear.
 
 Write `design.md` into the workflow directory:
 
-`thoughts/ryan/plans/YYYY-MM-DD-[slug]/design.md`
+`{plans-root}/YYYY-MM-DD-[slug]/design.md`
 
 ```markdown
 ---
@@ -75,7 +75,7 @@ goal: [one sentence goal]
 Design stage complete.
 
 Artifact written:
-- thoughts/ryan/plans/YYYY-MM-DD-[slug]/design.md
+- {plans-root}/YYYY-MM-DD-[slug]/design.md
 
 Next step:
 - Run /plan-next to continue in a fresh /skill:plan-structure session
