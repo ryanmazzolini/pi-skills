@@ -94,6 +94,19 @@ Recommended directory layout:
   plan.md
 ```
 
+Plans root resolution:
+1. `PI_SKILLS_PLANS_ROOT` if set
+2. `thoughts/$PI_SKILLS_THOUGHTS_PROFILE/plans/` if set
+3. Existing `.plans/`
+4. Existing `thoughts/*/plans/`
+5. Existing `docs/plans/`
+6. Existing `PRPs/`
+7. If none exist, `/plan-next` asks where to create new plan artifacts
+
+When multiple existing roots are present, new workflows prompt for the destination root instead of guessing.
+
+Use `PI_SKILLS_PLANS_ROOT` for the most explicit setup. `PI_SKILLS_THOUGHTS_PROFILE` remains supported for HumanLayer-style thoughts workflows.
+
 Recommended usage:
 1. Run `/plan-next <goal>` from a fresh session.
 2. Let it create or find the workflow directory.
@@ -132,3 +145,10 @@ Copy the ones you want into `~/.pi/agent/agents/`:
 cp skills/thin-subagent/agents/*.md ~/.pi/agent/agents/
 ```
 
+## Contributing
+
+This is a personal repo; PRs are welcome, but expect opinionated pushback. If you build something similar, I would often rather link to your package than merge a generalization that dilutes the intent here.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
