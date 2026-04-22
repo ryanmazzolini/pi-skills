@@ -1,0 +1,11 @@
+# Local agent/editor state
+.claude/
+thoughts/
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# OS/editor junk
+.DS_Store

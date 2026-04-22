@@ -1,6 +1,6 @@
 # pi-skills
 
-Personal [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) skills package.
+An opinionated [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) skills package I use day-to-day. Personal, not intended to be universally applicable — fork it, keep what's useful, and adapt the rest.
 
 ## Install
 
@@ -13,6 +13,28 @@ pi install https://github.com/ryanmazzolini/pi-skills
 ```bash
 pi update
 ```
+
+## Caveats before you use or fork
+
+These skills are calibrated to my workflow. In particular:
+
+- Planning skills use durable workflow artifacts under a resolved plans root: `.plans/`, `thoughts/*/plans/`, `docs/plans/`, or `PRPs/`.
+- `/plan-next` prefers an explicit `PI_SKILLS_PLANS_ROOT`, then a compatibility `PI_SKILLS_THOUGHTS_PROFILE`, then existing detected roots in that order. If multiple existing roots are available for a new workflow, it lets you choose.
+- If no plans root exists yet, `/plan-next` prompts for one before creating the first workflow directory.
+- Several skills are thin wrappers around optional third-party CLIs. If you do not use those tools, skip those skills.
+- `thin-subagent` is a workflow skill, not a built-in executor. It expects a compatible subagent extension.
+
+## Optional tooling
+
+`pi` is the only base dependency. The tools below are optional and only needed for the matching skills.
+
+| Tool | Used by | Notes |
+|------|---------|-------|
+| [HumanLayer](https://humanlayer.dev) | `humanlayer-thoughts`, plan workflow sync steps | Needed only if you want `humanlayer thoughts init` / `humanlayer thoughts sync` workflows |
+| [Diffity](https://www.npmjs.com/package/diffity) | `diffity-*` | Browser-first diff review, comments, and guided tours |
+| [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut` | Requires Shortcut auth/config |
+| [agent-browser](https://github.com/vercel-labs/agent-browser) | `agent-browser` | Browser automation CLI |
+| `npm:@tintinweb/pi-subagents` | `thin-subagent` | Provides Claude Code-style `Agent`, `get_subagent_result`, and `steer_subagent` tools in pi |
 
 ## Skills
 
@@ -31,6 +53,7 @@ pi update
 | `plan-task` | Focused planning for single-concern tasks |
 | `plan-verify` | Run verification against a plan |
 | `research` | Standalone technical research |
+| `shortcut` | Interact with Shortcut stories via the `short` CLI |
 | `thin-subagent` | Human-in-the-loop delegated research/review workflow via an installed subagent extension |
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance |
@@ -63,7 +86,7 @@ pi update
 Recommended directory layout:
 
 ```text
-thoughts/ryan/plans/YYYY-MM-DD-[slug]/
+{plans-root}/YYYY-MM-DD-[slug]/
   question.md
   research.md
   design.md
@@ -93,8 +116,10 @@ Status vs progression:
 `thin-subagent` is a workflow skill, not an execution extension. It expects an installed subagent extension such as:
 
 ```bash
-pi install npm:@mjakl/pi-subagent
+pi install npm:@tintinweb/pi-subagents
 ```
+
+That extension provides the Claude Code-style `Agent`, `get_subagent_result`, and `steer_subagent` tools.
 
 Starter agent presets live in `skills/thin-subagent/agents/`:
 - `delegate.md` — generic read-mostly one-off delegation
