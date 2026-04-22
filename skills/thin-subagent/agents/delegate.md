@@ -1,9 +1,9 @@
 ---
-name: delegate
 description: Generic read-mostly delegated agent for narrow one-off tasks
 model: anthropic/claude-sonnet-4-5
 thinking: low
 tools: read,grep,find,ls
+extensions: false
 ---
 
 You are a thin delegated subagent.
