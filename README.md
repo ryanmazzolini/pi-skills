@@ -38,33 +38,33 @@ A few things to know up front:
 
 This README is the map. The family README files have the details.
 
-| Family | Overview | Docs |
-|--------|----------|------|
-| `plan/*` | Staged planning and execution workflow with durable artifacts, workflow directories, and `/plan-next` handoff support | [`skills/plan/README.md`](./skills/plan/README.md) |
-| `diffity/*` | Browser-first diff review, file-tree review, guided tours, and learning workflows built around Diffity | [`skills/diffity/README.md`](./skills/diffity/README.md) |
+| Family | Overview | Docs | References |
+|--------|----------|------|------------|
+| `plan/*` | Staged planning workflow with durable artifacts and `/plan-next` handoffs | [`skills/plan/README.md`](./skills/plan/README.md) | [HumanLayer context engineering](https://www.humanlayer.dev/blog/advanced-context-engineering), [QRSPI](https://alexlavaee.me/blog/from-rpi-to-qrspi/) |
+| `diffity/*` | Browser-first diff review, file-tree review, guided tours, and learning workflows | [`skills/diffity/README.md`](./skills/diffity/README.md) | [Diffity](https://www.npmjs.com/package/diffity) |
 
 ## Standalone skills
 
-| Skill | Description |
-|-------|-------------|
-| `commit-simple` | Branch, commit, and push changes |
-| `commit-pr` | Create or update draft pull requests |
-| `research` | Standalone technical research |
-| `shortcut` | Interact with Shortcut stories via the `short` CLI |
-| `architecture-review` | Architecture review lens for design tradeoffs and operability |
-| `improve-codebase-architecture` | Find deep-module refactor opportunities that improve testability and navigability; adapted from [`mattpocock/skills/improve-codebase-architecture`](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
-| `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs; adapted from [`mattpocock/skills/design-an-interface`](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
-| `grill-me` | Stress-test a plan or design with a focused one-question-at-a-time interview; adapted from [`mattpocock/skills/grill-me`](https://github.com/mattpocock/skills/tree/main/grill-me) |
-| `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary; adapted from [`mattpocock/skills/ubiquitous-language`](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
-| `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs |
-| `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance |
-| `context-guidelines` | Context engineering principles for AI config |
-| `explain-code` | Code explanations with diagrams and analogies |
-| `typescript` | TypeScript strict mode conventions |
-| `nextjs-app-router` | Next.js App Router patterns |
-| `hci` | Usability, accessibility, responsive design |
-| `humanlayer-thoughts` | Persist plans, research, and reviews with HumanLayer thoughts |
-| `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation |
+| Skill | Description | References |
+|-------|-------------|------------|
+| `commit-simple` | Branch, commit, and push changes | — |
+| `commit-pr` | Create or update draft pull requests | — |
+| `research` | Standalone technical research | — |
+| `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
+| `architecture-review` | Architecture review lens for design tradeoffs and operability | — |
+| `improve-codebase-architecture` | Find deep-module refactor opportunities that improve testability and navigability | [mattpocock](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
+| `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
+| `grill-me` | Stress-test a plan or design with a one-question-at-a-time interview | [mattpocock](https://github.com/mattpocock/skills/tree/main/grill-me) |
+| `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
+| `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs | — |
+| `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance | — |
+| `context-guidelines` | Context engineering principles for AI config | [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents), [HumanLayer CLAUDE.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md) |
+| `explain-code` | Code explanations with diagrams and analogies | — |
+| `typescript` | TypeScript strict mode conventions | — |
+| `nextjs-app-router` | Next.js App Router patterns | — |
+| `hci` | Usability, accessibility, responsive design | — |
+| `humanlayer-thoughts` | Persist plans, research, and reviews with HumanLayer thoughts | [HumanLayer](https://humanlayer.dev) |
+| `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation | [agent-browser](https://github.com/vercel-labs/agent-browser) |
 
 ## Extensions
 
