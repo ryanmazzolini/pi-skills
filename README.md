@@ -52,6 +52,10 @@ This README is the map. The family README files have the details.
 | `research` | Standalone technical research |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI |
 | `architecture-review` | Architecture review lens for design tradeoffs and operability |
+| `improve-codebase-architecture` | Find deep-module refactor opportunities that improve testability and navigability; adapted from [`mattpocock/skills/improve-codebase-architecture`](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
+| `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs; adapted from [`mattpocock/skills/design-an-interface`](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
+| `grill-me` | Stress-test a plan or design with a focused one-question-at-a-time interview; adapted from [`mattpocock/skills/grill-me`](https://github.com/mattpocock/skills/tree/main/grill-me) |
+| `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary; adapted from [`mattpocock/skills/ubiquitous-language`](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance |
 | `context-guidelines` | Context engineering principles for AI config |
@@ -74,4 +78,4 @@ This repo reflects my personal workflow and is shared in case it is useful. Feel
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT — see [LICENSE](./LICENSE). Some skills are adapted from third-party MIT-licensed sources; see [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
