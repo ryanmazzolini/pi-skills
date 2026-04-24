@@ -16,13 +16,12 @@ pi update
 
 ## A quick note before you use or fork
 
-These skills are calibrated to my workflow. In particular:
+This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.
 
-- Planning skills use durable workflow artifacts under a resolved plans root: `.plans/`, `thoughts/*/plans/`, `docs/plans/`, or `PRPs/`.
-- `/plan-next` prefers an explicit `PI_SKILLS_PLANS_ROOT`, then a compatibility `PI_SKILLS_THOUGHTS_PROFILE`, then existing detected roots in that order. If multiple existing roots are available for a new workflow, it lets you choose.
-- If no plans root exists yet, `/plan-next` prompts for one before creating the first workflow directory.
-- Several skills are thin wrappers around optional third-party CLIs. If you do not use those tools, skip those skills.
-- Some workflows may use delegated helper agents when the workspace provides them, but they should degrade gracefully to other review or research approaches.
+A few things to know up front:
+- Related skills are grouped together in the repo where it makes sense, especially under `skills/plan/*` and `skills/diffity/*`.
+- Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
+- Planning workflows use durable markdown artifacts instead of hidden session state. See [`skills/plan/README.md`](./skills/plan/README.md) for the details.
 
 ## Optional tooling
 
@@ -30,101 +29,48 @@ These skills are calibrated to my workflow. In particular:
 
 | Tool | Used by | Notes |
 |------|---------|-------|
-| [HumanLayer](https://humanlayer.dev) | `humanlayer-thoughts`, plan workflow sync steps | Needed only if you want `humanlayer thoughts init` / `humanlayer thoughts sync` workflows |
-| [Diffity](https://www.npmjs.com/package/diffity) | `diffity-*` | Browser-first diff review, comments, and guided tours |
+| [HumanLayer](https://humanlayer.dev) | `humanlayer-thoughts`, optionally `plan/*` | Needed only if you want `humanlayer thoughts init` / `humanlayer thoughts sync` workflows |
+| [Diffity](https://www.npmjs.com/package/diffity) | `diffity/*` | Browser-first diff review, comments, guided tours, and learning workflows |
 | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut` | Requires Shortcut auth/config |
 | [agent-browser](https://github.com/vercel-labs/agent-browser) | `agent-browser` | Browser automation CLI |
 
-## Skills
+## Skill families
+
+This README is the map. The family README files have the details.
+
+| Family | Overview | Docs |
+|--------|----------|------|
+| `plan/*` | Staged planning and execution workflow with durable artifacts, workflow directories, and `/plan-next` handoff support | [`skills/plan/README.md`](./skills/plan/README.md) |
+| `diffity/*` | Browser-first diff review, file-tree review, guided tours, and learning workflows built around Diffity | [`skills/diffity/README.md`](./skills/diffity/README.md) |
+
+## Standalone skills
 
 | Skill | Description |
 |-------|-------------|
 | `commit-simple` | Branch, commit, and push changes |
 | `commit-pr` | Create or update draft pull requests |
-| `plan-question` | Frame the problem and surface the unknowns before research |
-| `plan-research` | Research a problem space before planning |
-| `plan-design` | Align on current state, target state, and key choices |
-| `plan-structure` | Turn aligned design into milestones, slices, and dependencies |
-| `plan-create` | Distill workflow artifacts into an implementation plan |
-| `plan-implement` | Execute a plan adaptively |
-| `plan-progress` | Check progress on a plan |
-| `plan-save` | Checkpoint session progress to plan doc |
-| `plan-task` | Focused planning for single-concern tasks |
-| `plan-verify` | Run verification against a plan |
 | `research` | Standalone technical research |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI |
+| `architecture-review` | Architecture review lens for design tradeoffs and operability |
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance |
-| `architecture-review` | Architecture review lens for design tradeoffs and operability |
-| `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation |
 | `context-guidelines` | Context engineering principles for AI config |
 | `explain-code` | Code explanations with diagrams and analogies |
 | `typescript` | TypeScript strict mode conventions |
 | `nextjs-app-router` | Next.js App Router patterns |
 | `hci` | Usability, accessibility, responsive design |
 | `humanlayer-thoughts` | Persist plans, research, and reviews with HumanLayer thoughts |
-| `diffity-diff` | Open Diffity browser diff viewer |
-| `diffity-review` | AI code review with high-signal inline Diffity comments |
-| `diffity-resolve` | Resolve open Diffity diff comments by making code changes |
-| `diffity-tree` | Open Diffity file tree browser |
-| `diffity-resolve-tree` | Resolve open Diffity tree comments by making code changes |
-| `diffity-tour` | Create guided code tours with step-by-step walkthroughs |
-| `diffity-learn` | Interactive project-driven learning with Diffity tours and challenges |
+| `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation |
 
 ## Extensions
 
 | Extension | Description |
 |-----------|-------------|
-| `plan-workflow-handoff` | Thin workflow orchestration layer with `/plan-next` for fresh-session staged planning |
-
-## Plan Workflow Handoff
-
-`/plan-next` is a thin handoff layer over the staged plan skills. The workflow state should live in durable markdown artifacts under a workflow directory, not in hidden session state.
-
-Recommended directory layout:
-
-```text
-{plans-root}/YYYY-MM-DD-[slug]/
-  question.md
-  research.md
-  design.md
-  structure.md
-  plan.md
-```
-
-Plans root resolution:
-1. `PI_SKILLS_PLANS_ROOT` if set
-2. `thoughts/$PI_SKILLS_THOUGHTS_PROFILE/plans/` if set
-3. Existing `.plans/`
-4. Existing `thoughts/*/plans/`
-5. Existing `docs/plans/`
-6. Existing `PRPs/`
-7. If none exist, `/plan-next` asks where to create new plan artifacts
-
-When multiple existing roots are present, new workflows prompt for the destination root instead of guessing.
-
-Use `PI_SKILLS_PLANS_ROOT` for the most explicit setup. `PI_SKILLS_THOUGHTS_PROFILE` remains supported for HumanLayer-style thoughts workflows.
-
-Recommended usage:
-1. Run `/plan-next <goal>` from a fresh session.
-2. Let it create or find the workflow directory.
-3. Work conversationally inside the selected stage and write the stage artifact.
-4. Run `/plan-next` again to move into a fresh session for the next stage.
-
-Stage mapping:
-- Dedicated QRSPI-inspired stages: `plan-question`, `plan-research`, `plan-design`, `plan-structure`
-- Final planning + execution stages: `plan-create`, `plan-implement`, `plan-verify`
-- Lighter single-concern off-ramp: `plan-task`
-
-Status vs progression:
-- Use `/plan-next` to advance to the next fresh-session stage.
-- Use `/skill:plan-progress` to inspect `plan.md` without changing sessions or workflow state.
-
-`/plan-start` is not currently added; `/plan-next <goal>` remains the cold-start entry point until testing proves an alias is needed.
+| `plan-workflow-handoff` | Thin workflow orchestration layer that adds `/plan-next` for the `plan/*` skill family |
 
 ## Contributing
 
-This repo reflects my personal workflow and is shared in case it is useful. Feel free to borrow ideas, fork it, or open an issue or PR if something small would make it clearer or easier to use. If you end up building a more general version, feel free to share it too.
+This repo reflects my personal workflow and is shared in case it is useful. Feel free to borrow ideas, fork it, or open an issue or PR if something small would make it clearer or easier to use.
 
 ## License
 
