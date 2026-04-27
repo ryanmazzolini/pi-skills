@@ -1,6 +1,8 @@
 # Local agent/editor state
 .claude/
 thoughts/
+/plan.md
+/progress.md
 
 # Dependencies and build output
 node_modules/

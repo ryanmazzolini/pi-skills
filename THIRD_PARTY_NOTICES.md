@@ -10,6 +10,7 @@ Adapted skills:
 - `grill-me`
 - `improve-codebase-architecture`
 - `ubiquitous-language`
+- `rpi/guides/tdd.md`
 
 ```text
 MIT License

@@ -12,9 +12,11 @@
   "bugs": {
     "url": "https://github.com/ryanmazzolini/pi-skills/issues"
   },
+  "dependencies": {
+    "typebox": "^1.1.24"
+  },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
+    "@mariozechner/pi-coding-agent": "*"
   },
   "pi": {
     "skills": ["./skills"],

@@ -19,9 +19,10 @@ pi update
 This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.
 
 A few things to know up front:
-- Related skills are grouped together in the repo where it makes sense, especially under `skills/plan/*` and `skills/diffity/*`.
+- RPI is the canonical durable workflow skill. Use `/rpi` in pi for the extension-backed interface, or `/skill:rpi` for the raw skill.
+- Related skills are grouped together in the repo where it makes sense, especially under `skills/diffity/*`.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
-- Planning workflows use durable markdown artifacts instead of hidden session state. See [`skills/plan/README.md`](./skills/plan/README.md) for the details.
+- RPI workflows use durable markdown artifacts instead of hidden session state. See [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) for the entrypoint.
 
 ## Optional tooling
 
@@ -29,7 +30,7 @@ A few things to know up front:
 
 | Tool | Used by | Notes |
 |------|---------|-------|
-| [HumanLayer](https://humanlayer.dev) | `humanlayer-thoughts`, optionally `plan/*` | Needed only if you want `humanlayer thoughts init` / `humanlayer thoughts sync` workflows |
+| [HumanLayer](https://humanlayer.dev) | `humanlayer-thoughts`, optionally `rpi` | Needed only if you want `humanlayer thoughts init` / `humanlayer thoughts sync` workflows |
 | [Diffity](https://www.npmjs.com/package/diffity) | `diffity/*` | Browser-first diff review, comments, guided tours, and learning workflows |
 | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut` | Requires Shortcut auth/config |
 | [agent-browser](https://github.com/vercel-labs/agent-browser) | `agent-browser` | Browser automation CLI |
@@ -40,7 +41,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `plan/*` | Staged planning workflow with durable artifacts and `/plan-next` handoffs | [`skills/plan/README.md`](./skills/plan/README.md) | [HumanLayer context engineering](https://www.humanlayer.dev/blog/advanced-context-engineering), [QRSPI](https://alexlavaee.me/blog/from-rpi-to-qrspi/) |
+| `rpi` | Single-skill durable workflow for question, research, design, planning, local boards, implementation, verification, and fresh-session handoffs | [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) | [HumanLayer context engineering](https://www.humanlayer.dev/blog/advanced-context-engineering), [QRSPI](https://alexlavaee.me/blog/from-rpi-to-qrspi/), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
 | `diffity/*` | Browser-first diff review, file-tree review, guided tours, and learning workflows | [`skills/diffity/README.md`](./skills/diffity/README.md) | [Diffity](https://www.npmjs.com/package/diffity) |
 
 ## Standalone skills
@@ -70,7 +71,7 @@ This README is the map. The family README files have the details.
 
 | Extension | Description |
 |-----------|-------------|
-| `plan-workflow-handoff` | Thin workflow orchestration layer that adds `/plan-next` for the `plan/*` skill family |
+| `rpi` | Adds `/rpi`, the `rpi_handoff` tool, and the internal `/rpi-handoff` fresh-session hook |
 
 ## Contributing
 
