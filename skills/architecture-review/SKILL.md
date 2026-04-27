@@ -25,4 +25,4 @@ description: Cross-cutting architecture review lens for system design, rollout r
 
 ## Related Skills
 
-- Use `plan-research` and `plan-create` when the change needs deeper option analysis or implementation planning
+- Use `rpi` when the change needs deeper option analysis or implementation planning
