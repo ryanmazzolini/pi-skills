@@ -103,5 +103,6 @@ After the user agrees, call `rpi_handoff` with:
 - `user_confirmed: true`
 - concise `next_step`
 - optional `workflow_dir`
+  - Passed to the fresh session as context only; the handoff tool does not create or validate it.
 - compact `carryover` bullets
 - `kickoff` that tells the fresh session to start working immediately

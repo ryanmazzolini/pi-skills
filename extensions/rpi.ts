@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
-import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WORKFLOW_DIR_PATTERN = /^\d{4}-\d{2}-\d{2}-.+/;
@@ -90,18 +90,9 @@ function getPlanRoots(cwd: string): string[] {
 	return Array.from(new Set(roots)).filter(directoryExists);
 }
 
-function isWithin(parent: string, child: string): boolean {
-	const relation = relative(parent, child);
-	return relation === "" || (!!relation && !relation.startsWith("..") && !isAbsolute(relation));
-}
-
-function resolveWorkflowDir(cwd: string, input: string): string | undefined {
+function normalizeWorkflowDir(cwd: string, input: string): string | undefined {
 	const trimmed = input.trim();
-	if (!trimmed) return undefined;
-
-	const resolved = resolve(cwd, trimmed);
-	const allowedRoots = [cwd, ...getPlanRoots(cwd)];
-	return allowedRoots.some((root) => isWithin(root, resolved)) ? resolved : undefined;
+	return trimmed ? resolve(cwd, trimmed) : undefined;
 }
 
 function readGoal(content: string | undefined, fallback: string): string {
@@ -240,16 +231,7 @@ async function startFreshHandoff(payload: HandoffPayload, ctx: ExtensionCommandC
 		return false;
 	}
 
-	const workflowDir = payload.workflow_dir ? resolveWorkflowDir(ctx.cwd, payload.workflow_dir) : undefined;
-	if (payload.workflow_dir && !workflowDir) {
-		ctx.ui.notify("RPI handoff workflow_dir must stay inside the repo or a configured plans root.", "error");
-		return false;
-	}
-
-	if (workflowDir) {
-		mkdirSync(workflowDir, { recursive: true });
-	}
-
+	const workflowDir = payload.workflow_dir ? normalizeWorkflowDir(ctx.cwd, payload.workflow_dir) : undefined;
 	const kickoff = buildFreshKickoff({ ...payload, workflow_dir: workflowDir });
 	const result = await ctx.newSession({
 		parentSession: ctx.sessionManager.getSessionFile(),
