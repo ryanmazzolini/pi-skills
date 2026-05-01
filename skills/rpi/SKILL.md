@@ -24,8 +24,14 @@ If invoked through the pi `/rpi` extension, use any lightweight workflow candida
 
 - **ARTIFACT-FIRST**: Build from files, not chat memory alone.
 - **PROGRESSIVE LOADING**: Load one stage file at a time from `stages/` unless the task needs more.
-- **NATURAL-LANGUAGE CONTROL**: Infer the next useful step from artifacts and user intent; ask only when ambiguity matters.
+- **NATURAL-LANGUAGE CONTROL**: Infer the next useful step from artifacts and user intent; ask only
+  when ambiguity matters.
+- **HITL JUDGMENT LOOPS**: Work back and forth with the user at decision points that affect scope,
+  architecture, sequencing, or shared contracts. Ask one focused question, include a recommended
+  answer, then update artifacts after the user responds.
 - **PLAN IS COMPASS, NOT RAILS**: Adapt as you learn and update artifacts when reality diverges.
+- **ARCHITECTURE WHERE IT MATTERS**: For domain modeling, module boundaries, public APIs, service
+  contracts, or testing strategy, load `references/architecture.md`.
 - **LOCAL BOARD WHEN USEFUL**: For multi-slice implementation, use the board contract in `contracts/board.md`.
 - **ONE BEHAVIOR AT A TIME**: For implementation, follow `guides/tdd.md`.
 - **CONVERSATIONAL HANDOFF**: When a clean session would help, ask the user in chat. After they agree, call `rpi_handoff` with `user_confirmed: true`.
@@ -73,6 +79,10 @@ Plans root resolution convention:
 4. For bearings or checkpointing, load `stages/progress.md` or `stages/save.md`.
 
 ## Stage files
+
+Load only the stage needed for the current step. Also load `references/architecture.md` when the
+stage involves domain-driven design, module boundaries, interfaces, or architectural testing
+strategy.
 
 - Clarify: `stages/question.md`
 - Research: `stages/research.md`
