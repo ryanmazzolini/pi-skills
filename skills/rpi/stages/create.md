@@ -6,9 +6,25 @@ Use after structure or when enough context exists to write the durable implement
 
 - Build from workflow artifacts, not memory alone.
 - Present key options before committing to a plan.
+- Use HITL judgment before committing to a plan that changes shared contracts, architecture, rollout,
+  or execution ownership.
 - `Remaining Intent` describes outcomes, not mechanical tasks.
 - Keep `plan.md` concise and durable.
 - Choose an execution tracker: local board, no board for small work, or deferred/shared tracker.
+
+## HITL Checkpoint
+
+Before writing or materially changing `plan.md` when tradeoffs matter, summarize the intended plan in
+chat:
+
+- selected approach and why
+- major interfaces or contracts the plan relies on
+- key slices/milestones
+- execution tracker recommendation
+- user decisions still needed
+
+Ask one focused question with a recommended answer, then write/update the plan after the user
+responds.
 
 ## Output
 
@@ -36,6 +52,8 @@ goal: [one sentence]
 ## Approach
 [Selected strategy]
 **Why**: [reasoning]
+
+## Architecture / Interfaces
 
 ## Decisions
 - [Decision]: [choice] — [why]
