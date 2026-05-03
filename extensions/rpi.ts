@@ -12,7 +12,58 @@ const MAX_CANDIDATES = 5;
 const RPI_SKILL_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../skills/rpi");
 const RPI_SKILL_PATH = join(RPI_SKILL_DIR, "SKILL.md");
 
-let latestCommandContext: ExtensionCommandContext | undefined;
+// Share handoff state across duplicate extension instances in the same pi process. This can happen
+// when the package is installed globally and the repo-local extension is loaded too.
+const RPI_STATE_KEY = "__ryanmazzoliniPiSkillsRpiExtensionState";
+
+type RpiExtensionState = {
+	latestCommandContext?: ExtensionCommandContext;
+	latestSessionFile?: string;
+	latestCwd?: string;
+};
+
+function getRpiState(): RpiExtensionState {
+	const globalWithState = globalThis as typeof globalThis & Record<string, RpiExtensionState | undefined>;
+	const state = globalWithState[RPI_STATE_KEY] ?? {};
+	globalWithState[RPI_STATE_KEY] = state;
+	return state;
+}
+
+function rememberCommandContext(ctx: ExtensionCommandContext): void {
+	const state = getRpiState();
+	state.latestCommandContext = ctx;
+	state.latestCwd = ctx.cwd;
+	try {
+		state.latestSessionFile = ctx.sessionManager.getSessionFile();
+	} catch {
+		state.latestSessionFile = undefined;
+	}
+}
+
+function getUsableCommandContext(currentCtx?: {
+	cwd: string;
+	sessionManager: { getSessionFile(): string };
+}): ExtensionCommandContext | undefined {
+	const state = getRpiState();
+	const commandCtx = state.latestCommandContext;
+	if (!commandCtx) return undefined;
+
+	try {
+		const commandSessionFile = commandCtx.sessionManager.getSessionFile();
+		if (currentCtx) {
+			const currentSessionFile = currentCtx.sessionManager.getSessionFile();
+			if (commandCtx.cwd !== currentCtx.cwd || commandSessionFile !== currentSessionFile) return undefined;
+		}
+		state.latestCwd = commandCtx.cwd;
+		state.latestSessionFile = commandSessionFile;
+		return commandCtx;
+	} catch {
+		state.latestCommandContext = undefined;
+		state.latestSessionFile = undefined;
+		state.latestCwd = undefined;
+		return undefined;
+	}
+}
 
 type WorkflowCandidate = {
 	dir: string;
@@ -261,7 +312,7 @@ export default function rpiExtension(pi: ExtensionAPI) {
 	pi.registerCommand("rpi", {
 		description: "Start or continue the RPI workflow with skill context and handoff hooks",
 		handler: async (args, ctx) => {
-			latestCommandContext = ctx;
+			rememberCommandContext(ctx);
 			await ctx.waitForIdle();
 			const candidates = listWorkflowCandidates(ctx.cwd);
 			pi.sendUserMessage(buildRpiPrompt(args, candidates));
@@ -271,7 +322,7 @@ export default function rpiExtension(pi: ExtensionAPI) {
 	pi.registerCommand("rpi-handoff", {
 		description: "Internal RPI fresh-session handoff command",
 		handler: async (args, ctx) => {
-			latestCommandContext = ctx;
+			rememberCommandContext(ctx);
 			await ctx.waitForIdle();
 			const payload = decodePayload(args);
 			if (!payload) {
@@ -294,7 +345,7 @@ export default function rpiExtension(pi: ExtensionAPI) {
 			carryover: Type.Optional(Type.Array(Type.String(), { description: "Compact context bullets to carry over." })),
 			kickoff: Type.String({ description: "Instruction for the fresh session; it should start working immediately." }),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (!params.user_confirmed) {
 				return {
 					content: [
@@ -306,18 +357,29 @@ export default function rpiExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			if (!latestCommandContext) {
+			const commandCtx = getUsableCommandContext(ctx);
+			if (!commandCtx) {
+				const handoffCommand = `/rpi-handoff ${encodePayload(params)}`;
+				if (ctx.hasUI) {
+					ctx.ui.setEditorText(handoffCommand);
+					ctx.ui.notify(
+						"RPI handoff command prepared in the editor. Submit it to start the fresh session.",
+						"warning",
+					);
+				}
 				return {
 					content: [
 						{
 							type: "text",
-							text: `RPI handoff not started automatically: no active /rpi command context is available. Ask the user to run /rpi and retry, or run /rpi-handoff ${encodePayload(params)}.`,
+							text: `RPI handoff needs a command-capable context to start a fresh session. I prepared this fallback command${
+								ctx.hasUI ? " in the editor" : ""
+							}:\n\n${handoffCommand}`,
 						},
 					],
 				};
 			}
 
-			queueFreshHandoff(params, latestCommandContext);
+			queueFreshHandoff(params, commandCtx);
 			return {
 				content: [{ type: "text", text: "Queued RPI fresh-session handoff." }],
 			};
