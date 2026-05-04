@@ -73,6 +73,7 @@ This README is the map. The family README files have the details.
 | Extension | Description |
 |-----------|-------------|
 | `rpi` | Adds `/rpi`, the `rpi_handoff` tool, and the internal `/rpi-handoff` fresh-session hook |
+| `gmux-remote-control` | Adds `/remote-control` and `/rc` commands that open/explain gmux access for Pi sessions started with `gmux pi` |
 
 ## Contributing
 
