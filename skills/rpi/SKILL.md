@@ -34,7 +34,7 @@ If invoked through the pi `/rpi` extension, use any lightweight workflow candida
   contracts, or testing strategy, load `references/architecture.md`.
 - **LOCAL BOARD WHEN USEFUL**: For multi-slice implementation, use the board contract in `contracts/board.md`.
 - **ONE BEHAVIOR AT A TIME**: For implementation, follow `guides/tdd.md`.
-- **CONVERSATIONAL HANDOFF**: When a clean session would help, ask the user in chat. After they agree, call `rpi_handoff` with `user_confirmed: true`.
+- **CONVERSATIONAL HANDOFF**: When a clean session would help, ask the user in chat. After they agree, suggest a readable `/rpi handoff <brief>` command for the user to run.
 
 ## Workflow artifacts
 
@@ -108,11 +108,18 @@ Question: Do you want me to start a fresh rpi session focused on [next step]?
 Recommended answer: Yes — [why a clean context helps and what will be carried over].
 ```
 
-After the user agrees, call `rpi_handoff` with:
+After the user agrees, suggest one readable command:
 
-- `user_confirmed: true`
-- concise `next_step`
-- optional `workflow_dir`
-  - Passed to the fresh session as context only; the handoff tool does not create or validate it.
-- compact `carryover` bullets
-- `kickoff` that tells the fresh session to start working immediately
+```text
+/rpi handoff <brief>
+```
+
+Keep `<brief>` concise and copyable. Include the workflow directory when known, because the fresh session starts with clean context.
+
+Example:
+
+```text
+/rpi handoff Continue workflow /path/to/plans/2026-04-28-62230-invoice-match-backend-search; implement card 002 and start by reading design.md.
+```
+
+Do not encode handoff data or use hidden session state. `/rpi handoff <brief>` owns creating the clear-context session.
