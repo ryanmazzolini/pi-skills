@@ -56,7 +56,7 @@ Plans root resolution convention:
 
 1. `PI_SKILLS_PLANS_ROOT` if set
 2. `thoughts/$PI_SKILLS_THOUGHTS_PROFILE/plans/` if set
-3. existing `.plans/`
+3. existing `.plan/` or `.plans/`
 4. existing `thoughts/*/plans/`
 5. existing `docs/plans/`
 6. existing `PRPs/`
