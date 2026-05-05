@@ -9,6 +9,13 @@ const DEFAULT_THOUGHTS_PROFILE = "default";
 const PLANS_ROOT_ENV = "PI_SKILLS_PLANS_ROOT";
 const THOUGHTS_PROFILE_ENV = "PI_SKILLS_THOUGHTS_PROFILE";
 const MAX_CANDIDATES = 5;
+const DEFAULT_PLAN_ROOT_PATTERNS = [
+	".plans/",
+	".plan/",
+	`thoughts/${DEFAULT_THOUGHTS_PROFILE}/plans/`,
+	"docs/plans/",
+	"PRPs/",
+];
 const RPI_SKILL_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../skills/rpi");
 const RPI_SKILL_PATH = join(RPI_SKILL_DIR, "SKILL.md");
 
@@ -130,7 +137,7 @@ function getPlanRoots(cwd: string): string[] {
 	const profile = normalizeProfileName(process.env[THOUGHTS_PROFILE_ENV]);
 	if (profile) roots.push(join(cwd, "thoughts", profile, "plans"));
 
-	for (const candidate of [".plans", `thoughts/${DEFAULT_THOUGHTS_PROFILE}/plans`, "docs/plans", "PRPs"]) {
+	for (const candidate of DEFAULT_PLAN_ROOT_PATTERNS) {
 		roots.push(join(cwd, candidate));
 	}
 
