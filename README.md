@@ -73,7 +73,7 @@ This README is the map. The family README files have the details.
 
 | Extension | Description |
 |-----------|-------------|
-| `rpi` | Adds `/rpi`, the `rpi_handoff` tool, and the internal `/rpi-handoff` fresh-session hook |
+| `rpi` | Adds `/rpi` workflow launch/candidates plus readable `/rpi handoff <brief>` fresh sessions |
 
 ## Contributing
 

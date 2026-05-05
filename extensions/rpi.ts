@@ -1,8 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Type } from "typebox";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, join, resolve } from "node:path";
 
 const WORKFLOW_DIR_PATTERN = /^\d{4}-\d{2}-\d{2}-.+/;
 const DEFAULT_THOUGHTS_PROFILE = "default";
@@ -16,61 +14,6 @@ const DEFAULT_PLAN_ROOT_PATTERNS = [
 	"docs/plans/",
 	"PRPs/",
 ];
-const RPI_SKILL_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../skills/rpi");
-const RPI_SKILL_PATH = join(RPI_SKILL_DIR, "SKILL.md");
-
-// Share handoff state across duplicate extension instances in the same pi process. This can happen
-// when the package is installed globally and the repo-local extension is loaded too.
-const RPI_STATE_KEY = "__ryanmazzoliniPiSkillsRpiExtensionState";
-
-type RpiExtensionState = {
-	latestCommandContext?: ExtensionCommandContext;
-	latestSessionFile?: string;
-	latestCwd?: string;
-};
-
-function getRpiState(): RpiExtensionState {
-	const globalWithState = globalThis as typeof globalThis & Record<string, RpiExtensionState | undefined>;
-	const state = globalWithState[RPI_STATE_KEY] ?? {};
-	globalWithState[RPI_STATE_KEY] = state;
-	return state;
-}
-
-function rememberCommandContext(ctx: ExtensionCommandContext): void {
-	const state = getRpiState();
-	state.latestCommandContext = ctx;
-	state.latestCwd = ctx.cwd;
-	try {
-		state.latestSessionFile = ctx.sessionManager.getSessionFile();
-	} catch {
-		state.latestSessionFile = undefined;
-	}
-}
-
-function getUsableCommandContext(currentCtx?: {
-	cwd: string;
-	sessionManager: { getSessionFile(): string };
-}): ExtensionCommandContext | undefined {
-	const state = getRpiState();
-	const commandCtx = state.latestCommandContext;
-	if (!commandCtx) return undefined;
-
-	try {
-		const commandSessionFile = commandCtx.sessionManager.getSessionFile();
-		if (currentCtx) {
-			const currentSessionFile = currentCtx.sessionManager.getSessionFile();
-			if (commandCtx.cwd !== currentCtx.cwd || commandSessionFile !== currentSessionFile) return undefined;
-		}
-		state.latestCwd = commandCtx.cwd;
-		state.latestSessionFile = commandSessionFile;
-		return commandCtx;
-	} catch {
-		state.latestCommandContext = undefined;
-		state.latestSessionFile = undefined;
-		state.latestCwd = undefined;
-		return undefined;
-	}
-}
 
 type WorkflowCandidate = {
 	dir: string;
@@ -80,13 +23,9 @@ type WorkflowCandidate = {
 	mtimeMs: number;
 };
 
-type HandoffPayload = {
-	user_confirmed: boolean;
-	next_step: string;
-	workflow_dir?: string;
-	carryover?: string[];
-	kickoff: string;
-};
+type RpiCommand =
+	| { kind: "handoff"; brief?: string }
+	| { kind: "workflow"; intent: string };
 
 function directoryExists(path: string | undefined): path is string {
 	if (!path) return false;
@@ -148,11 +87,6 @@ function getPlanRoots(cwd: string): string[] {
 	return Array.from(new Set(roots)).filter(directoryExists);
 }
 
-function normalizeWorkflowDir(cwd: string, input: string): string | undefined {
-	const trimmed = input.trim();
-	return trimmed ? resolve(cwd, trimmed) : undefined;
-}
-
 function readGoal(content: string | undefined, fallback: string): string {
 	if (!content) return fallback;
 	return (
@@ -171,8 +105,8 @@ function artifactNames(dir: string): string[] {
 	return names.filter((name) => fileExists(join(dir, name)));
 }
 
-function getWorkflowMtime(dir: string): number {
-	const mtimes = artifactNames(dir).map((name) => statSync(join(dir, name)).mtimeMs);
+function getWorkflowMtime(dir: string, artifacts: string[]): number {
+	const mtimes = artifacts.map((name) => statSync(join(dir, name)).mtimeMs);
 	return Math.max(statSync(dir).mtimeMs, ...mtimes);
 }
 
@@ -192,7 +126,7 @@ function listWorkflowCandidates(cwd: string): WorkflowCandidate[] {
 				goal: readGoal(plan ?? readText(join(dir, "question.md")), basename(dir)),
 				status: readStatus(plan),
 				artifacts,
-				mtimeMs: getWorkflowMtime(dir),
+				mtimeMs: getWorkflowMtime(dir, artifacts),
 			};
 		})
 		.sort((left, right) => right.mtimeMs - left.mtimeMs)
@@ -211,185 +145,94 @@ function formatCandidates(candidates: WorkflowCandidate[]): string {
 		.join("\n");
 }
 
-function encodePayload(payload: HandoffPayload): string {
-	return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+function buildRpiSkillInvocation(body: string): string {
+	return `/skill:rpi ${body.trim()}`;
 }
 
-function isHandoffPayload(value: unknown): value is HandoffPayload {
-	if (typeof value !== "object" || value === null) return false;
-	const payload = value as Partial<HandoffPayload>;
-	return (
-		typeof payload.user_confirmed === "boolean" &&
-		typeof payload.next_step === "string" &&
-		typeof payload.kickoff === "string" &&
-		(payload.workflow_dir === undefined || typeof payload.workflow_dir === "string") &&
-		(payload.carryover === undefined ||
-			(Array.isArray(payload.carryover) && payload.carryover.every((item) => typeof item === "string")))
-	);
-}
-
-function decodePayload(value: string): HandoffPayload | undefined {
-	try {
-		const parsed = JSON.parse(Buffer.from(value.trim(), "base64url").toString("utf8"));
-		return isHandoffPayload(parsed) ? parsed : undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-function stripFrontmatter(content: string): string {
-	return content.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "").trim();
-}
-
-function readRpiSkillBlock(): string {
-	const content = readText(RPI_SKILL_PATH);
-	if (!content) {
-		return `Use the rpi skill. Its expected location is ${RPI_SKILL_PATH}.`;
-	}
-
-	return `<skill name="rpi" location="${RPI_SKILL_PATH}">
-References are relative to ${RPI_SKILL_DIR}.
-
-${stripFrontmatter(content)}
-</skill>`;
-}
-
-function buildRpiPrompt(args: string, candidates: WorkflowCandidate[]): string {
-	const userIntent = args.trim() || "Continue or start the appropriate RPI workflow.";
-	return `${readRpiSkillBlock()}
-
-User intent:
+function buildWorkflowSkillCommand(intent: string, candidates: WorkflowCandidate[]): string {
+	const userIntent = intent.trim() || "Continue or start the appropriate RPI workflow.";
+	return buildRpiSkillInvocation(`User intent:
 ${userIntent}
 
 Lightweight workflow candidates from the pi /rpi extension:
 ${formatCandidates(candidates)}
 
-Use these candidates as context, not as a hard routing decision. If the next workflow or next step is ambiguous, ask one conversational question with your recommended answer. Otherwise proceed by loading the relevant rpi stage guidance.`;
+Use these candidates as context, not as a hard routing decision. If the next workflow or next step is ambiguous, ask one conversational question with your recommended answer. Otherwise proceed by loading the relevant rpi stage guidance.`);
 }
 
-function buildFreshKickoff(payload: HandoffPayload): string {
-	const carryover = payload.carryover?.length ? payload.carryover.map((item) => `- ${item}`).join("\n") : "- None provided";
-	return `${readRpiSkillBlock()}
+function buildFreshHandoffKickoff(brief: string): string {
+	return buildRpiSkillInvocation(`Fresh RPI handoff. Start working immediately.
 
-Fresh RPI handoff. Automatically start working on the agreed next step.
-
-Next step:
-${payload.next_step}
-
-${payload.workflow_dir ? `Workflow directory:\n${payload.workflow_dir}\n\n` : ""}Carryover context:
-${carryover}
-
-Kickoff:
-${payload.kickoff}`;
+Handoff brief:
+${brief}`);
 }
 
-async function startFreshHandoff(payload: HandoffPayload, ctx: ExtensionCommandContext): Promise<boolean> {
-	if (!payload.user_confirmed) {
-		ctx.ui.notify("RPI handoff requires conversational user confirmation first.", "warning");
-		return false;
+function buildHandoffFailurePrompt(errorMessage: string, brief: string): string {
+	return `RPI handoff failed while creating the fresh session.
+
+Error:
+${errorMessage}
+
+Ask me what I want to do next. Offer these options:
+- Retry with a readable /rpi handoff <brief> command
+- Continue in this session using the handoff brief
+- Revise the handoff brief before retrying
+
+Handoff brief:
+${brief}`;
+}
+
+function getErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function parseRpiArgs(args: string): RpiCommand {
+	const trimmed = args.trim();
+	if (trimmed === "handoff") return { kind: "handoff" };
+	if (trimmed.startsWith("handoff ")) return { kind: "handoff", brief: trimmed.slice("handoff ".length).trim() || undefined };
+	return { kind: "workflow", intent: trimmed };
+}
+
+async function runHandoffCommand(pi: ExtensionAPI, command: Extract<RpiCommand, { kind: "handoff" }>, ctx: ExtensionCommandContext): Promise<void> {
+	await ctx.waitForIdle();
+
+	const brief = command.brief;
+	if (!brief) {
+		ctx.ui.notify("Usage: /rpi handoff <brief>", "warning");
+		return;
 	}
 
-	const workflowDir = payload.workflow_dir ? normalizeWorkflowDir(ctx.cwd, payload.workflow_dir) : undefined;
-	const kickoff = buildFreshKickoff({ ...payload, workflow_dir: workflowDir });
-	const result = await ctx.newSession({
-		parentSession: ctx.sessionManager.getSessionFile(),
-		withSession: async (replacementCtx) => {
-			await replacementCtx.sendUserMessage(kickoff);
-		},
-	});
-	if (result.cancelled) {
-		ctx.ui.notify("RPI handoff cancelled.", "info");
-		return false;
-	}
-	return true;
-}
+	try {
+		const result = await ctx.newSession({
+			parentSession: ctx.sessionManager.getSessionFile(),
+			withSession: async (replacementCtx) => {
+				await replacementCtx.sendUserMessage(buildFreshHandoffKickoff(brief));
+			},
+		});
 
-function queueFreshHandoff(payload: HandoffPayload, ctx: ExtensionCommandContext): void {
-	setTimeout(() => {
-		ctx.waitForIdle()
-			.then(() => startFreshHandoff(payload, ctx))
-			.catch((error: unknown) => {
-				const message = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`RPI handoff failed: ${message}`, "error");
-			});
-	}, 0);
+		if (result.cancelled) {
+			ctx.ui.notify("RPI handoff cancelled.", "info");
+		}
+	} catch (error: unknown) {
+		const message = getErrorMessage(error);
+		ctx.ui.notify(`RPI handoff failed: ${message}`, "error");
+		pi.sendUserMessage(buildHandoffFailurePrompt(message, brief));
+	}
 }
 
 export default function rpiExtension(pi: ExtensionAPI) {
 	pi.registerCommand("rpi", {
-		description: "Start or continue the RPI workflow with skill context and handoff hooks",
+		description: "Start or continue the RPI workflow with skill context, workflow candidates, and handoff support",
 		handler: async (args, ctx) => {
-			rememberCommandContext(ctx);
-			await ctx.waitForIdle();
-			const candidates = listWorkflowCandidates(ctx.cwd);
-			pi.sendUserMessage(buildRpiPrompt(args, candidates));
-		},
-	});
-
-	pi.registerCommand("rpi-handoff", {
-		description: "Internal RPI fresh-session handoff command",
-		handler: async (args, ctx) => {
-			rememberCommandContext(ctx);
-			await ctx.waitForIdle();
-			const payload = decodePayload(args);
-			if (!payload) {
-				ctx.ui.notify("Invalid rpi handoff payload.", "error");
+			const command = parseRpiArgs(args);
+			if (command.kind === "handoff") {
+				await runHandoffCommand(pi, command, ctx);
 				return;
 			}
-			await startFreshHandoff(payload, ctx);
-		},
-	});
 
-	pi.registerTool({
-		name: "rpi_handoff",
-		label: "RPI Handoff",
-		description:
-			"Start a fresh RPI session after the user has conversationally confirmed the next step. Requires user_confirmed true.",
-		parameters: Type.Object({
-			user_confirmed: Type.Boolean({ description: "Must be true only after the user agreed in conversation." }),
-			next_step: Type.String({ description: "The agreed next step for the fresh session." }),
-			workflow_dir: Type.Optional(Type.String({ description: "Workflow directory, if known." })),
-			carryover: Type.Optional(Type.Array(Type.String(), { description: "Compact context bullets to carry over." })),
-			kickoff: Type.String({ description: "Instruction for the fresh session; it should start working immediately." }),
-		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			if (!params.user_confirmed) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: "RPI handoff not started: ask the user conversationally first, then call rpi_handoff with user_confirmed: true.",
-						},
-					],
-				};
-			}
-
-			const commandCtx = getUsableCommandContext(ctx);
-			if (!commandCtx) {
-				const handoffCommand = `/rpi-handoff ${encodePayload(params)}`;
-				if (ctx.hasUI) {
-					ctx.ui.setEditorText(handoffCommand);
-					ctx.ui.notify(
-						"RPI handoff command prepared in the editor. Submit it to start the fresh session.",
-						"warning",
-					);
-				}
-				return {
-					content: [
-						{
-							type: "text",
-							text: `RPI handoff needs a command-capable context to start a fresh session. I prepared this fallback command${
-								ctx.hasUI ? " in the editor" : ""
-							}:\n\n${handoffCommand}`,
-						},
-					],
-				};
-			}
-
-			queueFreshHandoff(params, commandCtx);
-			return {
-				content: [{ type: "text", text: "Queued RPI fresh-session handoff." }],
-			};
+			await ctx.waitForIdle();
+			const candidates = listWorkflowCandidates(ctx.cwd);
+			pi.sendUserMessage(buildWorkflowSkillCommand(command.intent, candidates));
 		},
 	});
 }
