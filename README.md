@@ -62,13 +62,13 @@ This README is the map. The family README files have the details.
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
 | `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs | — |
-| `frontend-hci-review` | Find frontend usability, accessibility, responsive, and interaction-state improvement opportunities | [Agent Skills progressive disclosure](https://agentskills.io/specification) |
+| `frontend-hci-review` | Progressive HCI/product-flow review; starts with friction candidates before design | [`skills/frontend-hci-review/SKILL.md`](./skills/frontend-hci-review/SKILL.md) |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance | — |
 | `context-guidelines` | Context engineering principles for AI config | [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents), [HumanLayer CLAUDE.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md) |
 | `explain-code` | Code explanations with diagrams and analogies | — |
 | `typescript` | TypeScript strict mode conventions | — |
 | `nextjs-app-router` | Next.js App Router patterns | — |
-| `hci` | Usability, accessibility, responsive design | — |
+| `hci` | Usability, accessibility, responsive design | [`skills/hci/SKILL.md`](./skills/hci/SKILL.md), [WCAG 2.1 Quick Reference](https://www.w3.org/WAI/WCAG21/quickref/) |
 | `humanlayer-thoughts` | Persist plans, research, and reviews with HumanLayer thoughts | [HumanLayer](https://humanlayer.dev) |
 | `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation | [agent-browser](https://github.com/vercel-labs/agent-browser) |
 
