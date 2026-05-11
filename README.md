@@ -48,6 +48,7 @@ This README is the map. The family README files have the details.
 
 | Skill | Description | References |
 |-------|-------------|------------|
+| `ticket-worktree` | Create or reuse ticket-oriented worktrees folders for Shortcut or GitHub issue work | — |
 | `commit-simple` | Branch, commit, and push changes | — |
 | `commit-pr` | Create or update draft pull requests | — |
 | `research` | Standalone technical research | — |

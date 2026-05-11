@@ -19,13 +19,14 @@ Wraps the [`short`](https://github.com/useshortcut/shortcut-cli) CLI. Assume it 
 
 Prefer `-q` to suppress loading output when piping or parsing.
 
-## From the current branch
+## From the current branch or path
 
-Branch names often embed the story id (e.g. `feat-sc-62230-...`, `rm/ch12345/...`). To look up the story for the current branch:
+Branch names and ticket worktree folders often embed the story id (e.g. `feat/sc-62230/...`, `rm/ch12345/...`, `~/git/worktrees/sc-62230-short-description/repo`). To look up the story:
 
-1. `git rev-parse --abbrev-ref HEAD`
-2. Extract the first `sc-<digits>` or `ch<digits>` group; the digits are the story id.
-3. Run `short story <id> -q`.
+1. Check the current path for a `sc-<digits>` or `ch<digits>` worktree folder segment.
+2. If needed, run `git rev-parse --abbrev-ref HEAD` and inspect the branch name.
+3. Extract the first `sc-<digits>` or `ch<digits>` group; the digits are the story id.
+4. Run `short story <id> -q`.
 
 `short story --from-git` only works for the `<mention>/ch<id>/<title>` branch format, so parse manually when branches use other conventions.
 

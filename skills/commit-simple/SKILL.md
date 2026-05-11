@@ -10,7 +10,8 @@ Use this skill when creating a branch, committing changes, or pushing work.
 ## Rules
 
 - If the current branch is `main` or `master`, propose a new branch before committing.
-- For new branches, use `{type}/sc-{number}/{slug}`, `{type}/{number}/{slug}`, or `{type}/{slug}`.
+- For new branches, use `{type}/sc-{number}/{slug}`, `{type}/gh-{number}/{slug}`, `{type}/{number}/{slug}`, or `{type}/{slug}`.
+- When working inside a ticket worktree folder, keep the branch aligned with the folder's ticket id.
 - Use Conventional Commits for commit messages.
 - Split unrelated work into separate commits.
 - Show the proposed commit message before committing.
