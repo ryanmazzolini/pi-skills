@@ -1,6 +1,6 @@
 ---
 name: frontend-guidelines
-description: Opinionated frontend defaults for UX, accessibility, and UI architecture. Use when working with React, Next.js, CSS, or evaluating UI tradeoffs.
+description: Opinionated frontend defaults for UX, accessibility, and UI architecture. Use for broad frontend tradeoffs; use frontend-react when writing or reviewing React, Next.js, or TSX implementation.
 ---
 
 # Frontend Guidelines
@@ -25,5 +25,6 @@ description: Opinionated frontend defaults for UX, accessibility, and UI archite
 
 ## Related Skills
 
+- Use `frontend-react` for React, Next.js, TSX, JSX readability, hooks, forms, and component review
 - Use `hci` for accessibility, responsive design, and interaction details
-- Use `nextjs-app-router` for Next.js server/client boundaries and server actions
+- Use `nextjs-app-router` for deeper Next.js server/client boundaries and server actions

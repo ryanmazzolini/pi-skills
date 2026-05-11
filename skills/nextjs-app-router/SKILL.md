@@ -1,9 +1,11 @@
 ---
 name: nextjs-app-router
-description: Next.js 14+ App Router patterns and conventions. Use when working with Next.js App Router, server components, or server actions.
+description: Next.js 14+ App Router patterns and conventions. Use when working with App Router routes, Server/Client Components, server actions, route states, or Next.js data loading; pair with frontend-react for TSX component implementation.
 ---
 
 # Next.js App Router Patterns
+
+Use `frontend-react` first for general React/TSX component authoring and review. Use this skill for Next.js-specific App Router boundaries, route files, and server/client data flow.
 
 ## Server vs Client Components
 
