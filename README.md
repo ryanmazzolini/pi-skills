@@ -61,6 +61,7 @@ This README is the map. The family README files have the details.
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
 | `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs | — |
+| `frontend-hci-review` | Find frontend usability, accessibility, responsive, and interaction-state improvement opportunities | [Agent Skills progressive disclosure](https://agentskills.io/specification) |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance | — |
 | `context-guidelines` | Context engineering principles for AI config | [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents), [HumanLayer CLAUDE.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md) |
 | `explain-code` | Code explanations with diagrams and analogies | — |
