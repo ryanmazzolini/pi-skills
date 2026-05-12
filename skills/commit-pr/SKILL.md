@@ -7,22 +7,21 @@ description: Create or update a draft pull request from the current branch. Use 
 
 Use this skill when opening or updating a pull request from the current branch.
 
+## Workflow
+
+1. Inspect the branch diff, commits, base branch, and existing PR status.
+2. Draft a clear PR title and a slim body with `Description`, `Details`, and `Testing`.
+3. Show the full PR title and body to the user and ask for confirmation or edits.
+4. After confirmation, push if needed and create or update the draft PR.
+5. Show the PR URL and offer next steps.
+
 ## Rules
 
 - Draft the PR from the diff and commits against the base branch.
 - Include an issue reference when one is available from the branch name or user context.
 - Keep the PR body slim with these sections:
-  - `Description` — the problem, why it matters, and how the PR solves it
+  - `Description` — human-readable description of the problem, why it matters, and how the PR solves it
   - `Details` — high-level implementation notes only when they add useful context
-  - `Testing` — testing completed, still needed, or frontend screenshots/videos when UI changed
-- Show the full PR title and body before creating or updating the PR.
+  - `Testing` — repo-level verification when practical, relevant targeted checks, anything still needed, and screenshots/videos when UI changed.
+- Ask before pushing, creating, or updating a PR.
 - Create PRs as draft first, then offer follow-up actions.
-
-## Workflow
-
-1. Inspect the branch diff and commits against the base branch.
-2. Check whether a pull request already exists for the current branch.
-3. Draft a clear PR title and a slim body with `Description`, `Details`, and `Testing`.
-4. Ask for confirmation or edits.
-5. Push if needed, then create or update the draft PR.
-6. Show the PR URL and offer next steps.

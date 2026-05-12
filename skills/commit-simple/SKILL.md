@@ -7,22 +7,21 @@ description: Branch, commit, and push changes. Use when preparing a commit or pu
 
 Use this skill when creating a branch, committing changes, or pushing work.
 
+## Workflow
+
+1. Inspect the current branch, working tree, staged changes, and diff.
+2. Propose any branch change, commit split, and Conventional Commit message(s).
+3. After confirmation, create the branch if needed and commit.
+4. Offer to push after the commit.
+5. If the user wants a pull request, suggest `commit-pr` as the next step.
+
 ## Rules
 
-- If the current branch is `main` or `master`, propose a new branch before committing.
+- If there are logically separate changes, propose separate commits and confirm the plan before committing.
+- If the current branch is `main` or `master`, ask whether to create a new branch before committing.
 - For new branches, use `{type}/sc-{number}/{slug}`, `{type}/gh-{number}/{slug}`, `{type}/{number}/{slug}`, or `{type}/{slug}`.
 - When working inside a ticket worktree folder, keep the branch aligned with the folder's ticket id.
 - Use Conventional Commits for commit messages.
-- Split unrelated work into separate commits.
-- Show the proposed commit message before committing.
-- Push only after user confirmation.
+- Unless the change is trivial, include a human-readable summary of the change, not the development process.
+- Ask before committing or pushing.
 - Hand pull request work off to `commit-pr`.
-
-## Workflow
-
-1. Check the current branch, working tree, and staged changes.
-2. If needed, propose a branch name and confirm branch creation.
-3. Draft a Conventional Commit message from the diff.
-4. Ask for confirmation before committing.
-5. Offer to push after the commit.
-6. If the user wants a pull request, suggest `commit-pr` as the next step.
