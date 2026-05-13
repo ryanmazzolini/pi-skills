@@ -61,6 +61,7 @@ This README is the map. The family README files have the details.
 | `grill-with-docs` | Stress-test a plan against code/docs while updating CONTEXT.md and ADRs as decisions crystallize | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
 | `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
+| `ruby-sorbet-rails` | Ruby/Rails guidance for Rails-native structures, Sorbet/Tapioca RBIs, RuboCop, db schema, and GraphQL federation artifacts | [Sorbet RBI docs](https://sorbet.org/docs/rbi), [Tapioca](https://github.com/Shopify/tapioca), [Rails migrations](https://guides.rubyonrails.org/active_record_migrations.html) |
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs | — |
 | `frontend-hci-review` | Progressive HCI/product-flow review; starts with friction candidates before design | [`skills/frontend-hci-review/SKILL.md`](./skills/frontend-hci-review/SKILL.md) |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance | — |
