@@ -20,6 +20,7 @@ This is my personal toolkit first. If parts of it fit your workflow, great — u
 
 A few things to know up front:
 - RPI is the canonical durable workflow skill. Use `/rpi` in pi for the extension-backed interface, or `/skill:rpi` for the raw skill.
+- Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
 - Related skills are grouped together in the repo where it makes sense, especially under `skills/diffity/*`.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
 - RPI workflows use durable markdown artifacts instead of hidden session state. See [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) for the entrypoint.
@@ -33,6 +34,7 @@ A few things to know up front:
 | [HumanLayer](https://humanlayer.dev) | `humanlayer-thoughts`, optionally `rpi` | Needed only if you want `humanlayer thoughts init` / `humanlayer thoughts sync` workflows |
 | [Diffity](https://www.npmjs.com/package/diffity) | `diffity/*` | Browser-first diff review, comments, guided tours, and learning workflows |
 | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut` | Requires Shortcut auth/config |
+| [Obsidian CLI](https://obsidian.md/help/cli) | `obsidian-vault` | Requires Obsidian desktop CLI to be enabled |
 | [agent-browser](https://github.com/vercel-labs/agent-browser) | `agent-browser` | Browser automation CLI |
 
 ## Skill families
