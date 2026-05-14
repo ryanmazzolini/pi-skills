@@ -53,6 +53,7 @@ This README is the map. The family README files have the details.
 | `commit-pr` | Create or update draft pull requests | — |
 | `research` | Standalone technical research | — |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
+| `obsidian-vault` | Use the Obsidian CLI for vault-aware note workflows | [Obsidian CLI](https://obsidian.md/help/cli) |
 | `architecture-review` | Architecture review lens for design tradeoffs and operability | — |
 | `improve-codebase-architecture` | Find deep-module refactor opportunities that improve testability and navigability | [mattpocock](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
 | `simplify-codebase-architecture` | Find pragmatic refactor opportunities by reducing repeated knowledge and deleting shallow abstraction | — |
