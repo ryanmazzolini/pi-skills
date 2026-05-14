@@ -22,6 +22,8 @@ Use this skill when creating a branch, committing changes, or pushing work.
 - For new branches, use `{type}/sc-{number}/{slug}`, `{type}/gh-{number}/{slug}`, `{type}/{number}/{slug}`, or `{type}/{slug}`.
 - When working inside a ticket worktree folder, keep the branch aligned with the folder's ticket id.
 - Use Conventional Commits for commit messages.
-- Unless the change is trivial, include a human-readable summary of the change, not the development process.
+- Commit messages should describe the resulting code change, not the development process.
+- Unless the change is trivial, include a concise human-readable body that explains why the change matters and any important reviewer context.
+- Prefer concrete facts over workflow labels: name the behavior, API, module, or cleanup that changed.
 - Ask before committing or pushing.
 - Hand pull request work off to `commit-pr`.

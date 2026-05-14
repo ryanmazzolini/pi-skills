@@ -20,8 +20,16 @@ Use this skill when opening or updating a pull request from the current branch.
 - Draft the PR from the diff and commits against the base branch.
 - Include an issue reference when one is available from the branch name or user context.
 - Keep the PR body slim with these sections:
-  - `Description` — human-readable description of the problem, why it matters, and how the PR solves it
+  - `Description` — explain the motivation first, then the concrete change. Describe the product/codebase state before and after, not the development process.
   - `Details` — high-level implementation notes only when they add useful context
   - `Testing` — repo-level verification when practical, relevant targeted checks, anything still needed, and screenshots/videos when UI changed.
 - Ask before pushing, creating, or updating a PR.
 - Create PRs as draft first, then offer follow-up actions.
+
+## PR description style
+
+- Write for a reviewer who has not followed the prior discussion.
+- Lead with why the change matters, then describe what changed.
+- Describe the resulting code/product behavior, not the path taken to get there.
+- Prefer concrete facts over workflow labels: name the old behavior, missing capability, or risk when it matters.
+- Keep it concise; move file-by-file detail to `Details`.
