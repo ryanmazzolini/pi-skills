@@ -35,6 +35,7 @@ A few things to know up front:
 | [Diffity](https://www.npmjs.com/package/diffity) | `diffity/*` | Browser-first diff review, comments, guided tours, and learning workflows |
 | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut` | Requires Shortcut auth/config |
 | [Obsidian CLI](https://obsidian.md/help/cli) | `obsidian-vault` | Requires Obsidian desktop CLI to be enabled |
+| Notion CLI (`ntn`) | `notion-cli` | Installed with mise; requires Notion auth/token setup |
 | [agent-browser](https://github.com/vercel-labs/agent-browser) | `agent-browser` | Browser automation CLI |
 
 ## Skill families
@@ -56,6 +57,7 @@ This README is the map. The family README files have the details.
 | `research` | Standalone technical research | — |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
 | `obsidian-vault` | Use the Obsidian CLI for vault-aware note workflows | [Obsidian CLI](https://obsidian.md/help/cli) |
+| `notion-cli` | Use the Notion `ntn` CLI for pages, data sources, and API calls | — |
 | `architecture-review` | Architecture review lens for design tradeoffs and operability | — |
 | `improve-codebase-architecture` | Find deep-module refactor opportunities that improve testability and navigability | [mattpocock](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
 | `simplify-codebase-architecture` | Find pragmatic refactor opportunities by reducing repeated knowledge and deleting shallow abstraction | — |
