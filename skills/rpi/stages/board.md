@@ -1,30 +1,51 @@
 # Board stage
 
-Use when `plan.md` chooses a local board or when implementation should be split into tracer-bullet cards.
+Use when `plan.md` chooses a compact local board or when implementation should be split into vertical slices.
 
-Load `contracts/board.md` before writing cards.
+Load `contracts/board.md` before writing the board.
 
 ## Rules
 
-- `plan.md` remains canonical; cards are the execution queue.
-- Each card is an end-to-end vertical slice.
-- Mark cards `AFK` or `HITL`.
-- Make blockers explicit in `blocked_by`.
-- Keep `board/index.md` compact; card bodies carry detail.
+- `plan.md` remains the PRP/end-state artifact; `board/index.md` is the execution manifest.
+- Each slice is a narrow vertical outcome, not a horizontal layer.
+- Define the slice by end state and verification, not by implementation method.
+- Mark slices `AFK` or `HITL`.
+- Make blockers explicit.
+- Use stable descriptive slice IDs; do not use numeric IDs that imply total sequence.
+- Keep `board/index.md` compact and readable every time.
+- Create `board/cards/*.md` only for slices that need more detail than fits in the index.
 
 ## Process
 
-1. Read `plan.md`, then `structure.md` if present.
-2. Create `board/` and `board/cards/` beside `plan.md`.
-3. Write 3-7 normal-feature cards unless the work is clearly smaller/larger.
-4. Regenerate the index with the helper script resolved relative to this skill's `SKILL.md`. Pass the workflow path as one argument; do not interpolate untrusted path text into a shell command.
+1. Read `plan.md`, then optional `structure.md` only if it exists and seems relevant.
+2. Create `board/` and optionally `board/cards/` beside `plan.md`.
+3. Draft 3-7 normal-feature slices unless the work is clearly smaller/larger.
+4. Put simple slices directly in `board/index.md`.
+5. For complex slices, write a detail file under `board/cards/` and link it from the slice's `Detail:` field.
+6. Do not run an index generator; maintain the compact index directly.
 
-```bash
-node "{path-to-rpi-skill}/scripts/update-board-index.mjs" "{workflow-dir}"
+## Output
+
+Write `{workflow-dir}/board/index.md` using the contract shape:
+
+```md
+# Board
+
+## Statuses
+
+backlog -> ready -> in-progress -> review -> done
+blocked
+
+## Next
+
+### [slice slug] — ready — [AFK/HITL]
+
+End state: [observable completed outcome]
+Verification: [automated/manual/playtest/visual/review proof]
+Blocked by: [None or slice IDs]
+Detail: [Inline only or ./cards/[slug].md]
 ```
-
-Do not assume the current project has a `./scripts/` directory; installed skills live outside the target repo.
 
 ## Check-in
 
-Ask the user to review granularity, order/blockers, and AFK/HITL classification. If a fresh implementation context would help, ask conversationally before calling `rpi_handoff`.
+Ask the user to review slice granularity, current priority, blockers, AFK/HITL classification, and verification expectations. If a fresh implementation context would help, ask conversationally before calling `rpi_handoff`.

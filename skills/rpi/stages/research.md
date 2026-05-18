@@ -1,18 +1,20 @@
 # Research stage
 
-Use after `question.md` or when the user asks to investigate/evaluate before design.
+Optional playbook. Use when facts are expensive to rediscover, external docs matter, the codebase is unfamiliar, or the PRP needs evidence before decisions can be made.
 
 ## Rules
 
-- Research prior art, existing codebase patterns, related implementations, and risks.
-- Prefer code/docs evidence over assumptions.
+- Prefer facts, code/docs evidence, and file references over assumptions.
 - Keep findings durable and concise.
+- Avoid turning research into an implementation plan.
+- If the research question is driven by `question.md`, preserve the user's goal while separating facts from recommendations.
 
 ## Process
 
-1. Read `question.md` and any existing workflow artifacts.
+1. Read `question.md`, `plan.md` if present, and any relevant existing artifacts.
 2. Explore code, docs, git history, and web sources as needed.
-3. Summarize options, constraints, risks, and recommended direction.
+3. Summarize facts, constraints, options, risks, and any recommended direction.
+4. Call out which findings should affect the PRP.
 
 ## Output
 
@@ -37,6 +39,8 @@ goal: [one sentence]
 ## Risks
 
 ## Recommendation
+
+## PRP Impact
 
 ## Suggested Next Step
 ```

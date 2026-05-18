@@ -1,11 +1,11 @@
 ---
 name: rpi
-description: Runs the RPI workflow for durable planning, research, design, local board execution, implementation, verification, progress checks, and fresh-session handoffs. Use for starting, continuing, saving, or verifying multi-step work.
+description: Runs a local-first alignment, PRP, board, implementation, verification, and fresh-session handoff workflow. Use for starting, continuing, saving, or verifying durable multi-step work.
 ---
 
 # RPI Workflow
 
-RPI is a durable, local-first workflow for work that should survive across sessions. It uses markdown artifacts plus progressive loading: read only the stage guidance needed for the current situation.
+RPI is a durable, local-first workflow for work that should survive across sessions. It uses markdown artifacts plus progressive disclosure: keep the default path simple, and load optional playbooks only when the work earns them. In this workflow, the PRP is the implementation-ready prompt/plan captured in `plan.md`.
 
 ## Interface
 
@@ -15,26 +15,30 @@ Examples:
 
 - `/rpi start a workflow for replacing auth sessions`
 - `/rpi continue the latest workflow`
-- `/rpi make a board for this plan`
-- `/rpi verify the local kanban board workflow`
+- `/rpi draft a PRP from our questions`
+- `/rpi make a board for this PRP`
+- `/rpi verify the workflow`
 
 If invoked through the pi `/rpi` extension, use any lightweight workflow candidates it provides. If invoked directly with `/skill:rpi`, inspect the repo yourself.
 
 ## Core rules
 
 - **ARTIFACT-FIRST**: Build from files, not chat memory alone.
-- **PROGRESSIVE LOADING**: Load one stage file at a time from `stages/` unless the task needs more.
-- **NATURAL-LANGUAGE CONTROL**: Infer the next useful step from artifacts and user intent; ask only
-  when ambiguity matters.
-- **HITL JUDGMENT LOOPS**: Work back and forth with the user at decision points that affect scope,
-  architecture, sequencing, or shared contracts. Ask one focused question, include a recommended
-  answer, then update artifacts after the user responds.
-- **PLAN IS COMPASS, NOT RAILS**: Adapt as you learn and update artifacts when reality diverges.
-- **ARCHITECTURE WHERE IT MATTERS**: For domain modeling, module boundaries, public APIs, service
-  contracts, or testing strategy, load `references/architecture.md`.
-- **LOCAL BOARD WHEN USEFUL**: For multi-slice implementation, use the board contract in `contracts/board.md`.
-- **ONE BEHAVIOR AT A TIME**: For implementation, follow `guides/tdd.md`.
-- **CONVERSATIONAL HANDOFF**: When a clean session would help, ask the user in chat. After they agree, suggest a readable `/rpi handoff <brief>` command for the user to run.
+- **PROGRESSIVE DISCLOSURE**: Load one stage file at a time from `stages/` unless the task needs more.
+- **ALIGNMENT GATE**: Unless the user explicitly says to just do it, briefly align before writing durable artifacts or implementing.
+- **QUESTION LOG THEN PRP**: Capture meaningful alignment in `question.md`, then draft/update the PRP in `plan.md`.
+- **PRP IS INTENT, BOARD IS EXECUTION**: Keep `plan.md` focused on end state and decisions; track slice progress in `board/index.md` when a board exists.
+- **VERIFY OUTCOMES**: Each slice needs clear proof. Automated checks are preferred when practical, but manual QA, playtests, visual review, and acceptance review are valid.
+- **ARCHITECTURE WHERE IT MATTERS**: For domain modeling, module boundaries, public APIs, service contracts, or testing strategy, load `references/architecture.md`.
+- **CONVERSATIONAL HANDOFF**: After writing a durable artifact, ask whether a fresh session should continue from it. After the user agrees, suggest a readable `/rpi handoff <brief>` command.
+
+## Default path
+
+```text
+alignment gate → question.md → PRP/plan.md → board/index.md → implement/verify
+```
+
+Use this path for non-trivial work. For an explicit "just do it" request, respect the user and proceed directly with the smallest safe implementation/verification loop.
 
 ## Workflow artifacts
 
@@ -42,14 +46,15 @@ Prefer workflow directories under a plans root:
 
 ```text
 {plans-root}/YYYY-MM-DD-[slug]/
-  question.md
-  research.md
-  design.md
-  structure.md
-  plan.md
+  question.md       # compact decision interview log
+  plan.md           # PRP: end state, decisions, verification strategy
   board/
-    index.md
-    cards/
+    index.md        # compact execution manifest; canonical for simple slices
+    cards/          # optional detailed slice files
+  research.md       # optional facts cache
+  design.md         # optional architecture/design decision artifact
+  structure.md      # optional complex sequencing artifact
+  qa.md             # optional verification / feedback notes
 ```
 
 Plans root resolution convention:
@@ -62,39 +67,39 @@ Plans root resolution convention:
 6. existing `PRPs/`
 7. ask where to create new artifacts
 
-## Stage selection
+## Routing
 
 1. If the user asks for a specific action, load the matching stage.
-2. Otherwise inspect artifacts:
-   - no workflow: load `stages/question.md`
-   - missing `question.md`: load `stages/question.md`
-   - missing `research.md`: load `stages/research.md`
-   - missing `design.md`: load `stages/design.md`
-   - missing `structure.md`: load `stages/structure.md`
-   - missing `plan.md`: load `stages/create.md`
-   - `plan.md` chooses local board and `board/index.md` is missing: load `stages/board.md`
-   - board exists or plan has remaining intent: load `stages/implement.md`
-   - remaining intent/cards are complete: load `stages/verify.md`
-3. For a lightweight single-concern task, load `stages/task.md`.
-4. For bearings or checkpointing, load `stages/progress.md` or `stages/save.md`.
+2. If the user explicitly says "just do it", perform the task and verify it without forcing artifacts.
+3. If intent or scope is ambiguous, load `stages/question.md`.
+4. If alignment exists but `plan.md` is missing or stale, load `stages/create.md`.
+5. If `plan.md` describes multiple slices and `board/index.md` is missing or stale, load `stages/board.md`.
+6. If `board/index.md` exists, load `stages/implement.md` or `stages/progress.md` depending on whether the user wants action or bearings.
+7. If implementation is complete or the user asks for a check, load `stages/verify.md`.
+
+Optional playbooks:
+
+- Load `stages/research.md` only when facts are expensive to rediscover, external docs matter, or the codebase is unfamiliar.
+- Load `stages/design.md` when meaningful technical tradeoffs need separate design alignment.
+- Load `stages/structure.md` when sequencing is too complex for the PRP plus board.
+- Load `stages/task.md` for small durable tasks that do not need the full workflow.
+- Load `stages/save.md` before pausing.
 
 ## Stage files
 
-Load only the stage needed for the current step. Also load `references/architecture.md` when the
-stage involves domain-driven design, module boundaries, interfaces, or architectural testing
-strategy.
+Load only the stage needed for the current step. Also load `references/architecture.md` when the stage involves domain-driven design, module boundaries, interfaces, or architectural testing strategy.
 
-- Clarify: `stages/question.md`
-- Research: `stages/research.md`
-- Design: `stages/design.md`
-- Structure: `stages/structure.md`
-- Create plan: `stages/create.md`
+- Align / question log: `stages/question.md`
+- Create PRP: `stages/create.md`
 - Create board: `stages/board.md`
 - Implement: `stages/implement.md`
-- Verify: `stages/verify.md`
+- Verify / QA: `stages/verify.md`
 - Progress: `stages/progress.md`
 - Save: `stages/save.md`
 - Lightweight task: `stages/task.md`
+- Optional research: `stages/research.md`
+- Optional design: `stages/design.md`
+- Optional structure: `stages/structure.md`
 
 ## Handoff
 
@@ -105,7 +110,7 @@ Conversation pattern:
 ```text
 Question: Do you want me to start a fresh rpi session focused on [next step]?
 
-Recommended answer: Yes — [why a clean context helps and what will be carried over].
+Recommended answer: Yes — [why a clean context helps and which artifact it will continue from].
 ```
 
 After the user agrees, suggest one readable command:
@@ -119,7 +124,7 @@ Keep `<brief>` concise and copyable. Include the workflow directory when known, 
 Example:
 
 ```text
-/rpi handoff Continue workflow /path/to/plans/2026-04-28-62230-invoice-match-backend-search; implement card 002 and start by reading design.md.
+/rpi handoff Continue workflow /path/to/plans/2026-04-28-62230-invoice-match-backend-search; implement the next board slice and start by reading plan.md and board/index.md.
 ```
 
 Do not encode handoff data or use hidden session state. `/rpi handoff <brief>` owns creating the clear-context session.

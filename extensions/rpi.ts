@@ -101,7 +101,7 @@ function readStatus(content: string | undefined): string | undefined {
 }
 
 function artifactNames(dir: string): string[] {
-	const names = ["question.md", "research.md", "design.md", "structure.md", "plan.md", "board/index.md"];
+	const names = ["question.md", "plan.md", "board/index.md", "research.md", "design.md", "structure.md", "qa.md"];
 	return names.filter((name) => fileExists(join(dir, name)));
 }
 

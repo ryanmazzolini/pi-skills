@@ -5,7 +5,8 @@ Use before pausing or ending a session.
 ## Process
 
 1. Read the current workflow artifacts.
-2. Update `plan.md` with current Done, Remaining Intent, Deviations, and Notes.
-3. Update board card statuses if a local board exists.
-4. Run `humanlayer thoughts sync` when this repo uses thoughts.
-5. Summarize exactly what was saved and what should happen next.
+2. Keep `plan.md` focused on durable intent: update it only for changed end state, decisions, scope, or verification strategy.
+3. Update `board/index.md` and optional card files with current execution status, blockers, verification notes, and next slice.
+4. Write or update `qa.md` if verification findings or follow-up work should survive the session.
+5. Run `humanlayer thoughts sync` when this repo uses thoughts.
+6. Summarize exactly what was saved and what should happen next.
