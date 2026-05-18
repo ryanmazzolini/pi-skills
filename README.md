@@ -44,7 +44,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `rpi` | Single-skill durable workflow for question, research, design, planning, local boards, implementation, verification, and fresh-session handoffs | [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) | [HumanLayer context engineering](https://www.humanlayer.dev/blog/advanced-context-engineering), [QRSPI](https://alexlavaee.me/blog/from-rpi-to-qrspi/), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
+| `rpi` | Single-skill durable workflow for alignment questions, PRP-style plans, compact local boards, implementation, QA/verification, and fresh-session handoffs | [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [HumanLayer context engineering](https://www.humanlayer.dev/blog/advanced-context-engineering), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
 | `diffity/*` | Browser-first diff review, file-tree review, guided tours, and learning workflows | [`skills/diffity/README.md`](./skills/diffity/README.md) | [Diffity](https://www.npmjs.com/package/diffity) |
 
 ## Standalone skills

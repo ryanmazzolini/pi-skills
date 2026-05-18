@@ -1,6 +1,6 @@
 # Local board contract
 
-The local board is a tool-agnostic execution queue for a workflow directory. `plan.md` remains the destination/spec; the board describes the journey as small vertical slices.
+The local board is a compact execution manifest for a workflow directory. `plan.md` remains the PRP/end-state artifact; `board/index.md` describes the journey as vertical slices.
 
 ## Layout
 
@@ -10,8 +10,7 @@ The local board is a tool-agnostic execution queue for a workflow directory. `pl
   board/
     index.md
     cards/
-      001-bootstrap-tracer-bullet.md
-      002-add-main-behavior.md
+      detailed-slice.md   # optional
 ```
 
 ## Statuses
@@ -23,23 +22,81 @@ backlog -> ready -> in-progress -> review -> done
 blocked
 ```
 
-Use `blocked` for cards that cannot move forward until another decision, dependency, or card is resolved.
+Use `blocked` for slices that cannot move forward until another decision, dependency, or slice is resolved.
 
-## Card files
+## Index file
 
-Each card is a markdown file under `board/cards/`. Card files are canonical.
+`board/index.md` is the progressive-disclosure manifest agents read first. It is canonical for simple slices.
+
+```md
+# Board
+
+## Statuses
+
+backlog -> ready -> in-progress -> review -> done
+blocked
+
+## Next
+
+### bootstrap-tracer-bullet — ready — AFK
+
+End state: A narrow end-to-end path proves the main integration works.
+Verification: Automated smoke check passes; manual acceptance confirms the visible behavior.
+Blocked by: None
+Detail: Inline only
+
+## In progress
+
+_None_
+
+## Ready
+
+### add-main-behavior — ready — AFK
+
+End state: [observable completed outcome]
+Verification: [automated/manual/playtest/visual/review proof]
+Blocked by: bootstrap-tracer-bullet
+Detail: ./cards/add-main-behavior.md
+
+## Backlog
+
+_None_
+
+## Review
+
+_None_
+
+## Done
+
+_None_
+
+## Blocked
+
+_None_
+```
+
+Minimum slice fields:
+
+- **End state**: what must be true when the slice is done
+- **Verification**: how the outcome will be proven
+- **Blocked by**: dependencies or `None`
+- **Detail**: `Inline only` or a relative card path
+
+## Optional card files
+
+Create `board/cards/*.md` only when a slice needs more context than belongs in `board/index.md`.
 
 Minimum frontmatter:
 
 ```yaml
 ---
-id: 001
-title: Bootstrap tracer bullet
+id: add-main-behavior
 status: ready
 type: AFK # AFK | HITL
 priority: medium # low | medium | high | critical
-parent: plan.md
-blocked_by: []
+parent: ../index.md
+blocked_by:
+  - bootstrap-tracer-bullet
 user_stories: []
 ---
 ```
@@ -47,44 +104,35 @@ user_stories: []
 Minimum body:
 
 ```md
+# [Slice title]
+
 ## Why
 
 Why this slice matters; what risk it reduces or capability it unlocks.
 
-## What to build
+## End State
 
-End-to-end behavior this slice delivers.
+Observable outcome this slice delivers.
 
-## Acceptance criteria
+## Acceptance Criteria
 
-- [ ] Observable outcome the implementer can verify
+- [ ] Criterion the implementer/reviewer can verify
+
+## Verification
+
+- Automated: [commands/checks, if practical]
+- Manual / review: [manual QA, playtest, visual review, acceptance review]
 
 ## Notes
 
 Context useful to the implementer. Prefer durable behavior and decisions over fragile file-path-heavy instructions.
 ```
 
-## Index file
+## Rules
 
-`board/index.md` is the progressive-disclosure manifest agents read first. It mirrors card frontmatter plus the first paragraph under `## Why`.
-
-```md
-# Board
-
-## Statuses
-backlog -> ready -> in-progress -> review -> done
-blocked
-
-## Cards
-
-| ID | Status | Type | Priority | Blocked by | Title | Why |
-|----|--------|------|----------|------------|-------|-----|
-| 001 | ready | AFK | high | [] | Bootstrap tracer bullet | Proves the end-to-end path early |
-```
-
-Rules:
-
-- Card files remain canonical.
-- `index.md` is an overview, not a replacement for cards.
-- Agents read full card bodies only for selected cards.
-- Regenerate or repair `index.md` from card files when frontmatter changes.
+- `board/index.md` is always the first board file to read.
+- Simple slices can live entirely in `board/index.md`.
+- If a card file exists, it is canonical for that slice's detailed context; keep the index summary aligned manually.
+- Use stable descriptive slice IDs; do not use numeric IDs that imply total sequence.
+- Dependencies describe prerequisites; they do not define a total implementation sequence.
+- Keep verification outcome-based. TDD is optional; proof is required.

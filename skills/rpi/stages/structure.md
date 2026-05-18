@@ -1,25 +1,22 @@
 # Structure stage
 
-Use after design to turn the selected approach into vertical slices, milestones, dependencies,
-architectural boundaries, and verification strategy.
+Optional playbook. Use when sequencing is too complex for the PRP plus `board/index.md`, or when the team needs to reason about dependencies before creating execution slices.
 
-Load `references/architecture.md` when slices depend on domain boundaries, module interfaces,
-service contracts, or non-trivial testing strategy.
+Load `references/architecture.md` when slices depend on domain boundaries, module interfaces, service contracts, or non-trivial testing strategy.
 
 ## Rules
 
-- Prefer tracer-bullet vertical slices over horizontal phases.
-- Make dependencies explicit.
+- Prefer vertical slices over horizontal layers.
+- Make dependencies explicit without implying a total order where none exists.
 - Identify AFK/HITL boundaries when delegation or autonomy matters.
 - Keep slices independently demonstrable where possible.
 - Name anticipated architectural interfaces and which slice proves each boundary.
-- Pause for user judgment before locking in slice order, interface shape, or shared contract changes
-  when tradeoffs matter.
+- Pause for user judgment before locking in slice order, interface shape, or shared contract changes when tradeoffs matter.
+- Feed the result back into `plan.md` and `board/index.md`; do not create a parallel execution tracker.
 
 ## HITL Checkpoint
 
-Before writing the final structure when architecture or sequencing matters, give the user a compact
-overview:
+Before writing the final structure when architecture or sequencing matters, give the user a compact overview:
 
 - proposed vertical slices and why this order
 - interfaces/boundaries the plan will introduce or change
@@ -55,17 +52,21 @@ goal: [one sentence]
 ## Slices
 
 ### [Slice]
-- Outcome:
+
+- End state:
 - Why:
 - Boundary proved:
 - Dependencies:
 - AFK/HITL:
+- Verification:
 
-## Milestones
+## Dependency Notes
 
 ## Verification Strategy
 
 ## Risks
+
+## PRP / Board Impact
 
 ## Suggested Next Step
 ```
