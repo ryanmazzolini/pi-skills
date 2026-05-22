@@ -9,36 +9,12 @@ Default skill for Ruby/Rails application work using Sorbet, GraphQL federation, 
 
 ## Defaults
 
-- Prefer Rails framework features before hand-rolled infrastructure: ActiveStorage for files/blobs, ActiveJob for background work, ActiveModel/ActiveRecord validations and attributes, Rails mailers/cache/configuration, and Rails generators/tasks where the app already uses them.
-- Before adding custom persistence, file handling, jobs, schema dumping, or integration glue, scan the app for existing Rails conventions and ask: “is there a Rails primitive or project task for this?”
+- Prefer Rails commands, generators, tasks, and framework primitives over hand-editing Rails-owned files or building custom infrastructure.
+- Prefer Rails and ActiveRecord defaults/conventions before bespoke persistence, SQL helpers, validation layers, file handling, jobs, or schema glue.
+- Treat committed/applied migrations as append-only: create a follow-up migration, run migrations, and regenerate schema artifacts.
+- In Sorbet projects, use the strongest feasible sigil/type checking, avoid weakening existing sigils, and regenerate RBIs when DSL/schema/dependency changes require it.
 - Treat generated artifacts as part of the change: commit RBI files, `db/schema.rb` or `db/structure.sql`, and GraphQL schema/federation dumps when they change.
-- For Sorbet projects, regenerate RBIs after Gemfile, model/schema, Rails DSL, ActiveStorage, ActiveJob, ActiveModel, or GraphQL type changes; do not leave RBI drift for CI.
-- Always run Ruby linting with `bundle exec rubocop -P -a` or the project binstub equivalent `bin/rubocop -P -a` before finalizing Ruby changes.
-- Regenerate database schema files after migrations.
-- Regenerate GraphQL schema/federation artifacts after GraphQL schema/type/resolver changes; for federation, prefer the project task that writes federated SDL.
-- Prefer project binstubs and documented rake tasks over guessed commands; inspect `bin/`, `README.md`, `lib/tasks/`, `sorbet/tapioca/`, and CI config first.
-
-## Common Artifact Workflow
-
-Use project-specific commands when available, but expect this shape:
-
-```sh
-# Ruby linting: required for Ruby/Rails changes
-bundle exec rubocop -P -a
-
-# Sorbet/Tapioca projects
-bin/tapioca gem --all        # after gem/dependency changes, or targeted `bin/tapioca gem <name>`
-bin/tapioca dsl              # after Rails DSL/schema/model/framework changes
-bundle exec srb tc           # or project typecheck wrapper, e.g. `bin/spoom srb tc`
-
-# Database changes
-bin/rails db:migrate         # or project DB-specific migration command
-bin/rails db:schema:dump     # when migration did not already update the checked-in schema
-
-# GraphQL federation projects
-bin/rails graphql:federation:dump
-# or inspect lib/tasks for graphql:schema:* / graphql:federation:* task names
-```
+- Prefer project binstubs and documented tasks over guessed commands; inspect `bin/`, `README.md`, `lib/tasks/`, `sorbet/tapioca/`, and CI config first.
 
 ## Progressive References
 
@@ -53,6 +29,6 @@ Before final response, report which of these were run or why they were not appli
 
 - `bundle exec rubocop -P -a` or `bin/rubocop -P -a`
 - Sorbet typecheck and Tapioca generation/verification for Sorbet projects
-- Rails db schema regeneration for migrations
+- Rails migrations/schema regeneration for migrations (`bundle exec rails db:migrate`, schema dump if needed)
 - GraphQL federation/schema dump for GraphQL projects
 - Relevant tests (`bundle exec rspec`, `bin/rspec`, or project wrapper)

@@ -1,6 +1,6 @@
 # Sorbet and Tapioca
 
-Use Tapioca as the normal RBI workflow for Sorbet Rails projects. Commit generated RBI changes with the code that requires them.
+Use Tapioca as the normal RBI workflow for Sorbet Rails projects. Commit generated RBI changes with the code that requires them. Prefer strict Sorbet coverage where the project can support it.
 
 ## When to Regenerate
 
@@ -27,6 +27,12 @@ bin/spoom srb tc
 bundle exec tapioca gem --verify
 bundle exec tapioca dsl --verify
 ```
+
+## Strict Type Checking
+
+- Prefer `# typed: strict` for new Ruby files when nearby/project conventions allow it; otherwise use the strongest existing local sigil and explain the constraint.
+- Do not weaken existing sigils to make changes pass. Prefer typed method signatures, narrower types, and small refactors over `T.untyped`, `T.unsafe`, or broad `T.must` usage.
+- Run `bundle exec srb tc` or the project typecheck wrapper before finalizing; leave no avoidable Sorbet errors for CI.
 
 ## Rules of Thumb
 
