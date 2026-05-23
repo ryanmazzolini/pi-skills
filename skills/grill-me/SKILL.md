@@ -14,9 +14,13 @@ understanding.
 
 ## Rules
 
-- Ask questions one at a time and wait for the user's answer before continuing.
-- For each question, include your recommended answer so the user has something concrete to accept,
-  reject, or revise.
+- Split decisions by impact and alignment:
+  - For high-impact, divergent, or hard-to-reverse decisions, ask one focused question and wait for
+    the user's answer before continuing.
+  - For low-impact, highly aligned confirmations, use a short "unless you disagree" proposal list
+    instead of turning each item into a blocking question.
+- For each high-impact question, include your recommended answer so the user has something concrete
+  to accept, reject, or revise.
 - Walk the decision tree deliberately: resolve upstream decisions before asking downstream
   questions.
 - If a question can be answered by exploring the codebase, explore the codebase instead of asking
@@ -28,19 +32,34 @@ understanding.
 
 1. Summarize the plan or design you are grilling in 2-4 bullets.
 2. Identify the highest-leverage unresolved decision.
-3. Ask exactly one question about that decision.
+3. If it is high-impact or divergent, ask exactly one question about that decision.
 4. Provide your recommended answer immediately after the question.
-5. After the user responds, update your mental model and choose the next highest-leverage unresolved
+5. If there are low-impact, highly aligned confirmations, include up to 3 concise proposals under
+   "Unless you disagree" and do not block on each individually.
+6. After the user responds, update your mental model and choose the next highest-leverage unresolved
    decision.
-6. When the design is stable, summarize:
+7. When the design is stable, summarize:
    - resolved decisions
    - remaining risks
    - assumptions to verify in code or tests
 
 ## Question Format
 
+For high-impact or divergent decisions:
+
 ```text
 Question: [one sharp question]
 
 Recommended answer: [your opinionated recommendation and why]
 ```
+
+For low-impact, highly aligned confirmations, append this only when useful:
+
+```text
+Unless you disagree, I will also assume:
+- [proposal] — [short rationale or consequence]
+- [proposal] — [short rationale or consequence]
+```
+
+Do not hide consequential trade-offs in the "unless you disagree" list. Promote them to the single
+blocking question instead.
