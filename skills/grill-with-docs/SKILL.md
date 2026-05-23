@@ -16,10 +16,12 @@ become clear.
 ## Rules
 
 - **Artifact-first**: build from code and docs, not chat memory alone.
-- **One question at a time**: ask one focused question and wait for the user's answer before
-  continuing.
-- **Recommended answer required**: every question includes your opinionated recommendation so the
-  user has something concrete to accept, reject, or revise.
+- **Decision split**: for high-impact, divergent, or hard-to-reverse decisions, ask one focused
+  question and wait for the user's answer before continuing; for low-impact, highly aligned
+  confirmations, use a short "unless you disagree" proposal list instead of turning each item into a
+  blocking question.
+- **Recommended answer required**: every high-impact question includes your opinionated
+  recommendation so the user has something concrete to accept, reject, or revise.
 - **Investigate before asking**: if a question can be answered by reading code or docs, investigate
   instead of asking.
 - **Ask only when ambiguity matters**: do not run a checklist; surface the highest-leverage unknown
@@ -48,18 +50,32 @@ If multiple contexts could apply, ask one clarifying question before writing doc
 1. Summarize the plan or design in 2-4 bullets.
 2. Identify the highest-leverage unresolved decision.
 3. Investigate code/docs if they can answer it.
-4. Ask exactly one question when user judgment is needed.
+4. If user judgment is needed for a high-impact or divergent decision, ask exactly one question.
 5. Provide your recommended answer immediately after the question.
-6. After the user responds, update docs for any resolved term or durable decision.
-7. Repeat until the important branches are resolved or the user asks to stop.
+6. If there are low-impact, highly aligned confirmations, include up to 3 concise proposals under
+   "Unless you disagree" and do not block on each individually.
+7. After the user responds, update docs for any resolved term, durable decision, or accepted
+   low-impact proposal that is worth recording.
+8. Repeat until the important branches are resolved or the user asks to stop.
 
-Use the same question shape as `grill-me` and RPI handoffs:
+Use the same question shape as `grill-me` and RPI handoffs for high-impact or divergent decisions:
 
 ```text
 Question: [one sharp question]
 
 Recommended answer: [your opinionated recommendation and why]
 ```
+
+For low-impact, highly aligned confirmations, append this only when useful:
+
+```text
+Unless you disagree, I will also assume:
+- [proposal] — [short rationale or doc/code consequence]
+- [proposal] — [short rationale or doc/code consequence]
+```
+
+Do not hide consequential trade-offs in the "unless you disagree" list. Promote them to the single
+blocking question instead.
 
 Good questions should be:
 
