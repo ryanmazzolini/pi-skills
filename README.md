@@ -59,6 +59,7 @@ This README is the map. The family README files have the details.
 | `obsidian-vault` | Use the Obsidian CLI for vault-aware note workflows | [Obsidian CLI](https://obsidian.md/help/cli) |
 | `notion-cli` | Use the Notion `ntn` CLI for pages, data sources, and API calls | — |
 | `architecture-review` | Architecture review lens for design tradeoffs and operability | — |
+| `security-review` | High-signal AppSec review for OWASP-style risks, auth/authz, injection, XSS, SSRF, secrets, CI/CD and GitOps risk, and sensitive data exposure | — |
 | `improve-codebase-architecture` | Find deep-module refactor opportunities that improve testability and navigability | [mattpocock](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
 | `simplify-codebase-architecture` | Find pragmatic refactor opportunities by reducing repeated knowledge and deleting shallow abstraction | — |
 | `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
