@@ -24,11 +24,12 @@ become clear.
   recommendation so the user has something concrete to accept, reject, or revise.
 - **Investigate before asking**: if a question can be answered by reading code or docs, investigate
   instead of asking.
-- **Ask only when ambiguity matters**: do not run a checklist; surface the highest-leverage unknown
-  that blocks the next decision.
+- **Critical path over full tree**: do not run a checklist; ask only about upstream choices that
+  would change several downstream decisions, are hard to reverse, or require user judgment. Default
+  or defer reversible/local choices.
 - Challenge the plan against existing terminology, ADRs, tests, and implementation details.
-- Update docs inline when a term or decision is resolved; do not batch documentation updates for the
-  end.
+- Update docs immediately when a durable term or decision is resolved so future sessions can resume
+  from project context, not chat memory.
 - Create documentation files lazily: only when there is something real to record.
 
 ## Documentation Discovery
@@ -48,14 +49,16 @@ If multiple contexts could apply, ask one clarifying question before writing doc
 ### Grill the plan
 
 1. Summarize the plan or design in 2-4 bullets.
-2. Identify the highest-leverage unresolved decision.
+2. Identify the highest-leverage unresolved decision: the one with the most downstream fan-out,
+   irreversibility, uncertainty, or need for user judgment.
 3. Investigate code/docs if they can answer it.
-4. If user judgment is needed for a high-impact or divergent decision, ask exactly one question.
+4. If user judgment is needed for a high-impact or divergent decision, ask exactly one question and
+   briefly say why it comes first.
 5. Provide your recommended answer immediately after the question.
 6. If there are low-impact, highly aligned confirmations, include up to 3 concise proposals under
    "Unless you disagree" and do not block on each individually.
-7. After the user responds, update docs for any resolved term, durable decision, or accepted
-   low-impact proposal that is worth recording.
+7. After the user responds, update docs immediately for any resolved term, durable decision, or
+   accepted low-impact proposal that is worth recording.
 8. Repeat until the important branches are resolved or the user asks to stop.
 
 Use the same question shape as `grill-me` and RPI handoffs for high-impact or divergent decisions:
