@@ -55,6 +55,7 @@ This README is the map. The family README files have the details.
 | `commit-simple` | Branch, commit, and push changes | — |
 | `commit-pr` | Create or update draft pull requests | — |
 | `research` | Standalone technical research | — |
+| `tiger-team` | Orchestrate pi-subagents implementers and reviewers across deterministic ticket worktrees with integration, security scrutiny, and fix loops | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
 | `obsidian-vault` | Use the Obsidian CLI for vault-aware note workflows | [Obsidian CLI](https://obsidian.md/help/cli) |
 | `notion-cli` | Use the Notion `ntn` CLI for pages, data sources, and API calls | — |
