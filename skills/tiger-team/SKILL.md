@@ -1,6 +1,6 @@
 ---
 name: tiger-team
-description: Orchestrate pi-subagents for planned implementation work: deterministic ticket worktrees, parallel implementers, integration, xhigh review, optional security scrutiny, and focused fix loops.
+description: "Orchestrate pi-subagents for planned implementation work: deterministic ticket worktrees, parallel implementers, integration, xhigh review, optional security scrutiny, and focused fix loops."
 ---
 
 # Tiger Team
