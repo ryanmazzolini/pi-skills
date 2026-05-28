@@ -48,4 +48,4 @@ Detail: [Inline only or ./cards/[slug].md]
 
 ## Check-in
 
-Ask the user to review slice granularity, current priority, blockers, AFK/HITL classification, and verification expectations. If a fresh implementation context would help, ask conversationally before calling `rpi_handoff`.
+Ask the user to review slice granularity, current priority, blockers, AFK/HITL classification, and verification expectations. If a fresh implementation context would help, ask conversationally before suggesting `/rpi handover <brief>`.

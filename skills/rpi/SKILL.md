@@ -1,6 +1,6 @@
 ---
 name: rpi
-description: Runs a local-first alignment, PRP, board, implementation, verification, and fresh-session handoff workflow. Use for starting, continuing, saving, or verifying durable multi-step work.
+description: Runs a local-first alignment, PRP, board, implementation, verification, and fresh-session handover workflow. Use for starting, continuing, saving, verifying, or handing over durable multi-step work.
 ---
 
 # RPI Workflow
@@ -18,6 +18,7 @@ Examples:
 - `/rpi draft a PRP from our questions`
 - `/rpi make a board for this PRP`
 - `/rpi verify the workflow`
+- `/rpi handover continue this workflow from plan.md and board/index.md`
 
 If invoked through the pi `/rpi` extension, use any lightweight workflow candidates it provides. If invoked directly with `/skill:rpi`, inspect the repo yourself.
 
@@ -30,7 +31,8 @@ If invoked through the pi `/rpi` extension, use any lightweight workflow candida
 - **PRP IS INTENT, BOARD IS EXECUTION**: Keep `plan.md` focused on end state and decisions; track slice progress in `board/index.md` when a board exists.
 - **VERIFY OUTCOMES**: Each slice needs clear proof. Automated checks are preferred when practical, but manual QA, playtests, visual review, and acceptance review are valid.
 - **ARCHITECTURE WHERE IT MATTERS**: For domain modeling, module boundaries, public APIs, service contracts, or testing strategy, load `references/architecture.md`.
-- **CONVERSATIONAL HANDOFF**: After writing a durable artifact, ask whether a fresh session should continue from it. After the user agrees, suggest a readable `/rpi handoff <brief>` command.
+- **CONVERSATIONAL HANDOVER**: After writing a durable artifact, ask whether a fresh pi session should continue from it. After the user agrees, suggest a readable `/rpi handover <brief>` command.
+- **PORTABLE HANDOFFS**: For out-of-scope, cross-agent, prototype, review, or debug threads that need a markdown context packet instead of immediate pi session automation, suggest `/skill:handoff <focus>`.
 
 ## Default path
 
@@ -101,9 +103,11 @@ Load only the stage needed for the current step. Also load `references/architect
 - Optional design: `stages/design.md`
 - Optional structure: `stages/structure.md`
 
-## Handoff
+## Handover and handoff
 
-Use handoff when the next step is clear and a fresh context would help.
+Use `/rpi handover <brief>` when the next step is clear and a fresh pi context should start working immediately from RPI artifacts.
+
+Use `/skill:handoff <focus>` when the user needs a portable markdown context packet for another tool, an out-of-scope thread, a prototype/review/debug branch, or a session that should not auto-start in pi.
 
 Conversation pattern:
 
@@ -116,7 +120,7 @@ Recommended answer: Yes — [why a clean context helps and which artifact it wil
 After the user agrees, suggest one readable command:
 
 ```text
-/rpi handoff <brief>
+/rpi handover <brief>
 ```
 
 Keep `<brief>` concise and copyable. Include the workflow directory when known, because the fresh session starts with clean context.
@@ -124,7 +128,7 @@ Keep `<brief>` concise and copyable. Include the workflow directory when known, 
 Example:
 
 ```text
-/rpi handoff Continue workflow /path/to/plans/2026-04-28-62230-invoice-match-backend-search; implement the next board slice and start by reading plan.md and board/index.md.
+/rpi handover Continue workflow /path/to/plans/2026-04-28-62230-invoice-match-backend-search; implement the next board slice and start by reading plan.md and board/index.md.
 ```
 
-Do not encode handoff data or use hidden session state. `/rpi handoff <brief>` owns creating the clear-context session.
+Do not encode handover data or use hidden session state. `/rpi handover <brief>` owns creating the clear-context session.

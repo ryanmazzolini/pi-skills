@@ -61,7 +61,7 @@ If multiple contexts could apply, ask one clarifying question before writing doc
    accepted low-impact proposal that is worth recording.
 8. Repeat until the important branches are resolved or the user asks to stop.
 
-Use the same question shape as `grill-me` and RPI handoffs for high-impact or divergent decisions:
+Use the same question shape as `grill-me` and RPI handovers for high-impact or divergent decisions:
 
 ```text
 Question: [one sharp question]
