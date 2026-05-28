@@ -5,7 +5,7 @@ Use when alignment is sufficient to describe the end state. This stage writes th
 ## Rules
 
 - Build from `question.md` and any optional artifacts; do not rely on chat memory alone.
-- Keep `plan.md` end-state and handoff oriented, not a noisy progress log.
+- Keep `plan.md` end-state and handover oriented, not a noisy progress log.
 - Present key options before committing to a PRP when tradeoffs matter.
 - Use HITL judgment before committing to a PRP that changes shared contracts, architecture, rollout, or execution ownership.
 - Include code snippets only when they are high-signal examples, preferred idioms, or resolved contracts.

@@ -44,7 +44,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `rpi` | Single-skill durable workflow for alignment questions, PRP-style plans, compact local boards, implementation, QA/verification, and fresh-session handoffs | [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [HumanLayer context engineering](https://www.humanlayer.dev/blog/advanced-context-engineering), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
+| `rpi` | Single-skill durable workflow for alignment questions, PRP-style plans, compact local boards, implementation, QA/verification, and fresh-session handovers | [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [HumanLayer context engineering](https://www.humanlayer.dev/blog/advanced-context-engineering), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
 | `diffity/*` | Browser-first diff review, file-tree review, guided tours, and learning workflows | [`skills/diffity/README.md`](./skills/diffity/README.md) | [Diffity](https://www.npmjs.com/package/diffity) |
 
 ## Standalone skills
@@ -55,6 +55,7 @@ This README is the map. The family README files have the details.
 | `commit-simple` | Branch, commit, and push changes | — |
 | `commit-pr` | Create or update draft pull requests | — |
 | `research` | Standalone technical research | — |
+| `handoff` | Write a portable temp-dir markdown handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
 | `tiger-team` | Orchestrate pi-subagents implementers and reviewers across deterministic ticket worktrees with integration, security scrutiny, and fix loops | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
 | `obsidian-vault` | Use the Obsidian CLI for vault-aware note workflows | [Obsidian CLI](https://obsidian.md/help/cli) |
@@ -84,7 +85,7 @@ This README is the map. The family README files have the details.
 
 | Extension | Description |
 |-----------|-------------|
-| `rpi` | Adds `/rpi` workflow launch/candidates plus readable `/rpi handoff <brief>` fresh sessions |
+| `rpi` | Adds `/rpi` workflow launch/candidates plus readable `/rpi handover <brief>` fresh sessions |
 
 ## Contributing
 

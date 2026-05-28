@@ -11,7 +11,7 @@ Use when starting a meaningful workflow, when intent/scope is ambiguous, or when
 - Every question must include a recommended answer.
 - Resolve upstream decisions before downstream details.
 - Inspect code/docs instead of asking questions whose answers are discoverable.
-- Update `question.md` incrementally during meaningful alignment so it can serve as a handoff point.
+- Update `question.md` incrementally during meaningful alignment so it can serve as a handover point.
 
 ## Alignment gate format
 
@@ -101,7 +101,7 @@ Decision: [resolved decision, if any]
 
 ## Suggested PRP Direction
 
-[Short handoff note for `plan.md`: likely end state, scope boundaries, verification expectations, and whether a board is likely needed.]
+[Short handover note for `plan.md`: likely end state, scope boundaries, verification expectations, and whether a board is likely needed.]
 ```
 
 After alignment is sufficient, draft/update the PRP automatically unless the workflow location is unclear or writing would overwrite meaningful existing content.

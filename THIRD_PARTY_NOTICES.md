@@ -9,6 +9,7 @@ Adapted skills:
 - `design-an-interface`
 - `grill-me`
 - `grill-with-docs`
+- `handoff`
 - `improve-codebase-architecture`
 - `ubiquitous-language`
 - `rpi/guides/tdd.md`

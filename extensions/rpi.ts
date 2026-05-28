@@ -24,7 +24,7 @@ type WorkflowCandidate = {
 };
 
 type RpiCommand =
-	| { kind: "handoff"; brief?: string }
+	| { kind: "handover"; brief?: string }
 	| { kind: "workflow"; intent: string };
 
 function directoryExists(path: string | undefined): path is string {
@@ -160,25 +160,25 @@ ${formatCandidates(candidates)}
 Use these candidates as context, not as a hard routing decision. If the next workflow or next step is ambiguous, ask one conversational question with your recommended answer. Otherwise proceed by loading the relevant rpi stage guidance.`);
 }
 
-function buildFreshHandoffKickoff(brief: string): string {
-	return buildRpiSkillInvocation(`Fresh RPI handoff. Start working immediately.
+function buildFreshHandoverKickoff(brief: string): string {
+	return buildRpiSkillInvocation(`Fresh RPI handover. Start working immediately.
 
-Handoff brief:
+Handover brief:
 ${brief}`);
 }
 
-function buildHandoffFailurePrompt(errorMessage: string, brief: string): string {
-	return `RPI handoff failed while creating the fresh session.
+function buildHandoverFailurePrompt(errorMessage: string, brief: string): string {
+	return `RPI handover failed while creating the fresh session.
 
 Error:
 ${errorMessage}
 
 Ask me what I want to do next. Offer these options:
-- Retry with a readable /rpi handoff <brief> command
-- Continue in this session using the handoff brief
-- Revise the handoff brief before retrying
+- Retry with a readable /rpi handover <brief> command
+- Continue in this session using the handover brief
+- Revise the handover brief before retrying
 
-Handoff brief:
+Handover brief:
 ${brief}`;
 }
 
@@ -188,17 +188,17 @@ function getErrorMessage(error: unknown): string {
 
 function parseRpiArgs(args: string): RpiCommand {
 	const trimmed = args.trim();
-	if (trimmed === "handoff") return { kind: "handoff" };
-	if (trimmed.startsWith("handoff ")) return { kind: "handoff", brief: trimmed.slice("handoff ".length).trim() || undefined };
+	if (trimmed === "handover") return { kind: "handover" };
+	if (trimmed.startsWith("handover ")) return { kind: "handover", brief: trimmed.slice("handover ".length).trim() || undefined };
 	return { kind: "workflow", intent: trimmed };
 }
 
-async function runHandoffCommand(pi: ExtensionAPI, command: Extract<RpiCommand, { kind: "handoff" }>, ctx: ExtensionCommandContext): Promise<void> {
+async function runHandoverCommand(pi: ExtensionAPI, command: Extract<RpiCommand, { kind: "handover" }>, ctx: ExtensionCommandContext): Promise<void> {
 	await ctx.waitForIdle();
 
 	const brief = command.brief;
 	if (!brief) {
-		ctx.ui.notify("Usage: /rpi handoff <brief>", "warning");
+		ctx.ui.notify("Usage: /rpi handover <brief>", "warning");
 		return;
 	}
 
@@ -206,27 +206,27 @@ async function runHandoffCommand(pi: ExtensionAPI, command: Extract<RpiCommand, 
 		const result = await ctx.newSession({
 			parentSession: ctx.sessionManager.getSessionFile(),
 			withSession: async (replacementCtx) => {
-				await replacementCtx.sendUserMessage(buildFreshHandoffKickoff(brief));
+				await replacementCtx.sendUserMessage(buildFreshHandoverKickoff(brief));
 			},
 		});
 
 		if (result.cancelled) {
-			ctx.ui.notify("RPI handoff cancelled.", "info");
+			ctx.ui.notify("RPI handover cancelled.", "info");
 		}
 	} catch (error: unknown) {
 		const message = getErrorMessage(error);
-		ctx.ui.notify(`RPI handoff failed: ${message}`, "error");
-		pi.sendUserMessage(buildHandoffFailurePrompt(message, brief));
+		ctx.ui.notify(`RPI handover failed: ${message}`, "error");
+		pi.sendUserMessage(buildHandoverFailurePrompt(message, brief));
 	}
 }
 
 export default function rpiExtension(pi: ExtensionAPI) {
 	pi.registerCommand("rpi", {
-		description: "Start or continue the RPI workflow with skill context, workflow candidates, and handoff support",
+		description: "Start or continue the RPI workflow with skill context, workflow candidates, and handover support",
 		handler: async (args, ctx) => {
 			const command = parseRpiArgs(args);
-			if (command.kind === "handoff") {
-				await runHandoffCommand(pi, command, ctx);
+			if (command.kind === "handover") {
+				await runHandoverCommand(pi, command, ctx);
 				return;
 			}
 
