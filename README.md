@@ -1,18 +1,36 @@
 # pi-skills
 
-A collection of opinionated [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) skills I use day-to-day. It is shaped around my personal workflow, but feel free to use it, fork it, and adapt anything that is useful.
+A collection of opinionated [Agent Skills](https://agentskills.io/) I use day-to-day, packaged first for [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and also exposed as a Claude Code plugin marketplace. It is shaped around my personal workflow, but feel free to use it, fork it, and adapt anything that is useful.
 
 ## Install
+
+### pi
 
 ```bash
 pi install https://github.com/ryanmazzolini/pi-skills
 ```
+
+Use `pi config` to enable or disable individual skills after install. For example, disable `humanlayer-thoughts` if you do not use HumanLayer.
+
+### Claude Code
+
+```text
+/plugin marketplace add ryanmazzolini/pi-skills
+/plugin install rpi@ryan-pi-skills
+/plugin install commit@ryan-pi-skills
+/plugin install team@ryan-pi-skills
+/plugin install typescript-nextjs@ryan-pi-skills
+```
+
+The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) exposes grouped plugin namespaces backed by the canonical `skills/*` directories. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple`, `/diffity:diffity-review`, and `/team:tiger-team`.
 
 ## Update
 
 ```bash
 pi update
 ```
+
+For Claude Code, use `/plugin marketplace update` and `/plugin update`.
 
 ## A quick note before you use or fork
 
