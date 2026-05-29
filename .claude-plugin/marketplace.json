@@ -1,0 +1,99 @@
+{
+  "name": "ryan-pi-skills",
+  "owner": {
+    "name": "Ryan Mazzolini"
+  },
+  "description": "Ryan's personal Agent Skills packaged for Claude Code and pi",
+  "plugins": [
+    {
+      "name": "rpi",
+      "source": "./plugins/rpi",
+      "description": "Durable local-first planning and implementation workflow"
+    },
+    {
+      "name": "team",
+      "source": "./plugins/team",
+      "description": "Tiger-team implementation and review orchestration with host-provided subagents"
+    },
+    {
+      "name": "commit",
+      "source": "./plugins/commit",
+      "description": "Git commit and pull request workflows"
+    },
+    {
+      "name": "research",
+      "source": "./plugins/research",
+      "description": "Technical research and spike documentation"
+    },
+    {
+      "name": "explain",
+      "source": "./plugins/explain",
+      "description": "Code explanations with diagrams and analogies"
+    },
+    {
+      "name": "agent-browser",
+      "source": "./plugins/agent-browser",
+      "description": "Browser automation via the agent-browser CLI"
+    },
+    {
+      "name": "diffity",
+      "source": "./plugins/diffity",
+      "description": "Browser-first diff review, resolution, tours, and learning workflows"
+    },
+    {
+      "name": "humanlayer",
+      "source": "./plugins/humanlayer",
+      "description": "HumanLayer thoughts conventions for durable notes"
+    },
+    {
+      "name": "ai-authoring",
+      "source": "./plugins/ai-authoring",
+      "description": "Context engineering guidance for AI configuration"
+    },
+    {
+      "name": "typescript-nextjs",
+      "source": "./plugins/typescript-nextjs",
+      "description": "TypeScript, Next.js App Router, and React implementation guidance"
+    },
+    {
+      "name": "ux-accessibility",
+      "source": "./plugins/ux-accessibility",
+      "description": "Frontend UX, HCI, accessibility, and product-flow review guidance"
+    },
+    {
+      "name": "ruby-sorbet-rails",
+      "source": "./plugins/ruby-sorbet-rails",
+      "description": "Ruby/Rails implementation and review with Sorbet and Tapioca"
+    },
+    {
+      "name": "architecture",
+      "source": "./plugins/architecture",
+      "description": "Architecture review, interface design, refactoring, and domain-language workflows"
+    },
+    {
+      "name": "security",
+      "source": "./plugins/security",
+      "description": "High-signal application security review guidance"
+    },
+    {
+      "name": "ticket-worktree",
+      "source": "./plugins/ticket-worktree",
+      "description": "Ticket-oriented worktree discovery and creation workflow"
+    },
+    {
+      "name": "shortcut",
+      "source": "./plugins/shortcut",
+      "description": "Shortcut story workflows via the short CLI"
+    },
+    {
+      "name": "notes",
+      "source": "./plugins/notes",
+      "description": "Obsidian and Notion CLI note workflows"
+    },
+    {
+      "name": "godot",
+      "source": "./plugins/godot",
+      "description": "Gameplay-oriented defaults for Godot projects"
+    }
+  ]
+}

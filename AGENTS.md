@@ -8,6 +8,8 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 - Extensions live in `extensions/*.ts`
 - Skills follow the [Agent Skills standard](https://agentskills.io/specification)
 - The `package.json` declares `pi.skills` pointing to `./skills` and `pi.extensions` pointing to `./extensions`
+- `.claude-plugin/marketplace.json` exposes grouped Claude Code plugin namespaces under `plugins/*`
+- Claude plugin roots symlink their `skills/*` entries back to canonical `skills/*` directories
 
 ## Conventions
 
@@ -21,6 +23,8 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 
 1. Create `skills/<name>/SKILL.md` with frontmatter and instructions
 2. Add an entry to the table in `README.md`
+3. Add or update a grouped Claude plugin under `plugins/<namespace>` with a relative symlink to the canonical skill, unless the skill is pi-specific
+4. Add or update `.claude-plugin/marketplace.json` when introducing a new Claude plugin namespace
 
 ## Adding an Extension
 
