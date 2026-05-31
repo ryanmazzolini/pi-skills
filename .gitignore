@@ -1,5 +1,6 @@
 # Local agent/editor state
 .claude/
+.pi/
 thoughts/
 /plan.md
 /progress.md

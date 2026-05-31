@@ -19,7 +19,7 @@ pi update
 This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.
 
 A few things to know up front:
-- RPI is the canonical durable workflow skill. Use `/rpi` in pi for the extension-backed interface, or `/skill:rpi` for the raw skill.
+- RPI is the canonical durable workflow skill. Use `/rpi` in pi for the extension-backed interface, or `/skill:rpi` for the raw skill. Boards are optional; compact `question.md` + `plan.md` artifacts are enough for many workflows.
 - Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
 - Related skills are grouped together in the repo where it makes sense, especially under `skills/diffity/*`.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
@@ -67,6 +67,8 @@ This README is the map. The family README files have the details.
 | `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
 | `grill-me` | Stress-test a plan or design with a one-question-at-a-time interview | [mattpocock](https://github.com/mattpocock/skills/tree/main/grill-me) |
 | `grill-with-docs` | Stress-test a plan against code/docs while updating CONTEXT.md and ADRs as decisions crystallize | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
+| `converge` | Fast durable alignment loop that writes `question.md` plus acceptance criteria for lightweight planning | — |
+| `slice-plan` | Write compact RPI-compatible `plan.md` artifacts with MVP vertical slices from acceptance criteria; board optional | — |
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
 | `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
 | `ruby-sorbet-rails` | Ruby/Rails guidance for Rails-native structures, Rails commands/migrations, strict Sorbet/Tapioca RBIs, RuboCop, db schema, and GraphQL federation artifacts | [Sorbet RBI docs](https://sorbet.org/docs/rbi), [Tapioca](https://github.com/Shopify/tapioca), [Rails migrations](https://guides.rubyonrails.org/active_record_migrations.html) |

@@ -1,6 +1,6 @@
 # Implement stage
 
-Use when executing the PRP or a local board slice.
+Use when executing `plan.md` directly or a local board slice.
 
 If a board exists, load `contracts/board.md` and read `board/index.md` first. Load `guides/tdd.md` only when test-first implementation is a useful tactic for the current slice.
 
@@ -12,7 +12,7 @@ If a board exists, load `contracts/board.md` and read `board/index.md` first. Lo
 - Implement to the slice end state; do not prescribe TDD unless it is useful.
 - Every slice ends with relevant verification: automated checks when practical, otherwise manual QA, playtest, visual review, code review, or acceptance review.
 - Keep `plan.md` stable. Update it only when intent, decisions, scope, or verification strategy changes.
-- Track execution status in `board/index.md` and optional card files.
+- Track execution status in `board/index.md` and optional card files when a board exists; otherwise keep status in chat/`qa.md` and update `plan.md` only for durable intent changes.
 - Check in between slices/milestones.
 
 ## Board flow
