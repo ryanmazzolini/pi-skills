@@ -1,6 +1,6 @@
 # Board stage
 
-Use when `plan.md` chooses a compact local board or when implementation should be split into vertical slices.
+Use when `plan.md` chooses a compact local board or when status tracking, blockers, parallel work, or long handoffs need more structure than `plan.md`.
 
 Load `contracts/board.md` before writing the board.
 

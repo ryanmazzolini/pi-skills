@@ -27,8 +27,8 @@ If invoked through the pi `/rpi` extension, use any lightweight workflow candida
 - **ARTIFACT-FIRST**: Build from files, not chat memory alone.
 - **PROGRESSIVE DISCLOSURE**: Load one stage file at a time from `stages/` unless the task needs more.
 - **ALIGNMENT GATE**: Unless the user explicitly says to just do it, briefly align before writing durable artifacts or implementing.
-- **QUESTION LOG THEN PRP**: Capture meaningful alignment in `question.md`, then draft/update the PRP in `plan.md`.
-- **PRP IS INTENT, BOARD IS EXECUTION**: Keep `plan.md` focused on end state and decisions; track slice progress in `board/index.md` when a board exists.
+- **QUESTION LOG THEN PLAN**: Capture meaningful alignment in `question.md`, then draft/update the compact plan/PRP in `plan.md`.
+- **PLAN IS INTENT, BOARD IS OPTIONAL TRACKING**: Keep `plan.md` focused on end state, acceptance criteria, slices, decisions, and verification; use `board/index.md` only when status tracking, blockers, parallel work, or long handoffs need it.
 - **VERIFY OUTCOMES**: Each slice needs clear proof. Automated checks are preferred when practical, but manual QA, playtests, visual review, and acceptance review are valid.
 - **ARCHITECTURE WHERE IT MATTERS**: For domain modeling, module boundaries, public APIs, service contracts, or testing strategy, load `references/architecture.md`.
 - **CONVERSATIONAL HANDOVER**: After writing a durable artifact, ask whether a fresh pi session should continue from it. After the user agrees, suggest a readable `/rpi handover <brief>` command.
@@ -37,7 +37,8 @@ If invoked through the pi `/rpi` extension, use any lightweight workflow candida
 ## Default path
 
 ```text
-alignment gate → question.md → PRP/plan.md → board/index.md → implement/verify
+alignment gate → question.md → plan.md → implement/verify
+                         ↘ board/index.md only when tracking is useful
 ```
 
 Use this path for non-trivial work. For an explicit "just do it" request, respect the user and proceed directly with the smallest safe implementation/verification loop.
@@ -49,9 +50,9 @@ Prefer workflow directories under a plans root:
 ```text
 {plans-root}/YYYY-MM-DD-[slug]/
   question.md       # compact decision interview log
-  plan.md           # PRP: end state, decisions, verification strategy
-  board/
-    index.md        # compact execution manifest; canonical for simple slices
+  plan.md           # compact plan/PRP: end state, acceptance criteria, slices, decisions, verification
+  board/            # optional status tracker for complex/long-running workflows
+    index.md        # compact execution manifest
     cards/          # optional detailed slice files
   research.md       # optional facts cache
   design.md         # optional architecture/design decision artifact
@@ -75,8 +76,8 @@ Plans root resolution convention:
 2. If the user explicitly says "just do it", perform the task and verify it without forcing artifacts.
 3. If intent or scope is ambiguous, load `stages/question.md`.
 4. If alignment exists but `plan.md` is missing or stale, load `stages/create.md`.
-5. If `plan.md` describes multiple slices and `board/index.md` is missing or stale, load `stages/board.md`.
-6. If `board/index.md` exists, load `stages/implement.md` or `stages/progress.md` depending on whether the user wants action or bearings.
+5. If `plan.md` needs status tracking, blockers, parallel work, or a longer handoff, load `stages/board.md`.
+6. If the user wants action, load `stages/implement.md`; if they want bearings, load `stages/progress.md`. Both handle `plan.md` with or without a board.
 7. If implementation is complete or the user asks for a check, load `stages/verify.md`.
 
 Optional playbooks:
