@@ -13,6 +13,7 @@ Default skill for React/Next.js frontend implementation and review. Optimize for
 - Keep returned JSX mostly declarative; move decision logic into named variables, helpers, lookup maps, or child components.
 - Use inline ternaries only for simple two-way choices.
 - If JSX has nested ternaries, 3+ visual states, or branching `className` logic, extract the decision.
+- For Tailwind/shadcn class composition, use the project `cn` helper for conditional classes and caller-provided overrides.
 - Prefer native HTML semantics before custom controls; use `hci` for deeper interaction details.
 - Make loading, empty, error, disabled, and success states explicit where users make decisions.
 - In Next.js App Router, default to Server Components; use Client Components only for interactivity, hooks, or browser APIs.
@@ -24,6 +25,7 @@ Read only the references that match the task:
 
 - [references/react-components.md](references/react-components.md) when authoring, reviewing, or refactoring TSX components.
 - [references/conditional-rendering.md](references/conditional-rendering.md) when JSX or `className` logic has multiple states.
+- [references/tailwind-shadcn.md](references/tailwind-shadcn.md) when working with Tailwind-heavy TSX, shadcn/ui primitives, `cn`, `cva`, or feature-specific colors/tokens.
 - [references/nextjs-app-router.md](references/nextjs-app-router.md) when changing server/client boundaries, routing, data loading, server actions, or route states.
 - [references/accessibility.md](references/accessibility.md) for React-specific accessibility pressure tests before using the deeper `hci` references.
 - [references/review-checklist.md](references/review-checklist.md) before finalizing generated frontend code or addressing PR review feedback.
