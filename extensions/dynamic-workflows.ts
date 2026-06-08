@@ -230,7 +230,7 @@ export default function dynamicWorkflowsExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_execution_start", async (event, ctx) => {
-		if (event.toolName !== "subagent") return;
+		if (event.toolName !== "subagent" || !isChainWorkflowToolArgs(event.args)) return;
 		if (dismissTimer) clearTimeout(dismissTimer);
 		current = {
 			toolCallId: event.toolCallId,
@@ -246,6 +246,7 @@ export default function dynamicWorkflowsExtension(pi: ExtensionAPI) {
 
 	pi.on("tool_execution_update", async (event, ctx) => {
 		if (event.toolName !== "subagent") return;
+		if ((!current || current.toolCallId !== event.toolCallId) && !isChainWorkflowToolArgs(event.args)) return;
 		if (!current || current.toolCallId !== event.toolCallId) {
 			current = {
 				toolCallId: event.toolCallId,
@@ -265,6 +266,7 @@ export default function dynamicWorkflowsExtension(pi: ExtensionAPI) {
 
 	pi.on("tool_execution_end", async (event, ctx) => {
 		if (event.toolName !== "subagent") return;
+		if ((!current || current.toolCallId !== event.toolCallId) && !isChainWorkflowToolArgs(event.args)) return;
 		if (!current || current.toolCallId !== event.toolCallId) {
 			current = {
 				toolCallId: event.toolCallId,
@@ -297,6 +299,14 @@ export default function dynamicWorkflowsExtension(pi: ExtensionAPI) {
 		clearTimers();
 		clearWidget(ctx);
 	});
+}
+
+function isChainWorkflowToolArgs(args: unknown): boolean {
+	const record = asRecord(args);
+	if (!record) return false;
+	if (Array.isArray(record.chain)) return true;
+	if (Array.isArray(record.tasks) && record.tasks.length > 1) return true;
+	return false;
 }
 
 function parseWorkflowCommand(args: string): WorkflowCommand {
