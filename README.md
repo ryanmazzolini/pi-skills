@@ -75,6 +75,7 @@ This README is the map. The family README files have the details.
 | `research` | Standalone technical research | — |
 | `handoff` | Write a portable temp-dir markdown handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
 | `tiger-team` | Orchestrate pi-subagents implementers and reviewers across deterministic ticket worktrees with integration, security scrutiny, and fix loops | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
+| `dynamic-workflows` | Create pi-subagents chain workflows with dynamic fanout, model profiles, and acceptance gates | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
 | `obsidian-vault` | Use the Obsidian CLI for vault-aware note workflows | [Obsidian CLI](https://obsidian.md/help/cli) |
 | `notion-cli` | Use the Notion `ntn` CLI for pages, data sources, and API calls | — |
@@ -106,6 +107,7 @@ This README is the map. The family README files have the details.
 | Extension | Description |
 |-----------|-------------|
 | `rpi` | Adds `/rpi` workflow launch/candidates plus readable `/rpi handover <brief>` fresh sessions |
+| `dynamic-workflows` | Adds autonomous `/chain-workflow <task>`, `/chain-workflow wizard`, `/chain-workflow status`, explicit pi-subagents chain-workflow routing, and compact/live chain-workflow status UI |
 
 ## Contributing
 
