@@ -135,7 +135,7 @@ If the user agrees, draft a concise local note using the template in [REFERENCE.
 Prefer a project-appropriate planning location such as:
 
 ```text
-thoughts/{profile}/research/YYYY-MM-DD-[slug]-simplification-note.md
+.plans/YYYY-MM-DD-[slug]-simplification-note/simplification-note.md
 ```
 
 Keep the note durable: describe ownership, behavior, and migration strategy more than fragile file

@@ -110,10 +110,10 @@ If the user agrees, draft a local RFC using the template in [REFERENCE.md](REFER
 path like:
 
 ```text
-thoughts/{profile}/research/YYYY-MM-DD-[slug]-architecture-rfc.md
+.plans/YYYY-MM-DD-[slug]-architecture-rfc/architecture-rfc.md
 ```
 
-or another project-appropriate docs/plans location if the user requests it.
+or another project-appropriate docs/plans location if the user requests a tracked artifact.
 
 The RFC should be durable and not overly tied to file paths that may drift.
 

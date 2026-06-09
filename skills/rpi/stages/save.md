@@ -8,5 +8,4 @@ Use before pausing or ending a session.
 2. Keep `plan.md` focused on durable intent: update it only for changed end state, decisions, scope, or verification strategy.
 3. Update `board/index.md` and optional card files with current execution status, blockers, verification notes, and next slice.
 4. Write or update `qa.md` if verification findings or follow-up work should survive the session.
-5. Run `humanlayer thoughts sync` when this repo uses thoughts.
-6. Summarize exactly what was saved and what should happen next.
+5. Summarize exactly what was saved and what should happen next.
