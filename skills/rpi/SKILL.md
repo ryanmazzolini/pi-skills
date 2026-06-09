@@ -63,12 +63,10 @@ Prefer workflow directories under a plans root:
 Plans root resolution convention:
 
 1. `PI_SKILLS_PLANS_ROOT` if set
-2. `thoughts/$PI_SKILLS_THOUGHTS_PROFILE/plans/` if set
-3. existing `.plan/` or `.plans/`
-4. existing `thoughts/*/plans/`
-5. existing `docs/plans/`
-6. existing `PRPs/`
-7. ask where to create new artifacts
+2. existing `.plans/` or `.plan/`
+3. existing `docs/plans/`
+4. existing `PRPs/`
+5. `.plans/` for new local artifacts unless the user chooses a tracked docs location
 
 ## Routing
 

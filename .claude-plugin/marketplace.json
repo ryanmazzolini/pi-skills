@@ -41,11 +41,6 @@
       "description": "Browser-first diff review, resolution, tours, and learning workflows"
     },
     {
-      "name": "humanlayer",
-      "source": "./plugins/humanlayer",
-      "description": "HumanLayer thoughts conventions for durable notes"
-    },
-    {
       "name": "ai-authoring",
       "source": "./plugins/ai-authoring",
       "description": "Context engineering guidance for AI configuration"

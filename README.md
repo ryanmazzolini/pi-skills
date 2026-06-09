@@ -10,7 +10,7 @@ A collection of opinionated [Agent Skills](https://agentskills.io/) I use day-to
 pi install https://github.com/ryanmazzolini/pi-skills
 ```
 
-Use `pi config` to enable or disable individual skills after install. For example, disable `humanlayer-thoughts` if you do not use HumanLayer.
+Use `pi config` to enable or disable individual skills after install.
 
 ### Claude Code
 
@@ -41,7 +41,7 @@ A few things to know up front:
 - Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
 - Related skills are grouped together in the repo where it makes sense, especially under `skills/diffity/*`.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
-- RPI workflows use durable markdown artifacts instead of hidden session state. See [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) for the entrypoint.
+- RPI workflows use durable markdown artifacts instead of hidden session state. They default to local `.plans/` workflow directories; set `PI_SKILLS_PLANS_ROOT` when a project needs a different durable artifact root. See [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) for the entrypoint.
 
 ## Optional tooling
 
@@ -49,7 +49,6 @@ A few things to know up front:
 
 | Tool | Used by | Notes |
 |------|---------|-------|
-| [HumanLayer](https://humanlayer.dev) | `humanlayer-thoughts`, optionally `rpi` | Needed only if you want `humanlayer thoughts init` / `humanlayer thoughts sync` workflows |
 | [Diffity](https://www.npmjs.com/package/diffity) | `diffity/*` | Browser-first diff review, comments, guided tours, and learning workflows |
 | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut` | Requires Shortcut auth/config |
 | [Obsidian CLI](https://obsidian.md/help/cli) | `obsidian-vault` | Requires Obsidian desktop CLI to be enabled |
@@ -62,7 +61,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `rpi` | Single-skill durable workflow for alignment questions, PRP-style plans, compact local boards, implementation, QA/verification, and fresh-session handovers | [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [HumanLayer context engineering](https://www.humanlayer.dev/blog/advanced-context-engineering), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
+| `rpi` | Single-skill durable workflow for alignment questions, PRP-style plans, compact local boards, implementation, QA/verification, and fresh-session handovers | [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
 | `diffity/*` | Browser-first diff review, file-tree review, guided tours, and learning workflows | [`skills/diffity/README.md`](./skills/diffity/README.md) | [Diffity](https://www.npmjs.com/package/diffity) |
 
 ## Standalone skills
@@ -94,12 +93,11 @@ This README is the map. The family README files have the details.
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs | — |
 | `frontend-hci-review` | Progressive HCI/product-flow review; starts with friction candidates before design | [`skills/frontend-hci-review/SKILL.md`](./skills/frontend-hci-review/SKILL.md) |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance | — |
-| `context-guidelines` | Context engineering principles for AI config | [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents), [HumanLayer CLAUDE.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md) |
+| `context-guidelines` | Context engineering principles for AI config | [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) |
 | `explain-code` | Code explanations with diagrams and analogies | — |
 | `typescript` | TypeScript strict mode conventions | — |
 | `nextjs-app-router` | Next.js App Router patterns | — |
 | `hci` | Usability, accessibility, responsive design | [`skills/hci/SKILL.md`](./skills/hci/SKILL.md), [WCAG 2.1 Quick Reference](https://www.w3.org/WAI/WCAG21/quickref/) |
-| `humanlayer-thoughts` | Persist plans, research, and reviews with HumanLayer thoughts | [HumanLayer](https://humanlayer.dev) |
 | `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation | [agent-browser](https://github.com/vercel-labs/agent-browser) |
 
 ## Extensions

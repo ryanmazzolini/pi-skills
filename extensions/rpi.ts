@@ -3,17 +3,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
 const WORKFLOW_DIR_PATTERN = /^\d{4}-\d{2}-\d{2}-.+/;
-const DEFAULT_THOUGHTS_PROFILE = "default";
 const PLANS_ROOT_ENV = "PI_SKILLS_PLANS_ROOT";
-const THOUGHTS_PROFILE_ENV = "PI_SKILLS_THOUGHTS_PROFILE";
 const MAX_CANDIDATES = 5;
-const DEFAULT_PLAN_ROOT_PATTERNS = [
-	".plans/",
-	".plan/",
-	`thoughts/${DEFAULT_THOUGHTS_PROFILE}/plans/`,
-	"docs/plans/",
-	"PRPs/",
-];
+const DEFAULT_PLAN_ROOT_PATTERNS = [".plans/", ".plan/", "docs/plans/", "PRPs/"];
 
 type WorkflowCandidate = {
 	dir: string;
@@ -54,34 +46,13 @@ function readText(path: string | undefined): string | undefined {
 	}
 }
 
-function normalizeProfileName(value: string | undefined): string | undefined {
-	const normalized = value?.trim().replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
-	return normalized || undefined;
-}
-
-function listThoughtsProfiles(cwd: string): string[] {
-	const thoughtsRoot = join(cwd, "thoughts");
-	if (!directoryExists(thoughtsRoot)) return [];
-	return readdirSync(thoughtsRoot)
-		.filter((name) => !["global", "searchable"].includes(name))
-		.filter((name) => directoryExists(join(thoughtsRoot, name, "plans")))
-		.sort();
-}
-
 function getPlanRoots(cwd: string): string[] {
 	const roots: string[] = [];
 	const explicitRoot = process.env[PLANS_ROOT_ENV]?.trim();
 	if (explicitRoot) roots.push(resolve(cwd, explicitRoot));
 
-	const profile = normalizeProfileName(process.env[THOUGHTS_PROFILE_ENV]);
-	if (profile) roots.push(join(cwd, "thoughts", profile, "plans"));
-
 	for (const candidate of DEFAULT_PLAN_ROOT_PATTERNS) {
 		roots.push(join(cwd, candidate));
-	}
-
-	for (const thoughtsProfile of listThoughtsProfiles(cwd)) {
-		roots.push(join(cwd, "thoughts", thoughtsProfile, "plans"));
 	}
 
 	return Array.from(new Set(roots)).filter(directoryExists);

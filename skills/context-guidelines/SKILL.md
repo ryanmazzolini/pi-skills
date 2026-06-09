@@ -39,5 +39,4 @@ description: Context engineering principles for AI configuration. Use when editi
 ## References
 
 - [Anthropic: Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
-- [HumanLayer: Writing a Good CLAUDE.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md)
 - [Evaluating AGENTS.md (arxiv 2602.11988)](https://arxiv.org/abs/2602.11988)
