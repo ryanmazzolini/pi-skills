@@ -25,6 +25,12 @@ Write/update:
 
 Keep `question.md` compact enough to read at the start of a fresh session. It is a decision log, not a transcript.
 
+## Plain-language standard
+
+Write the durable artifact so a future reader can understand and act on it the first time. State the reader-relevant main point first, then add necessary technical detail. Use active voice and short sentences. Keep the meaning exact.
+
+For product requirements, prefer user outcomes over implementation mechanics when that preserves accuracy.
+
 ## Read the docs first
 
 Before asking anything, read what the project already knows. Expect this layout:
@@ -93,11 +99,11 @@ goal: [one sentence]
 
 ## Goal
 
-[What we are trying to accomplish.]
+[Reader-relevant main point: what will be true or possible when this works.]
 
 ## From Docs / Code
 
-- [Facts discovered by inspection.]
+- [Relevant fact discovered by inspection; include technical detail only when it affects decisions.]
 
 ## Question Log
 
@@ -114,7 +120,7 @@ Decision: [resolved decision, if any]
 
 ## Acceptance Criteria
 
-- [Plain testable behavior, one observable check per line.]
+- [Observable behavior. Start with the actor, action, or outcome when relevant, then include technical detail needed to verify it.]
 
 ## Assumptions
 
@@ -126,12 +132,12 @@ Decision: [resolved decision, if any]
 
 ## Suggested Plan Direction
 
-[Short handoff note for slice-plan: likely MVP, scope boundaries, verification expectations.]
+[Short handoff note for slice-plan: likely MVP outcome first, then scope boundaries and verification expectations.]
 ```
 
 ## Acceptance criteria
 
-Use plain testable statements: one observable behavior per line. No "the system shall" ceremony.
+Use plain testable statements: one observable behavior per line. No "the system shall" ceremony. Prefer active voice where the actor matters. Avoid vague quality words like "seamless", "robust", or "intuitive" unless the criterion also says how to observe them.
 
 Good:
 
@@ -159,4 +165,5 @@ Skip durable docs for easily reversed or unsurprising choices. The durable artif
 - Asking what docs or code already answer.
 - Grilling past high-stakes ambiguity.
 - EARS-style "WHEN… the system shall…" criteria.
+- Implementation-first wording when user-visible behavior is the point.
 - Long prose specs that duplicate `question.md` and make `slice-plan` harder to use.
