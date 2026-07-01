@@ -1,5 +1,5 @@
 ---
-name: ticket-worktree
+name: "ticket-worktree"
 description: Create, find, or reuse ticket-based worktree folders for Shortcut stories or GitHub issues.
 ---
 

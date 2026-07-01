@@ -1,5 +1,5 @@
 ---
-name: frontend-react
+name: "frontend-react"
 description: "React/Next.js TSX implementation and review: readable JSX, conditional rendering, client/server boundaries, accessibility, forms, async states, and PR feedback."
 ---
 

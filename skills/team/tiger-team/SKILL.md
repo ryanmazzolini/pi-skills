@@ -1,5 +1,5 @@
 ---
-name: tiger-team
+name: "tiger-team"
 description: "Orchestrate planned implementation work with host-provided subagents or task agents: durable worktrees, parallel implementers, integration, high-scrutiny review, optional security review, and focused fix loops."
 ---
 

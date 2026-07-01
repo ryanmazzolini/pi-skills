@@ -1,5 +1,5 @@
 ---
-name: architecture-review
+name: "architecture-review"
 description: Cross-cutting architecture review lens for system design, rollout risk, and operability. Use when evaluating design tradeoffs, migrations, or scaling concerns.
 ---
 

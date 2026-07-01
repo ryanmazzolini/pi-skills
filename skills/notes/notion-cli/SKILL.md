@@ -1,5 +1,5 @@
 ---
-name: notion-cli
+name: "notion-cli"
 description: Use the Notion `ntn` CLI for reading, creating, updating, querying, or calling Notion API endpoints.
 ---
 

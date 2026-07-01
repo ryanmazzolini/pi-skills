@@ -1,10 +1,10 @@
 ---
-name: ubiquitous-language
+name: "ubiquitous-language"
 description:
   Extract and harden a DDD-style ubiquitous language glossary from the current conversation or
   codebase context, flag ambiguities, and propose canonical terms. Use when defining domain terms,
   building a glossary, clarifying overloaded language, or discussing DDD/domain models.
-license: MIT; adapted from mattpocock/skills
+license: "MIT; adapted from mattpocock/skills"
 ---
 
 # Ubiquitous Language

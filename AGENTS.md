@@ -16,6 +16,7 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 
 - Skill directory names must be lowercase with hyphens (e.g. `commit-simple`, `plan-create`)
 - Every `SKILL.md` requires `name` and `description` frontmatter
+- Quote the frontmatter `name` value, e.g. `name: "commit-simple"`
 - The frontmatter `name` must match the parent skill directory name
 - Descriptions should be specific about what the skill does and when to use it
 - Use relative paths to reference scripts or assets within a skill directory
@@ -26,6 +27,7 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 2. Add an entry to the table in `README.md`
 3. If Claude should expose it, add the skill path to the matching plugin entry in `.claude-plugin/marketplace.json`
 4. Add a new marketplace plugin entry only when introducing a new Claude namespace
+5. Run `npm run validate:skills`
 
 ## Adding an Extension
 

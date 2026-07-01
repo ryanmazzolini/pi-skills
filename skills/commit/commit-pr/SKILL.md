@@ -1,5 +1,5 @@
 ---
-name: commit-pr
+name: "commit-pr"
 description: Create or update a draft pull request from the current branch. Use when opening or updating a PR.
 ---
 

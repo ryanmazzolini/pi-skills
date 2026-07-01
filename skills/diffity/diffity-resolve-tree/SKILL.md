@@ -1,5 +1,5 @@
 ---
-name: diffity-resolve-tree
+name: "diffity-resolve-tree"
 description:
   Resolve open comments from the Diffity tree browser by making code changes. Use after commenting
   on files in Diffity tree.

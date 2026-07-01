@@ -1,5 +1,5 @@
 ---
-name: diffity-review
+name: "diffity-review"
 description: Review the current diff in Diffity and leave only high-signal inline comments. Use for AI code review.
 disable-model-invocation: true
 ---

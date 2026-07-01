@@ -1,5 +1,5 @@
 ---
-name: simplify-codebase-architecture
+name: "simplify-codebase-architecture"
 description:
   Find pragmatic refactor opportunities by reducing repeated knowledge, deleting shallow abstraction,
   and adding seams only when the code has earned them. Use when simplifying architecture,
