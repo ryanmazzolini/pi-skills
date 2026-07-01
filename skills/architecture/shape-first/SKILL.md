@@ -1,6 +1,6 @@
 ---
 name: shape-first
-description: Use for human-in-the-loop non-trivial code changes: discover existing patterns, model domain shapes, choose an idiomatic boundary, turn that into TODOs, implement, then check drift.
+description: "Use for human-in-the-loop non-trivial code changes: discover existing patterns, model domain shapes, choose an idiomatic boundary, turn that into TODOs, implement, then check drift."
 ---
 
 # Shape First
