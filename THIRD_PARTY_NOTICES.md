@@ -13,6 +13,7 @@ Adapted skills:
 - `improve-codebase-architecture`
 - `ubiquitous-language`
 - `rpi/guides/tdd.md`
+- `teach`
 
 ```text
 MIT License

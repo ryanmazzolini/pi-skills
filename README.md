@@ -18,6 +18,7 @@ Use `pi config` to enable or disable individual skills after install.
 /plugin marketplace add ryanmazzolini/pi-skills
 /plugin install rpi@ryan-pi-skills
 /plugin install commit@ryan-pi-skills
+/plugin install productivity@ryan-pi-skills
 /plugin install team@ryan-pi-skills
 /plugin install typescript-nextjs@ryan-pi-skills
 ```
@@ -72,6 +73,7 @@ This README is the map. The family README files have the details.
 | `commit-simple` | Branch, commit, and push changes | — |
 | `commit-pr` | Create or update draft pull requests | — |
 | `research` | Standalone technical research | — |
+| `teach` | Build a durable teaching workspace with missions, lessons, references, resources, and learning records | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/teach) |
 | `handoff` | Write a portable temp-dir markdown handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
 | `tiger-team` | Orchestrate pi-subagents implementers and reviewers across deterministic ticket worktrees with integration, security scrutiny, and fix loops | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
 | `dynamic-workflows` | Create pi-subagents chain workflows with dynamic fanout, model profiles, and acceptance gates | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
