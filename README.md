@@ -22,7 +22,7 @@ Use `pi config` to enable or disable individual skills after install.
 /plugin install typescript-nextjs@ryan-pi-skills
 ```
 
-The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) exposes grouped plugin namespaces backed by the canonical `skills/*` directories. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple`, `/diffity:diffity-review`, and `/team:tiger-team`.
+The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) exposes grouped plugin namespaces backed directly by canonical `skills/<namespace>/<skill>` directories. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple`, `/diffity:diffity-review`, and `/team:tiger-team`.
 
 ## Update
 
@@ -39,9 +39,9 @@ This is my personal toolkit first. If parts of it fit your workflow, great — u
 A few things to know up front:
 - RPI is the canonical durable workflow skill. Use `/rpi` in pi for the extension-backed interface, or `/skill:rpi` for the raw skill. Boards are optional; compact `question.md` + `plan.md` artifacts are enough for many workflows.
 - Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
-- Related skills are grouped together in the repo where it makes sense, especially under `skills/diffity/*`.
+- Related Claude-exposed skills are grouped in the repo under `skills/<plugin>/<skill>`, with pi-only helpers allowed to stay as plain `skills/<skill>` directories.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
-- RPI workflows use durable markdown artifacts instead of hidden session state. They default to local `.plans/` workflow directories; set `PI_SKILLS_PLANS_ROOT` when a project needs a different durable artifact root. See [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) for the entrypoint.
+- RPI workflows use durable markdown artifacts instead of hidden session state. They default to local `.plans/` workflow directories; set `PI_SKILLS_PLANS_ROOT` when a project needs a different durable artifact root. See [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) for the entrypoint.
 
 ## Optional tooling
 
@@ -61,7 +61,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `rpi` | Single-skill durable workflow for alignment questions, PRP-style plans, compact local boards, implementation, QA/verification, and fresh-session handovers | [`skills/rpi/SKILL.md`](./skills/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
+| `rpi` | Single-skill durable workflow for alignment questions, PRP-style plans, compact local boards, implementation, QA/verification, and fresh-session handovers | [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
 | `diffity/*` | Browser-first diff review, file-tree review, guided tours, and learning workflows | [`skills/diffity/README.md`](./skills/diffity/README.md) | [Diffity](https://www.npmjs.com/package/diffity) |
 
 ## Standalone skills
@@ -91,13 +91,13 @@ This README is the map. The family README files have the details.
 | `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
 | `ruby-sorbet-rails` | Ruby/Rails guidance for Rails-native structures, Rails commands/migrations, strict Sorbet/Tapioca RBIs, RuboCop, db schema, and GraphQL federation artifacts | [Sorbet RBI docs](https://sorbet.org/docs/rbi), [Tapioca](https://github.com/Shopify/tapioca), [Rails migrations](https://guides.rubyonrails.org/active_record_migrations.html) |
 | `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs | — |
-| `frontend-hci-review` | Progressive HCI/product-flow review; starts with friction candidates before design | [`skills/frontend-hci-review/SKILL.md`](./skills/frontend-hci-review/SKILL.md) |
+| `frontend-hci-review` | Progressive HCI/product-flow review; starts with friction candidates before design | [`skills/ux-accessibility/frontend-hci-review/SKILL.md`](./skills/ux-accessibility/frontend-hci-review/SKILL.md) |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance | — |
 | `context-guidelines` | Context engineering principles for AI config | [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) |
 | `explain-code` | Code explanations with diagrams and analogies | — |
 | `typescript` | TypeScript strict mode conventions | — |
 | `nextjs-app-router` | Next.js App Router patterns | — |
-| `hci` | Usability, accessibility, responsive design | [`skills/hci/SKILL.md`](./skills/hci/SKILL.md), [WCAG 2.1 Quick Reference](https://www.w3.org/WAI/WCAG21/quickref/) |
+| `hci` | Usability, accessibility, responsive design | [`skills/ux-accessibility/hci/SKILL.md`](./skills/ux-accessibility/hci/SKILL.md), [WCAG 2.1 Quick Reference](https://www.w3.org/WAI/WCAG21/quickref/) |
 | `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation | [agent-browser](https://github.com/vercel-labs/agent-browser) |
 
 ## Extensions
