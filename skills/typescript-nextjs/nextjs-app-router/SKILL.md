@@ -1,5 +1,5 @@
 ---
-name: nextjs-app-router
+name: "nextjs-app-router"
 description: Next.js 14+ App Router patterns and conventions. Use when working with App Router routes, Server/Client Components, server actions, route states, or Next.js data loading; pair with frontend-react for TSX component implementation.
 ---
 

@@ -1,10 +1,10 @@
 ---
-name: grill-me
+name: "grill-me"
 description:
   Interview the user relentlessly about a plan or design until the critical path and highest-impact
   decisions are resolved. Use when the user wants to stress-test a plan, get grilled on a design, or
   mentions "grill me".
-license: MIT; adapted from mattpocock/skills
+license: "MIT; adapted from mattpocock/skills"
 ---
 
 # Grill Me

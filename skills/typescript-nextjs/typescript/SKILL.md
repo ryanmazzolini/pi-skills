@@ -1,5 +1,5 @@
 ---
-name: typescript
+name: "typescript"
 description: TypeScript strict mode patterns and conventions. Use when working with TypeScript code.
 ---
 

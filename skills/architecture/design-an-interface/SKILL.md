@@ -1,10 +1,10 @@
 ---
-name: design-an-interface
+name: "design-an-interface"
 description:
   Generate multiple radically different interface designs for a module or API, then compare
   tradeoffs. Use when designing module boundaries, public APIs, service contracts, or when the user
   wants to "design it twice" before implementation.
-license: MIT; adapted from mattpocock/skills
+license: "MIT; adapted from mattpocock/skills"
 ---
 
 # Design an Interface

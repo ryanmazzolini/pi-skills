@@ -1,5 +1,5 @@
 ---
-name: diffity-diff
+name: "diffity-diff"
 description:
   Open Diffity for the current repo so you can inspect changes in the browser. Use when viewing
   diffs visually.

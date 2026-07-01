@@ -1,8 +1,8 @@
 ---
-name: handoff
+name: "handoff"
 description: Compact the current conversation into a portable markdown handoff document for another agent or fresh session. Use when passing context across sessions/tools, splitting out-of-scope work, starting a focused prototype/review/debug thread, or when the user asks for a handoff.
 argument-hint: "What will the next session focus on?"
-license: MIT; adapted from mattpocock/skills
+license: "MIT; adapted from mattpocock/skills"
 ---
 
 # Handoff

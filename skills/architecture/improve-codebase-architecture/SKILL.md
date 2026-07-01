@@ -1,10 +1,10 @@
 ---
-name: improve-codebase-architecture
+name: "improve-codebase-architecture"
 description:
   Explore a codebase for architectural improvement opportunities, focusing on deep modules,
   testability, and AI-navigable boundaries. Use when improving architecture, finding refactor
   candidates, consolidating tightly coupled modules, or reducing shallow-module seams.
-license: MIT; adapted from mattpocock/skills
+license: "MIT; adapted from mattpocock/skills"
 ---
 
 # Improve Codebase Architecture

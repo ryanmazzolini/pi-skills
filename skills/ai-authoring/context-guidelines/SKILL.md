@@ -1,5 +1,5 @@
 ---
-name: context-guidelines
+name: "context-guidelines"
 description: Context engineering principles for AI configuration. Use when editing AGENTS.md, skills, agent prompts, or discussing AI configuration.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: diffity-tree
+name: "diffity-tree"
 description: Open the Diffity file tree browser to browse and comment on any file. Use when browsing a repo visually.
 disable-model-invocation: true
 ---

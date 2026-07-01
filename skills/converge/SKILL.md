@@ -1,5 +1,5 @@
 ---
-name: converge
+name: "converge"
 description: Align on a plan or feature in the fewest questions possible, grounded in the project's docs/code, then write a durable RPI-compatible question.md with plain testable acceptance criteria. Use when the user wants to stress-test a plan, be "grilled", or align before building but wants fewer turns than grill-with-docs.
 ---
 

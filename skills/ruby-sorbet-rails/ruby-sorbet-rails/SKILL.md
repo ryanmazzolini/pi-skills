@@ -1,5 +1,5 @@
 ---
-name: ruby-sorbet-rails
+name: "ruby-sorbet-rails"
 description: Ruby/Rails implementation and review with Sorbet/Tapioca, Rails-native structures, RuboCop, db schema, and GraphQL federation artifact conventions.
 ---
 

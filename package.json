@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Opinionated pi skills — planning, git workflows, code review, and dev conventions",
   "keywords": ["pi-package"],
+  "scripts": {
+    "validate:skills": "node scripts/validate-skills.mjs"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

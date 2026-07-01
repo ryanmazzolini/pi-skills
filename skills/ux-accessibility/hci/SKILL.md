@@ -1,5 +1,5 @@
 ---
-name: hci
+name: "hci"
 description: Usability heuristics, WCAG accessibility, responsive design. Use when reviewing or writing UI components, CSS, forms, interaction states, or discussing UX.
 ---
 

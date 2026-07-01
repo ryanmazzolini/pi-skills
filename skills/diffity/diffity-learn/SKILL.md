@@ -1,5 +1,5 @@
 ---
-name: diffity-learn
+name: "diffity-learn"
 description: Start a project-driven learning journey for any technical topic using Diffity tours, challenges, and adaptive pacing. Use when the user wants to learn a language, tool, or framework interactively.
 disable-model-invocation: true
 ---

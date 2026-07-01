@@ -1,5 +1,5 @@
 ---
-name: rpi
+name: "rpi"
 description: Runs a local-first alignment, PRP, board, implementation, verification, and fresh-session handover workflow. Use for starting, continuing, saving, verifying, or handing over durable multi-step work.
 ---
 

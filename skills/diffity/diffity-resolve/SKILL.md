@@ -1,5 +1,5 @@
 ---
-name: diffity-resolve
+name: "diffity-resolve"
 description:
   Resolve open Diffity threads by making the requested code changes. Use after reviewing or
   commenting in Diffity.

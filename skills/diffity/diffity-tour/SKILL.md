@@ -1,5 +1,5 @@
 ---
-name: diffity-tour
+name: "diffity-tour"
 description: Create a guided code tour that walks through the codebase to answer a question or explain a feature. Opens in the browser with step-by-step navigation and highlighted code.
 disable-model-invocation: true
 ---

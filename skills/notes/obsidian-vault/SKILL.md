@@ -1,5 +1,5 @@
 ---
-name: obsidian-vault
+name: "obsidian-vault"
 description: Use the Obsidian CLI for vault-aware note workflows. Use when reading, creating, moving, filing, triaging, recovering, or validating notes in an Obsidian vault.
 ---
 

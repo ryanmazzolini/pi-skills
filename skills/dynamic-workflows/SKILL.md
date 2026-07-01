@@ -1,5 +1,5 @@
 ---
-name: dynamic-workflows
+name: "dynamic-workflows"
 description: Create pi-subagents chain workflows. Use when asked to create a pi-subagents workflow, chain workflow, fanout plan, multi-agent chain, codebase-wide audit, migration workflow, or goal-like verified subagent run.
 ---
 

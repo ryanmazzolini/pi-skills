@@ -1,5 +1,5 @@
 ---
-name: frontend-guidelines
+name: "frontend-guidelines"
 description: Opinionated frontend defaults for UX, accessibility, and UI architecture. Use for broad frontend tradeoffs; use frontend-react when writing or reviewing React, Next.js, or TSX implementation.
 ---
 

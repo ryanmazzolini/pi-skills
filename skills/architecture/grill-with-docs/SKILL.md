@@ -1,10 +1,10 @@
 ---
-name: grill-with-docs
+name: "grill-with-docs"
 description:
   Stress-test a plan against the existing codebase and project docs, sharpen domain terminology, and
   update CONTEXT.md / ADRs as decisions crystallize. Use when the user wants to be grilled on a
   design while keeping durable docs in sync.
-license: MIT; adapted from mattpocock/skills
+license: "MIT; adapted from mattpocock/skills"
 ---
 
 # Grill With Docs

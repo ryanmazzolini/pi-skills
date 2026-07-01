@@ -1,5 +1,5 @@
 ---
-name: commit-simple
+name: "commit-simple"
 description: Branch, commit, and push changes. Use when preparing a commit or pushing work.
 ---
 

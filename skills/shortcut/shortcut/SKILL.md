@@ -1,5 +1,5 @@
 ---
-name: shortcut
+name: "shortcut"
 description: Interact with Shortcut stories via the `short` CLI. Use when viewing, searching, commenting on, or updating Shortcut stories.
 ---
 

@@ -33,6 +33,14 @@ pi update
 
 For Claude Code, use `/plugin marketplace update` and `/plugin update`.
 
+## Validation
+
+```bash
+npm run validate:skills
+```
+
+Checks `SKILL.md` frontmatter, pi skill-loader diagnostics, and Claude marketplace skill references.
+
 ## A quick note before you use or fork
 
 This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.

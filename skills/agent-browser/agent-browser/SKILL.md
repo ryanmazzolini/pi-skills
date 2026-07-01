@@ -1,5 +1,5 @@
 ---
-name: agent-browser
+name: "agent-browser"
 description: Browser automation via the agent-browser CLI. Use when the user needs to open websites, click buttons, fill forms, take screenshots, scrape page data, test a web app, automate Slack/Electron/browser workflows, or otherwise control a browser.
 ---
 

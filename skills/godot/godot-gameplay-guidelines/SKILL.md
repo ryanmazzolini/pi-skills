@@ -1,5 +1,5 @@
 ---
-name: godot-gameplay-guidelines
+name: "godot-gameplay-guidelines"
 description: Gameplay-oriented defaults for Godot projects. Use when working with .gd files, scene architecture, or tuning game feel and performance.
 ---
 
