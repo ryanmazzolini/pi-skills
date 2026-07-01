@@ -7,88 +7,138 @@
   "plugins": [
     {
       "name": "rpi",
-      "source": "./plugins/rpi",
-      "description": "Durable local-first planning and implementation workflow"
+      "source": "./skills/rpi",
+      "description": "Durable local-first planning and implementation workflow",
+      "strict": false,
+      "skills": ["./rpi"]
     },
     {
       "name": "team",
-      "source": "./plugins/team",
-      "description": "Tiger-team implementation and review orchestration with host-provided subagents"
+      "source": "./skills/team",
+      "description": "Tiger-team implementation and review orchestration with host-provided subagents",
+      "strict": false,
+      "skills": ["./tiger-team"]
     },
     {
       "name": "commit",
-      "source": "./plugins/commit",
-      "description": "Git commit and pull request workflows"
+      "source": "./skills/commit",
+      "description": "Git commit and pull request workflows",
+      "strict": false,
+      "skills": ["./commit-pr", "./commit-simple"]
     },
     {
       "name": "research",
-      "source": "./plugins/research",
-      "description": "Technical research and spike documentation"
+      "source": "./skills/research",
+      "description": "Technical research and spike documentation",
+      "strict": false,
+      "skills": ["./research"]
     },
     {
       "name": "explain",
-      "source": "./plugins/explain",
-      "description": "Code explanations with diagrams and analogies"
+      "source": "./skills/explain",
+      "description": "Code explanations with diagrams and analogies",
+      "strict": false,
+      "skills": ["./explain-code"]
     },
     {
       "name": "agent-browser",
-      "source": "./plugins/agent-browser",
-      "description": "Browser automation via the agent-browser CLI"
+      "source": "./skills/agent-browser",
+      "description": "Browser automation via the agent-browser CLI",
+      "strict": false,
+      "skills": ["./agent-browser"]
     },
     {
       "name": "diffity",
-      "source": "./plugins/diffity",
-      "description": "Browser-first diff review, resolution, tours, and learning workflows"
+      "source": "./skills/diffity",
+      "description": "Browser-first diff review, resolution, tours, and learning workflows",
+      "strict": false,
+      "skills": [
+        "./diffity-diff",
+        "./diffity-learn",
+        "./diffity-resolve",
+        "./diffity-resolve-tree",
+        "./diffity-review",
+        "./diffity-tour",
+        "./diffity-tree"
+      ]
     },
     {
       "name": "ai-authoring",
-      "source": "./plugins/ai-authoring",
-      "description": "Context engineering guidance for AI configuration"
+      "source": "./skills/ai-authoring",
+      "description": "Context engineering guidance for AI configuration",
+      "strict": false,
+      "skills": ["./context-guidelines"]
     },
     {
       "name": "typescript-nextjs",
-      "source": "./plugins/typescript-nextjs",
-      "description": "TypeScript, Next.js App Router, and React implementation guidance"
+      "source": "./skills/typescript-nextjs",
+      "description": "TypeScript, Next.js App Router, and React implementation guidance",
+      "strict": false,
+      "skills": ["./typescript", "./frontend-react", "./nextjs-app-router"]
     },
     {
       "name": "ux-accessibility",
-      "source": "./plugins/ux-accessibility",
-      "description": "Frontend UX, HCI, accessibility, and product-flow review guidance"
+      "source": "./skills/ux-accessibility",
+      "description": "Frontend UX, HCI, accessibility, and product-flow review guidance",
+      "strict": false,
+      "skills": ["./frontend-guidelines", "./frontend-hci-review", "./hci"]
     },
     {
       "name": "ruby-sorbet-rails",
-      "source": "./plugins/ruby-sorbet-rails",
-      "description": "Ruby/Rails implementation and review with Sorbet and Tapioca"
+      "source": "./skills/ruby-sorbet-rails",
+      "description": "Ruby/Rails implementation and review with Sorbet and Tapioca",
+      "strict": false,
+      "skills": ["./ruby-sorbet-rails"]
     },
     {
       "name": "architecture",
-      "source": "./plugins/architecture",
-      "description": "Architecture review, interface design, refactoring, and domain-language workflows"
+      "source": "./skills/architecture",
+      "description": "Architecture review, interface design, refactoring, and domain-language workflows",
+      "strict": false,
+      "skills": [
+        "./architecture-review",
+        "./design-an-interface",
+        "./grill-me",
+        "./grill-with-docs",
+        "./improve-codebase-architecture",
+        "./simplify-codebase-architecture",
+        "./ubiquitous-language"
+      ]
     },
     {
       "name": "security",
-      "source": "./plugins/security",
-      "description": "High-signal application security review guidance"
+      "source": "./skills/security",
+      "description": "High-signal application security review guidance",
+      "strict": false,
+      "skills": ["./security-review"]
     },
     {
       "name": "ticket-worktree",
-      "source": "./plugins/ticket-worktree",
-      "description": "Ticket-oriented worktree discovery and creation workflow"
+      "source": "./skills/ticket-worktree",
+      "description": "Ticket-oriented worktree discovery and creation workflow",
+      "strict": false,
+      "skills": ["./ticket-worktree"]
     },
     {
       "name": "shortcut",
-      "source": "./plugins/shortcut",
-      "description": "Shortcut story workflows via the short CLI"
+      "source": "./skills/shortcut",
+      "description": "Shortcut story workflows via the short CLI",
+      "strict": false,
+      "skills": ["./shortcut"]
     },
     {
       "name": "notes",
-      "source": "./plugins/notes",
-      "description": "Obsidian and Notion CLI note workflows"
+      "source": "./skills/notes",
+      "description": "Obsidian and Notion CLI note workflows",
+      "strict": false,
+      "skills": ["./notion-cli", "./obsidian-vault"]
     },
     {
       "name": "godot",
-      "source": "./plugins/godot",
-      "description": "Gameplay-oriented defaults for Godot projects"
+      "source": "./skills/godot",
+      "description": "Gameplay-oriented defaults for Godot projects",
+      "strict": false,
+      "skills": ["./godot-gameplay-guidelines"]
     }
   ]
 }
