@@ -38,7 +38,7 @@
       "source": "./skills/productivity",
       "description": "Durable learning and personal productivity workflows",
       "strict": false,
-      "skills": ["./teach"]
+      "skills": ["./teach", "./writing-great-skills"]
     },
     {
       "name": "explain",
