@@ -14,6 +14,8 @@ Adapted skills:
 - `ubiquitous-language`
 - `rpi/guides/tdd.md`
 - `teach`
+- `writing-great-skills`
+- `writing-great-skills/GLOSSARY.md`
 
 ```text
 MIT License
