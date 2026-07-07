@@ -95,9 +95,7 @@ This README is the map. The family README files have the details.
 | `simplify-codebase-architecture` | Find pragmatic refactor opportunities by reducing repeated knowledge and deleting shallow abstraction | — |
 | `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
 | `shape-first` | Human-in-the-loop coding loop for domain shapes, boundaries, TODOs, implementation, and drift checks | [ThePrimeagen](https://youtu.be/Aie0nYktsNA) |
-| `grill-me` | Stress-test a plan or design with a one-question-at-a-time interview | [mattpocock](https://github.com/mattpocock/skills/tree/main/grill-me) |
-| `grill-with-docs` | Stress-test a plan against code/docs while updating CONTEXT.md and ADRs as decisions crystallize | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
-| `converge` | Fast durable alignment loop that writes `question.md` plus acceptance criteria for lightweight planning | — |
+| `converge` | Fast durable alignment loop that writes `question.md` plus acceptance criteria for lightweight planning; updates CONTEXT.md and ADRs as decisions crystallize | [mattpocock grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
 | `slice-plan` | Write compact RPI-compatible `plan.md` artifacts with MVP vertical slices from acceptance criteria; board optional | — |
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
 | `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
