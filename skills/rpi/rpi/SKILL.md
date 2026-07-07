@@ -1,6 +1,6 @@
 ---
 name: "rpi"
-description: Runs a local-first alignment, PRP, board, implementation, verification, and fresh-session handover workflow. Use for starting, continuing, saving, verifying, or handing over durable multi-step work.
+description: Local-first workflow for durable multi-step work with plans, boards, verification, and handover. Use when starting, continuing, verifying, or handing over such work.
 ---
 
 # RPI Workflow

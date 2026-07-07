@@ -1,6 +1,6 @@
 ---
 name: "frontend-hci-review"
-description: Investigate frontend product flows for usability, accessibility, responsive, and interaction-state improvements. Use when reviewing UI quality, reducing user friction, auditing forms or flows, or planning HCI-focused frontend refactors.
+description: Investigate frontend product flows for usability, accessibility, responsive, and interaction-state improvements. Use when reviewing UX quality or auditing user-facing flows.
 ---
 
 # Frontend HCI Review
