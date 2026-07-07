@@ -1,6 +1,6 @@
 ---
 name: "slice-plan"
-description: Turn durable alignment artifacts or acceptance criteria into a compact RPI-compatible plan.md under .plans/, sequenced as MVP vertical slices. Use after converge/question.md, when planning implementation, or when a board would be overkill.
+description: Turn acceptance criteria or question.md into a compact plan.md of MVP vertical slices under .plans/. Use when planning implementation after converge, or when an rpi board would be overkill.
 ---
 
 # Slice Plan

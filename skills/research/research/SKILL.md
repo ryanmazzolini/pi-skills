@@ -1,6 +1,6 @@
 ---
 name: "research"
-description: Conduct technical research and produce structured findings. Use when doing spikes, evaluations, investigations, or when user asks to "research", "evaluate", "investigate", or "compare" technical options.
+description: Conduct technical research and produce structured findings. Use for spikes, or when the user asks to research, evaluate, or compare technical options.
 ---
 
 # Research
