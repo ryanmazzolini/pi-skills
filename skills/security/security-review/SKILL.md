@@ -1,6 +1,6 @@
 ---
 name: "security-review"
-description: High-signal application security review for changed code. Use for AppSec, OWASP-style review, auth/authz, injection, XSS, SSRF, path traversal, secrets, unsafe crypto, webhook verification, CI/CD or GitOps risk, or sensitive data exposure.
+description: High-signal application security review that reports only proven, exploitable findings. Use when reviewing code changes for security or OWASP-style risks, or when CI/CD or GitOps changes touch deploy authority.
 ---
 
 # Security Review
