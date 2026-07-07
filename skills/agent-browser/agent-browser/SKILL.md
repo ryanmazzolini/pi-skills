@@ -1,6 +1,6 @@
 ---
 name: "agent-browser"
-description: Browser automation via the agent-browser CLI. Use when the user needs to open websites, click buttons, fill forms, take screenshots, scrape page data, test a web app, automate Slack/Electron/browser workflows, or otherwise control a browser.
+description: Browser automation via the agent-browser CLI. Use when opening, testing, scraping, or automating websites, or driving Electron apps such as Slack.
 ---
 
 # Agent Browser
@@ -17,27 +17,12 @@ Use this skill as a thin bridge to the installed `agent-browser` CLI.
 
 ## Load Runtime Instructions
 
-Run one of these before using `agent-browser` commands:
-
-```bash
-agent-browser skills get core 2>/dev/null || agent-browser skills get agent-browser
-agent-browser skills get <name> --full
-```
-
-Why: `agent-browser` ships its own skill content, and the exact commands can change between releases. Some versions expose the core skill as `core`; older versions use `agent-browser`.
-
-## Choosing a Skill
-
-Start with the core browser workflow, then switch to a specialized skill if needed:
+`agent-browser` ships its own version-matched skill content. Load the core workflow first, then a specialized skill (`electron`, `slack`, `dogfood`, `vercel-sandbox`, `agentcore`) if the target needs it:
 
 ```bash
 agent-browser skills list
 agent-browser skills get core 2>/dev/null || agent-browser skills get agent-browser
-agent-browser skills get electron
-agent-browser skills get slack
-agent-browser skills get dogfood
-agent-browser skills get vercel-sandbox
-agent-browser skills get agentcore
+agent-browser skills get <name> --full
 ```
 
 ## Default Workflow
@@ -50,8 +35,4 @@ After loading the runtime instructions, prefer the standard snapshot → ref →
 4. Re-snapshot after the page changes.
 5. Capture screenshots, text, or other output the user asked for.
 
-## Notes
-
-- Prefer `agent-browser` over ad-hoc browser scripting when the user explicitly wants browser automation.
-- Use the specialized skills for Electron apps, Slack, QA/dogfooding, Vercel Sandbox, or AgentCore.
-- If a command fails unexpectedly, run `agent-browser doctor` before improvising.
+If a command fails unexpectedly, run `agent-browser doctor` before improvising.
