@@ -5,8 +5,6 @@ description: Branch, commit, and push changes. Use when preparing a commit or pu
 
 # Commit
 
-Use this skill when creating a branch, committing changes, or pushing work.
-
 ## Workflow
 
 1. Inspect the current branch, working tree, staged changes, and diff.
