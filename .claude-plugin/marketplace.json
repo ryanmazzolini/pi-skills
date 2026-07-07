@@ -106,8 +106,6 @@
         "./architecture-review",
         "./design-an-interface",
         "./shape-first",
-        "./grill-me",
-        "./grill-with-docs",
         "./improve-codebase-architecture",
         "./simplify-codebase-architecture",
         "./ubiquitous-language"

@@ -1,11 +1,11 @@
 ---
 name: "converge"
-description: Align on a plan or feature in the fewest questions possible, grounded in the project's docs/code, then write a durable RPI-compatible question.md with plain testable acceptance criteria. Use when the user wants to stress-test a plan, be "grilled", or align before building but wants fewer turns than grill-with-docs.
+description: Align on a plan or feature in a few batched questions, recording decisions and acceptance criteria in question.md. Use when the user wants to stress-test a plan, be "grilled", or align before building.
 ---
 
 # Converge
 
-Reach shared understanding in as few turns as possible, then preserve it in a durable `question.md` that `slice-plan` can turn into `plan.md`. This is grill-with-docs' alignment loop tightened: same CONTEXT.md and ADR grounding, but a question-*selection* discipline instead of a relentless one-at-a-time interview.
+Reach shared understanding in as few turns as possible, then preserve it in a durable `question.md` that `slice-plan` can turn into `plan.md`. Ground the alignment in CONTEXT.md and ADRs when they exist, and use question-*selection* discipline instead of a one-at-a-time interview.
 
 Most alignment uncertainty lives in 2-3 load-bearing decisions. Resolve everything else by reading docs/code or by stating an assumption the user can veto.
 
@@ -23,13 +23,7 @@ Write/update:
   board/        # optional; do not create during converge
 ```
 
-Keep `question.md` compact enough to read at the start of a fresh session. It is a decision log, not a transcript.
-
-## Plain-language standard
-
-Write the durable artifact so a future reader can understand and act on it the first time. State the reader-relevant main point first, then add necessary technical detail. Use active voice and short sentences. Keep the meaning exact.
-
-For product requirements, prefer user outcomes over implementation mechanics when that preserves accuracy.
+Keep `question.md` compact enough to read at the start of a fresh session. It is a decision log, not a transcript. Write it in plain language: main point first, active voice, user outcomes over implementation mechanics where that preserves accuracy.
 
 ## Read the docs first
 
@@ -44,7 +38,7 @@ Before asking anything, read what the project already knows. Expect this layout:
     └── 0002-*.md
 ```
 
-If `CONTEXT-MAP.md` exists, read it first to identify the relevant bounded context. In multi-context repos also check `src/<context>/CONTEXT.md` and `src/<context>/docs/adr/`. If any of these don't exist, proceed silently — don't flag their absence or suggest creating them upfront. They get created lazily, only when a term or decision actually crystallizes.
+If `CONTEXT-MAP.md` exists, read it first to identify the relevant bounded context. In multi-context repos also check `src/<context>/CONTEXT.md` and `src/<context>/docs/adr/`. If any of these don't exist, say so in one line and continue — the user can redirect. They get created lazily, only when a term or decision actually crystallizes.
 
 When your output names a domain concept, use the term as CONTEXT.md defines it. If a term conflicts with the glossary, call it out: "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?" If the concept isn't in the glossary yet, either you're inventing language the project doesn't use, or there's a real gap worth a new entry.
 
@@ -154,16 +148,7 @@ Each line should map to a test, manual check, playtest, visual review, or accept
 
 After the user resolves something worth keeping:
 
-- **New or sharpened domain term** → add/update CONTEXT.md using `../grill-with-docs/CONTEXT-FORMAT.md`.
-- **High-reversal-cost decision with a real trade-off** → write an ADR using `../grill-with-docs/ADR-FORMAT.md`.
+- **New or sharpened domain term** → add/update CONTEXT.md using `./CONTEXT-FORMAT.md`.
+- **High-reversal-cost decision with a real trade-off** → write an ADR using `./ADR-FORMAT.md`.
 
 Skip durable docs for easily reversed or unsurprising choices. The durable artifact for every converge session is `question.md`; CONTEXT.md and ADRs are only for knowledge future sessions should not rediscover.
-
-## Anti-patterns
-
-- One question per turn when 1-3 high-value questions would resolve the same space faster.
-- Asking what docs or code already answer.
-- Grilling past high-stakes ambiguity.
-- EARS-style "WHEN… the system shall…" criteria.
-- Implementation-first wording when user-visible behavior is the point.
-- Long prose specs that duplicate `question.md` and make `slice-plan` harder to use.
