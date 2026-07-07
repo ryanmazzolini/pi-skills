@@ -1,9 +1,9 @@
 ---
 name: "design-an-interface"
 description:
-  Generate multiple radically different interface designs for a module or API, then compare
-  tradeoffs. Use when designing module boundaries, public APIs, service contracts, or when the user
-  wants to "design it twice" before implementation.
+  Generate multiple meaningfully different interface designs for a module or API and compare
+  tradeoffs. Use when designing module boundaries or public APIs, or to "design it twice" before
+  implementation.
 license: "MIT; adapted from mattpocock/skills"
 ---
 
@@ -15,7 +15,6 @@ meaningfully different designs, then compare them before implementation.
 ## Rules
 
 - Design only the interface shape; do not implement it unless the user explicitly asks afterward.
-- Make the designs meaningfully different, not small variations.
 - Optimize for deep modules: small interfaces that hide substantial complexity.
 - Compare designs in prose. Tables are okay for summaries, but the reasoning matters most.
 - If subagents are available, use them to generate independent designs with different constraints.
@@ -59,29 +58,8 @@ For each design, provide:
 
 ### 3. Present designs sequentially
 
-Show each design clearly before comparison so the user can absorb it.
-
-Use this shape:
-
-```md
-## Design A: [Name]
-
-### Interface
-
-[signature/contract]
-
-### Usage
-
-[example]
-
-### What it hides
-
-- ...
-
-### Trade-offs
-
-- ...
-```
+Show each design clearly — name, interface, usage, what it hides, trade-offs — before comparison so
+the user can absorb it.
 
 ### 4. Compare designs
 

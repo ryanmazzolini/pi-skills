@@ -1,11 +1,11 @@
 ---
 name: "converge"
-description: Align on a plan or feature in a few batched questions, recording decisions and acceptance criteria in question.md. Use when the user wants to stress-test a plan, be "grilled", or align before building.
+description: Align on a plan or feature in a few batched questions, recording decisions and acceptance criteria in question.md. Use when the user wants to be "grilled" on a plan or align before building.
 ---
 
 # Converge
 
-Reach shared understanding in as few turns as possible, then preserve it in a durable `question.md` that `slice-plan` can turn into `plan.md`. Ground the alignment in CONTEXT.md and ADRs when they exist, and use question-*selection* discipline instead of a one-at-a-time interview.
+Reach shared understanding in as few turns as possible, then preserve it in a durable `question.md` that `slice-plan` can turn into `plan.md`.
 
 Most alignment uncertainty lives in 2-3 load-bearing decisions. Resolve everything else by reading docs/code or by stating an assumption the user can veto.
 
@@ -23,7 +23,7 @@ Write/update:
   board/        # optional; do not create during converge
 ```
 
-Keep `question.md` compact enough to read at the start of a fresh session. It is a decision log, not a transcript. Write it in plain language: main point first, active voice, user outcomes over implementation mechanics where that preserves accuracy.
+Keep `question.md` compact enough to read at the start of a fresh session. It is a decision log, not a transcript. Prefer user outcomes over implementation mechanics where that preserves accuracy.
 
 ## Read the docs first
 
@@ -49,7 +49,7 @@ Treat the plan as a search space. Before asking, estimate two things about each 
 - **Entropy** — how evenly the plausible answers split the remaining design space. A decision you can already guess is near-zero entropy; don't spend a question on it.
 - **Reversal cost** — how expensive it is to undo. Data shapes, public contracts, and core model decisions are expensive; surface details like copy, thresholds, and presentation are cheap.
 
-Ask only decisions that are **high-entropy AND high-reversal-cost**. State everything else as an assumption. This maximizes bits resolved per user turn instead of walking every branch of the tree.
+Ask only decisions that are **high-entropy AND high-reversal-cost**. State everything else as an assumption.
 
 ## The loop
 

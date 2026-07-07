@@ -1,9 +1,8 @@
 ---
 name: "ubiquitous-language"
 description:
-  Extract and harden a DDD-style ubiquitous language glossary from the current conversation or
-  codebase context, flag ambiguities, and propose canonical terms. Use when defining domain terms,
-  building a glossary, clarifying overloaded language, or discussing DDD/domain models.
+  Extract and harden a DDD-style domain glossary, flagging ambiguous or overloaded terms. Use when
+  defining domain terms or discussing DDD/domain models.
 license: "MIT; adapted from mattpocock/skills"
 ---
 
@@ -87,12 +86,4 @@ For `CONTEXT.md`, use the existing file's style. If no style exists, prefer:
 - Flag conflicts explicitly with a recommendation.
 - Write a short example dialogue that demonstrates the terms interacting naturally.
 
-## Re-running
-
-When invoked again:
-
-1. Read the existing glossary/context file.
-2. Incorporate new terms from later discussion.
-3. Update definitions if understanding has changed.
-4. Re-flag unresolved ambiguities.
-5. Refresh the example dialogue if new terms changed the domain story.
+When invoked again, update the existing glossary in place and re-flag unresolved ambiguities.
