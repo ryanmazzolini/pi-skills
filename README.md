@@ -91,8 +91,7 @@ This README is the map. The family README files have the details.
 | `notion-cli` | Use the Notion `ntn` CLI for pages, data sources, and API calls | — |
 | `architecture-review` | Architecture review lens for design tradeoffs and operability | — |
 | `security-review` | High-signal AppSec review for OWASP-style risks, auth/authz, injection, XSS, SSRF, secrets, CI/CD and GitOps risk, and sensitive data exposure | — |
-| `improve-codebase-architecture` | Find deep-module refactor opportunities that improve testability and navigability | [mattpocock](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
-| `simplify-codebase-architecture` | Find pragmatic refactor opportunities by reducing repeated knowledge and deleting shallow abstraction | — |
+| `simplify-codebase-architecture` | Find pragmatic refactor opportunities: delete shallow abstraction, merge coupled code, deepen modules | [mattpocock improve-codebase-architecture](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
 | `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
 | `shape-first` | Human-in-the-loop coding loop for domain shapes, boundaries, TODOs, implementation, and drift checks | [ThePrimeagen](https://youtu.be/Aie0nYktsNA) |
 | `converge` | Fast durable alignment loop that writes `question.md` plus acceptance criteria for lightweight planning; updates CONTEXT.md and ADRs as decisions crystallize | [mattpocock grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |

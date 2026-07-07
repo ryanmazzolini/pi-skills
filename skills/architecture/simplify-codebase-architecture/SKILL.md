@@ -1,9 +1,9 @@
 ---
 name: "simplify-codebase-architecture"
 description:
-  Find pragmatic refactor opportunities by reducing repeated knowledge, deleting shallow abstraction,
-  and adding seams only when the code has earned them. Use when simplifying architecture,
-  questioning abstractions, consolidating tightly coupled code, or making tests less mock-heavy.
+  Find refactor opportunities that make code semantically smaller — delete shallow abstraction,
+  merge coupled code, deepen modules. Use when improving or simplifying architecture, questioning
+  abstractions, or reducing mock-heavy tests.
 ---
 
 # Simplify Codebase Architecture
@@ -24,15 +24,9 @@ whether an abstraction pays rent, classifying dependencies, or drafting a refact
 - Prefer deleting, inlining, or merging proven complexity before adding a new seam.
 - Accept some duplication while the shape is still unclear. Compress only after repeated knowledge is
   visible.
-- A useful module hides decisions that callers would otherwise repeat. A pass-through module does
-  not earn its keep.
-- Treat the interface as everything callers must know: types, ordering, invariants, errors,
-  configuration, performance, and side effects.
 - Add new concepts or nomenclature only when the name lets maintainers stop carrying concrete
   details in their heads. A good name compresses existing behavior; it does not invent a category the
   code has not earned.
-- Add a seam only when behavior actually varies, an I/O boundary forces it, or a realistic local
-  substitute is needed at an existing boundary. A seam with one real adapter is probably speculation.
 - Prefer tests that exercise stable behavior through the module interface over tests that mock
   internal choreography.
 - Stop if the best answer is "do nothing yet." Not every rough edge deserves architecture work.
@@ -59,7 +53,8 @@ Look for evidence such as:
   latency, retries, resource ownership, concurrency, or failure modes
 
 For broad or unfamiliar codebases, sample a few representative paths first; only expand the search if
-the evidence points to repeated pressure.
+the evidence points to repeated pressure. Exploration is done when each candidate cluster has
+concrete code evidence attached — file paths and the repeated knowledge they share — not a hunch.
 
 ### 2. Classify what the code wants
 
