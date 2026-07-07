@@ -5,8 +5,6 @@ description: Create or update a draft pull request from the current branch. Use 
 
 # Pull Request
 
-Use this skill when opening or updating a pull request from the current branch.
-
 ## Workflow
 
 1. Inspect the branch diff, commits, base branch, and existing PR status.
@@ -20,7 +18,7 @@ Use this skill when opening or updating a pull request from the current branch.
 - Draft the PR from the diff and commits against the base branch.
 - Include an issue markdown link (eg. [sc-123](..)) when one is available from the branch name or user context.
 - Keep the PR body slim with these sections:
-  - `Description` — explain the motivation first, then the concrete change. Describe the product/codebase state before and after, not the development process.
+  - `Description` — explain the motivation first, then the concrete change.
   - `Details` — high-level implementation notes only when they add useful context
   - `Testing` — repo-level verification when practical, relevant full-suite tests/checks, anything still needed, and screenshots/videos when UI changed (use tools like playwright or agent-browser for screenshots).
 - Ask before pushing, creating, or updating a PR.
