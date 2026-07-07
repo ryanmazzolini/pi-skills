@@ -1,6 +1,6 @@
 ---
 name: "handoff"
-description: Compact the current conversation into a portable markdown handoff document for another agent or fresh session. Use when passing context across sessions/tools, splitting out-of-scope work, starting a focused prototype/review/debug thread, or when the user asks for a handoff.
+description: Compact the current conversation into a markdown handoff document another agent or fresh session can continue from. Use when passing context to another session or the user asks for a handoff.
 argument-hint: "What will the next session focus on?"
 license: "MIT; adapted from mattpocock/skills"
 ---
@@ -11,7 +11,7 @@ Write a focused handoff document so another agent or fresh session can continue 
 
 ## Rules
 
-- Save the handoff to the OS temp directory, not the current workspace, unless the user explicitly asks for a durable repo artifact.
+- Save the handoff to `.plans/` by default, creating the directory if missing. Use the OS temp directory only when the user wants a throwaway handoff or there is no repo.
 - If the user passed arguments, treat them as the next session's purpose and tailor the document to that focus.
 - Reference existing artifacts instead of duplicating them: PRPs, RPI plans, boards, thoughts, ADRs, issues, commits, diffs, screenshots, logs, or prototypes.
 - Include a `Suggested skills` section with relevant skills the next agent should invoke. Prefer installed repo skills such as `rpi`, `research`, `converge`, `improve-codebase-architecture`, `frontend-react`, or `typescript` only when they actually fit.
@@ -21,21 +21,11 @@ Write a focused handoff document so another agent or fresh session can continue 
 
 ## Filename
 
-Use a descriptive temp filename:
-
 ```text
-handoff-<short-subject>.md
+.plans/YYYY-MM-DD-handoff-<short-subject>.md
 ```
 
-Derive `<short-subject>` from the handoff focus or current task: lowercase, kebab-case, human-readable, usually 2-5 words.
-
-Examples:
-
-- `handoff-auth-refactor.md`
-- `handoff-prototype-state-machine.md`
-- `handoff-rpi-handover-rename.md`
-
-Do not create a literal `handoff-XXXXXX.md`. If the chosen filename exists, add a small suffix like `-2`.
+Derive `<short-subject>` from the handoff focus: lowercase, kebab-case, usually 2-5 words, e.g. `.plans/2026-07-07-handoff-auth-refactor.md`. If the filename exists, add a small suffix like `-2`.
 
 ## Document shape
 

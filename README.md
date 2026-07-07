@@ -83,7 +83,7 @@ This README is the map. The family README files have the details.
 | `research` | Standalone technical research | — |
 | `teach` | Build a durable teaching workspace with missions, lessons, references, resources, and learning records | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/teach) |
 | `writing-great-skills` | User-invoked reference for writing predictable, low-context-load skills | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/writing-great-skills) |
-| `handoff` | Write a portable temp-dir markdown handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
+| `handoff` | Write a date-stamped `.plans/` handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
 | `tiger-team` | Orchestrate pi-subagents implementers and reviewers across deterministic ticket worktrees with integration, security scrutiny, and fix loops | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
 | `dynamic-workflows` | Create pi-subagents chain workflows with dynamic fanout, model profiles, and acceptance gates | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
