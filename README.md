@@ -23,7 +23,7 @@ Use `pi config` to enable or disable individual skills after install.
 /plugin install typescript-nextjs@ryan-pi-skills
 ```
 
-The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) exposes grouped plugin namespaces backed directly by canonical `skills/<namespace>/<skill>` directories. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple`, `/diffity:diffity-review`, and `/team:tiger-team`.
+The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) exposes grouped plugin namespaces backed directly by canonical `skills/<namespace>/<skill>` directories. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple` and `/team:tiger-team`.
 
 ## Update
 
@@ -58,7 +58,6 @@ A few things to know up front:
 
 | Tool | Used by | Notes |
 |------|---------|-------|
-| [Diffity](https://www.npmjs.com/package/diffity) | `diffity/*` | Browser-first diff review, comments, guided tours, and learning workflows |
 | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut` | Requires Shortcut auth/config |
 | [Obsidian CLI](https://obsidian.md/help/cli) | `obsidian-vault` | Requires Obsidian desktop CLI to be enabled |
 | Notion CLI (`ntn`) | `notion-cli` | Installed with mise; requires Notion auth/token setup |
@@ -71,7 +70,6 @@ This README is the map. The family README files have the details.
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
 | `rpi` | Single-skill durable workflow for alignment questions, PRP-style plans, compact local boards, implementation, QA/verification, and fresh-session handovers | [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
-| `diffity/*` | Browser-first diff review, file-tree review, guided tours, and learning workflows | [`skills/diffity/README.md`](./skills/diffity/README.md) | [Diffity](https://www.npmjs.com/package/diffity) |
 
 ## Standalone skills
 
