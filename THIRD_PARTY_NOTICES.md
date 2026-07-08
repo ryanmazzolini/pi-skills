@@ -10,6 +10,7 @@ Adapted artifacts:
 - `skills/architecture/simplify-codebase-architecture` (from `improve-codebase-architecture`)
 - `skills/architecture/ubiquitous-language`
 - `skills/converge` (from `grill-me` and `grill-with-docs`)
+- `skills/diagnosing-bugs`
 - `skills/handoff`
 - `skills/productivity/teach`
 - `skills/productivity/writing-great-skills`
