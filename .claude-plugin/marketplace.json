@@ -88,7 +88,7 @@
       "source": "./skills/ux-accessibility",
       "description": "Frontend UX, HCI, accessibility, and product-flow review guidance",
       "strict": false,
-      "skills": ["./frontend-guidelines", "./frontend-hci-review", "./hci"]
+      "skills": ["./frontend-hci-review", "./hci"]
     },
     {
       "name": "ruby-sorbet-rails",
@@ -122,7 +122,7 @@
       "source": "./skills/ticket-worktree",
       "description": "Ticket-oriented worktree discovery and creation workflow",
       "strict": false,
-      "skills": ["./ticket-worktree"]
+      "skills": ["./ticket-worktree", "./ticket-worktree-cleanup"]
     },
     {
       "name": "shortcut",

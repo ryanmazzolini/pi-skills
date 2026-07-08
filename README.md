@@ -78,6 +78,7 @@ This README is the map. The family README files have the details.
 | Skill | Description | References |
 |-------|-------------|------------|
 | `ticket-worktree` | Create or reuse ticket-oriented worktrees folders for Shortcut or GitHub issue work | — |
+| `ticket-worktree-cleanup` | User-invoked cleanup for completed ticket worktree folders after git-state checks | — |
 | `commit-simple` | Branch, commit, and push changes | — |
 | `commit-pr` | Create or update draft pull requests | — |
 | `research` | Standalone technical research | — |
@@ -99,14 +100,13 @@ This README is the map. The family README files have the details.
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
 | `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
 | `ruby-sorbet-rails` | Ruby/Rails guidance for Rails-native structures, Rails commands/migrations, strict Sorbet/Tapioca RBIs, RuboCop, db schema, and GraphQL federation artifacts | [Sorbet RBI docs](https://sorbet.org/docs/rbi), [Tapioca](https://github.com/Shopify/tapioca), [Rails migrations](https://guides.rubyonrails.org/active_record_migrations.html) |
-| `frontend-guidelines` | Frontend defaults for UX, accessibility, and UI tradeoffs | — |
 | `frontend-hci-review` | Progressive HCI/product-flow review; starts with friction candidates before design | [`skills/ux-accessibility/frontend-hci-review/SKILL.md`](./skills/ux-accessibility/frontend-hci-review/SKILL.md) |
 | `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance | — |
 | `context-guidelines` | Context engineering principles for AI config | [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) |
 | `explain-code` | Code explanations with diagrams and analogies | — |
 | `typescript` | TypeScript strict mode conventions | — |
 | `nextjs-app-router` | Next.js App Router patterns | — |
-| `hci` | Usability, accessibility, responsive design | [`skills/ux-accessibility/hci/SKILL.md`](./skills/ux-accessibility/hci/SKILL.md), [WCAG 2.1 Quick Reference](https://www.w3.org/WAI/WCAG21/quickref/) |
+| `hci` | Usability, accessibility, responsive design, and interaction states for human-facing surfaces | [`skills/ux-accessibility/hci/SKILL.md`](./skills/ux-accessibility/hci/SKILL.md), [WCAG 2.1 Quick Reference](https://www.w3.org/WAI/WCAG21/quickref/) |
 | `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation | [agent-browser](https://github.com/vercel-labs/agent-browser) |
 
 ## Extensions
@@ -115,6 +115,7 @@ This README is the map. The family README files have the details.
 |-----------|-------------|
 | `rpi` | Adds `/rpi` workflow launch/candidates plus readable `/rpi handover <brief>` fresh sessions |
 | `dynamic-workflows` | Adds autonomous `/chain-workflow <task>`, `/chain-workflow wizard`, `/chain-workflow status`, explicit pi-subagents chain-workflow routing, and compact/live chain-workflow status UI |
+| `editor-links` | Rewrites existing relative/absolute paths in assistant output into clickable `zed://file` links |
 
 ## Contributing
 
