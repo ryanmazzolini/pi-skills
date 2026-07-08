@@ -10,63 +10,64 @@
       "source": "./skills/rpi",
       "description": "Durable local-first planning and implementation workflow",
       "strict": false,
-      "skills": ["./rpi"]
+      "skills": [
+        "./rpi"
+      ]
     },
     {
       "name": "team",
       "source": "./skills/team",
       "description": "Tiger-team implementation and review orchestration with host-provided subagents",
       "strict": false,
-      "skills": ["./tiger-team"]
+      "skills": [
+        "./tiger-team"
+      ]
     },
     {
       "name": "commit",
       "source": "./skills/commit",
       "description": "Git commit and pull request workflows",
       "strict": false,
-      "skills": ["./commit-pr", "./commit-simple"]
+      "skills": [
+        "./commit-pr",
+        "./commit-simple"
+      ]
     },
     {
       "name": "research",
       "source": "./skills/research",
       "description": "Technical research and spike documentation",
       "strict": false,
-      "skills": ["./research"]
+      "skills": [
+        "./research"
+      ]
     },
     {
       "name": "productivity",
       "source": "./skills/productivity",
       "description": "Durable learning and personal productivity workflows",
       "strict": false,
-      "skills": ["./teach", "./writing-great-skills"]
+      "skills": [
+        "./teach",
+        "./writing-great-skills"
+      ]
     },
     {
       "name": "explain",
       "source": "./skills/explain",
       "description": "Code explanations with diagrams and analogies",
       "strict": false,
-      "skills": ["./explain-code"]
+      "skills": [
+        "./explain-code"
+      ]
     },
     {
       "name": "agent-browser",
       "source": "./skills/agent-browser",
       "description": "Browser automation via the agent-browser CLI",
       "strict": false,
-      "skills": ["./agent-browser"]
-    },
-    {
-      "name": "diffity",
-      "source": "./skills/diffity",
-      "description": "Browser-first diff review, resolution, tours, and learning workflows",
-      "strict": false,
       "skills": [
-        "./diffity-diff",
-        "./diffity-learn",
-        "./diffity-resolve",
-        "./diffity-resolve-tree",
-        "./diffity-review",
-        "./diffity-tour",
-        "./diffity-tree"
+        "./agent-browser"
       ]
     },
     {
@@ -74,28 +75,39 @@
       "source": "./skills/ai-authoring",
       "description": "Context engineering guidance for AI configuration",
       "strict": false,
-      "skills": ["./context-guidelines"]
+      "skills": [
+        "./context-guidelines"
+      ]
     },
     {
       "name": "typescript-nextjs",
       "source": "./skills/typescript-nextjs",
       "description": "TypeScript, Next.js App Router, and React implementation guidance",
       "strict": false,
-      "skills": ["./typescript", "./frontend-react", "./nextjs-app-router"]
+      "skills": [
+        "./typescript",
+        "./frontend-react",
+        "./nextjs-app-router"
+      ]
     },
     {
       "name": "ux-accessibility",
       "source": "./skills/ux-accessibility",
       "description": "Frontend UX, HCI, accessibility, and product-flow review guidance",
       "strict": false,
-      "skills": ["./frontend-hci-review", "./hci"]
+      "skills": [
+        "./frontend-hci-review",
+        "./hci"
+      ]
     },
     {
       "name": "ruby-sorbet-rails",
       "source": "./skills/ruby-sorbet-rails",
       "description": "Ruby/Rails implementation and review with Sorbet and Tapioca",
       "strict": false,
-      "skills": ["./ruby-sorbet-rails"]
+      "skills": [
+        "./ruby-sorbet-rails"
+      ]
     },
     {
       "name": "architecture",
@@ -115,35 +127,47 @@
       "source": "./skills/security",
       "description": "High-signal application security review guidance",
       "strict": false,
-      "skills": ["./security-review"]
+      "skills": [
+        "./security-review"
+      ]
     },
     {
       "name": "ticket-worktree",
       "source": "./skills/ticket-worktree",
       "description": "Ticket-oriented worktree discovery and creation workflow",
       "strict": false,
-      "skills": ["./ticket-worktree", "./ticket-worktree-cleanup"]
+      "skills": [
+        "./ticket-worktree",
+        "./ticket-worktree-cleanup"
+      ]
     },
     {
       "name": "shortcut",
       "source": "./skills/shortcut",
       "description": "Shortcut story workflows via the short CLI",
       "strict": false,
-      "skills": ["./shortcut"]
+      "skills": [
+        "./shortcut"
+      ]
     },
     {
       "name": "notes",
       "source": "./skills/notes",
       "description": "Obsidian and Notion CLI note workflows",
       "strict": false,
-      "skills": ["./notion-cli", "./obsidian-vault"]
+      "skills": [
+        "./notion-cli",
+        "./obsidian-vault"
+      ]
     },
     {
       "name": "godot",
       "source": "./skills/godot",
       "description": "Gameplay-oriented defaults for Godot projects",
       "strict": false,
-      "skills": ["./godot-gameplay-guidelines"]
+      "skills": [
+        "./godot-gameplay-guidelines"
+      ]
     }
   ]
 }
