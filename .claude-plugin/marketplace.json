@@ -168,6 +168,14 @@
       "skills": [
         "./godot-gameplay-guidelines"
       ]
+    },
+    {
+      "name": "debugging",
+      "source": "./skills/debugging",
+      "description": "Debugging discipline: feedback-loop-first bug diagnosis.",
+      "skills": [
+        "./diagnosing-bugs"
+      ]
     }
   ]
 }
