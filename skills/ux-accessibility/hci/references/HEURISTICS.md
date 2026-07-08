@@ -1,6 +1,6 @@
 # Usability Heuristics
 
-Use these as review lenses, not as a rigid checklist. Tie each issue to a concrete user task and a visible UI behavior.
+Use these as review lenses, not as a rigid checklist. Tie each issue to a concrete user task and a visible behavior of the surface — UI, API response, CLI output, or error message.
 
 ## System status
 
