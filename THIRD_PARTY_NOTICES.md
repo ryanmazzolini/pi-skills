@@ -4,18 +4,16 @@
 
 Some skills in this package are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills), licensed under the MIT License.
 
-Adapted skills:
+Adapted artifacts:
 
-- `design-an-interface`
-- `grill-me`
-- `grill-with-docs`
-- `handoff`
-- `improve-codebase-architecture`
-- `ubiquitous-language`
-- `rpi/guides/tdd.md`
-- `teach`
-- `writing-great-skills`
-- `writing-great-skills/GLOSSARY.md`
+- `skills/architecture/design-an-interface`
+- `skills/architecture/simplify-codebase-architecture` (from `improve-codebase-architecture`)
+- `skills/architecture/ubiquitous-language`
+- `skills/converge` (from `grill-me` and `grill-with-docs`)
+- `skills/handoff`
+- `skills/productivity/teach`
+- `skills/productivity/writing-great-skills`
+- `skills/rpi/rpi/guides/tdd.md`
 
 ```text
 MIT License
