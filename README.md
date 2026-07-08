@@ -93,6 +93,7 @@ This README is the map. The family README files have the details.
 | `simplify-codebase-architecture` | Find pragmatic refactor opportunities: delete shallow abstraction, merge coupled code, deepen modules | [mattpocock improve-codebase-architecture](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
 | `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
 | `shape-first` | Human-in-the-loop coding loop for domain shapes, boundaries, TODOs, implementation, and drift checks | [ThePrimeagen](https://youtu.be/Aie0nYktsNA) |
+| `diagnosing-bugs` | Diagnosis loop for hard bugs: build a tight red-capable feedback loop before hypothesising | [mattpocock diagnosing-bugs](https://github.com/mattpocock/skills/tree/main/skills/engineering/diagnosing-bugs) |
 | `converge` | Fast durable alignment loop that writes `question.md` plus acceptance criteria for lightweight planning; updates CONTEXT.md and ADRs as decisions crystallize | [mattpocock grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
 | `slice-plan` | Write compact RPI-compatible `plan.md` artifacts with MVP vertical slices from acceptance criteria; board optional | — |
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
