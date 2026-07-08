@@ -15,6 +15,10 @@ Adapted artifacts:
 - `skills/productivity/writing-great-skills`
 - `skills/rpi/rpi/guides/tdd.md`
 
+## Leonxlnx/taste-skill
+
+`skills/typescript-nextjs/frontend-react/references/visual-design.md` adapts rules from [`Leonxlnx/taste-skill`](https://github.com/Leonxlnx/taste-skill), licensed under the MIT License (Copyright (c) 2026 Leonxlnx; same MIT terms as below).
+
 ```text
 MIT License
 

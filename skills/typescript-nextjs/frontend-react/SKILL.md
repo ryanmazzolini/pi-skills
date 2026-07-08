@@ -1,6 +1,6 @@
 ---
 name: "frontend-react"
-description: "React/Next.js TSX implementation and review: readable JSX, conditional rendering, client/server boundaries, accessibility, forms, async states, and PR feedback."
+description: "React/Next.js TSX implementation and review: readable JSX, conditional rendering, client/server boundaries, accessibility, forms, async states, visual design, and PR feedback."
 ---
 
 # Frontend React
@@ -25,6 +25,7 @@ Read only the references that match the task:
 
 - [references/react-components.md](references/react-components.md) when authoring, reviewing, or refactoring TSX components.
 - [references/conditional-rendering.md](references/conditional-rendering.md) when JSX or `className` logic has multiple states.
+- [references/visual-design.md](references/visual-design.md) when styling new UI or choosing typography, color, layout, or motion.
 - [references/tailwind-shadcn.md](references/tailwind-shadcn.md) when working with Tailwind-heavy TSX, shadcn/ui primitives, `cn`, `cva`, or feature-specific colors/tokens.
 - [references/nextjs-app-router.md](references/nextjs-app-router.md) when changing server/client boundaries, routing, data loading, server actions, or route states.
 - [references/accessibility.md](references/accessibility.md) for React-specific accessibility pressure tests before using the deeper `hci` references.
