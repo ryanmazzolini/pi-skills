@@ -115,7 +115,7 @@ This README is the map. The family README files have the details.
 |-----------|-------------|
 | `rpi` | Adds `/rpi` workflow launch/candidates plus readable `/rpi handover <brief>` fresh sessions |
 | `dynamic-workflows` | Adds autonomous `/chain-workflow <task>`, `/chain-workflow wizard`, `/chain-workflow status`, explicit pi-subagents chain-workflow routing, and compact/live chain-workflow status UI |
-| `editor-links` | Rewrites existing relative/absolute paths in assistant output into clickable `zed://file` links |
+| `editor-links` | Rewrites existing relative/absolute paths in assistant output into clickable links that open in Zed via a localhost bridge (Ghostty only opens http links) |
 
 ## Contributing
 
