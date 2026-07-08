@@ -176,6 +176,30 @@
       "skills": [
         "./diagnosing-bugs"
       ]
+    },
+    {
+      "name": "converge",
+      "source": "./skills",
+      "description": "Batched alignment loop that records decisions and acceptance criteria in question.md.",
+      "skills": [
+        "./converge"
+      ]
+    },
+    {
+      "name": "handoff",
+      "source": "./skills",
+      "description": "Compact the conversation into a handoff document for another session.",
+      "skills": [
+        "./handoff"
+      ]
+    },
+    {
+      "name": "slice-plan",
+      "source": "./skills",
+      "description": "Turn acceptance criteria into a compact plan.md of MVP vertical slices.",
+      "skills": [
+        "./slice-plan"
+      ]
     }
   ]
 }
