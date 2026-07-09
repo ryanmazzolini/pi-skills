@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "description": "Opinionated pi skills — planning, git workflows, code review, and dev conventions",
   "keywords": ["pi-package"],
+  "bin": {
+    "daily-report": "skills/notes/daily-report/scripts/daily-report.mjs"
+  },
   "scripts": {
+    "test": "npm run validate:skills && node --test",
     "validate:skills": "node scripts/validate-skills.mjs"
   },
   "license": "MIT",
