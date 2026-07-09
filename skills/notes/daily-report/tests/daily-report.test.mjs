@@ -308,6 +308,9 @@ test("CLI launcher install and removal are idempotent", (t) => {
   assert.equal(first.status, 0, first.stderr);
   const launcher = path.join(bin, "daily-report");
   assert.equal(fs.realpathSync(launcher), fs.realpathSync(CLI_PATH));
+  const invocation = spawnSync(launcher, ["--help"], { encoding: "utf8" });
+  assert.equal(invocation.status, 0, invocation.stderr);
+  assert.match(invocation.stdout, /daily-report run PROFILE/);
   const second = install();
   assert.equal(second.status, 0, second.stderr);
   const removal = spawnSync(process.execPath, [CLI_PATH, "remove-cli", "--bin-dir", bin], {
