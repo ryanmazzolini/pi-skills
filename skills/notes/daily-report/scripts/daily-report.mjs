@@ -338,7 +338,16 @@ export function main(argv = process.argv.slice(2)) {
   return 0;
 }
 
-if (path.resolve(process.argv[1] || "") === path.resolve(SCRIPT_PATH)) {
+function invokedAsMain() {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(SCRIPT_PATH);
+  } catch {
+    return path.resolve(process.argv[1]) === path.resolve(SCRIPT_PATH);
+  }
+}
+
+if (invokedAsMain()) {
   try {
     process.exitCode = main();
   } catch (error) {
