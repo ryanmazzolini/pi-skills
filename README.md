@@ -54,12 +54,13 @@ A few things to know up front:
 
 ## Optional tooling
 
-`pi` is the only base dependency. The tools below are optional and only needed for the matching skills.
+`pi` is the package-wide base dependency. `daily-report` also requires Git; the tools below are optional and only needed for matching skills or report sources.
 
 | Tool | Used by | Notes |
 |------|---------|-------|
-| [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut` | Requires Shortcut auth/config |
-| [Obsidian CLI](https://obsidian.md/help/cli) | `obsidian-vault` | Requires Obsidian desktop CLI to be enabled |
+| [GitHub CLI](https://cli.github.com/) | `daily-report` | Optional source; requires GitHub authentication |
+| [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut`, `daily-report` | Optional for daily reports; requires Shortcut auth/config |
+| [Obsidian CLI](https://obsidian.md/help/cli) | `obsidian-vault`, `inbox-wiki`, `vault-cleanup` | Requires Obsidian desktop CLI to be enabled |
 | Notion CLI (`ntn`) | `notion-cli` | Installed with mise; requires Notion auth/token setup |
 | [agent-browser](https://github.com/vercel-labs/agent-browser) | `agent-browser` | Browser automation CLI |
 
@@ -86,6 +87,9 @@ This README is the map. The family README files have the details.
 | `tiger-team` | Orchestrate pi-subagents implementers and reviewers across deterministic ticket worktrees with integration, security scrutiny, and fix loops | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
 | `dynamic-workflows` | Create pi-subagents chain workflows with dynamic fanout, model profiles, and acceptance gates | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
+| `daily-report` | Generate and reconcile OKF-compatible activity reports from local Git plus optional GitHub and Shortcut evidence | [OKF v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) |
+| `inbox-wiki` | Triage vault inbox captures into immutable raw sources and durable notes with human approval | — |
+| `vault-cleanup` | Audit and optionally repair vault metadata, links, assets, indexes, and legacy structure without inbox intake | — |
 | `obsidian-vault` | Use the Obsidian CLI for vault-aware note workflows | [Obsidian CLI](https://obsidian.md/help/cli) |
 | `notion-cli` | Use the Notion `ntn` CLI for pages, data sources, and API calls | — |
 | `architecture-review` | Architecture review lens for design tradeoffs and operability | — |

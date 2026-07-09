@@ -153,11 +153,14 @@
     {
       "name": "notes",
       "source": "./skills/notes",
-      "description": "Obsidian and Notion CLI note workflows",
+      "description": "Obsidian, Notion, vault intake, cleanup, and daily report workflows",
       "strict": false,
       "skills": [
+        "./daily-report",
+        "./inbox-wiki",
         "./notion-cli",
-        "./obsidian-vault"
+        "./obsidian-vault",
+        "./vault-cleanup"
       ]
     },
     {

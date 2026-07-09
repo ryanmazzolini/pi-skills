@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "defaults": {
+    "timezone": "America/New_York",
+    "maxReconcileDays": 7
+  },
+  "profiles": {
+    "work": {
+      "vault": "~/work-notes",
+      "gitRoots": ["~/git"],
+      "reportDirectory": "daily-reports",
+      "reportDays": ["mon", "tue", "wed", "thu", "fri"],
+      "schedule": "30 17 * * 1-5",
+      "github": {
+        "enabled": true,
+        "owners": ["OdekoTeam"]
+      },
+      "shortcut": {
+        "enabled": true,
+        "includeRequested": true
+      }
+    },
+    "personal": {
+      "vault": "~/personal/notes",
+      "gitRoots": ["~/personal"],
+      "reportDirectory": "daily-reports",
+      "github": {
+        "enabled": true
+      },
+      "shortcut": {
+        "enabled": false
+      }
+    }
+  }
+}
