@@ -132,13 +132,13 @@
       ]
     },
     {
-      "name": "ticket-worktree",
-      "source": "./skills/ticket-worktree",
-      "description": "Ticket-oriented worktree discovery and creation workflow",
+      "name": "ticket-workspace",
+      "source": "./skills/ticket-workspace",
+      "description": "Ticket workspaces: one folder per ticket, one git worktree per PR",
       "strict": false,
       "skills": [
-        "./ticket-worktree",
-        "./ticket-worktree-cleanup"
+        "./ticket-workspace",
+        "./ticket-workspace-cleanup"
       ]
     },
     {
