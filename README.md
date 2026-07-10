@@ -5,7 +5,6 @@ A collection of opinionated [Agent Skills](https://agentskills.io/) I use day-to
 ## Install
 
 
-
 ### pi
 
 ```bash
@@ -72,7 +71,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `rpi` | Auto-invoked durable workflow: reads the vault project folder, routes converge → slice-plan, pauses per slice, graduates a dated summary note into the vault | [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
+| `rpi` | Auto-invoked durable workflow: reads the vault project folder, routes converge → slice-plan, pauses per slice, graduates a dated summary note into the vault | [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) | — |
 
 ## Standalone skills
 
@@ -118,7 +117,6 @@ This README is the map. The family README files have the details.
 
 | Extension | Description |
 |-----------|-------------|
-| `rpi` | Adds `/rpi` workflow launch/candidates plus readable `/rpi handover <brief>` fresh sessions |
 | `dynamic-workflows` | Adds autonomous `/chain-workflow <task>`, `/chain-workflow wizard`, `/chain-workflow status`, explicit pi-subagents chain-workflow routing, and compact/live chain-workflow status UI |
 | `editor-links` | Rewrites existing relative/absolute paths in assistant output into clickable links that open in Zed via a localhost bridge (Ghostty only opens http links) |
 

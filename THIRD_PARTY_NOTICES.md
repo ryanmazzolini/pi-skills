@@ -14,7 +14,6 @@ Adapted artifacts:
 - `skills/handoff`
 - `skills/productivity/teach`
 - `skills/productivity/writing-great-skills`
-- `skills/rpi/rpi/guides/tdd.md`
 
 ## Leonxlnx/taste-skill
 
