@@ -1,15 +1,15 @@
 ---
 name: "slice-plan"
-description: Turn acceptance criteria or question.md into a compact plan.md of MVP vertical slices under .plans/. Use when planning implementation after converge, or when an rpi board would be overkill.
+description: Turn acceptance criteria or question.md into a compact plan.md of MVP vertical slices under .plans/. Use when planning implementation after converge or within an rpi workflow.
 ---
 
 # Slice Plan
 
-Turn aligned acceptance criteria into a compact durable `plan.md` that RPI can implement without requiring a board. This is the planning handoff after `converge`: `question.md` records alignment; `plan.md` records the MVP goal, vertical slices, verification, and deferred decisions.
+Turn aligned acceptance criteria into a compact durable `plan.md` that RPI can implement directly. This is the planning handoff after `converge`: `question.md` records alignment; `plan.md` records the MVP goal, vertical slices, verification, and deferred decisions.
 
 ## Artifact contract
 
-Prefer an existing RPI workflow directory. If none is given, use the RPI plans-root convention from `../rpi/SKILL.md`; `.plans/YYYY-MM-DD-slug/` is the default when no project convention exists.
+Prefer an existing RPI workflow directory. If none is given, use the RPI plans-root convention from `../rpi/rpi/SKILL.md`; `.plans/YYYY-MM-DD-slug/` is the default when no project convention exists.
 
 Write/update:
 
@@ -18,10 +18,7 @@ Write/update:
   question.md   # input from converge when available
   plan.md       # output from this skill
   qa.md         # optional verification findings later
-  board/        # optional; do not create by default
 ```
-
-Do not create `board/index.md` unless the user asks or tracking needs statuses, blockers, parallel work, or a long handoff. RPI's implement stage can choose the next highest-value outcome directly from `plan.md`.
 
 ## Inputs
 
@@ -134,4 +131,4 @@ Covers: [AC3]
 - Keep leaves concrete and everything above abstract.
 - Every slice must include verification and map back to acceptance criteria.
 - If a slice forces a new high-reversal-cost decision, use `converge`/ADR rules instead of burying the decision in a task.
-- After writing `plan.md`, ask whether to implement the first slice directly or create an optional board for tracking.
+- After writing `plan.md`, ask whether to implement the first slice.
