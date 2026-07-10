@@ -1,25 +1,34 @@
 ---
-name: "ticket-worktree"
-description: Create, find, or reuse ticket-based worktree folders for Shortcut stories or GitHub issues.
+name: "ticket-workspace"
+description: Create, find, or reuse ticket workspaces — one folder per Shortcut story or GitHub issue, one git worktree per PR inside. Use when starting ticket work, locating a ticket's worktrees, or adding a worktree for a stacked or multi-repo PR.
 ---
 
-# Ticket Worktree
+# Ticket Workspace
 
-Use this when starting or locating work for a ticket. A ticket gets one folder, and one or more repo worktrees live inside it:
+A ticket gets one workspace folder. Inside it, each PR gets its own git worktree, so any PR can be cut, revised, or rebased without switching branches anywhere:
 
 ```text
-<workspace-root>/worktrees/<ticket-slug>/<repo-worktree>/
+<workspace-root>/worktrees/<ticket-slug>/<pr-worktree>/
 ```
 
 Examples:
 
 ```text
-~/git/worktrees/sc-12345-short-description/api/
-~/git/worktrees/sc-12345-short-description/web/
-~/personal/worktrees/gh-987-short-description/pi-skills/
+~/git/worktrees/sc-12345-invoice-match/api/           # single PR against api
+~/git/worktrees/sc-12345-invoice-match/api-graphql/   # stacked PR 2, based on api's PR branch
+~/git/worktrees/sc-12345-invoice-match/web/           # separate repo, its own PR or stack
+~/personal/worktrees/gh-987-fix-roles/pi-skills/
 ```
 
 `<workspace-root>` is flexible. Do not assume `~/git`; common roots include `~/git`, `~/personal`, and project-specific directories.
+
+## Worktrees are PR-shaped
+
+- One worktree per PR. Add a worktree when its PR becomes real, not upfront.
+- A single PR against a repo names its worktree after the repo (`api/`).
+- Stacked PRs in one repo get one worktree each, named `<repo>-<pr-slug>` (`api/`, then `api-graphql/`). Base each stacked branch on the previous PR's branch, not the default branch.
+- Multi-repo tickets give each repo its own worktree or its own stack.
+- A stack cascades: after amending an earlier PR, rebase the later worktrees onto it.
 
 ## Ticket folder names
 
@@ -48,13 +57,11 @@ Avoid broad home-directory scans. Use targeted, shallow `find` commands.
 
 ## Create a workspace
 
-To create a new ticket workspace:
-
 1. Start from a Shortcut story or GitHub issue. If missing, ask for one or offer to search.
 2. Fetch the title when tools are available:
    - Shortcut: `short story <id> -q`
    - GitHub: `gh issue view <number>` from the relevant repo
-3. Propose the ticket folder, repo worktree paths, branch names, and base branches.
+3. Propose the ticket folder, the worktree for the first PR (and base branches for any planned stack), and branch names.
 4. Ask before running `mkdir`, `git worktree add`, branch creation, or checkout.
 
 ## Branch names
@@ -69,9 +76,8 @@ Follow the repo's branch convention when it has one.
 
 ## Rules
 
-- Treat the ticket folder as the unit of work.
-- Reuse existing ticket folders; do not create duplicates.
-- Keep root selection flexible and explicit.
-- Ask before choosing between plausible roots.
+- Treat the ticket workspace as the unit of work.
+- Reuse existing workspaces; do not create duplicates.
+- Keep root selection flexible and explicit; ask before choosing between plausible roots.
 - Do not create tickets, worktrees, branches, commits, pushes, or PRs without confirmation.
 - Do not access secrets, credential files, or `.env` files while discovering roots or repos.

@@ -34,7 +34,7 @@ Use the best subagent mechanism the current host provides:
 
 ## Worktrees
 
-Use the current ticket-worktree folder when available:
+Use the current ticket-workspace folder when available:
 
 ```text
 <workspace-root>/worktrees/<ticket-slug>/

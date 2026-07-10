@@ -1,20 +1,20 @@
 ---
-name: "ticket-worktree-cleanup"
-description: "Safely remove completed ticket-worktree folders after checking git state."
+name: "ticket-workspace-cleanup"
+description: "Safely remove completed ticket workspace folders after checking git state."
 disable-model-invocation: true
 argument-hint: "ticket id, slug, or path"
 ---
 
-# Ticket Worktree Cleanup
+# Ticket Workspace Cleanup
 
 The user invoked this skill to retire a ticket workspace. Cleanup is destructive; run it like a lockout/tagout.
 
 ## Scope
 
-A ticket workspace is the ticket folder used by `ticket-worktree`:
+A ticket workspace is the ticket folder used by `ticket-workspace`:
 
 ```text
-<workspace-root>/worktrees/<ticket-slug>/<repo-worktree>/
+<workspace-root>/worktrees/<ticket-slug>/<pr-worktree>/
 ```
 
 Clean the ticket folder as the unit of work. Never broaden cleanup outside that folder unless the user explicitly asks.

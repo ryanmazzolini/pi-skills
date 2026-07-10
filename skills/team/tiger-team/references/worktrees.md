@@ -1,6 +1,6 @@
 # Tiger Team Worktrees
 
-Use deterministic ticket-worktree folders instead of `pi-subagents` temporary `worktree: true` worktrees.
+Use deterministic ticket-workspace folders instead of `pi-subagents` temporary `worktree: true` worktrees.
 
 ## Naming
 
