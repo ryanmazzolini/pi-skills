@@ -4,6 +4,8 @@ A collection of opinionated [Agent Skills](https://agentskills.io/) I use day-to
 
 ## Install
 
+
+
 ### pi
 
 ```bash
@@ -46,7 +48,7 @@ Checks `SKILL.md` frontmatter, pi skill-loader diagnostics, and Claude marketpla
 This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.
 
 A few things to know up front:
-- RPI is the canonical durable workflow skill. Use `/rpi` in pi for the extension-backed interface, or `/skill:rpi` for the raw skill. Boards are optional; compact `question.md` + `plan.md` artifacts are enough for many workflows.
+- RPI is the canonical durable workflow skill. It fires on its own for multi-session work: vault read → `converge` → `slice-plan` → slice walk with review pauses → summary note graduated into the notes vault.
 - Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
 - Related Claude-exposed skills are grouped in the repo under `skills/<plugin>/<skill>`, with pi-only helpers allowed to stay as plain `skills/<skill>` directories.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
@@ -70,14 +72,14 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `rpi` | Single-skill durable workflow for alignment questions, PRP-style plans, compact local boards, implementation, QA/verification, and fresh-session handovers | [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
+| `rpi` | Auto-invoked durable workflow: reads the vault project folder, routes converge → slice-plan, pauses per slice, graduates a dated summary note into the vault | [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) | [mattpocock/skills](https://github.com/mattpocock/skills), [Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) |
 
 ## Standalone skills
 
 | Skill | Description | References |
 |-------|-------------|------------|
-| `ticket-worktree` | Create or reuse ticket-oriented worktrees folders for Shortcut or GitHub issue work | — |
-| `ticket-worktree-cleanup` | User-invoked cleanup for completed ticket worktree folders after git-state checks | — |
+| `ticket-workspace` | Create or reuse ticket workspaces — one folder per ticket, one git worktree per PR (stacked or multi-repo) | — |
+| `ticket-workspace-cleanup` | User-invoked cleanup for completed ticket workspace folders after git-state checks | — |
 | `commit-simple` | Branch, commit, and push changes | — |
 | `commit-pr` | Create or update draft pull requests | — |
 | `research` | Standalone technical research | — |
