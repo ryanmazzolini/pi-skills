@@ -1261,6 +1261,197 @@ export function stateDirectory(env = process.env) {
   return path.join(base, "llm-wiki");
 }
 
+function schedulerPath(tools, env = process.env) {
+  const inheritedDirectories = (env.PATH || "").split(path.delimiter).filter(Boolean);
+  const commandDirectories = [
+    ...inheritedDirectories,
+    path.dirname(process.execPath),
+    path.dirname(tools.pi),
+    path.dirname(tools.git),
+    tools.gh ? path.dirname(tools.gh) : undefined,
+    tools.short ? path.dirname(tools.short) : undefined,
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+  ].filter(Boolean);
+  return [...new Set(commandDirectories)].join(path.delimiter);
+}
+
+function schedulerCommand({ profile, configPath, scriptPath }) {
+  return [
+    process.execPath,
+    path.resolve(scriptPath),
+    "reconcile",
+    profile.name,
+    "--config",
+    path.resolve(configPath),
+  ];
+}
+
+function parseCronWeekdays(value) {
+  if (value === "*") return [0, 1, 2, 3, 4, 5, 6];
+  const weekdays = [];
+  for (const part of value.split(",")) {
+    const match = part.match(/^(\d)(?:-(\d))?$/);
+    if (!match) return undefined;
+    const start = Number(match[1]);
+    const end = match[2] === undefined ? start : Number(match[2]);
+    if (start > 7 || end > 7 || end < start) return undefined;
+    for (let day = start; day <= end; day += 1) weekdays.push(day === 7 ? 0 : day);
+  }
+  return [...new Set(weekdays)].sort((left, right) => left - right);
+}
+
+export function nativeSchedule(value) {
+  const fields = validateCronExpression(value).split(/\s+/);
+  const [minuteText, hourText, dayOfMonth, month, weekdayText] = fields;
+  if (!/^\d+$/.test(minuteText) || !/^\d+$/.test(hourText)) return undefined;
+  const minute = Number(minuteText);
+  const hour = Number(hourText);
+  if (minute > 59 || hour > 23 || dayOfMonth !== "*" || month !== "*") return undefined;
+  const weekdays = parseCronWeekdays(weekdayText);
+  if (!weekdays?.length) return undefined;
+  return { hour, minute, weekdays };
+}
+
+function xmlEscape(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function plistString(value) {
+  return `    <string>${xmlEscape(value)}</string>`;
+}
+
+export function launchdDefinition({
+  profile,
+  configPath,
+  tools,
+  scriptPath,
+  env = process.env,
+  homeDirectory = os.homedir(),
+}) {
+  const schedule = nativeSchedule(profile.schedule);
+  if (!schedule) return undefined;
+  const label = `com.llm-wiki.daily-report.${profile.name}`;
+  const plistPath = path.join(homeDirectory, "Library", "LaunchAgents", `${label}.plist`);
+  const logPath = path.join(stateDirectory(env), `daily-report-${profile.name}.log`);
+  const command = schedulerCommand({ profile, configPath, scriptPath });
+  const intervalWeekdays = schedule.weekdays.length === 7 ? [undefined] : schedule.weekdays;
+  const intervals = intervalWeekdays
+    .map((weekday) => {
+      const weekdayEntry =
+        weekday === undefined ? "" : `\n        <key>Weekday</key>\n        <integer>${weekday}</integer>`;
+      return [
+        "      <dict>",
+        "        <key>Hour</key>",
+        `        <integer>${schedule.hour}</integer>`,
+        "        <key>Minute</key>",
+        `        <integer>${schedule.minute}</integer>${weekdayEntry}`,
+        "      </dict>",
+      ].join("\n");
+    })
+    .join("\n");
+  const argumentsXml = command.map(plistString).join("\n");
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${xmlEscape(label)}</string>
+  <key>ProgramArguments</key>
+  <array>
+${argumentsXml}
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${xmlEscape(schedulerPath(tools, env))}</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <array>
+${intervals}
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>${xmlEscape(logPath)}</string>
+  <key>StandardErrorPath</key>
+  <string>${xmlEscape(logPath)}</string>
+</dict>
+</plist>
+`;
+  return { label, logPath, plist, plistPath };
+}
+
+const SYSTEMD_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function systemdQuote(value) {
+  return `"${String(value)
+    .replace(/%/g, "%%")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')}"`;
+}
+
+export function systemdDefinitions({
+  profile,
+  configPath,
+  tools,
+  scriptPath,
+  env = process.env,
+  homeDirectory = os.homedir(),
+}) {
+  const schedule = nativeSchedule(profile.schedule);
+  if (!schedule) return undefined;
+  const unitBase = `daily-report-${profile.name}`;
+  const serviceName = `${unitBase}.service`;
+  const timerName = `${unitBase}.timer`;
+  const configHome = env.XDG_CONFIG_HOME
+    ? path.resolve(expandHome(env.XDG_CONFIG_HOME))
+    : path.join(homeDirectory, ".config");
+  const unitDirectory = path.join(configHome, "systemd", "user");
+  const command = schedulerCommand({ profile, configPath, scriptPath });
+  const calendarPrefix = schedule.weekdays.length === 7
+    ? ""
+    : `${schedule.weekdays.map((day) => SYSTEMD_WEEKDAYS[day]).join(",")} `;
+  const time = `${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}:00`;
+  const calendar = `${calendarPrefix}*-*-* ${time}`;
+  const service = `[Unit]
+Description=Generate ${profile.name} daily reports
+
+[Service]
+Type=oneshot
+Environment=${systemdQuote(`PATH=${schedulerPath(tools, env)}`)}
+ExecStart=${command.map(systemdQuote).join(" ")}
+`;
+  const timer = `[Unit]
+Description=Schedule ${profile.name} daily reports
+
+[Timer]
+OnCalendar=${calendar}
+Persistent=true
+Unit=${serviceName}
+
+[Install]
+WantedBy=timers.target
+`;
+  return {
+    service,
+    serviceName,
+    servicePath: path.join(unitDirectory, serviceName),
+    timer,
+    timerName,
+    timerPath: path.join(unitDirectory, timerName),
+    unitDirectory,
+  };
+}
+
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'"'"'`)}'`;
 }
@@ -1271,17 +1462,7 @@ function escapeCronPercents(value) {
 
 export function cronBlock({ profile, configPath, tools, scriptPath, env = process.env }) {
   const schedule = validateCronExpression(profile.schedule);
-  const commandDirectories = [
-    path.dirname(process.execPath),
-    path.dirname(tools.pi),
-    path.dirname(tools.git),
-    tools.gh ? path.dirname(tools.gh) : undefined,
-    tools.short ? path.dirname(tools.short) : undefined,
-    "/usr/local/bin",
-    "/usr/bin",
-    "/bin",
-  ].filter(Boolean);
-  const cronPath = [...new Set(commandDirectories)].join(path.delimiter);
+  const cronPath = schedulerPath(tools, env);
   const logDirectory = stateDirectory(env);
   fs.mkdirSync(logDirectory, { recursive: true });
   const logPath = path.join(logDirectory, `daily-report-${profile.name}.log`);
@@ -1289,12 +1470,7 @@ export function cronBlock({ profile, configPath, tools, scriptPath, env = proces
   const command = [
     "env",
     `PATH=${cronPath}`,
-    process.execPath,
-    path.resolve(scriptPath),
-    "reconcile",
-    profile.name,
-    "--config",
-    path.resolve(configPath),
+    ...schedulerCommand({ profile, configPath, scriptPath }),
   ]
     .map(shellQuote)
     .join(" ");
