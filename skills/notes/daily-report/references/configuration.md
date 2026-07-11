@@ -25,7 +25,7 @@ Optional profile fields:
 - `reportDirectory`: vault-relative destination; defaults to `daily-reports` and may not escape the vault.
 - `timezone`: IANA timezone used for report dates and source windows; falls back to `defaults.timezone` and then the host timezone.
 - `reportDays`: any of `sun`, `mon`, `tue`, `wed`, `thu`, `fri`, `sat`; defaults to every day.
-- `schedule`: five-field cron expression used by `install-cron`.
+- `schedule`: five-field cron expression used by scheduler installation.
 - `gitAuthors`: author names or email addresses. When omitted, each repository's configured `user.email` and `user.name` are used.
 - `github.enabled`: collect authenticated-user GitHub events. Defaults to `false`.
 - `github.owners`: optional repository-owner allowlist.
@@ -60,8 +60,18 @@ A partial report exits successfully so cron does not retry it as a failed job. U
 
 Generation uses an exclusive hidden lock beside each report. An interrupted process can leave this lock behind. The resulting error names the lock path; verify that no report process is active before removing it manually.
 
-## Cron
+## Scheduling
 
-`install-cron` adds one marker-delimited, idempotent entry to the current user's crontab. It uses absolute paths, preserves existing entries, and logs under `${XDG_STATE_HOME:-~/.local/state}/llm-wiki/`.
+`install-schedule` chooses the best available adapter:
 
-The cron expression follows the cron daemon's local timezone. The profile timezone still controls report dates and exact source windows. Use a machine-specific schedule when those timezones differ.
+- macOS: a user launchd agent under `~/Library/LaunchAgents/`.
+- Linux: a systemd user service and timer under `${XDG_CONFIG_HOME:-~/.config}/systemd/user/`.
+- Other or unavailable native scheduler: a marker-delimited cron entry.
+
+Launchd calendar jobs resume after sleep, and the generated systemd timer uses `Persistent=true` to catch up after downtime. Both call the idempotent `reconcile` command. A successful native installation removes the profile's previous cron entry.
+
+Native adapters support fixed numeric hour/minute schedules with wildcard day-of-month and month fields plus numeric weekday lists or ranges, such as `30 17 * * 1-5`. Other five-field expressions fall back to cron after any previous native job is safely stopped. Explicit `install-cron` and `remove-cron` commands remain available.
+
+Schedules follow the host's local timezone. The profile timezone still controls report dates and exact source windows. Use a machine-specific schedule when those timezones differ.
+
+Launchd and cron log under `${XDG_STATE_HOME:-~/.local/state}/llm-wiki/`. Inspect systemd output with `journalctl --user -u daily-report-<profile>.service`.

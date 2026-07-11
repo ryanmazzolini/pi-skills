@@ -21,12 +21,14 @@ node scripts/daily-report.mjs reconcile work --max-days 7 --refresh-partial
 
 `install-cli` creates `~/.local/bin/daily-report` without replacing an unrelated path. After that, use the shorter `daily-report ...` form. Use `--config <path>` to override configuration discovery. Add `--force` to replace an existing report.
 
-After reviewing the generated cron entry, scheduling can be installed or removed with:
+Install or remove the host's preferred scheduler with:
 
 ```bash
-node scripts/daily-report.mjs install-cron work
-node scripts/daily-report.mjs remove-cron work
+node scripts/daily-report.mjs install-schedule work
+node scripts/daily-report.mjs remove-schedule work
 ```
+
+`install-schedule` prefers launchd on macOS and a systemd user timer on Linux, then falls back to cron when the native scheduler or schedule shape is unavailable. Use `install-cron` and `remove-cron` only when explicitly choosing cron.
 
 ## Rules
 
