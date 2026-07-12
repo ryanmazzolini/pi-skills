@@ -181,11 +181,11 @@
       ]
     },
     {
-      "name": "converge",
+      "name": "align",
       "source": "./skills",
-      "description": "Batched alignment loop that records decisions and acceptance criteria in question.md.",
+      "description": "One-question alignment for requirements and high-level solution shape.",
       "skills": [
-        "./converge"
+        "./align"
       ]
     },
     {
@@ -199,7 +199,7 @@
     {
       "name": "slice-plan",
       "source": "./skills",
-      "description": "Turn acceptance criteria into a compact plan.md of MVP vertical slices.",
+      "description": "Turn approved alignment into a dependency-shaped plan.md of vertical slices.",
       "skills": [
         "./slice-plan"
       ]

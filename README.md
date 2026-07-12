@@ -47,7 +47,7 @@ Checks `SKILL.md` frontmatter, pi skill-loader diagnostics, and Claude marketpla
 This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.
 
 A few things to know up front:
-- RPI is the canonical durable workflow skill. It fires on its own for multi-session work: vault read → `converge` → `slice-plan` → slice walk with review pauses → summary note graduated into the notes vault.
+- RPI is the canonical durable workflow skill. It fires on its own for multi-session work: vault read → `align` → `slice-plan` → slice walk with review pauses → summary note graduated into the notes vault.
 - Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
 - Related Claude-exposed skills are grouped in the repo under `skills/<plugin>/<skill>`, with pi-only helpers allowed to stay as plain `skills/<skill>` directories.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
@@ -71,7 +71,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `rpi` | Auto-invoked durable workflow: reads the vault project folder, routes converge → slice-plan, pauses per slice, graduates a dated summary note into the vault | [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) | — |
+| `rpi` | Auto-invoked durable workflow: reads the vault project folder, routes align → slice-plan, pauses per slice, graduates a dated summary note into the vault | [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) | — |
 
 ## Standalone skills
 
@@ -99,8 +99,8 @@ This README is the map. The family README files have the details.
 | `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
 | `shape-first` | Human-in-the-loop coding loop for domain shapes, boundaries, TODOs, implementation, and drift checks | [ThePrimeagen](https://youtu.be/Aie0nYktsNA) |
 | `diagnosing-bugs` | Diagnosis loop for hard bugs: build a tight red-capable feedback loop before hypothesising | [mattpocock diagnosing-bugs](https://github.com/mattpocock/skills/tree/main/skills/engineering/diagnosing-bugs) |
-| `converge` | Fast durable alignment loop that writes `question.md` plus acceptance criteria for lightweight planning; updates CONTEXT.md and ADRs as decisions crystallize | [mattpocock grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
-| `slice-plan` | Write compact RPI-compatible `plan.md` artifacts with MVP vertical slices from acceptance criteria; board optional | — |
+| `align` | One-question alignment for non-functional requirements, functional behavior, and high-level solution shape; preserves adaptive `alignment.md` context and durable decisions | [mattpocock grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
+| `slice-plan` | Turn approved alignment into dependency-shaped `plan.md` artifacts of cold-pickup vertical slices | — |
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
 | `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
 | `ruby-sorbet-rails` | Ruby/Rails guidance for Rails-native structures, Rails commands/migrations, strict Sorbet/Tapioca RBIs, RuboCop, db schema, and GraphQL federation artifacts | [Sorbet RBI docs](https://sorbet.org/docs/rbi), [Tapioca](https://github.com/Shopify/tapioca), [Rails migrations](https://guides.rubyonrails.org/active_record_migrations.html) |
