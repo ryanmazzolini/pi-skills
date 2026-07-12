@@ -33,7 +33,7 @@ Use **non-functional requirements → functional requirements → high-level sol
 - Resolve observable behavior and edge cases one human-owned decision at a time.
 - Refine relevant non-functional requirements as concrete behavior makes them measurable.
 - Revisit earlier understanding whenever a later answer changes it.
-- When the scope warrants high-level shaping, use the domain-shape and boundary concepts from `../architecture/shape-first/SKILL.md`. Stop at enough architecture to plan safely; implementation may shape slice-local interfaces and structure later.
+- When the scope warrants high-level shaping, use the domain-shape and boundary concepts from `../../architecture/shape-first/SKILL.md`. Stop at enough architecture to plan safely; implementation may shape slice-local interfaces and structure later.
 
 Use the project's domain language. Read `CONTEXT-MAP.md`, relevant `CONTEXT.md` files, and ADRs when present. Challenge a term that conflicts with the glossary or hides two different concepts.
 

@@ -9,7 +9,7 @@ Adapted artifacts:
 - `skills/architecture/design-an-interface`
 - `skills/architecture/simplify-codebase-architecture` (from `improve-codebase-architecture`)
 - `skills/architecture/ubiquitous-language`
-- `skills/align` (from `grill-me` and `grill-with-docs`)
+- `skills/ship/align` (from `grill-me` and `grill-with-docs`)
 - `skills/debugging/diagnosing-bugs`
 - `skills/handoff`
 - `skills/productivity/teach`

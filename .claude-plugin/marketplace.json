@@ -6,12 +6,14 @@
   "description": "Ryan's personal Agent Skills packaged for Claude Code and pi",
   "plugins": [
     {
-      "name": "rpi",
-      "source": "./skills/rpi",
-      "description": "Durable local-first planning and implementation workflow",
+      "name": "ship",
+      "source": "./skills/ship",
+      "description": "Align, slice, and advance durable work to completion",
       "strict": false,
       "skills": [
-        "./rpi"
+        "./tick",
+        "./align",
+        "./slice-plan"
       ]
     },
     {
@@ -181,27 +183,11 @@
       ]
     },
     {
-      "name": "align",
-      "source": "./skills",
-      "description": "One-question alignment for requirements and high-level solution shape.",
-      "skills": [
-        "./align"
-      ]
-    },
-    {
       "name": "handoff",
       "source": "./skills",
       "description": "Compact the conversation into a handoff document for another session.",
       "skills": [
         "./handoff"
-      ]
-    },
-    {
-      "name": "slice-plan",
-      "source": "./skills",
-      "description": "Turn approved alignment into a dependency-shaped plan.md of vertical slices.",
-      "skills": [
-        "./slice-plan"
       ]
     }
   ]
