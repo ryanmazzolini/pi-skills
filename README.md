@@ -17,14 +17,14 @@ Use `pi config` to enable or disable individual skills after install.
 
 ```text
 /plugin marketplace add ryanmazzolini/pi-skills
-/plugin install rpi@ryan-pi-skills
+/plugin install ship@ryan-pi-skills
 /plugin install commit@ryan-pi-skills
 /plugin install productivity@ryan-pi-skills
 /plugin install team@ryan-pi-skills
 /plugin install typescript-nextjs@ryan-pi-skills
 ```
 
-The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) exposes grouped plugin namespaces backed directly by canonical `skills/<namespace>/<skill>` directories. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple` and `/team:tiger-team`.
+The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) points directly at canonical skill directories; grouped families use `skills/<namespace>/<skill>`. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple` and `/team:tiger-team`.
 
 ## Update
 
@@ -47,11 +47,11 @@ Checks `SKILL.md` frontmatter, pi skill-loader diagnostics, and Claude marketpla
 This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.
 
 A few things to know up front:
-- RPI is the canonical durable workflow skill. It fires on its own for multi-session work: vault read → `align` → `slice-plan` → slice walk with review pauses → summary note graduated into the notes vault.
+- Tick is the canonical durable-work router. It fires on its own for multi-session work and advances vault context → `align` → `slice-plan` → confirmed ready work → review → a high-level vault distillate.
 - Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
-- Related Claude-exposed skills are grouped in the repo under `skills/<plugin>/<skill>`, with pi-only helpers allowed to stay as plain `skills/<skill>` directories.
+- Claude-exposed skill families are grouped under `skills/<plugin>/<skill>`; standalone skills stay under `skills/<skill>`.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
-- RPI workflows use durable markdown artifacts instead of hidden session state. They default to local `.plans/` workflow directories; set `PI_SKILLS_PLANS_ROOT` when a project needs a different durable artifact root. See [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) for the entrypoint.
+- Tick workflows use durable markdown artifacts instead of hidden session state. They default to local `.plans/` workflow directories; set `PI_SKILLS_PLANS_ROOT` when a project needs a different durable artifact root. See [`skills/ship/tick/SKILL.md`](./skills/ship/tick/SKILL.md) for the entrypoint.
 
 ## Optional tooling
 
@@ -71,7 +71,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `rpi` | Auto-invoked durable workflow: reads the vault project folder, routes align → slice-plan, pauses per slice, graduates a dated summary note into the vault | [`skills/rpi/rpi/SKILL.md`](./skills/rpi/rpi/SKILL.md) | — |
+| `ship` | Durable-work family: `align` requirements and shape, build a dependency-shaped plan, then `tick` through confirmed checkpoints | [`skills/ship/tick/SKILL.md`](./skills/ship/tick/SKILL.md) | [`skills/ship/tick/references/review-artifacts.md`](./skills/ship/tick/references/review-artifacts.md) |
 
 ## Standalone skills
 

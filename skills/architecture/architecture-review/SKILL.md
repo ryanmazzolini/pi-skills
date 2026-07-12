@@ -25,4 +25,4 @@ description: Cross-cutting architecture review lens for system design, rollout r
 
 ## Related Skills
 
-- Use `rpi` when the change needs deeper option analysis or implementation planning
+- Use `tick` when the change needs durable alignment, implementation planning, or work across sessions
