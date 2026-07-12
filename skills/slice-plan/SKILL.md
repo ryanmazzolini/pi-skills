@@ -1,134 +1,95 @@
 ---
 name: "slice-plan"
-description: Turn acceptance criteria or question.md into a compact plan.md of MVP vertical slices under .plans/. Use when planning implementation after converge or within an rpi workflow.
+description: Turn approved alignment or acceptance criteria into a dependency-shaped plan.md of vertical slices. Use when planning implementation after align or within a durable tick workflow.
 ---
 
 # Slice Plan
 
-Turn aligned acceptance criteria into a compact durable `plan.md` that RPI can implement directly. This is the planning handoff after `converge`: `question.md` records alignment; `plan.md` records the MVP goal, vertical slices, verification, and deferred decisions.
-
-## Artifact contract
-
-Prefer an existing RPI workflow directory. If none is given, use the RPI plans-root convention from `../rpi/rpi/SKILL.md`; `.plans/YYYY-MM-DD-slug/` is the default when no project convention exists.
-
-Write/update:
-
-```text
-{workflow-dir}/
-  question.md   # input from converge when available
-  plan.md       # output from this skill
-  qa.md         # optional verification findings later
-```
+Turn shared understanding into a `plan.md` that a fresh session can implement slice by slice. Model the work's real dependencies; document order is for reading only.
 
 ## Inputs
 
-Read in order:
+Prefer a workflow directory supplied by the caller. Otherwise reuse the relevant directory under an existing `.plans/`, `.plan/`, or `docs/plans/`; create `.plans/YYYY-MM-DD-slug/` when the plan needs to survive the session and no project convention exists.
 
-1. `{workflow-dir}/question.md` if present.
-2. User-provided acceptance criteria.
-3. `CONTEXT-MAP.md` if present, then the relevant root/context `CONTEXT.md` and ADRs for constraints and vocabulary.
-4. Codebase files only far enough to name real layers and concrete leaf tasks.
+Read:
 
-If acceptance criteria are missing, unstable, or still hide high-reversal-cost choices, stop and use `converge` first. Don't invent criteria just to make a plan look complete.
+1. `{workflow-dir}/alignment.md`, falling back to legacy `question.md`.
+2. Existing `plan.md` when revising rather than starting over.
+3. Relevant `CONTEXT-MAP.md`, `CONTEXT.md`, and ADRs.
+4. Code only far enough to identify real layers, seams, and concrete leaf tasks.
 
-## Plan abstract at the top, concrete only at the leaves
+The alignment does not need fixed headings or numbered requirements. Derive testable outcomes from its settled understanding. If an open human decision could change requirements, scope, or high-level solution shape, return to `align` instead of inventing an answer.
 
-Predict coarsely at the top, precisely at the bottom. The top level is reliable about *direction* but vague about *implementation* — and that's correct. Only the leaves name concrete code. This lets you re-plan one subtask without re-planning the tree.
+## Slice the work
 
-Three levels:
+Start from the user-observable goal and approved high-level shape. Identify the layers the work actually crosses from project docs and code; do not assume a web stack.
 
-1. **Goal** (coarse): the user-observable outcome the MVP delivers. Defined by benefit, never by files.
-2. **Slices** (mid): vertical cuts by feature, each delivering observable value on its own.
-3. **Tasks** (leaf): concrete work. Leaf tasks may name modules, files, functions, scenes, commands, or tests.
+Each ordinary slice is a **tracer bullet**:
 
-Use domain language for the goal and slice names. Use implementation names only at the task leaves.
+- a narrow but complete path through the relevant layers
+- independently demonstrable or verifiable
+- small enough for one fresh context
+- concrete only at task leaves
+- traceable to the settled requirements it satisfies
 
-## Slicing rules
+Build the thinnest useful path first when dependencies allow it, then thicken behavior in later slices. A slice that delivers no observable outcome belongs inside a slice that does, unless it is part of the wide-refactor exception below.
 
-**Cut vertically by feature; identify the layers from the project; sequence as a tracer bullet.**
+## Record dependencies, not order
 
-First, find the layers this project's work actually passes through — read CONTEXT.md and the codebase rather than assuming. Every project has a stack of layers a feature must cross to become real; name them in the project's own terms. For worked examples across web services, games, audio/MIDI tools, CLIs, and libraries, see `references/layer-examples.md` only if the project's layers aren't obvious.
+Give every slice a stable short label and name. Every slice states **Depends on**, including `None`. Dependencies are the single source of truth for execution order; the order of sections carries no scheduling meaning.
 
-Then: don't build a whole layer at a time. For the first slice, build the thinnest cut that crosses every layer and reaches the user — one happy path, end to end. Thicken each layer in later slices.
+Use a dependency only when another slice must finish before this one can safely start. After drafting, verify:
 
-A tracer bullet proves the full path cheaply, so costly structural decisions get validated against real behavior early instead of after a horizontal layer is overbuilt.
+- every dependency names an existing slice
+- the graph has no cycles
+- at least one slice is ready
+- every requirement is covered or explicitly deferred
 
-## Ordering the slices
+The **ready set** is every incomplete slice whose dependencies are complete. A simple chain is valid when the work is genuinely linear; branching is equally valid when independent work becomes ready together.
 
-Order by **earliest user value per unit of irreversible commitment**. For each candidate slice estimate:
+Do not duplicate the dependency ledger in another maintained section. Generate a temporary diagram or review artifact when it helps a human understand the graph, but keep each slice's `Depends on` field authoritative.
 
-- **Value** — does the user observe a benefit when this ships?
-- **Commitment cost** — how much hard-to-reverse structure, data shape, public contract, or core model does it lock in?
+## Wide refactors
 
-Do high-value / low-commitment slices first. Defer decisions that can be made later more cheaply.
+A wide mechanical change may be impossible to ship as ordinary vertical slices because one edit breaks callers across the codebase. Model it as **expand → migrate → contract**:
 
-## Output format
+1. Expand by adding the new form beside the old.
+2. Migrate callers in independently verifiable batches, branching when batches do not depend on one another.
+3. Contract by removing the old form after every migration dependency is complete.
 
-Write `{workflow-dir}/plan.md` using this compact RPI-compatible shape:
+Keep each step green when possible. If only a final integration point can be green, state that exception and make integration verification an explicit dependent slice.
+
+## Plan contract
+
+Keep `plan.md` adaptive, but make it possible for a fresh session to identify:
+
+- the goal and alignment source
+- each slice's outcome and actual dependencies
+- concrete leaf tasks
+- verification evidence required
+- the settled requirements each slice covers
+- deferred work or decisions
+
+A canonical slice is compact:
 
 ```md
----
-source: {repo basename}
-date: YYYY-MM-DD
-type: slice-plan
-goal: [one sentence]
----
+### Slice A — [outcome name]
 
-# [Feature / Workflow Name]
+**Depends on:** None | Slice B — [name], Slice C — [name]
 
-**Status**: planned
-**Workflow**: {workflow-dir}/
-
-## Goal
-
-[One line: the user benefit at MVP.]
-
-## Acceptance Criteria
-
-- [AC1: plain testable behavior.]
-- [AC2: plain testable behavior.]
-
-## Slice Plan
-
-### Slice 1 — [name]  [first: high value, low commitment]
-
-Tracer bullet: [the one end-to-end happy path this proves]
+[What becomes possible and why this slice exists.]
 
 Tasks:
-- [layer A]: [concrete task or "none"]
-- [layer B]: [concrete task]
-- [layer C]: [concrete task]
+- [project layer or surface]: [concrete leaf task]
 
-Verification: [automated/manual/playtest/visual/review proof]
-Ships: [what the user can now do]
-Covers: [AC1, AC2]
-
-### Slice 2 — [name]
-
-Tracer bullet: [what this thickens or adds]
-
-Tasks:
-- [layer A]: [task]
-- [layer B]: [task]
-
-Verification: [proof]
-Ships: [observable value]
-Covers: [AC3]
-
-## Deferred
-
-- [decision] — defer because [cheap to change later]
-
-## Notes
-
-- [Assumptions, dependencies, or follow-up context only.]
+Verification: [automated, manual, visual, playtest, or review evidence]
+Covers: [settled requirements in the alignment artifact]
 ```
 
-## Notes
+Use project language for goals and slice names. Use implementation names only in tasks. Point to alignment or design authorities instead of restating them.
 
-- One tracer-bullet slice first, always. Everything else thickens layers behind it.
-- A slice that ships nothing observable isn't a slice — fold it into one that does, or move it to Deferred.
-- Keep leaves concrete and everything above abstract.
-- Every slice must include verification and map back to acceptance criteria.
-- If a slice forces a new high-reversal-cost decision, use `converge`/ADR rules instead of burying the decision in a task.
-- After writing `plan.md`, ask whether to implement the first slice.
+## Review the plan
+
+Write or update `{workflow-dir}/plan.md`, then present the dependency shape, current ready set, and your recommended next slice or safe asynchronous wave. Ask the user or active workflow coordinator to correct the slices and dependencies.
+
+The plan is ready when the graph checks pass, each slice can be picked up cold, and the human or coordinator confirms the proposed shape. Stop there; execution belongs to `tick` or the chosen coordinator.

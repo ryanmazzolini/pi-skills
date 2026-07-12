@@ -33,7 +33,7 @@ Before presenting it, check:
 
 - **Representation fit:** the medium matches the review question.
 - **Glance test:** the point and current recommendation appear within a few seconds.
-- **Traceability:** claims and visuals map back to decisions or slices in `question.md` and `plan.md`.
+- **Traceability:** claims and visuals map back to decisions or slices in `alignment.md` and `plan.md`.
 - **Honesty:** alternatives, uncertainty, and unfinished areas are visible.
 - **Accessibility:** color is not the only signal; diagrams have a text explanation; reading and focus order are clear.
 - **Approval:** the user can tell exactly what they are being asked to review.
