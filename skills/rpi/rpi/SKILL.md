@@ -25,7 +25,7 @@ Workflow artifacts live in `{plans-root}/YYYY-MM-DD-slug/` (`question.md`, `plan
 ## The loop
 
 1. **Align** — run `converge`. It writes `question.md` with decisions and acceptance criteria.
-2. **Plan** — run `slice-plan`. It writes `plan.md` as ordered vertical slices. Each slice must be complete enough to pick up cold: what/why, tasks, verification, what it ships.
+2. **Plan** — run `slice-plan`. It writes `plan.md` as ordered vertical slices. Each slice must be complete enough to pick up cold: what/why, tasks, verification, what it ships. Present plans in plain language. When markdown is not enough for human review, load `references/review-artifacts.md` and generate the smallest artifact whose shape fits the review question.
 3. **Walk the slices.** Implement one slice, verify it, then stop: report what shipped and how it was verified, and wait for the user's review before the next slice. A slice may ship as one or more PRs — stacked in one repo or across repos; work in the ticket workspace (`ticket-workspace`), one worktree per PR, and verify at the slice, not per PR. The pause is also the session boundary — the user may compact or start fresh; any new session resumes from the workflow directory (see Resume). Use `handoff` only when leaving pi for another agent or machine.
 
 If the user says "just do it", skip ceremony and do the smallest safe implement-and-verify loop.
