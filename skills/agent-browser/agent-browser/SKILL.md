@@ -35,4 +35,10 @@ After loading the runtime instructions, prefer the standard snapshot → ref →
 4. Re-snapshot after the page changes.
 5. Capture screenshots, text, or other output the user asked for.
 
+## Session Hygiene
+
+- Prefer one stable session per task or worktree. Reuse it across testing passes; create separate sessions only for parallel browsers or isolated identities.
+- Close sessions when browser work finishes. If a workflow created several sessions, use `agent-browser close --all`.
+- Accumulated Chromium sessions can consume substantial memory and graphics resources, including WindowServer memory on macOS. If shutdown stalls or memory remains high, run `agent-browser doctor` and confirm that no daemons remain before launching more sessions.
+
 If a command fails unexpectedly, run `agent-browser doctor` before improvising.
