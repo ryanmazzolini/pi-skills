@@ -1,13 +1,13 @@
 ---
 name: "slice-plan"
-description: Turn approved alignment or acceptance criteria into a dependency-shaped plan.md of vertical slices. Use when planning implementation after align or within a durable tick workflow.
+description: Slice approved Now scope into a compact dependency-shaped plan. Use after align or when tick reaches planning.
 ---
 
 # Slice Plan
 
-Turn shared understanding into a `plan.md` that a fresh session can implement slice by slice. Model the work's real dependencies; document order is for reading only.
+Turn approved Now scope into the smallest implementable `plan.md`. Later is deferred. Every slice must trace to Now.
 
-## Inputs
+## Inputs and scope gate
 
 Prefer a workflow directory supplied by the caller. Otherwise reuse the relevant directory under an existing `.plans/`, `.plan/`, or `docs/plans/`; create `.plans/YYYY-MM-DD-slug/` when the plan needs to survive the session and no project convention exists.
 
@@ -18,11 +18,11 @@ Read:
 3. Relevant `CONTEXT-MAP.md`, `CONTEXT.md`, and ADRs.
 4. Code only far enough to identify real layers, seams, and concrete leaf tasks.
 
-The alignment does not need fixed headings or numbered requirements. Derive testable outcomes from its settled understanding. If an open human decision could change requirements, scope, or high-level solution shape, return to `align` instead of inventing an answer.
+Before slicing, extract the goal, Now, Later, assumptions, and open blockers. The scope gate passes when Now and Later are explicit and non-contradictory, and every human decision capable of materially changing Now is settled. Otherwise return to `align`. When revising an overbuilt plan, replace its out-of-scope structure with the approved Now scope.
 
 ## Slice the work
 
-Start from the user-observable goal and approved high-level shape. Identify the layers the work actually crosses from project docs and code; do not assume a web stack.
+Start from the next user-observable outcome and approved high-level shape. Identify the layers from project docs and code so the plan matches the actual project.
 
 Each ordinary slice is a **tracer bullet**:
 
@@ -30,24 +30,29 @@ Each ordinary slice is a **tracer bullet**:
 - independently demonstrable or verifiable
 - small enough for one fresh context
 - concrete only at task leaves
-- traceable to the settled requirements it satisfies
+- traceable to a requirement in Now
 
-Build the thinnest useful path first when dependencies allow it, then thicken behavior in later slices. A slice that delivers no observable outcome belongs inside a slice that does, unless it is part of the wide-refactor exception below.
+Build the thinnest useful end-to-end path first, then thicken it only where Now requires more behavior. Rank candidate slices by user value relative to irreversible commitment; prefer early evidence over early infrastructure.
 
-## Record dependencies, not order
+A normal Now often fits in 1–3 slices. For each additional slice, state the independent delivery, safety, migration, or verification boundary that earns it. Fold internal machinery into the first observable slice that needs it. Keep prerequisite research inside the affected slice unless its result could independently stop or reshape the plan; a separate discovery gate must be bounded and state its fallback.
 
-Give every slice a stable short label and name. Every slice states **Depends on**, including `None`. Dependencies are the single source of truth for execution order; the order of sections carries no scheduling meaning.
+Add supporting machinery only when a Now outcome requires it. Place future flexibility in Later.
 
-Use a dependency only when another slice must finish before this one can safely start. After drafting, verify:
+## Record dependencies
+
+Give every slice a stable short label and name. Every slice states **Depends on**, including `None`. Dependencies are the single source of truth for execution order; section order is for reading only.
+
+After drafting, verify:
 
 - every dependency names an existing slice
 - the graph has no cycles
 - at least one slice is ready
-- every requirement is covered or explicitly deferred
+- every Now requirement is covered
+- every slice traces to Now
 
 The **ready set** is every incomplete slice whose dependencies are complete. A simple chain is valid when the work is genuinely linear; branching is equally valid when independent work becomes ready together.
 
-Do not duplicate the dependency ledger in another maintained section. Generate a temporary diagram or review artifact when it helps a human understand the graph, but keep each slice's `Depends on` field authoritative.
+Keep each slice's `Depends on` field authoritative. Generate a temporary diagram or review artifact when it helps a human understand the graph.
 
 ## Wide refactors
 
@@ -64,11 +69,11 @@ Keep each step green when possible. If only a final integration point can be gre
 Keep `plan.md` adaptive, but make it possible for a fresh session to identify:
 
 - the goal and alignment source
-- each slice's outcome and actual dependencies
+- Now and Later
+- each slice's observable outcome and actual dependencies
 - concrete leaf tasks
-- verification evidence required
-- the settled requirements each slice covers
-- deferred work or decisions
+- required verification evidence
+- the Now requirements each slice covers
 
 A canonical slice is compact:
 
@@ -83,13 +88,13 @@ Tasks:
 - [project layer or surface]: [concrete leaf task]
 
 Verification: [automated, manual, visual, playtest, or review evidence]
-Covers: [settled requirements in the alignment artifact]
+Covers: [requirements in Now]
 ```
 
 Use project language for goals and slice names. Use implementation names only in tasks. Point to alignment or design authorities instead of restating them.
 
 ## Review the plan
 
-Write or update `{workflow-dir}/plan.md`, then present the dependency shape, current ready set, and your recommended next slice or safe asynchronous wave. Ask the user or active workflow coordinator to correct the slices and dependencies.
+After drafting, rerun the scope gate and dependency checks. Write or update `{workflow-dir}/plan.md`, then present Now and Later, the dependency shape, the current ready set, and your recommended next slice or safe asynchronous wave. Ask the user or active workflow coordinator to correct the scope, slices, and dependencies.
 
-The plan is ready when the graph checks pass, each slice can be picked up cold, and the human or coordinator confirms the proposed shape. Stop there; execution belongs to `tick` or the chosen coordinator.
+The plan is ready when both gates pass, each slice can be picked up cold, and the human or coordinator confirms the proposed shape. Stop there; execution belongs to `tick` or the chosen coordinator.
