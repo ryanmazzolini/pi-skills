@@ -29,5 +29,7 @@ Use before finalizing generated frontend code or addressing PR review feedback.
 ## Tests and Validation
 
 - Tests cover user-visible behavior and important states, not only helper implementation.
+- Generated artifacts come from their canonical inputs and supported generator, not manual edits.
 - Type checking and framework build pass for the changed area.
+- Repository-level validation results are retained; targeted checks are not the final evidence.
 - Manual review includes keyboard-only navigation for new custom interactions.
