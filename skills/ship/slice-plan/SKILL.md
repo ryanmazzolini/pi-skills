@@ -1,6 +1,6 @@
 ---
 name: "slice-plan"
-description: Slice approved Now scope into a compact dependency-shaped plan. Use after align or when tick reaches planning.
+description: Slice approved Now scope into a compact dependency-shaped plan. Use after align or when ship reaches planning.
 ---
 
 # Slice Plan
@@ -97,4 +97,4 @@ Use project language for goals and slice names. Use implementation names only in
 
 After drafting, rerun the scope gate and dependency checks. Write or update `{workflow-dir}/plan.md`, then present Now and Later, the dependency shape, the current ready set, and your recommended next slice or safe asynchronous wave. Ask the user or active workflow coordinator to correct the scope, slices, and dependencies.
 
-The plan is ready when both gates pass, each slice can be picked up cold, and the human or coordinator confirms the proposed shape. Stop there; execution belongs to `tick` or the chosen coordinator.
+The plan is ready when both gates pass, each slice can be picked up cold, and the human or coordinator confirms the proposed shape. Stop there; execution belongs to `ship` or the chosen coordinator.

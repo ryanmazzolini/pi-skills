@@ -1,11 +1,11 @@
 ---
-name: "tick"
-description: Advance durable multi-session work to its next human checkpoint. Use when the user says tick, wants to plan or continue sizeable work across sessions, or resumes an interrupted local workflow.
+name: "ship"
+description: Advance durable multi-session work to its next human checkpoint. Use when planning or continuing sizeable work across sessions, or resuming an interrupted local workflow.
 ---
 
-# Tick
+# Ship
 
-A **tick** advances durable work to its next meaningful human checkpoint, then stops. It routes from the semantic state in local artifacts; it adds no workflow engine, separate state file, or stage flags.
+`ship` advances durable work to its next meaningful human checkpoint, then stops. It routes from the semantic state in local artifacts; it adds no workflow engine, separate state file, or stage flags.
 
 When work can finish safely in one session, say so and proceed normally without creating workflow artifacts.
 
@@ -47,7 +47,7 @@ Record implementation outcomes and verification with the relevant slice before s
 
 ## Confirm ready work
 
-`plan.md` dependencies—not section order—determine the ready set. Recommend what should run next and why. Confirm the recommendation with the user or active workflow coordinator before dispatch. A coordinator may choose synchronous or asynchronous execution; `tick` does not invent a concurrency policy.
+`plan.md` dependencies—not section order—determine the ready set. Recommend what should run next and why. Confirm the recommendation with the user or active workflow coordinator before dispatch. The coordinator owns the concurrency policy.
 
 ## Recover safely
 

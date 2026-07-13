@@ -25,4 +25,4 @@ description: Cross-cutting architecture review lens for system design, rollout r
 
 ## Related Skills
 
-- Use `tick` when the change needs durable alignment, implementation planning, or work across sessions
+- Use `ship` when the change needs durable alignment, implementation planning, or work across sessions
