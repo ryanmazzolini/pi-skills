@@ -116,7 +116,7 @@ This README is the map. The family README files have the details.
 
 | Extension | Description |
 |-----------|-------------|
-| `editor-links` | Rewrites existing relative/absolute paths in assistant output into clickable links that open in Zed via a localhost bridge (Ghostty only opens http links) |
+| `editor-links` | Rewrites bare paths and local Markdown-link destinations into clickable links that open in Zed via a localhost bridge (Ghostty only opens http links) |
 
 ## Contributing
 

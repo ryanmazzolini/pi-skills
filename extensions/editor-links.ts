@@ -30,6 +30,7 @@ export function startBridge(port = BRIDGE_PORT, openCmd = "open") {
 }
 
 const PATH_RE = /(^|[\s(\[{<"'])(@?(?:~|\.{1,2}|\/)?[A-Za-z0-9_.~/-]+\/[A-Za-z0-9_.~/-]+(:\d+(?::\d+)?)?)(?=$|[\s)\]}>"',;])/g;
+const MARKDOWN_LINK_RE = /(?<!!)(\[[^\]\n]*\]\()(<[^>\n]+>|[^)\s]+)([^)\n]*\))/g;
 
 function expandPath(input: string, cwd: string): string {
 	const clean = input.startsWith("@") ? input.slice(1) : input;
@@ -56,10 +57,36 @@ function isProbablyMarkdownLink(text: string, start: number, end: number): boole
 	return false;
 }
 
+function linkifyMarkdownLinks(line: string, cwd: string): string {
+	return line.replace(
+		MARKDOWN_LINK_RE,
+		(match: string, prefix: string, rawDestination: string, suffix: string, offset: number) => {
+			if (isInsideInlineCode(line, offset)) return match;
+			const destination = rawDestination.startsWith("<")
+				? rawDestination.slice(1, -1)
+				: rawDestination;
+			const hasScheme = /^[A-Za-z][A-Za-z0-9+.-]*:/.test(destination);
+			if (destination.startsWith("#") || destination.startsWith("//") || hasScheme) return match;
+			let decodedDestination: string;
+			try {
+				decodedDestination = decodeURI(destination);
+			} catch {
+				return match;
+			}
+			const url = toEditorUrl(decodedDestination, cwd);
+			return url ? `${prefix}${url}${suffix}` : match;
+		},
+	);
+}
+
 function linkifyLine(line: string, cwd: string): string {
-	return line.replace(PATH_RE, (match: string, prefix: string, rawPath: string, _pos: string, offset: number) => {
+	const linkedLine = linkifyMarkdownLinks(line, cwd);
+	return linkedLine.replace(PATH_RE, (match: string, prefix: string, rawPath: string, _pos: string, offset: number) => {
 		const pathStart = offset + prefix.length;
-		if (isProbablyMarkdownLink(line, pathStart, pathStart + rawPath.length) || isInsideInlineCode(line, pathStart)) {
+		if (
+			isProbablyMarkdownLink(linkedLine, pathStart, pathStart + rawPath.length) ||
+			isInsideInlineCode(linkedLine, pathStart)
+		) {
 			return match;
 		}
 		const url = toEditorUrl(rawPath, cwd);
