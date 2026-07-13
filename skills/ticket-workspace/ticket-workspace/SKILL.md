@@ -1,6 +1,6 @@
 ---
 name: "ticket-workspace"
-description: Create, find, or reuse ticket workspaces — one folder per Shortcut story or GitHub issue, one git worktree per PR inside. Use when starting ticket work, locating a ticket's worktrees, or adding a worktree for a stacked or multi-repo PR.
+description: "Create, find, or reuse workspaces with one git worktree per PR. Use when the user asks for a separate workspace or worktree for a ticket, quick fix, stacked PR, or multi-repo change."
 ---
 
 # Ticket Workspace
@@ -30,15 +30,25 @@ Examples:
 - Multi-repo tickets give each repo its own worktree or its own stack.
 - A stack cascades: after amending an earlier PR, rebase the later worktrees onto it.
 
-## Ticket folder names
+## Workspace folder names
 
-Use stable, ticket-first names:
+Use stable, ticket-first names when a ticket exists:
 
 - Shortcut: `sc-<number>-<short-description>`
 - GitHub issue: `gh-<number>-<short-description>` when the repo is clear
 - Multi-repo GitHub issue: `gh-<owner-or-repo>-<number>-<short-description>` when needed
 
 Build the slug from the ticket title: lowercase, short, recognizable, no filler words.
+
+### Ticketless quick fixes
+
+When the user explicitly waives a ticket or issue, use a short descriptive slug without a ticket prefix:
+
+```text
+~/git/worktrees/local-date-spec-flakes/logistics-delivery-service/
+```
+
+Treat the waiver as the ticket decision for the current task. Propose the exact workspace folder, repo worktree, branch, and base in one checkpoint, then follow the normal worktree-per-PR rules.
 
 ## Find existing work first
 
@@ -57,26 +67,28 @@ Avoid broad home-directory scans. Use targeted, shallow `find` commands.
 
 ## Create a workspace
 
-1. Start from a Shortcut story or GitHub issue. If missing, ask for one or offer to search.
-2. Fetch the title when tools are available:
+1. Start from a Shortcut story or GitHub issue. If missing, ask for one or offer to search unless the user explicitly chooses a ticketless quick fix.
+2. When a ticket exists, fetch its title with available tools:
    - Shortcut: `short story <id> -q`
    - GitHub: `gh issue view <number>` from the relevant repo
-3. Propose the ticket folder, the worktree for the first PR (and base branches for any planned stack), and branch names.
+3. Propose the workspace folder, the worktree for the first PR (and base branches for any planned stack), and branch names.
 4. Ask before running `mkdir`, `git worktree add`, branch creation, or checkout.
 
 ## Branch names
 
-Use readable branch names that keep the ticket id visible:
+When a ticket exists, keep its id visible:
 
 - `feat/sc-12345/short-description`
 - `fix/sc-12345/short-description`
 - `chore/gh-987/short-description`
 
+For a ticketless quick fix, use `{type}/{short-description}`, such as `fix/local-date-spec-flakes`.
+
 Follow the repo's branch convention when it has one.
 
 ## Rules
 
-- Treat the ticket workspace as the unit of work.
+- Treat the ticket or quick-fix workspace as the unit of work.
 - Reuse existing workspaces; do not create duplicates.
 - Keep root selection flexible and explicit; ask before choosing between plausible roots.
 - Do not create tickets, worktrees, branches, commits, pushes, or PRs without confirmation.

@@ -77,7 +77,7 @@ This README is the map. The family README files have the details.
 
 | Skill | Description | References |
 |-------|-------------|------------|
-| `ticket-workspace` | Create or reuse ticket workspaces — one folder per ticket, one git worktree per PR (stacked or multi-repo) | — |
+| `ticket-workspace` | Create or reuse workspaces — one folder per ticket or ticketless quick fix, one git worktree per PR | — |
 | `ticket-workspace-cleanup` | User-invoked cleanup for completed ticket workspace folders after git-state checks | — |
 | `commit-simple` | Branch, commit, and push changes | — |
 | `commit-pr` | Create or update draft pull requests | — |
@@ -97,7 +97,7 @@ This README is the map. The family README files have the details.
 | `simplify-codebase-architecture` | Find pragmatic refactor opportunities: delete shallow abstraction, merge coupled code, deepen modules | [mattpocock improve-codebase-architecture](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
 | `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
 | `shape-first` | Human-in-the-loop coding loop for domain shapes, boundaries, TODOs, implementation, and drift checks | [ThePrimeagen](https://youtu.be/Aie0nYktsNA) |
-| `diagnosing-bugs` | Diagnosis loop for hard bugs: build a tight red-capable feedback loop before hypothesising | [mattpocock diagnosing-bugs](https://github.com/mattpocock/skills/tree/main/skills/engineering/diagnosing-bugs) |
+| `diagnosing-bugs` | Fast path for localized failures and a tight red-capable loop for hard, flaky, environment-specific, or performance bugs | [mattpocock diagnosing-bugs](https://github.com/mattpocock/skills/tree/main/skills/engineering/diagnosing-bugs) |
 | `align` | One-question alignment for non-functional requirements, functional behavior, and high-level solution shape; preserves adaptive `alignment.md` context and durable decisions | [mattpocock grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
 | `slice-plan` | Turn approved alignment into dependency-shaped `plan.md` artifacts of cold-pickup vertical slices | — |
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |

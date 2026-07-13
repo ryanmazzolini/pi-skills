@@ -7,11 +7,15 @@ description: Branch, commit, and push changes. Use when preparing a commit or pu
 
 ## Workflow
 
-1. Inspect the current branch, working tree, staged changes, and diff.
+1. Inspect the current branch, expected base, working tree, staged changes, and diff.
 2. Propose any branch change, commit split, and Conventional Commit message(s).
 3. After confirmation, create the branch if needed and commit.
 4. Offer to push after the commit.
 5. If the user wants a pull request, suggest `commit-pr` as the next step.
+
+## Cherry-picks
+
+Before cherry-picking, show the destination branch and exact commits in application order. If one requested commit requires additional dependency commits, explain the expansion and confirm the full set before applying it.
 
 ## Rules
 
@@ -26,5 +30,5 @@ description: Branch, commit, and push changes. Use when preparing a commit or pu
 - Focus the body on the resulting change: why it matters, what behavior/API/module/workflow/docs changed, and any important tradeoffs, compatibility notes, risks, or verification context.
 - Omit the development process: do not describe the conversation, prompting, agent workflow, or steps taken to arrive at the change.
 - When committing, use multiple `-m` flags or an editor so the body is actually recorded, not just proposed.
-- Ask before committing or pushing.
+- Ask before each commit or push.
 - Handoff pull request work to `commit-pr`.

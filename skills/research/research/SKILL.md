@@ -12,28 +12,30 @@ Conduct technical research and produce structured findings with diagrams, option
 - **gh CLI** (check with `which gh`): `gh issue view <number>`, `gh issue comment <number> --body "..."`
 - **Manual fallback**: Prompt for topic/scope directly
 
+## Retrieval budget
+
+Use the smallest evidence pass that can support the decision. When external evidence is needed, start with one broad pass of 2–4 varied searches, then fetch the strongest primary sources. Search again only for a decision-critical fact that remains missing.
+
+Stop when the recommendation is supported, material gaps are named, and another search is unlikely to change the decision. After the user approves a direction, resume research only when new evidence creates a blocker.
+
 ## Process
 
-1. **Gather Context**
-   - Parse arguments for GitHub issue (gh#XXXXX or #XXXXX) or topic
-   - If issue found: fetch issue for problem context via `gh issue view`
-   - Quick scan to understand scope
+1. **Gather context**
+   - Parse arguments for a GitHub issue (`gh#XXXXX` or `#XXXXX`) or topic.
+   - If an issue is present, fetch it with `gh issue view`.
+   - Inspect the local code or docs that constrain the decision.
 
-2. **Clarify**
-   - **Scope**: What specific aspects need investigation?
-   - **Constraints**: Requirements like cost, license, self-hosted?
-   - **Depth**: Quick overview or deep-dive?
-   - **Output destination** (infer from context, confirm with user):
-     - GitHub issue comment (if issue in context)
-     - Markdown file (specify path)
-     - Inline response
+2. **Clarify only blockers**
+   - Infer scope, depth, constraints, and a local or inline output destination from context.
+   - Ask when an unresolved answer would change the research or destination.
+   - Treat publication to a GitHub issue or other public surface as a confirmation gate.
 
 3. **Research**
-   - Search web for solutions, libraries, patterns
-   - Explore codebase for existing patterns to integrate with
-   - Analyze trade-offs between options
+   - Use the retrieval budget above.
+   - Prefer primary sources and current local evidence.
+   - Compare only viable options against the user's constraints.
 
-4. **Generate Output**
+4. **Generate output**
 
    Format findings using this template:
 
@@ -71,7 +73,7 @@ Conduct technical research and produce structured findings with diagrams, option
    - [Source Title](url) — brief description
    ```
 
-5. **Deliver Output**
-   - If GitHub issue: post as comment via `gh issue comment`
-   - If markdown file: write to specified path
-   - If inline: display in conversation
+5. **Deliver output**
+   - For a GitHub issue or other public surface, show the destination and proposed body, then confirm posting and whether AI attribution is wanted before publishing.
+   - For a markdown file, write to the agreed path.
+   - For inline output, display it in the conversation.
