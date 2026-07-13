@@ -1,12 +1,27 @@
 ---
 name: "diagnosing-bugs"
-description: "Diagnosis loop for hard bugs and performance regressions. Use when the user says \"diagnose\"/\"debug this\", or reports something broken/throwing/failing/slow."
+description: "Diagnose hard, flaky, environment-specific, or performance bugs. Use when the cause is unclear, local/CI/production behavior differs, or the user asks to diagnose or debug."
 license: "MIT; adapted from mattpocock/skills"
 ---
 
 # Diagnosing Bugs
 
-A discipline for hard bugs. Skip phases only when explicitly justified.
+Choose the smallest branch that fits the evidence.
+
+## Localized failure
+
+Use the fast path when the error identifies a narrow violated contract and one command can reproduce it:
+
+1. Run that command and observe the exact failure.
+2. State the evidenced cause. Use the full loop if the cause remains uncertain.
+3. Add or tighten a regression assertion at the real seam. If no correct test seam exists, document that gap and keep the reproducer as regression evidence.
+4. Apply the narrow fix, rerun the reproducer, then run the repo's expected regression checks.
+
+Completion: the original failure is green, regression evidence covers it, and broader validation has run or its blocker is explicit.
+
+## Uncertain failure
+
+Use the full loop below for hard, flaky, environment-specific, or performance bugs. Skip a phase only when the evidence makes its purpose unnecessary, and state why.
 
 When exploring the codebase, read `CONTEXT.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
@@ -44,6 +59,12 @@ A 30-second flaky loop is barely better than no loop; a 2-second deterministic o
 ### Non-deterministic bugs
 
 The goal is not a clean repro but a **higher reproduction rate**. Loop the trigger 100×, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not — keep raising the rate until it's debuggable.
+
+### Environment-specific bugs
+
+Build the smallest matrix that distinguishes the environments: timezone, locale, runtime version, configuration, data shape, or deployed revision. Hold the input constant and vary one difference at a time.
+
+Completion: one command produces the failing and passing verdict under named environment settings, or the missing environment access is explicit.
 
 ### When you genuinely cannot build a loop
 
