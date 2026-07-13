@@ -47,11 +47,11 @@ Checks `SKILL.md` frontmatter, pi skill-loader diagnostics, and Claude marketpla
 This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.
 
 A few things to know up front:
-- Tick is the canonical durable-work router. It fires on its own for multi-session work and advances vault context → `align` → `slice-plan` → confirmed ready work → review → a high-level vault distillate.
+- Ship is the canonical durable-work router. It fires on its own for multi-session work and advances vault context → `align` → `slice-plan` → confirmed ready work → review → a high-level vault distillate.
 - Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
 - Claude-exposed skill families are grouped under `skills/<plugin>/<skill>`; standalone skills stay under `skills/<skill>`.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
-- Tick workflows use durable markdown artifacts instead of hidden session state. They default to local `.plans/` workflow directories; set `PI_SKILLS_PLANS_ROOT` when a project needs a different durable artifact root. See [`skills/ship/tick/SKILL.md`](./skills/ship/tick/SKILL.md) for the entrypoint.
+- Ship workflows use durable markdown artifacts instead of hidden session state. They default to local `.plans/` workflow directories; set `PI_SKILLS_PLANS_ROOT` when a project needs a different durable artifact root. See [`skills/ship/ship/SKILL.md`](./skills/ship/ship/SKILL.md) for the entrypoint.
 
 ## Optional tooling
 
@@ -71,7 +71,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `ship` | Durable-work family: `align` requirements and shape, build a dependency-shaped plan, then `tick` through confirmed checkpoints | [`skills/ship/tick/SKILL.md`](./skills/ship/tick/SKILL.md) | [`skills/ship/tick/references/review-artifacts.md`](./skills/ship/tick/references/review-artifacts.md) |
+| `ship` | Durable-work family: `align` requirements and shape, build a dependency-shaped plan, then advance through confirmed checkpoints with `ship` | [`skills/ship/ship/SKILL.md`](./skills/ship/ship/SKILL.md) | [`skills/ship/ship/references/review-artifacts.md`](./skills/ship/ship/references/review-artifacts.md) |
 
 ## Standalone skills
 
