@@ -1,6 +1,6 @@
 ---
 name: "frontend-react"
-description: "React/Next.js TSX implementation and review: readable JSX, conditional rendering, client/server boundaries, accessibility, forms, async states, visual design, and PR feedback."
+description: "React/Next.js TSX implementation and review: readable JSX, conditional rendering, client/server boundaries, accessibility, forms, async states, visual design, generated artifacts, and PR feedback."
 ---
 
 # Frontend React
@@ -29,6 +29,7 @@ Read only the references that match the task:
 - [references/tailwind-shadcn.md](references/tailwind-shadcn.md) when working with Tailwind-heavy TSX, shadcn/ui primitives, `cn`, `cva`, or feature-specific colors/tokens.
 - [references/nextjs-app-router.md](references/nextjs-app-router.md) when changing server/client boundaries, routing, data loading, server actions, or route states.
 - [references/accessibility.md](references/accessibility.md) for React-specific accessibility pressure tests before using the deeper `hci` references.
+- [references/generated-artifacts.md](references/generated-artifacts.md) when changing GraphQL, OpenAPI, schema-derived, or other generated frontend code.
 - [references/review-checklist.md](references/review-checklist.md) before finalizing generated frontend code or addressing PR review feedback.
 
 ## Related Skills
