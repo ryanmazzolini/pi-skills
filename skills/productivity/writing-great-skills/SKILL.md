@@ -82,3 +82,14 @@ Use these to diagnose issues the user may be having with the skill.
 - **Sprawl** — a skill simply too long, even when every line is live and unique. Hurts readability and maintainability and wastes tokens. The cure is the ladder: disclose **reference** behind pointers, and split by **branch** or sequence so each path carries only what it needs.
 - **No-op** — a line the model already obeys by default, so you pay load to say nothing. The test: does it change behaviour versus the default? A weak leading word (_be thorough_ when the agent is already thorough-ish) is a no-op; the fix is a stronger word (_relentless_), not a different technique.
 - **Negation** — steering by prohibition backfires: _don't think of an elephant_ names the elephant and makes it more available, not less. Prompt the **positive** — state the target behaviour so the banned one is never spoken; keep a prohibition only as a hard guardrail you can't phrase positively, and even then pair it with what to do instead.
+
+## Reviewing a skill
+
+When using this reference to review a skill:
+
+1. State the recommended action first.
+2. Rank only issues that materially affect predictability.
+3. Propose the smallest useful revision.
+4. Keep raw analysis in working notes unless the user asks for it.
+
+The review is complete when the reader can decide what to change without reading the raw analysis.

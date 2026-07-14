@@ -81,7 +81,7 @@ This README is the map. The family README files have the details.
 | `ticket-workspace-cleanup` | User-invoked cleanup for completed ticket workspace folders after git-state checks | — |
 | `commit-simple` | Branch, commit, and push changes | — |
 | `commit-pr` | Create or update draft pull requests | — |
-| `research` | Standalone technical research | — |
+| `research` | Decision-first technical research with bounded evidence gathering | — |
 | `teach` | Run a tight learning loop with short lessons, practice, feedback, and earned durable artifacts | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/teach) |
 | `writing-great-skills` | User-invoked reference for writing predictable, low-context-load skills | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/writing-great-skills) |
 | `handoff` | Write a date-stamped `.plans/` handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
