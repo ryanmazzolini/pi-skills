@@ -104,7 +104,7 @@ This README is the map. The family README files have the details.
 | `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
 | `ruby-sorbet-rails` | Ruby/Rails guidance for Rails-native structures, Rails commands/migrations, strict Sorbet/Tapioca RBIs, RuboCop, db schema, and GraphQL federation artifacts | [Sorbet RBI docs](https://sorbet.org/docs/rbi), [Tapioca](https://github.com/Shopify/tapioca), [Rails migrations](https://guides.rubyonrails.org/active_record_migrations.html) |
 | `frontend-hci-review` | Progressive HCI/product-flow review; starts with friction candidates before design | [`skills/ux-accessibility/frontend-hci-review/SKILL.md`](./skills/ux-accessibility/frontend-hci-review/SKILL.md) |
-| `godot-gameplay-guidelines` | Gameplay defaults for Godot feel, scenes, and performance | — |
+| `godot-gameplay-guidelines` | Godot 4.7 gameplay feedback loop for behavior, scene ownership, game feel, and runtime performance | [Godot 4.7](https://docs.godotengine.org/en/4.7/), [minimal-godot-mcp](https://github.com/ryanmazzolini/minimal-godot-mcp), [godot-mcp](https://github.com/satelliteoflove/godot-mcp) |
 | `context-guidelines` | Context engineering principles for AI config | [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) |
 | `explain-code` | Code explanations with diagrams and analogies | — |
 | `typescript` | TypeScript strict mode conventions | — |
