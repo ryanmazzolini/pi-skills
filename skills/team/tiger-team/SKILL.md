@@ -17,7 +17,7 @@ Use the best subagent mechanism the current host provides:
 
 ## Non-Negotiables
 
-- Parent decomposes the work; do not launch a planning subagent just to split slices.
+- Parent decomposes the confirmed slice into work units; do not launch a planning subagent just to do that.
 - Use durable ticket worktrees by default when the repo/workflow has earned parallel writers.
 - Parallel writers get separate worktrees. Integration/fix work uses one explicitly chosen worktree at a time.
 - Children must not spawn more agents or invent alternate paths/branches.
@@ -28,7 +28,8 @@ Use the best subagent mechanism the current host provides:
 
 - Implementers, integration workers, fix workers: use the host's fast/low-reasoning implementation model when configurable.
 - Reviewers/validators: use the host's highest-scrutiny available reviewer model when configurable.
-- Max implementer slices: 3 unless the user approves more.
+- One confirmed slice per run.
+- Max parallel implementation work units: 3 unless the user approves more.
 - Max review rounds: 3; stop earlier when no fixes worth doing now remain.
 - Testing: implementers use an 80/20 hint — add or run the focused checks most likely to catch regressions, not exhaustive scaffolding.
 
@@ -40,13 +41,13 @@ Use the current ticket-workspace folder when available:
 <workspace-root>/worktrees/<ticket-slug>/
 ```
 
-Slice worktrees use semantic names, not sequence numbers:
+Work-unit worktrees use semantic names, not sequence numbers:
 
 ```text
-<ticket-folder>/<repo>-<slice-slug>/
+<ticket-folder>/<repo>-<work-unit-slug>/
 ```
 
-Slice branches append the same semantic slug to the main ticket branch name:
+Work-unit branches append the same semantic slug to the main ticket branch name:
 
 ```text
 feat/sc-12345/short-description-auth
@@ -66,10 +67,10 @@ Read [references/worktrees.md](references/worktrees.md) before creating/reusing 
 
 ## Workflow
 
-1. **Align** — summarize target, acceptance criteria, non-goals, and whether local commits are approved for this run. Ask one question if any of those are unclear.
-2. **Slice** — define up to 3 independent implementation slices with assigned worktree, branch, relevant skills, validation expectation, and stop rules.
-3. **Implement** — launch host-provided implementation agents in parallel when available, with each child scoped to one durable worktree. Do not use temporary worktrees unless the user explicitly prefers them.
-4. **Integrate** — inspect slice diffs/commits. Apply straightforward changes yourself or launch one integration worker. Ask the user before resolving conflicting product/API/architecture choices.
+1. **Align** — confirm the current slice's target, acceptance criteria, non-goals, and whether local commits are approved for this run. Ask one question if any of those are unclear.
+2. **Decompose** — divide the confirmed slice into up to 3 independent work units with assigned worktree, branch, relevant skills, validation expectation, and stop rules.
+3. **Implement** — launch host-provided implementation agents in parallel when available, with each child scoped to one work unit in one durable worktree. Do not use temporary worktrees unless the user explicitly prefers them.
+4. **Integrate** — inspect work-unit diffs/commits. Apply straightforward changes yourself or launch one integration worker. Ask the user before resolving conflicting product/API/architecture choices.
 5. **Review** — after an integrated diff exists, launch fresh-context high-scrutiny reviewers for correctness/regressions and maintainability/decoupling/idiomatic code. Add a security reviewer with `security-review` when risk warrants it.
 6. **Fix loop** — synthesize reviewer feedback; apply only fixes worth doing now with one fix worker; re-review material fixes.
 7. **Finalize** — inspect the final diff yourself, summarize worktrees/branches, validation, remaining risks, deferred feedback, and recommended next step.
