@@ -41,7 +41,7 @@ If the state is genuinely ambiguous, state your interpretation and ask one direc
 
 Alignment asks one human-owned question at a time. Planning proposes the dependency shape and ready set. Implementation completes and verifies one confirmed ready slice, or hands a confirmed ready wave to the active workflow coordinator.
 
-Before implementing an interface-facing slice, return to `align` if its primary UX/DX walkthrough is not explicit. Once the experience is settled, use `shape-first` when local interfaces or structure remain uncertain. Return to `align` when implementation reveals a change to the settled experience, requirements, scope, or high-level solution shape.
+Before implementing an interface-facing slice, return to `align` if its primary UX/DX walkthrough is not explicit. Once the experience is settled, use `shape-first` when local interfaces or structure remain uncertain. Before code, apply `simplest-sufficient-change` to choose the first repo-native option that fully satisfies the slice; this is an implementation lens, not another human checkpoint. Return to `align` when implementation reveals a change to the settled experience, requirements, scope, or high-level solution shape.
 
 Record implementation outcomes and verification with the relevant slice before stopping. Keep the conversational update brief; add orientation, recovery detail, or a question only when it helps the human act.
 

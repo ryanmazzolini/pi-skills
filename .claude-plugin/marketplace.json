@@ -120,6 +120,7 @@
         "./architecture-review",
         "./design-an-interface",
         "./shape-first",
+        "./simplest-sufficient-change",
         "./simplify-codebase-architecture",
         "./ubiquitous-language"
       ]

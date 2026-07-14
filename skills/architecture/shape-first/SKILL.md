@@ -84,9 +84,9 @@ Done when every approved shape rule and boundary behavior is covered by a TODO, 
 
 ## Code
 
-Implement the approved TODOs in order.
+Before editing, apply `simplest-sufficient-change` to the approved TODOs. If the first sufficient option changes the approved contract, return to Boundary.
 
-Reuse existing code first. Keep edits narrow. Run the relevant check.
+Implement the approved TODOs in order. Keep edits narrow. Run the relevant check.
 
 Done when the TODOs are complete, the check has run, and any skipped check has a reason.
 

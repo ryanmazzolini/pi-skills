@@ -78,6 +78,7 @@ Read [references/worktrees.md](references/worktrees.md) before creating/reusing 
 
 When the host supports skill injection, pass relevant skills to child agents. Otherwise include the relevant skill names and file paths in the child prompt.
 
+- All implementation and fix work: `simplest-sufficient-change`
 - React/Next/UI: `frontend-react`, `nextjs-app-router`, `typescript`, `hci`
 - Ruby/Rails/Sorbet: `ruby-sorbet-rails`
 - TypeScript/backend: `typescript`
