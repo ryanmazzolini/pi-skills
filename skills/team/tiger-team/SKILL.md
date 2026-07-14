@@ -1,6 +1,6 @@
 ---
 name: "tiger-team"
-description: "Orchestrate planned implementation work with host-provided subagents or task agents: durable worktrees, parallel implementers, integration, high-scrutiny review, optional security review, and focused fix loops."
+description: "Orchestrate planned implementation work with host-provided task agents: durable worktrees, parallel implementers, integration, high-scrutiny review, optional security review, and focused fix loops."
 ---
 
 # Tiger Team
@@ -9,19 +9,19 @@ Use this when the user wants planned work implemented by a small team of special
 
 ## Host Adapter
 
-Use the best subagent mechanism the current host provides:
+Use the best task-agent mechanism the current host provides:
 
-- **pi**: run `subagent({ action: "list" })` first and use only listed executable agents. Prefer durable ticket worktrees over `subagent(..., worktree: true)` temp worktrees.
-- **Claude Code**: use the Task/subagent capability available in the session. If model or skill injection is not available, include the relevant skill names and files in each child prompt.
-- **No subagent support**: do not fake parallelism. Run the same workflow sequentially and say which parallel steps are being collapsed.
+- **pi**: use the owned `delegate` extension for task-shaped children and `delegate_control` only for lifecycle operations. Load `agent-coordination` before choosing a child model or reasoning level. Readers with shared resources may use one batch; writers in different durable worktrees need separate non-blocking calls with their assigned `cwd`.
+- **Claude Code**: use the Task/subagent capability available in the session. If model or skill injection is unavailable, include the relevant skill names and files in each child prompt.
+- **No task-agent support**: do not fake parallelism. Run the same workflow sequentially and say which parallel steps are being collapsed.
 
 ## Non-Negotiables
 
-- Parent decomposes the confirmed slice into work units; do not launch a planning subagent just to do that.
+- Parent decomposes the confirmed slice into work units; do not launch a planning child just to do that.
 - Use durable ticket worktrees by default when the repo/workflow has earned parallel writers.
 - Parallel writers get separate worktrees. Integration/fix work uses one explicitly chosen worktree at a time.
 - Children must not spawn more agents or invent alternate paths/branches.
-- Escalate unapproved product, API, architecture, scope, or conflict decisions to the parent/user. If the host has child-to-parent channels such as intercom or `contact_supervisor`, use them.
+- Escalate unapproved product, API, architecture, scope, or conflict decisions to the parent/user. In pi, a child enters `needs_attention` and the parent answers through `delegate_control`; otherwise use the host's child-to-parent channel.
 - No push or PR from tiger-team agents. Local commits are allowed only after the parent explicitly says the user approved local commits for this tiger-team run.
 
 ## Defaults
@@ -69,7 +69,7 @@ Read [references/worktrees.md](references/worktrees.md) before creating/reusing 
 
 1. **Align** — confirm the current slice's target, acceptance criteria, non-goals, and whether local commits are approved for this run. Ask one question if any of those are unclear.
 2. **Decompose** — divide the confirmed slice into up to 3 independent work units with assigned worktree, branch, relevant skills, validation expectation, and stop rules.
-3. **Implement** — launch host-provided implementation agents in parallel when available, with each child scoped to one work unit in one durable worktree. Do not use temporary worktrees unless the user explicitly prefers them.
+3. **Implement** — launch host-provided implementation agents in parallel when available, with each child scoped to one work unit in one durable worktree. In pi, start separate non-blocking `delegate` calls for different worktree paths, continue useful parent work, and wait once only when a result becomes a dependency. Do not use temporary worktrees unless the user explicitly prefers them.
 4. **Integrate** — inspect work-unit diffs/commits. Apply straightforward changes yourself or launch one integration worker. Ask the user before resolving conflicting product/API/architecture choices.
 5. **Review** — after an integrated diff exists, launch fresh-context high-scrutiny reviewers for correctness/regressions and maintainability/decoupling/idiomatic code. Add a security reviewer with `security-review` when risk warrants it.
 6. **Fix loop** — synthesize reviewer feedback; apply only fixes worth doing now with one fix worker; re-review material fixes.

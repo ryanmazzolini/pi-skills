@@ -1,6 +1,6 @@
 # Tiger Team Worktrees
 
-Use deterministic ticket-workspace folders instead of `pi-subagents` temporary `worktree: true` worktrees.
+Use deterministic ticket-workspace folders for parallel writers and durable work. Temporary task workspaces are for small review-before-apply changes, not tiger-team branches.
 
 ## Naming
 
