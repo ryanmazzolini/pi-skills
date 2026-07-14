@@ -130,7 +130,7 @@ function runtimeFixture(options = {}) {
     workspaces: options.workspaces,
     maxActiveChildren: options.maxActiveChildren,
     createId: (kind) => `${kind}-${++id}`,
-    now: (() => {
+    now: options.now ?? (() => {
       let time = 0;
       return () => new Date(Date.UTC(2026, 0, 1, 0, 0, time++));
     })(),
@@ -173,6 +173,44 @@ test("starts a child without waiting and delivers its final answer once", async 
   assert.equal(run.children[0].result.value, "The cache key is stale.");
   assert.equal(run.delivery.state, "delivered");
   assert.equal(deliveries.length, 1);
+});
+
+test("coalesces duplicate streaming activity while preserving a liveness heartbeat", async () => {
+  let now = Date.UTC(2026, 0, 1);
+  const repository = memoryRepository();
+  let saves = 0;
+  const save = repository.save.bind(repository);
+  repository.save = async (run) => {
+    saves++;
+    await save(run);
+  };
+  const { runtime, children } = runtimeFixture({ repository, now: () => new Date(now) });
+  const handle = await runtime.start(startInput());
+  await settle();
+  const baselineSaves = saves;
+  let emissions = 0;
+  const unsubscribe = runtime.subscribe(() => { emissions++; });
+
+  for (let index = 0; index < 100; index++) {
+    children.launches[0].sink.activity({ kind: "thinking", summary: "Thinking" });
+  }
+  await settle();
+  assert.equal(saves, baselineSaves + 1);
+  assert.equal(emissions, 1);
+
+  now += 4_999;
+  children.launches[0].sink.activity({ kind: "thinking", summary: "Thinking" });
+  await settle();
+  assert.equal(saves, baselineSaves + 1);
+  assert.equal(emissions, 1);
+
+  now += 1;
+  children.launches[0].sink.activity({ kind: "thinking", summary: "Thinking" });
+  await settle();
+  assert.equal(saves, baselineSaves + 2);
+  assert.equal(emissions, 2);
+  assert.equal(runtime.get(handle.runId).children[0].latestActivity.observedAt, new Date(now).toISOString());
+  unsubscribe();
 });
 
 test("a four-child batch runs three children and starts the fourth in FIFO order", async () => {

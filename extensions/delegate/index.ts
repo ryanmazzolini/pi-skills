@@ -7,7 +7,7 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { createPiChildSessionAdapter, resolveChildResources } from "./child-session.ts";
 import { createParentDelivery, type DeliveryMetadata } from "./delivery.ts";
 import { createFileRunRepository } from "./persistence.ts";
@@ -43,6 +43,8 @@ const DelegateParams = Type.Object({
 	reasoning: Type.Optional(Type.String({ enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"] })),
 	outputSchema: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Object JSON Schema for validated structured output" })),
 }, { additionalProperties: false });
+
+const DELEGATE_PARAM_NAMES = new Set(Object.keys(DelegateParams.properties));
 
 const DelegateControlParams = Type.Object({
 	action: Type.String({ enum: ["status", "wait", "steer", "reply", "cancel", "resume", "review", "apply", "discard", "cleanup"], description: "Lifecycle or temporary-workspace operation" }),
@@ -339,6 +341,15 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 		],
 		renderShell: "self",
 		parameters: DelegateParams,
+		prepareArguments(args): Static<typeof DelegateParams> {
+			if (!args || typeof args !== "object" || Array.isArray(args)) return args as Static<typeof DelegateParams>;
+			const unknown = Object.keys(args).filter((name) => !DELEGATE_PARAM_NAMES.has(name)).sort();
+			if (unknown.length === 0) return args as Static<typeof DelegateParams>;
+			const noun = unknown.length === 1 ? "option" : "options";
+			throw new Error(
+				`Unsupported delegate ${noun}: ${unknown.join(", ")}. Supported options: ${[...DELEGATE_PARAM_NAMES].join(", ")}`,
+			);
+		},
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			currentContext = ctx;
 			const tasks = normalizeTasks(params);

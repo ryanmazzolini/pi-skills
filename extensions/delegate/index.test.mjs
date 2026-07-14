@@ -127,6 +127,15 @@ test("registers a small execution tool and separate control tool", () => {
   assert.deepEqual(delegate.parameters.properties.workspace.enum, ["existing", "temporary"]);
   assert.deepEqual(Object.keys(delegate.parameters.properties.tasks.items.properties), ["task", "label"]);
   assert.equal(delegate.renderShell, "self");
+  assert.deepEqual(delegate.prepareArguments({ task: "Inspect it", tools: ["read"] }), { task: "Inspect it", tools: ["read"] });
+  assert.throws(
+    () => delegate.prepareArguments({ task: "Inspect it", acceptance: "attested" }),
+    /Unsupported delegate option: acceptance/,
+  );
+  assert.throws(
+    () => delegate.prepareArguments({ task: "Inspect it", acceptance: "attested", timeoutMs: 1000 }),
+    /Unsupported delegate options: acceptance, timeoutMs/,
+  );
   const theme = { fg: (_color, text) => text, bold: (text) => text };
   const renderedCall = delegate.renderCall({ tasks: Array.from({ length: 4 }, (_, index) => ({ task: `task ${index}` })) }, theme).render(100).join("\n");
   assert.match(renderedCall, /agents 4 tasks/);

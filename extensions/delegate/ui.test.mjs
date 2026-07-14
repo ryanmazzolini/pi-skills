@@ -42,7 +42,7 @@ function run(state = "running", observedAt = new Date(0).toISOString(), count = 
   };
 }
 
-test("reuses the live component without registering another invalidator", () => {
+test("reuses the live component and invalidates only for visible changes", () => {
   let listener;
   const activeRun = run();
   const runtime = {
@@ -58,11 +58,37 @@ test("reuses the live component without registering another invalidator", () => 
   assert.equal(second, first);
 
   listener(activeRun);
+  assert.equal(invalidations, 0);
+  const changedRun = structuredClone(activeRun);
+  changedRun.children[0].latestActivity = {
+    kind: "tool",
+    summary: "read: src/cache.ts",
+    observedAt: new Date().toISOString(),
+  };
+  listener(changedRun);
   assert.equal(invalidations, 1);
   ui.dispose();
 });
 
-test("invalidates only the changed run, retains paused rows, and detaches settled rows", async () => {
+test("background live rows do not request animation renders without state changes", async () => {
+  const activeRun = run("running", new Date().toISOString());
+  const runtime = {
+    subscribe() { return () => {}; },
+    get: () => structuredClone(activeRun),
+  };
+  const ui = createDelegateUi(runtime);
+  let invalidations = 0;
+  const component = ui.renderRun("run-1", false, theme, () => { invalidations++; });
+  const before = component.render(100);
+
+  await new Promise((resolve) => setTimeout(resolve, 450));
+
+  assert.equal(invalidations, 0);
+  assert.deepEqual(component.render(100), before);
+  ui.dispose();
+});
+
+test("invalidates only the changed run, retains paused rows, and detaches settled rows", () => {
   let listener;
   const firstRun = run();
   const secondRun = structuredClone(firstRun);
@@ -79,28 +105,23 @@ test("invalidates only the changed run, retains paused rows, and detaches settle
   ui.renderRun("run-1", false, theme, () => { firstInvalidations++; });
   ui.renderRun("run-2", false, theme, () => { secondInvalidations++; });
 
-  listener(firstRun);
-  assert.deepEqual([firstInvalidations, secondInvalidations], [1, 0]);
-
   const attentionRun = structuredClone(firstRun);
   attentionRun.children[0].state = "needs_attention";
   runs.set(attentionRun.id, attentionRun);
   listener(attentionRun);
-  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.deepEqual([firstInvalidations, secondInvalidations], [1, 0]);
+
   const resumedRun = structuredClone(firstRun);
   runs.set(resumedRun.id, resumedRun);
-  const secondBeforeResume = secondInvalidations;
   listener(resumedRun);
-  assert.equal(firstInvalidations, 3);
-  assert.equal(secondInvalidations, secondBeforeResume);
+  assert.deepEqual([firstInvalidations, secondInvalidations], [2, 0]);
 
   const completedRun = structuredClone(firstRun);
   completedRun.children[0].state = "completed";
   runs.set(completedRun.id, completedRun);
   listener(completedRun);
   listener(secondRun);
-  assert.equal(firstInvalidations, 4);
-  assert.equal(secondInvalidations, secondBeforeResume + 1);
+  assert.deepEqual([firstInvalidations, secondInvalidations], [3, 0]);
   ui.dispose();
 });
 
