@@ -1,13 +1,15 @@
 {
   "name": "@ryanmazzolini/pi-skills",
   "version": "1.0.0",
+  "type": "module",
   "description": "Opinionated pi skills — planning, git workflows, code review, and dev conventions",
   "keywords": ["pi-package"],
   "bin": {
     "daily-report": "skills/notes/daily-report/scripts/daily-report.mjs"
   },
   "scripts": {
-    "test": "npm run validate:skills && node --test",
+    "test": "npm run validate:skills && npm run typecheck:extensions && node --test",
+    "typecheck:extensions": "tsc --noEmit -p tsconfig.extensions.json",
     "validate:skills": "node scripts/validate-skills.mjs"
   },
   "license": "MIT",
@@ -20,7 +22,13 @@
     "url": "https://github.com/ryanmazzolini/pi-skills/issues"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": ">=0.80.6"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-tui": "^0.80.6",
+    "@types/node": "^24.0.0",
+    "typebox": "^1.1.38",
+    "typescript": "^5.9.3"
   },
   "pi": {
     "skills": ["./skills"],
