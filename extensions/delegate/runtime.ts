@@ -1,4 +1,6 @@
-export const RUN_SCHEMA_VERSION = 2;
+import { join } from "node:path";
+
+export const RUN_SCHEMA_VERSION = 3;
 export const DEFAULT_RESULT_LIMIT_BYTES = 32 * 1024;
 
 export type ChildState =
@@ -62,6 +64,61 @@ export interface ResolvedChildConfig {
 	output: ChildOutputContract;
 }
 
+export interface DiffSummary {
+	filesChanged: number;
+	additions: number;
+	deletions: number;
+	stat: string;
+}
+
+export interface WorkspaceReview {
+	revision: string;
+	baseTree: string;
+	summary: DiffSummary;
+	patchPath: string;
+	manifestPath: string;
+	reviewedAt: string;
+}
+
+export type IntegrationState =
+	| { state: "working"; message?: string }
+	| { state: "no_changes"; reviewedAt: string; cleanupError?: string }
+	| { state: "review_pending"; review: WorkspaceReview }
+	| { state: "applying"; review: WorkspaceReview }
+	| { state: "discarding"; review: WorkspaceReview }
+	| { state: "applied"; revision: string; appliedAt: string; cleanupError?: string }
+	| { state: "conflict"; review: WorkspaceReview; message: string }
+	| { state: "discarded"; revision: string; discardedAt: string; cleanupError?: string };
+
+export interface ExistingWorkspace {
+	kind: "existing";
+	cwd: string;
+	owner: "external";
+}
+
+export interface TemporaryWorkspace {
+	kind: "temporary";
+	sourceCwd: string;
+	repoRoot: string;
+	relativeCwd: string;
+	worktreePath: string;
+	branch: string;
+	baseCommit: string;
+	patchPath: string;
+	manifestPath: string;
+	integration: IntegrationState;
+}
+
+export type ChildWorkspace = ExistingWorkspace | TemporaryWorkspace;
+
+export function childWorkspaceCwd(workspace: ChildWorkspace): string {
+	return workspace.kind === "existing"
+		? workspace.cwd
+		: workspace.relativeCwd
+			? join(workspace.worktreePath, workspace.relativeCwd)
+			: workspace.worktreePath;
+}
+
 export type ChildResult =
 	| { kind: "text"; value: string; completedAt: string }
 	| { kind: "structured"; value: unknown; completedAt: string };
@@ -105,11 +162,7 @@ export interface DelegatedChild {
 	sessionDir: string;
 	sessionFile?: string;
 	sessionId?: string;
-	workspace: {
-		kind: "existing";
-		cwd: string;
-		owner: "external";
-	};
+	workspace: ChildWorkspace;
 	latestActivity: Activity;
 	attention?: AttentionRequest;
 	pending?: PendingChildWork;
@@ -150,11 +203,23 @@ export type ChildViewResult =
 	| (ChildViewResultBase & { kind: "text"; value: string })
 	| (ChildViewResultBase & { kind: "structured"; value: unknown });
 
+export interface ChildWorkspaceView {
+	kind: "temporary";
+	state: IntegrationState["state"];
+	revision?: string;
+	summary?: DiffSummary;
+	patchRef?: string;
+	manifestRef?: string;
+	message?: string;
+	cleanupError?: string;
+}
+
 export interface ChildView {
 	childId: string;
 	label: string;
 	state: ChildState;
 	lastActivity: Activity;
+	workspace?: ChildWorkspaceView;
 	attention?: {
 		kind: AttentionKind;
 		question: string;
@@ -182,6 +247,9 @@ export interface RunView {
 export interface RunPaths {
 	runFile: string;
 	childSessionDir: string;
+	worktreeDir: string;
+	patchFile: string;
+	manifestFile: string;
 }
 
 export interface RunRepository {
@@ -246,6 +314,7 @@ export interface ParentDelivery {
 export interface StartRunInput {
 	tasks: Array<{ task: string; label: string }>;
 	cwd: string;
+	workspace?: "existing" | "temporary";
 	parent: ParentOrigin;
 	parentSessionFile?: string;
 	model: unknown;
@@ -263,10 +332,45 @@ export interface ParentReauthorization {
 	leafId: string | null;
 }
 
+export interface WorkspacePreparationInput {
+	sourceCwd: string;
+	runId: string;
+	childId: string;
+	worktreePath: string;
+	patchPath: string;
+	manifestPath: string;
+}
+
+export type WorkspaceInspection =
+	| { kind: "no_changes" }
+	| { kind: "changes"; review: Omit<WorkspaceReview, "reviewedAt"> };
+
+export type WorkspaceDestinationInspection =
+	| { kind: "base"; revision: string }
+	| { kind: "reviewed"; revision: string }
+	| { kind: "changed"; revision?: string; message: string };
+
+export interface WorkspaceManager {
+	prepare(input: WorkspacePreparationInput): Promise<TemporaryWorkspace>;
+	inspect(workspace: TemporaryWorkspace): Promise<WorkspaceInspection>;
+	inspectDestination(workspace: TemporaryWorkspace, review: WorkspaceReview): Promise<WorkspaceDestinationInspection>;
+	assertRevision(workspace: TemporaryWorkspace, revision: string): Promise<void>;
+	apply(workspace: TemporaryWorkspace, review: WorkspaceReview): Promise<void>;
+	cleanup(workspace: TemporaryWorkspace, expectedRevision?: string): Promise<void>;
+}
+
+export class WorkspaceConflictError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "WorkspaceConflictError";
+	}
+}
+
 export interface DelegateRuntimeOptions {
 	repository: RunRepository;
 	children: ChildSessionAdapter;
 	delivery: ParentDelivery;
+	workspaces?: WorkspaceManager;
 	maxActiveChildren?: number;
 	now?: () => Date;
 	createId?: (kind: "run" | "child" | "attention") => string;
@@ -337,6 +441,15 @@ function serialized(value: unknown): string {
 	}
 }
 
+function integrationReview(integration: IntegrationState): WorkspaceReview | undefined {
+	return integration.state === "review_pending"
+		|| integration.state === "applying"
+		|| integration.state === "discarding"
+		|| integration.state === "conflict"
+		? integration.review
+		: undefined;
+}
+
 export function projectRun(run: DelegationRun, maxBytes = DEFAULT_RESULT_LIMIT_BYTES): RunView {
 	const effectiveLimit = Math.max(1024, maxBytes);
 	const fixedBudget = Math.max(512, effectiveLimit - 4096);
@@ -371,6 +484,36 @@ export function projectRun(run: DelegationRun, maxBytes = DEFAULT_RESULT_LIMIT_B
 				fullResultRef: bounded(child.sessionFile ?? run.recordRef, 1024),
 			};
 		}
+		let workspace: ChildWorkspaceView | undefined;
+		if (child.workspace.kind === "temporary") {
+			const integration = child.workspace.integration;
+			const review = integrationReview(integration);
+			const finalRevision = integration.state === "applied" || integration.state === "discarded"
+				? integration.revision
+				: undefined;
+			const cleanupError = "cleanupError" in integration ? integration.cleanupError : undefined;
+			workspace = {
+				kind: "temporary",
+				state: integration.state,
+				...(review || finalRevision ? { revision: bounded(review?.revision ?? finalRevision!, 128) } : {}),
+				...(review
+					? {
+						summary: {
+							filesChanged: review.summary.filesChanged,
+							additions: review.summary.additions,
+							deletions: review.summary.deletions,
+							stat: bounded(review.summary.stat, Math.min(4096, perChildBudget)),
+						},
+						patchRef: bounded(review.patchPath, 1024),
+						manifestRef: bounded(review.manifestPath, 1024),
+					}
+					: {}),
+				...(integration.state === "conflict" || (integration.state === "working" && integration.message)
+					? { message: bounded(integration.message!, 2048) }
+					: {}),
+				...(cleanupError ? { cleanupError: bounded(cleanupError, 2048) } : {}),
+			};
+		}
 		return {
 			childId: bounded(child.id, 256),
 			label: bounded(child.label, 256),
@@ -380,6 +523,7 @@ export function projectRun(run: DelegationRun, maxBytes = DEFAULT_RESULT_LIMIT_B
 				summary: bounded(child.latestActivity.summary, 512),
 				observedAt: bounded(child.latestActivity.observedAt, 64),
 			},
+			...(workspace ? { workspace } : {}),
 			...(child.attention
 				? {
 					attention: {
@@ -420,14 +564,27 @@ export function projectRun(run: DelegationRun, maxBytes = DEFAULT_RESULT_LIMIT_B
 		view.runId = clipUtf8(view.runId, 96).value;
 		view.recordRef = clipUtf8(view.recordRef, 512).value;
 		view.children = view.children.map((child): ChildView => ({
-			childId: clipUtf8(child.childId, 96).value,
-			label: clipUtf8(child.label, 96).value,
+			childId: clipUtf8(child.childId, 64).value,
+			label: clipUtf8(child.label, 64).value,
 			state: child.state,
 			lastActivity: {
 				kind: child.lastActivity.kind,
-				summary: clipUtf8(child.lastActivity.summary, 96).value,
+				summary: clipUtf8(child.lastActivity.summary, 48).value,
 				observedAt: clipUtf8(child.lastActivity.observedAt, 40).value,
 			},
+			...(child.workspace
+				? {
+					workspace: {
+						kind: "temporary" as const,
+						state: child.workspace.state,
+						...(child.workspace.revision ? { revision: clipUtf8(child.workspace.revision, 64).value } : {}),
+						...(child.workspace.patchRef ? { patchRef: clipUtf8(child.workspace.patchRef, 96).value } : {}),
+						...(child.workspace.manifestRef ? { manifestRef: clipUtf8(child.workspace.manifestRef, 96).value } : {}),
+						...(child.workspace.message ? { message: clipUtf8(child.workspace.message, 96).value } : {}),
+						...(child.workspace.cleanupError ? { cleanupError: clipUtf8(child.workspace.cleanupError, 96).value } : {}),
+					},
+				}
+				: {}),
 			...(child.attention
 				? { attention: { kind: child.attention.kind, question: clipUtf8(child.attention.question, 160).value } }
 				: {}),
@@ -451,7 +608,7 @@ export function projectRun(run: DelegationRun, maxBytes = DEFAULT_RESULT_LIMIT_B
 					}
 					: {}),
 			...(child.error
-				? { error: { message: clipUtf8(child.error.message, 160).value, ...(child.error.stopReason ? { stopReason: clipUtf8(child.error.stopReason, 48).value } : {}) } }
+				? { error: { message: clipUtf8(child.error.message, 96).value, ...(child.error.stopReason ? { stopReason: clipUtf8(child.error.stopReason, 48).value } : {}) } }
 				: {}),
 			usage: child.usage,
 		}));
@@ -482,6 +639,12 @@ export function runNeedsControl(run: DelegationRun): boolean {
 		|| child.state === "running"
 		|| child.state === "needs_attention"
 		|| child.state === "interrupted"
+		|| (child.workspace.kind === "temporary" && (
+			(child.workspace.integration.state !== "no_changes"
+				&& child.workspace.integration.state !== "applied"
+				&& child.workspace.integration.state !== "discarded")
+			|| ("cleanupError" in child.workspace.integration && !!child.workspace.integration.cleanupError)
+		))
 	);
 }
 
@@ -489,6 +652,7 @@ export class DelegateRuntime {
 	private readonly repository: RunRepository;
 	private readonly children: ChildSessionAdapter;
 	private readonly delivery: ParentDelivery;
+	private readonly workspaces: WorkspaceManager | undefined;
 	private readonly maxActiveChildren: number;
 	private readonly now: () => Date;
 	private readonly createId: (kind: "run" | "child" | "attention") => string;
@@ -503,6 +667,7 @@ export class DelegateRuntime {
 	private readonly listeners = new Set<(run: DelegationRun) => void>();
 	private readonly saveChains = new Map<string, Promise<void>>();
 	private readonly finalizeChains = new Map<string, Promise<void>>();
+	private readonly workspaceChains = new Map<string, Promise<void>>();
 	private nextQueueSequence = 0;
 	private disposed = false;
 
@@ -510,6 +675,7 @@ export class DelegateRuntime {
 		this.repository = options.repository;
 		this.children = options.children;
 		this.delivery = options.delivery;
+		this.workspaces = options.workspaces;
 		this.maxActiveChildren = options.maxActiveChildren ?? 3;
 		this.now = options.now ?? (() => new Date());
 		this.createId = options.createId ?? ((kind) => `${kind}_${crypto.randomUUID()}`);
@@ -524,6 +690,9 @@ export class DelegateRuntime {
 				if (child.state === "queued" || child.state === "starting" || child.state === "running") {
 					child.state = "interrupted";
 					child.latestActivity = this.activity("waiting", "Interrupted when the parent session stopped; resume to continue");
+					changed = true;
+				}
+				if (child.workspace.kind === "temporary" && await this.reconcileRestoredWorkspace(child.workspace)) {
 					changed = true;
 				}
 			}
@@ -553,30 +722,48 @@ export class DelegateRuntime {
 		const runId = this.createId("run");
 		const timestamp = this.timestamp();
 		let recordRef = "";
-		const children = tasks.map((item): DelegatedChild => {
-			const childId = this.createId("child");
-			const paths = this.repository.paths(input.parent.sessionId, runId, childId);
-			recordRef ||= paths.runFile;
-			const pending = this.pending("initial");
-			const child: DelegatedChild = {
-				id: childId,
-				label: item.label,
-				task: item.task,
-				state: "queued",
-				resolved: clone(input.resolved),
-				...(input.resolved.context === "fork" && input.parentSessionFile
-					? { contextSource: { sessionFile: input.parentSessionFile, leafId: input.parent.leafId } }
-					: {}),
-				sessionDir: paths.childSessionDir,
-				workspace: { kind: "existing", cwd: input.cwd, owner: "external" },
-				latestActivity: { kind: "queued", summary: "Waiting for an inference slot", observedAt: timestamp },
-				pending,
-				usage: clone(ZERO_USAGE),
-			};
-			this.launchResources.set(child.id, { model: input.model, modelRegistry: input.modelRegistry });
-			this.queue.push({ runId, childId, sequence: pending.sequence });
-			return child;
-		});
+		const children: DelegatedChild[] = [];
+		const prepared: TemporaryWorkspace[] = [];
+		try {
+			for (const item of tasks) {
+				const childId = this.createId("child");
+				const paths = this.repository.paths(input.parent.sessionId, runId, childId);
+				recordRef ||= paths.runFile;
+				const pending = this.pending("initial");
+				let workspace: ChildWorkspace = { kind: "existing", cwd: input.cwd, owner: "external" };
+				if (input.workspace === "temporary") {
+					if (!this.workspaces) throw new Error("Temporary agent workspaces are unavailable");
+					workspace = await this.workspaces.prepare({
+						sourceCwd: input.cwd,
+						runId,
+						childId,
+						worktreePath: paths.worktreeDir,
+						patchPath: paths.patchFile,
+						manifestPath: paths.manifestFile,
+					});
+					prepared.push(workspace);
+				}
+				children.push({
+					id: childId,
+					label: item.label,
+					task: item.task,
+					state: "queued",
+					resolved: clone(input.resolved),
+					...(input.resolved.context === "fork" && input.parentSessionFile
+						? { contextSource: { sessionFile: input.parentSessionFile, leafId: input.parent.leafId } }
+						: {}),
+					sessionDir: paths.childSessionDir,
+					workspace,
+					latestActivity: { kind: "queued", summary: "Waiting for an inference slot", observedAt: timestamp },
+					pending,
+					usage: clone(ZERO_USAGE),
+				});
+			}
+		} catch (error) {
+			const cleanupErrors = await this.cleanupPrepared(prepared);
+			if (cleanupErrors.length > 0) throw new AggregateError([error, ...cleanupErrors], "Temporary workspace setup and cleanup failed");
+			throw error;
+		}
 		const run: DelegationRun = {
 			schemaVersion: RUN_SCHEMA_VERSION,
 			id: runId,
@@ -589,7 +776,22 @@ export class DelegateRuntime {
 		};
 
 		this.runs.set(run.id, run);
-		await this.persist(run);
+		for (const child of children) {
+			this.launchResources.set(child.id, { model: input.model, modelRegistry: input.modelRegistry });
+			this.queue.push({ runId, childId: child.id, sequence: child.pending!.sequence });
+		}
+		try {
+			await this.persist(run);
+		} catch (error) {
+			this.runs.delete(run.id);
+			for (const child of children) this.launchResources.delete(child.id);
+			for (let index = this.queue.length - 1; index >= 0; index--) {
+				if (this.queue[index]?.runId === run.id) this.queue.splice(index, 1);
+			}
+			const cleanupErrors = await this.cleanupPrepared(prepared);
+			if (cleanupErrors.length > 0) throw new AggregateError([error, ...cleanupErrors], "Delegation persistence and workspace cleanup failed");
+			throw error;
+		}
 		this.emit(run);
 		this.pump();
 		return {
@@ -710,6 +912,178 @@ export class DelegateRuntime {
 		for (const child of heldAttention) await this.notifyAttention(run, child);
 		if (heldResult) await this.finalizeIfSettled(run, true);
 		return clone(this.requireRun(runId));
+	}
+
+	async review(runId: string, childId?: string): Promise<DelegationRun> {
+		const selected = this.selectTemporary(this.requireRun(runId), childId, "review");
+		return this.serializeWorkspace(selected.id, async () => {
+			const run = this.requireRun(runId);
+			const child = this.selectTemporary(run, selected.id, "review");
+			if (!isFinalChild(child.state)) throw new Error(`Child ${child.id} is ${child.state}; review requires finalized work`);
+			const integration = child.workspace.integration;
+			if (integration.state === "applied" || integration.state === "discarded" || integration.state === "no_changes") {
+				throw new Error(`Child ${child.id} workspace is already ${integration.state}`);
+			}
+			if (integration.state === "applying" || integration.state === "discarding") {
+				throw new Error(`Child ${child.id} workspace is currently ${integration.state}`);
+			}
+			const manager = this.requireWorkspaceManager();
+			const inspection = await manager.inspect(child.workspace);
+			if (inspection.kind === "no_changes") {
+				child.workspace.integration = { state: "no_changes", reviewedAt: this.timestamp() };
+				run.updatedAt = this.timestamp();
+				await this.persist(run);
+				this.emit(run);
+				try {
+					await manager.cleanup(child.workspace);
+				} catch (error) {
+					child.workspace.integration = error instanceof WorkspaceConflictError
+						? { state: "working", message: error.message }
+						: {
+							...child.workspace.integration,
+							cleanupError: error instanceof Error ? error.message : String(error),
+						};
+					run.updatedAt = this.timestamp();
+					await this.persist(run);
+					this.emit(run);
+				}
+				return clone(run);
+			}
+			child.workspace.integration = {
+				state: "review_pending",
+				review: { ...inspection.review, reviewedAt: this.timestamp() },
+			};
+			run.updatedAt = this.timestamp();
+			await this.persist(run);
+			this.emit(run);
+			return clone(run);
+		});
+	}
+
+	async apply(runId: string, childId: string | undefined, revision: string): Promise<DelegationRun> {
+		const selected = this.selectTemporary(this.requireRun(runId), childId, "apply");
+		return this.serializeWorkspace(selected.id, async () => {
+			const run = this.requireRun(runId);
+			const child = this.selectTemporary(run, selected.id, "apply");
+			const integration = child.workspace.integration;
+			if (integration.state !== "review_pending" && integration.state !== "conflict") {
+				throw new Error(`Child ${child.id} workspace is ${integration.state}; apply requires reviewed changes`);
+			}
+			const expected = revision.trim();
+			if (!expected) throw new Error("Apply requires a reviewed revision");
+			const review = integration.review;
+			if (review.revision !== expected) throw new Error(`Reviewed workspace revision is ${review.revision}, not ${expected}`);
+			const manager = this.requireWorkspaceManager();
+			await manager.assertRevision(child.workspace, expected);
+			child.workspace.integration = { state: "applying", review };
+			run.updatedAt = this.timestamp();
+			await this.persist(run);
+			this.emit(run);
+			try {
+				await manager.apply(child.workspace, review);
+			} catch (error) {
+				child.workspace.integration = {
+					state: "conflict",
+					review,
+					message: error instanceof Error ? error.message : String(error),
+				};
+				run.updatedAt = this.timestamp();
+				await this.persist(run);
+				this.emit(run);
+				if (!(error instanceof WorkspaceConflictError)) throw error;
+				return clone(run);
+			}
+			child.workspace.integration = { state: "applied", revision: expected, appliedAt: this.timestamp() };
+			run.updatedAt = this.timestamp();
+			await this.persist(run);
+			this.emit(run);
+			try {
+				await manager.cleanup(child.workspace, expected);
+			} catch (error) {
+				child.workspace.integration = {
+					...child.workspace.integration,
+					cleanupError: error instanceof Error ? error.message : String(error),
+				};
+				run.updatedAt = this.timestamp();
+				await this.persist(run);
+				this.emit(run);
+			}
+			return clone(run);
+		});
+	}
+
+	async discard(runId: string, childId: string | undefined, revision: string): Promise<DelegationRun> {
+		const selected = this.selectTemporary(this.requireRun(runId), childId, "discard");
+		return this.serializeWorkspace(selected.id, async () => {
+			const run = this.requireRun(runId);
+			const child = this.selectTemporary(run, selected.id, "discard");
+			const integration = child.workspace.integration;
+			if (integration.state !== "review_pending" && integration.state !== "conflict") {
+				throw new Error(`Child ${child.id} workspace is ${integration.state}; discard requires reviewed changes`);
+			}
+			const expected = revision.trim();
+			if (!expected) throw new Error("Discard requires a reviewed revision");
+			const review = integration.review;
+			if (review.revision !== expected) throw new Error(`Reviewed workspace revision is ${review.revision}, not ${expected}`);
+			const manager = this.requireWorkspaceManager();
+			await manager.assertRevision(child.workspace, expected);
+			child.workspace.integration = { state: "discarding", review };
+			run.updatedAt = this.timestamp();
+			await this.persist(run);
+			this.emit(run);
+			try {
+				await manager.cleanup(child.workspace, expected);
+			} catch (error) {
+				if (error instanceof WorkspaceConflictError) {
+					child.workspace.integration = { state: "conflict", review, message: error.message };
+				} else {
+					child.workspace.integration = {
+						state: "discarded",
+						revision: expected,
+						discardedAt: this.timestamp(),
+						cleanupError: error instanceof Error ? error.message : String(error),
+					};
+				}
+				run.updatedAt = this.timestamp();
+				await this.persist(run);
+				this.emit(run);
+				return clone(run);
+			}
+			child.workspace.integration = { state: "discarded", revision: expected, discardedAt: this.timestamp() };
+			run.updatedAt = this.timestamp();
+			await this.persist(run);
+			this.emit(run);
+			return clone(run);
+		});
+	}
+
+	async cleanup(runId: string, childId?: string): Promise<DelegationRun> {
+		const selected = this.selectTemporary(this.requireRun(runId), childId, "cleanup");
+		return this.serializeWorkspace(selected.id, async () => {
+			const run = this.requireRun(runId);
+			const child = this.selectTemporary(run, selected.id, "cleanup");
+			const integration = child.workspace.integration;
+			if ((integration.state !== "no_changes" && integration.state !== "applied" && integration.state !== "discarded")
+				|| !integration.cleanupError) {
+				throw new Error(`Child ${child.id} workspace has no failed cleanup to retry`);
+			}
+			const expected = integration.state === "no_changes" ? undefined : integration.revision;
+			try {
+				await this.requireWorkspaceManager().cleanup(child.workspace, expected);
+				const recovered = { ...integration };
+				delete recovered.cleanupError;
+				child.workspace.integration = recovered;
+			} catch (error) {
+				child.workspace.integration = {
+					...integration,
+					cleanupError: error instanceof Error ? error.message : String(error),
+				};
+			}
+			run.updatedAt = this.timestamp();
+			await this.persist(run);
+			this.emit(run);
+			return clone(run);
+		});
 	}
 
 	async cancel(runId: string, childId?: string): Promise<DelegationRun> {
@@ -1098,6 +1472,119 @@ export class DelegateRuntime {
 		return count;
 	}
 
+	private async reconcileRestoredWorkspace(workspace: TemporaryWorkspace): Promise<boolean> {
+		const manager = this.requireWorkspaceManager();
+		const integration = workspace.integration;
+		if (integration.state === "applying") {
+			try {
+				const destination = await manager.inspectDestination(workspace, integration.review);
+				if (destination.kind === "base") {
+					await manager.assertRevision(workspace, integration.review.revision);
+					workspace.integration = { state: "review_pending", review: integration.review };
+					return true;
+				}
+				if (destination.kind === "changed") {
+					workspace.integration = { state: "conflict", review: integration.review, message: destination.message };
+					return true;
+				}
+				workspace.integration = {
+					state: "applied",
+					revision: integration.review.revision,
+					appliedAt: this.timestamp(),
+				};
+				try {
+					await manager.cleanup(workspace, integration.review.revision);
+				} catch (error) {
+					workspace.integration = {
+						...workspace.integration,
+						cleanupError: error instanceof Error ? error.message : String(error),
+					};
+				}
+				return true;
+			} catch (error) {
+				workspace.integration = {
+					state: "conflict",
+					review: integration.review,
+					message: `Could not reconcile interrupted apply: ${error instanceof Error ? error.message : String(error)}`,
+				};
+				return true;
+			}
+		}
+		if (integration.state === "discarding") {
+			try {
+				await manager.cleanup(workspace, integration.review.revision);
+				workspace.integration = {
+					state: "discarded",
+					revision: integration.review.revision,
+					discardedAt: this.timestamp(),
+				};
+			} catch (error) {
+				workspace.integration = error instanceof WorkspaceConflictError
+					? { state: "conflict", review: integration.review, message: error.message }
+					: {
+						state: "discarded",
+						revision: integration.review.revision,
+						discardedAt: this.timestamp(),
+						cleanupError: error instanceof Error ? error.message : String(error),
+					};
+			}
+			return true;
+		}
+		if (integration.state === "no_changes" || integration.state === "applied" || integration.state === "discarded") {
+			const expected = integration.state === "no_changes" ? undefined : integration.revision;
+			try {
+				await manager.cleanup(workspace, expected);
+				if (integration.cleanupError) {
+					const recovered = { ...integration };
+					delete recovered.cleanupError;
+					workspace.integration = recovered;
+					return true;
+				}
+			} catch (error) {
+				if (integration.state === "no_changes" && error instanceof WorkspaceConflictError) {
+					workspace.integration = { state: "working", message: error.message };
+					return true;
+				}
+				const message = error instanceof Error ? error.message : String(error);
+				if (integration.cleanupError !== message) {
+					workspace.integration = { ...integration, cleanupError: message };
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private serializeWorkspace<T>(childId: string, operation: () => Promise<T>): Promise<T> {
+		const previous = this.workspaceChains.get(childId) ?? Promise.resolve();
+		const result = previous.catch(() => {}).then(operation);
+		const settled = result.then(() => {}, () => {});
+		this.workspaceChains.set(childId, settled);
+		void settled.then(() => {
+			if (this.workspaceChains.get(childId) === settled) this.workspaceChains.delete(childId);
+		});
+		return result;
+	}
+
+	private selectTemporary(
+		run: DelegationRun,
+		childId: string | undefined,
+		action: string,
+	): DelegatedChild & { workspace: TemporaryWorkspace } {
+		const candidates = childId
+			? [this.requireChild(run, childId)]
+			: run.children.filter((child) => child.workspace.kind === "temporary");
+		if (candidates.length !== 1) throw new Error(`${action} requires childId unless exactly one temporary workspace exists`);
+		const child = candidates[0]!;
+		if (child.workspace.kind !== "temporary") throw new Error(`Child ${child.id} does not use a temporary workspace`);
+		return child as DelegatedChild & { workspace: TemporaryWorkspace };
+	}
+
+	private requireWorkspaceManager(): WorkspaceManager {
+		if (!this.workspaces) throw new Error("Temporary agent workspaces are unavailable");
+		return this.workspaces;
+	}
+
 	private selectOne(run: DelegationRun, childId: string | undefined, state: ChildState, action: string): DelegatedChild {
 		if (childId) {
 			const child = this.requireChild(run, childId);
@@ -1144,6 +1631,12 @@ export class DelegateRuntime {
 
 	private invalidateGeneration(childId: string): void {
 		this.generations.set(childId, (this.generations.get(childId) ?? 0) + 1);
+	}
+
+	private async cleanupPrepared(workspaces: TemporaryWorkspace[]): Promise<unknown[]> {
+		if (!this.workspaces || workspaces.length === 0) return [];
+		const results = await Promise.allSettled([...workspaces].reverse().map((workspace) => this.workspaces!.cleanup(workspace)));
+		return results.flatMap((result) => result.status === "rejected" ? [result.reason] : []);
 	}
 
 	private activity(kind: Activity["kind"], summary: string): Activity {

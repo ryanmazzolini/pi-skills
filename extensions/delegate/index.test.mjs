@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import delegateExtension, { currentDelegationRun, currentHeldRun, normalizeTasks, persistedInputGeneration, supportsReasoning, validateOutputSchema } from "./index.ts";
+import delegateExtension, { currentDelegationRun, currentHeldRun, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
 
 test("validates the one-or-batch task boundary", () => {
   assert.deepEqual(normalizeTasks({ task: " Read it " }), [{ task: "Read it", label: "Read it" }]);
@@ -53,9 +53,41 @@ test("rejects malformed or unsupported structured-output schemas before launch",
   assert.throws(() => validateOutputSchema({ type: "object", properties: { value: { type: "string", format: "email" } } }), /unsupported keyword: format/);
 });
 
+test("requires exact reviewed revisions only for apply and discard", () => {
+  assert.doesNotThrow(() => validateControl({ action: "review" }));
+  assert.doesNotThrow(() => validateControl({ action: "cleanup" }));
+  assert.doesNotThrow(() => validateControl({ action: "apply", revision: "tree-123" }));
+  assert.doesNotThrow(() => validateControl({ action: "discard", revision: "tree-123" }));
+  assert.throws(() => validateControl({ action: "apply" }), /requires revision/);
+  assert.throws(() => validateControl({ action: "review", revision: "tree-123" }), /revision is not valid/);
+  assert.throws(() => validateControl({ action: "status", message: "extra" }), /message is not valid/);
+});
+
+test("recommends temporary workspace review only after the child is finalized", () => {
+  const view = {
+    runId: "run-1",
+    status: "running",
+    delivery: "pending",
+    truncated: false,
+    recordRef: "/tmp/run.json",
+    children: [{
+      childId: "child-1",
+      label: "Writer",
+      state: "running",
+      lastActivity: { kind: "tool", summary: "Editing", observedAt: new Date(0).toISOString() },
+      workspace: { kind: "temporary", state: "working" },
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0 },
+    }],
+  };
+
+  assert.doesNotMatch(toolText(view), /Next: review/);
+  view.children[0].state = "completed";
+  assert.match(toolText(view), /Next: review/);
+});
+
 test("selects the newest manageable run for the no-argument agents command", () => {
   const base = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     parent: { sessionId: "parent", leafId: null, inputGeneration: 0 },
     recordRef: "/tmp/run.json",
     updatedAt: new Date(0).toISOString(),
@@ -90,16 +122,17 @@ test("registers a small execution tool and separate control tool", () => {
   const delegate = tools[0];
   assert.equal(delegate.parameters.required, undefined);
   assert.deepEqual(Object.keys(delegate.parameters.properties), [
-    "task", "label", "tasks", "cwd", "context", "skills", "tools", "model", "reasoning", "outputSchema",
+    "task", "label", "tasks", "cwd", "workspace", "context", "skills", "tools", "model", "reasoning", "outputSchema",
   ]);
+  assert.deepEqual(delegate.parameters.properties.workspace.enum, ["existing", "temporary"]);
   assert.deepEqual(Object.keys(delegate.parameters.properties.tasks.items.properties), ["task", "label"]);
   assert.equal(delegate.renderShell, "self");
   const theme = { fg: (_color, text) => text, bold: (text) => text };
   const renderedCall = delegate.renderCall({ tasks: Array.from({ length: 4 }, (_, index) => ({ task: `task ${index}` })) }, theme).render(100).join("\n");
   assert.match(renderedCall, /agents 4 tasks/);
   assert.doesNotMatch(renderedCall, /delegate|children/);
-  assert.deepEqual(tools[1].parameters.properties.action.enum, ["status", "wait", "steer", "reply", "cancel", "resume"]);
-  assert.deepEqual(Object.keys(tools[1].parameters.properties), ["action", "runId", "childId", "message", "timeoutMs"]);
+  assert.deepEqual(tools[1].parameters.properties.action.enum, ["status", "wait", "steer", "reply", "cancel", "resume", "review", "apply", "discard", "cleanup"]);
+  assert.deepEqual(Object.keys(tools[1].parameters.properties), ["action", "runId", "childId", "message", "revision", "timeoutMs"]);
   assert.match(tools[1].promptGuidelines.join("\n"), /Choose one result path/);
   assert.match(tools[1].promptGuidelines.join("\n"), /Reserve status for one-time inspection/);
   assert.deepEqual(commands.map((command) => command.name), ["agents"]);

@@ -32,17 +32,25 @@ function boundContent(content: string, maxBytes = DEFAULT_RESULT_LIMIT_BYTES): s
 }
 
 function formatRun(view: RunView): string {
-	const lines = [`Agents ${view.status}: ${view.runId}`];
+	const lines = [`Agents ${view.status}: ${view.runId}`, `Full run: ${view.recordRef}`];
+	if (view.truncated) lines.push("The model-visible result was truncated; the complete result remains in the run record.");
 	for (const child of view.children) {
 		lines.push("", `### ${child.label} — ${child.state}`);
+		if (child.workspace?.state === "working") {
+			lines.push(`Temporary workspace preserved. Review it with delegate_control action=review, runId=${view.runId}, childId=${child.childId}.`);
+		} else if (child.workspace) {
+			lines.push(`Temporary workspace: ${child.workspace.state}${child.workspace.revision ? ` (${child.workspace.revision})` : ""}.`);
+			if (child.workspace.message) lines.push(`Workspace note: ${child.workspace.message}`);
+			if (child.workspace.cleanupError) lines.push(`Cleanup failed: ${child.workspace.cleanupError}. Retry with delegate_control action=cleanup.`);
+		}
+		if (child.workspace?.patchRef) lines.push(`Patch: ${child.workspace.patchRef}`);
+		if (child.workspace?.manifestRef) lines.push(`Manifest: ${child.workspace.manifestRef}`);
 		if (child.result) lines.push(resultValue(child.result));
 		else if (child.error) lines.push(`Error: ${child.error.message}`);
 		else if (child.attention) lines.push(`Needs attention: ${child.attention.question}`);
 		else lines.push(child.lastActivity.summary);
 	}
 	if (view.omittedChildren) lines.push("", `${view.omittedChildren} agent snapshots were omitted from this bounded delivery.`);
-	lines.push("", `Full run: ${view.recordRef}`);
-	if (view.truncated) lines.push("The model-visible result was truncated; the complete result remains in the run record.");
 	return boundContent(lines.join("\n"));
 }
 

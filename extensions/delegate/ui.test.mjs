@@ -14,7 +14,7 @@ const theme = {
 
 function run(state = "running", observedAt = new Date(0).toISOString(), count = 1) {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: "run-1",
     parent: { sessionId: "parent-1", leafId: null, inputGeneration: 0 },
     recordRef: "/tmp/run.json",
@@ -124,6 +124,59 @@ test("collapsed cards make the no-argument agents view discoverable", () => {
   };
   const ui = createDelegateUi(runtime);
   assert.match(ui.renderRun("run-1", false, theme, () => {}).render(100).join("\n"), /Open: \/agents/);
+  ui.dispose();
+});
+
+test("temporary workspace state and exact review controls remain visible", async () => {
+  const completedRun = run("completed", new Date().toISOString());
+  completedRun.delivery = { state: "delivered", deliveredAt: new Date().toISOString() };
+  completedRun.children[0].workspace = {
+    kind: "temporary",
+    sourceCwd: "/tmp/source",
+    repoRoot: "/tmp/source",
+    relativeCwd: "",
+    worktreePath: "/tmp/worktree",
+    branch: "pi-delegate/run-1/child-1",
+    baseCommit: "base",
+    patchPath: "/tmp/review.patch",
+    manifestPath: "/tmp/review.json",
+    integration: { state: "working" },
+  };
+  let listener;
+  const runtime = {
+    subscribe(callback) { listener = callback; return () => {}; },
+    get: () => structuredClone(completedRun),
+  };
+  const ui = createDelegateUi(runtime);
+  const component = ui.renderRun("run-1", false, theme, () => {});
+  assert.match(component.render(100).join("\n"), /Workspace: review required/);
+
+  completedRun.children[0].workspace.integration = {
+    state: "review_pending",
+    review: {
+      revision: "tree-reviewed",
+      baseTree: "tree-base",
+      summary: { filesChanged: 1, additions: 2, deletions: 0, stat: "1 file changed, 2 insertions(+)" },
+      patchPath: "/tmp/review.patch",
+      manifestPath: "/tmp/review.json",
+      reviewedAt: new Date().toISOString(),
+    },
+  };
+  listener(completedRun);
+  assert.match(component.render(140).join("\n"), /Workspace: review pending/);
+  const expandedReview = ui.renderRun("run-1", true, theme, () => {}, component).render(180).join("\n");
+  assert.match(expandedReview, /\/agents apply run-1 tree-reviewed child-1/);
+  assert.match(expandedReview, /Manifest: \/tmp\/review\.json/);
+
+  completedRun.children[0].workspace.integration = {
+    state: "no_changes",
+    reviewedAt: new Date().toISOString(),
+    cleanupError: "worktree is busy",
+  };
+  listener(completedRun);
+  const cleanup = component.render(180).join("\n");
+  assert.match(cleanup, /Cleanup failed: worktree is busy/);
+  assert.match(cleanup, /\/agents cleanup run-1 child-1/);
   ui.dispose();
 });
 
