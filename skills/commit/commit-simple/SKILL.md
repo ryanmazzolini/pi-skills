@@ -20,7 +20,7 @@ Before cherry-picking, show the destination branch and exact commits in applicat
 ## Rules
 
 - If there are logically separate changes, propose separate commits and confirm the plan before committing.
-- If the current branch is `main` or `master`, ask whether to create a new branch before committing.
+- If the current branch is `main` or `master`, ask the single yes/no question: “Create a new branch before committing?” When offering mutually exclusive actions, ask the user to name one option and clarify any reply that does not select one.
 - For new branches, use `{type}/sc-{number}/{slug}`, `{type}/gh-{number}/{slug}`, `{type}/{number}/{slug}`, or `{type}/{slug}`.
 - When working inside a ticket worktree folder, keep the branch aligned with the folder's ticket id.
 - Use Conventional Commits for commit messages.
