@@ -1,79 +1,68 @@
 ---
 name: "research"
-description: Conduct technical research and produce structured findings. Use for spikes, or when the user asks to research, evaluate, or compare technical options.
+description: "Research technical questions and decisions. Use when the user asks for evidence, a technical spike, or a comparison of viable options."
 ---
 
 # Research
 
-Conduct technical research and produce structured findings with diagrams, options analysis, and references.
+Support a decision with the smallest evidence pass that can justify or change it.
 
-## GitHub Integration
+## 1. Define the decision
 
-- **gh CLI** (check with `which gh`): `gh issue view <number>`, `gh issue comment <number> --body "..."`
-- **Manual fallback**: Prompt for topic/scope directly
+Inspect the local code and documentation that constrain the question. Identify the decision, the user's constraints, and whether the result belongs in the conversation or a file.
 
-## Retrieval budget
+When the request names a GitHub issue such as `gh#123` or `#123`, use `gh issue view` when the CLI is available. Otherwise work from the topic and local context.
 
-Use the smallest evidence pass that can support the decision. When external evidence is needed, start with one broad pass of 2–4 varied searches, then fetch the strongest primary sources. Search again only for a decision-critical fact that remains missing.
+Ask only when a missing answer would change the research or its destination.
+
+Complete when the decision, constraints, and destination are clear.
+
+## 2. Gather the evidence
+
+Start with local evidence. When external evidence is needed, make one broad pass of 2–4 varied searches, then read the strongest primary sources. Search again only for a decision-critical fact that remains missing.
+
+Prefer current primary sources. Compare only options that satisfy the user's constraints. Keep raw notes, source inventories, and discarded paths out of the reader-facing result.
 
 Stop when the recommendation is supported, material gaps are named, and another search is unlikely to change the decision. After the user approves a direction, resume research only when new evidence creates a blocker.
 
-## Process
+## 3. Write for the reader
 
-1. **Gather context**
-   - Parse arguments for a GitHub issue (`gh#XXXXX` or `#XXXXX`) or topic.
-   - If an issue is present, fetch it with `gh issue view`.
-   - Inspect the local code or docs that constrain the decision.
+Lead with the recommendation. Use only the sections the reader needs:
 
-2. **Clarify only blockers**
-   - Infer scope, depth, constraints, and a local or inline output destination from context.
-   - Ask when an unresolved answer would change the research or destination.
-   - Treat publication to a GitHub issue or other public surface as a confirmation gate.
+```markdown
+# {Topic}
 
-3. **Research**
-   - Use the retrieval budget above.
-   - Prefer primary sources and current local evidence.
-   - Compare only viable options against the user's constraints.
+## Recommendation
 
-4. **Generate output**
+[The recommended decision and its practical effect.]
 
-   Format findings using this template:
+## Why
 
-   ```markdown
-   ## {Topic} Research Summary
+[The evidence and constraints that support it.]
 
-   ### How {Domain} Works
+## Important trade-offs and unknowns
 
-   [Brief explanation of the core concept]
+[Material costs, risks, and unresolved facts.]
 
-   ### Design Pattern
+## Viable alternatives
 
-   - [Pattern Name](url) — explanation with inline deep-links
+[Include only when another option could reasonably be chosen.]
 
-   ### Implementation Options
+## Next action
 
-   | Solution | License | Key Feature | Cost  |
-   |----------|---------|-------------|-------|
-   | Option A | MIT     | Feature X   | Free  |
-   | Option B | Apache  | Feature Y   | $X/mo |
+[The smallest useful next step.]
 
-   ### Recommended Approach: {Choice}
+## Sources
 
-   - **Rationale**: Why this option fits best
-   - **Integration**: How it fits with existing codebase
-   - **Caveats**: Known limitations or concerns
+- [Primary source](url) — why it matters
+```
 
-   ### Next Steps
+Add background explanation, diagrams, or comparison tables only when they help the reader understand or make the decision.
 
-   1. Actionable item with owner if known
-   2. Follow-up investigation if needed
+Complete when the reader can act without reading the sources and every material uncertainty is visible.
 
-   ### References
+## 4. Deliver the result
 
-   - [Source Title](url) — brief description
-   ```
-
-5. **Deliver output**
-   - For a GitHub issue or other public surface, show the destination and proposed body, then confirm posting and whether AI attribution is wanted before publishing.
-   - For a markdown file, write to the agreed path.
-   - For inline output, display it in the conversation.
+- For inline output, present the result in the conversation.
+- For a file, write to the agreed path.
+- Before publishing to a GitHub issue or another public surface, show the destination and proposed body. Confirm publication and whether AI attribution is wanted.
