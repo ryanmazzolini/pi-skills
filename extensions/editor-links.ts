@@ -3,8 +3,20 @@ import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
+import {
+	createBashToolDefinition,
+	createEditToolDefinition,
+	createLsToolDefinition,
+	createReadToolDefinition,
+	createWriteToolDefinition,
+	type ExtensionAPI,
+	SettingsManager,
+	type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
+import type { TSchema } from "typebox";
 
 // Ghostty only opens http(s) OSC8 links, so links point at a loopback
 // bridge that runs `open zed://...` instead of using zed:// directly.
@@ -31,6 +43,148 @@ export function startBridge(port = BRIDGE_PORT, openCmd = "open") {
 
 const PATH_RE = /(^|[\s(\[{<"'])(@?(?:~|\.{1,2}|\/)?[A-Za-z0-9_.~/-]+\/[A-Za-z0-9_.~/-]+(:\d+(?::\d+)?)?)(?=$|[\s)\]}>"',;])/g;
 const MARKDOWN_LINK_RE = /(?<!!)(\[[^\]\n]*\]\()(<[^>\n]+>|[^)\s]+)([^)\n]*\))/g;
+const INLINE_CODE_RE = /(?<!`)(`)([^`\n]+)`(?!`)/g;
+const OSC8_FILE_LINK_RE = /(\x1b\]8;[^;]*;)(file:\/\/[^\x07\x1b]*)(\x07|\x1b\\)/g;
+
+type TextTransform = (text: string) => string;
+
+interface ToolLinkTransforms {
+	call?: TextTransform;
+	result?: TextTransform;
+}
+
+export function linkifyToolOutput(text: string): string {
+	return text.replace(OSC8_FILE_LINK_RE, (match, prefix: string, fileUrl: string, terminator: string) => {
+		try {
+			return `${prefix}${urlFor(fileURLToPath(fileUrl), "")}${terminator}`;
+		} catch {
+			return match;
+		}
+	});
+}
+
+export function linkifyRenderedPaths(text: string, cwd: string): string {
+	const plainText = stripVTControlCharacters(text);
+	const replacements: Array<{ start: number; end: number; url: string }> = [];
+	let rawOffset = 0;
+
+	for (const match of plainText.matchAll(PATH_RE)) {
+		const rawPath = match[2];
+		if (!rawPath) continue;
+		const url = toEditorUrl(rawPath, cwd);
+		if (!url) continue;
+		const start = text.indexOf(rawPath, rawOffset);
+		if (start === -1) continue;
+		const end = start + rawPath.length;
+		replacements.push({ start, end, url });
+		rawOffset = end;
+	}
+
+	let linked = text;
+	for (const { start, end, url } of replacements.reverse()) {
+		linked = `${linked.slice(0, start)}\x1b]8;;${url}\x1b\\${linked.slice(start, end)}\x1b]8;;\x1b\\${linked.slice(end)}`;
+	}
+	return linked;
+}
+
+class EditorLinkComponent implements Component {
+	inner: Component;
+	transform: TextTransform;
+
+	constructor(inner: Component, transform: TextTransform) {
+		this.inner = inner;
+		this.transform = transform;
+	}
+
+	render(width: number): string[] {
+		return this.inner.render(width).map(this.transform);
+	}
+
+	invalidate(): void {
+		this.inner.invalidate();
+	}
+}
+
+export function linkifyToolDefinition<TParams extends TSchema, TDetails, TState>(
+	definition: ToolDefinition<TParams, TDetails, TState>,
+	transforms: ToolLinkTransforms = {},
+): ToolDefinition<TParams, TDetails, TState> {
+	const renderCall = definition.renderCall;
+	const renderResult = definition.renderResult;
+	const callTransform = transforms.call ?? linkifyToolOutput;
+	const resultTransform = transforms.result;
+
+	return {
+		...definition,
+		renderCall: renderCall
+			? (args, theme, context) => {
+					const previous = context.lastComponent;
+					const wrapper = previous instanceof EditorLinkComponent ? previous : undefined;
+					const inner = renderCall(args, theme, {
+						...context,
+						lastComponent: wrapper?.inner ?? previous,
+					});
+
+					if (wrapper) {
+						wrapper.inner = inner;
+						wrapper.transform = callTransform;
+						return wrapper;
+					}
+					return new EditorLinkComponent(inner, callTransform);
+				}
+			: undefined,
+		renderResult:
+			resultTransform && renderResult
+				? (result, options, theme, context) => {
+						const previous = context.lastComponent;
+						const wrapper = previous instanceof EditorLinkComponent ? previous : undefined;
+						const inner = renderResult(result, options, theme, {
+							...context,
+							lastComponent: wrapper?.inner ?? previous,
+						});
+
+						if (wrapper) {
+							wrapper.inner = inner;
+							wrapper.transform = resultTransform;
+							return wrapper;
+						}
+						return new EditorLinkComponent(inner, resultTransform);
+					}
+				: renderResult,
+	};
+}
+
+export function registerBuiltInToolLinks(pi: ExtensionAPI, cwd: string, projectTrusted = true): void {
+	const builtInTools = new Set(
+		pi
+			.getAllTools()
+			.filter((tool) => tool.sourceInfo.source === "builtin")
+			.map((tool) => tool.name),
+	);
+	const settings = SettingsManager.create(cwd, undefined, { projectTrusted });
+
+	if (builtInTools.has("read")) {
+		pi.registerTool(
+			linkifyToolDefinition(
+				createReadToolDefinition(cwd, { autoResizeImages: settings.getImageAutoResize() }),
+			),
+		);
+	}
+	if (builtInTools.has("write")) pi.registerTool(linkifyToolDefinition(createWriteToolDefinition(cwd)));
+	if (builtInTools.has("edit")) pi.registerTool(linkifyToolDefinition(createEditToolDefinition(cwd)));
+	if (builtInTools.has("ls")) pi.registerTool(linkifyToolDefinition(createLsToolDefinition(cwd)));
+	if (builtInTools.has("bash")) {
+		pi.registerTool(
+			linkifyToolDefinition(
+				createBashToolDefinition(cwd, {
+					commandPrefix: settings.getShellCommandPrefix(),
+					shellPath: settings.getShellPath(),
+				}),
+				{ result: (text) => linkifyRenderedPaths(text, cwd) },
+			),
+		);
+	}
+}
 
 function expandPath(input: string, cwd: string): string {
 	const clean = input.startsWith("@") ? input.slice(1) : input;
@@ -79,8 +233,20 @@ function linkifyMarkdownLinks(line: string, cwd: string): string {
 	);
 }
 
+function linkifyInlineCodePaths(line: string, cwd: string): string {
+	return line.replace(
+		INLINE_CODE_RE,
+		(match: string, _tick: string, rawPath: string, offset: number) => {
+			if (isProbablyMarkdownLink(line, offset, offset + match.length)) return match;
+			const url = toEditorUrl(rawPath, cwd);
+			return url ? `[${match}](${url})` : match;
+		},
+	);
+}
+
 function linkifyLine(line: string, cwd: string): string {
-	const linkedLine = linkifyMarkdownLinks(line, cwd);
+	const linkedMarkdown = linkifyMarkdownLinks(line, cwd);
+	const linkedLine = linkifyInlineCodePaths(linkedMarkdown, cwd);
 	return linkedLine.replace(PATH_RE, (match: string, prefix: string, rawPath: string, _pos: string, offset: number) => {
 		const pathStart = offset + prefix.length;
 		if (
@@ -110,10 +276,13 @@ export function linkifyText(text: string, cwd: string): string {
 
 export default function editorLinksExtension(pi: ExtensionAPI) {
 	startBridge();
+	pi.on("session_start", (_event, ctx) => {
+		registerBuiltInToolLinks(pi, ctx.cwd, ctx.isProjectTrusted());
+	});
 	pi.on("message_end", async (event, ctx) => {
 		if (event.message.role !== "assistant") return;
 		let changed = false;
-		const content = event.message.content.map((block: { type: string; text?: string }) => {
+		const content = event.message.content.map((block) => {
 			if (block.type !== "text" || !block.text) return block;
 			const text = linkifyText(block.text, ctx.cwd);
 			if (text === block.text) return block;
