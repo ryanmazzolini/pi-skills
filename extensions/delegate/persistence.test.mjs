@@ -15,7 +15,7 @@ function runRecord(repository) {
   const paths = repository.paths("parent-1", "run-1", "child-1");
   const timestamp = new Date(0).toISOString();
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: "run-1",
     parent: { sessionId: "parent-1", leafId: "leaf-1", inputGeneration: 0 },
     recordRef: paths.runFile,
@@ -59,19 +59,28 @@ test("atomically persists and lists runs under their parent session", async (t) 
   assert.deepEqual(fs.readdirSync(path.dirname(run.recordRef)).filter((name) => name.includes(".tmp-")), []);
 });
 
-test("loads Slice A records through the current schema", async (t) => {
+test("loads Slice A and B records through the current schema", async (t) => {
   const root = fixture(t);
   const repository = new FileRunRepository(root);
   const run = runRecord(repository);
-  const legacy = structuredClone(run);
-  legacy.schemaVersion = 1;
-  const runDir = path.dirname(legacy.recordRef);
-  fs.mkdirSync(runDir, { recursive: true });
-  fs.writeFileSync(legacy.recordRef, JSON.stringify(legacy));
+  const sliceA = structuredClone(run);
+  sliceA.schemaVersion = 1;
+  const sliceADir = path.dirname(sliceA.recordRef);
+  fs.mkdirSync(sliceADir, { recursive: true });
+  fs.writeFileSync(sliceA.recordRef, JSON.stringify(sliceA));
 
-  const [listed] = await repository.list("parent-1");
-  assert.equal(listed.schemaVersion, 2);
-  assert.deepEqual(listed.children[0].resolved.skills, []);
+  const sliceB = runRecord(repository);
+  sliceB.id = "run-2";
+  const sliceBPaths = repository.paths("parent-1", "run-2", "child-1");
+  sliceB.recordRef = sliceBPaths.runFile;
+  sliceB.children[0].sessionDir = sliceBPaths.childSessionDir;
+  sliceB.schemaVersion = 2;
+  fs.mkdirSync(path.dirname(sliceB.recordRef), { recursive: true });
+  fs.writeFileSync(sliceB.recordRef, JSON.stringify(sliceB));
+
+  const listed = await repository.list("parent-1");
+  assert.deepEqual(listed.map((item) => item.schemaVersion), [3, 3]);
+  assert.deepEqual(listed[0].children[0].resolved.skills, []);
 });
 
 test("reports corrupt records without hiding valid siblings", async (t) => {
@@ -100,4 +109,24 @@ test("rejects run and child paths outside their owned run directory", async (t) 
   const childPathRun = runRecord(repository);
   childPathRun.children[0].sessionDir = "/tmp/somewhere-else/child";
   await assert.rejects(repository.save(childPathRun), /invalid session path/);
+
+  const workspacePathRun = runRecord(repository);
+  const paths = repository.paths("parent-1", "run-1", "child-1");
+  workspacePathRun.children[0].workspace = {
+    kind: "temporary",
+    sourceCwd: "/tmp/source",
+    repoRoot: "/tmp/source",
+    relativeCwd: "",
+    worktreePath: "/tmp/somewhere-else/worktree",
+    branch: "pi-delegate/run-1/child-1",
+    baseCommit: "base",
+    patchPath: paths.patchFile,
+    manifestPath: paths.manifestFile,
+    integration: { state: "working" },
+  };
+  await assert.rejects(repository.save(workspacePathRun), /invalid temporary workspace ownership/);
+
+  workspacePathRun.children[0].workspace.worktreePath = paths.worktreeDir;
+  workspacePathRun.children[0].workspace.branch = "pi-delegate/other-run/other-child";
+  await assert.rejects(repository.save(workspacePathRun), /invalid temporary workspace ownership/);
 });

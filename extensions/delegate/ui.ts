@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-tui";
 import {
 	deriveRunStatus,
+	runNeedsControl,
 	type DelegateRuntime,
 	type DelegatedChild,
 	type DelegationRun,
@@ -43,6 +44,45 @@ function formatDuration(startedAt: string): string {
 
 function resultText(result: NonNullable<RunView["children"][number]["result"]>, expanded = false): string {
 	return result.kind === "text" ? result.value : JSON.stringify(result.value, null, expanded ? 2 : undefined);
+}
+
+function temporaryWorkspaceLines(runId: string, child: DelegatedChild, theme: Theme): string[] {
+	if (child.workspace.kind !== "temporary") return [];
+	const integration = child.workspace.integration;
+	if (integration.state === "working") {
+		const lines = isFinalState(child.state)
+			? [theme.fg("warning", "Temporary workspace ready for review"), theme.fg("dim", `Review: /agents review ${runId} ${child.id}`)]
+			: [theme.fg("dim", "Working in an isolated temporary workspace")];
+		if (integration.message) lines.splice(1, 0, theme.fg("warning", integration.message));
+		return lines;
+	}
+	if (integration.state === "review_pending" || integration.state === "conflict") {
+		const review = integration.review;
+		const lines = [
+			theme.fg(integration.state === "conflict" ? "warning" : "accent", `Workspace ${integration.state === "conflict" ? "conflict" : "review pending"} · ${review.summary.stat}`),
+			theme.fg("dim", `Revision: ${review.revision}`),
+			theme.fg("dim", `Patch: ${review.patchPath}`),
+			theme.fg("dim", `Manifest: ${review.manifestPath}`),
+		];
+		if (integration.state === "conflict") lines.push(theme.fg("error", integration.message));
+		lines.push(theme.fg("dim", `Apply: /agents apply ${runId} ${review.revision} ${child.id}`));
+		lines.push(theme.fg("dim", `Discard: /agents discard ${runId} ${review.revision} ${child.id}`));
+		return lines;
+	}
+	if (integration.state === "applying" || integration.state === "discarding") {
+		return [theme.fg("warning", `Workspace ${integration.state} · ${integration.review.revision}`)];
+	}
+	const cleanupError = "cleanupError" in integration ? integration.cleanupError : undefined;
+	const lines = [theme.fg(integration.state === "applied" ? "success" : "dim", `Workspace ${integration.state.replace("_", " ")}`)];
+	if (cleanupError) {
+		lines.push(theme.fg("warning", `Cleanup failed: ${cleanupError}`));
+		lines.push(theme.fg("dim", `Retry cleanup: /agents cleanup ${runId} ${child.id}`));
+	}
+	return lines;
+}
+
+function isFinalState(state: DelegatedChild["state"]): boolean {
+	return state === "completed" || state === "failed" || state === "cancelled";
 }
 
 export function describeLatestActivity(
@@ -131,6 +171,11 @@ class LiveRunComponent implements Component {
 				if (preview) lines.push(this.theme.fg("dim", `  ⎿  ${preview}`));
 			}
 			if (!this.expanded && child.failure) lines.push(this.theme.fg("error", `  ⎿  ${child.failure.message}`));
+			if (!this.expanded && child.workspace.kind === "temporary" && isFinalState(child.state)) {
+				const integration = child.workspace.integration;
+				const workspaceState = integration.state === "working" ? "review required" : integration.state.replace("_", " ");
+				lines.push(this.theme.fg(integration.state === "conflict" ? "warning" : "dim", `  Workspace: ${workspaceState}`));
+			}
 		} else {
 			lines.push(
 				`${runIcon(run, this.theme)} ${this.theme.fg("toolTitle", this.theme.bold(`${run.children.length} agents`))} `
@@ -163,6 +208,8 @@ class LiveRunComponent implements Component {
 					));
 				}
 				if (child.failure) lines.push(this.theme.fg("error", `Error: ${child.failure.message}`));
+				const workspaceLines = temporaryWorkspaceLines(run.id, child, this.theme);
+				if (workspaceLines.length > 0) lines.push(this.theme.fg("dim", "Workspace"), ...workspaceLines);
 			}
 			lines.push("", this.theme.fg("dim", `Run: ${run.id}`));
 			lines.push(this.theme.fg("dim", `Record: ${run.recordRef}`));
@@ -574,6 +621,11 @@ export class RunOverlayComponent implements Component {
 			lines.push(this.theme.fg("error", `✗ ${child.failure.message}`));
 			if (child.failure.partialOutput && this.expanded) lines.push(...wrapTextWithAnsi(boundedDisplay(child.failure.partialOutput), width));
 		}
+		const workspaceLines = temporaryWorkspaceLines(run.id, child, this.theme);
+		if (workspaceLines.length > 0) {
+			if (lines.length > 0) lines.push("");
+			lines.push(...workspaceLines.flatMap((line) => wrapTextWithAnsi(line, width)));
+		}
 		if (child.state === "queued" || child.state === "starting" || child.state === "running") {
 			if (lines.length > 0) lines.push("");
 			lines.push(this.theme.fg("dim", `${stateIcon(child.state, this.theme)} ${describeLatestActivity(run, Date.now(), 10_000, this.selected)}`));
@@ -630,13 +682,7 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 	const isAnimating = (run: DelegationRun): boolean => run.children.some((child) =>
 		child.state === "queued" || child.state === "starting" || child.state === "running",
 	);
-	const canChange = (run: DelegationRun): boolean => run.children.some((child) =>
-		child.state === "queued"
-		|| child.state === "starting"
-		|| child.state === "running"
-		|| child.state === "needs_attention"
-		|| child.state === "interrupted",
-	);
+	const canChange = (run: DelegationRun): boolean => runNeedsControl(run);
 	const unsubscribe = runtime.subscribe((run) => {
 		invalidators.get(run.id)?.();
 		if (!canChange(run)) invalidators.delete(run.id);
@@ -677,6 +723,18 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 					if (rendered) text += `\n  ${theme.fg("dim", `⎿  ${rendered}`)}`;
 				}
 				if (child.error) text += `\n  ${theme.fg("error", child.error.message)}`;
+				if (child.workspace) {
+					const state = child.workspace.state === "working" ? "review required" : child.workspace.state.replace("_", " ");
+					text += `\n  ${theme.fg(child.workspace.state === "conflict" ? "warning" : "dim", `Workspace: ${state}`)}`;
+					if (expanded && child.workspace.revision) text += `\n  ${theme.fg("dim", `Revision: ${child.workspace.revision}`)}`;
+					if (expanded && child.workspace.patchRef) text += `\n  ${theme.fg("dim", `Patch: ${child.workspace.patchRef}`)}`;
+					if (expanded && child.workspace.manifestRef) text += `\n  ${theme.fg("dim", `Manifest: ${child.workspace.manifestRef}`)}`;
+					if (child.workspace.message) text += `\n  ${theme.fg("error", child.workspace.message)}`;
+					if (child.workspace.cleanupError) {
+						text += `\n  ${theme.fg("warning", `Cleanup failed: ${child.workspace.cleanupError}`)}`;
+						if (expanded) text += `\n  ${theme.fg("dim", `Retry: /agents cleanup ${view.runId} ${child.childId}`)}`;
+					}
+				}
 			}
 			const hidden = view.children.length - visibleChildren.length + (view.omittedChildren ?? 0);
 			if (hidden > 0) text += `\n  ${theme.fg("dim", `… ${hidden} more · /agents`)}`;

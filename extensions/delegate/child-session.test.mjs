@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createChildResourceLoader, createRuntimeTools, resolveChildResources } from "./child-session.ts";
+import { createChildResourceLoader, createRuntimeTools, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-resources-test-"));
@@ -45,6 +45,9 @@ test("child resources keep AGENTS.md while excluding ambient resources", async (
   assert.equal(context.some((file) => file.path.endsWith("agent/AGENTS.md")), true);
   assert.equal(context.some((file) => file.path.endsWith("project/AGENTS.md")), true);
   assert.match(loader.getAppendSystemPrompt().join("\n"), /delegate_attention/);
+
+  const { loader: temporaryLoader } = await createChildResourceLoader(cwd, agentDir, [], ["Do not commit temporary changes."]);
+  assert.match(temporaryLoader.getAppendSystemPrompt().join("\n"), /Do not commit temporary changes/);
 });
 
 test("selected skills are resolved exactly without exposing ambient siblings", async (t) => {
@@ -56,6 +59,23 @@ test("selected skills are resolved exactly without exposing ambient siblings", a
   await assert.rejects(
     () => createChildResourceLoader(cwd, agentDir, ["missing"]),
     /Unknown delegated skill: missing/,
+  );
+});
+
+test("temporary worktrees preserve project skill identity across root relocation", () => {
+  const child = {
+    workspace: {
+      kind: "temporary",
+      repoRoot: "/source/repo",
+      worktreePath: "/agent/runs/worktree",
+    },
+  };
+  const expected = resolvedSkillIdentity(child, { name: "project-skill", filePath: "/source/repo/.agents/skills/project-skill/SKILL.md" }, false);
+  const actual = resolvedSkillIdentity(child, { name: "project-skill", filePath: "/agent/runs/worktree/.agents/skills/project-skill/SKILL.md" }, true);
+  assert.equal(expected, actual);
+  assert.notEqual(
+    resolvedSkillIdentity(child, { name: "user-skill", filePath: "/other/user-skill/SKILL.md" }, false),
+    resolvedSkillIdentity(child, { name: "user-skill", filePath: "/other/different/SKILL.md" }, true),
   );
 });
 

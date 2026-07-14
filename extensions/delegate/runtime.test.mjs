@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DelegateRuntime,
+  WorkspaceConflictError,
   deriveRunStatus,
   projectRun,
+  runNeedsControl,
 } from "./runtime.ts";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -25,7 +27,13 @@ function memoryRepository(initial = []) {
     records,
     paths(parentSessionId, runId, childId) {
       const root = `/tmp/delegate/${parentSessionId}/${runId}`;
-      return { runFile: `${root}/run.json`, childSessionDir: `${root}/children/${childId}` };
+      return {
+        runFile: `${root}/run.json`,
+        childSessionDir: `${root}/children/${childId}`,
+        worktreeDir: `${root}/worktrees/${childId}`,
+        patchFile: `${root}/patches/${childId}.patch`,
+        manifestFile: `${root}/patches/${childId}.manifest.json`,
+      };
     },
     async save(run) {
       records.set(run.id, structuredClone(run));
@@ -119,6 +127,7 @@ function runtimeFixture(options = {}) {
       },
       shutdown() {},
     },
+    workspaces: options.workspaces,
     maxActiveChildren: options.maxActiveChildren,
     createId: (kind) => `${kind}-${++id}`,
     now: (() => {
@@ -498,6 +507,59 @@ test("restore converts unfinished work to interrupted without relaunching", asyn
   assert.equal(restored.deliveries.length, 0);
 });
 
+test("restore reconciles interrupted apply, discard, and cleanup windows", async () => {
+  const originalWorkspaces = fakeWorkspaceManager();
+  const original = runtimeFixture({ workspaces: originalWorkspaces.manager });
+  const handle = await original.runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  original.children.launches[0].done.resolve(success("done"));
+  await settle();
+  await original.runtime.review(handle.runId);
+  const reviewed = structuredClone(original.repository.records.get(handle.runId));
+  const review = reviewed.children[0].workspace.integration.review;
+
+  const applying = structuredClone(reviewed);
+  applying.children[0].workspace.integration = { state: "applying", review };
+
+  const baseWorkspaces = fakeWorkspaceManager({ destinationKind: "base" });
+  const baseRestore = runtimeFixture({ repository: memoryRepository([applying]), workspaces: baseWorkspaces.manager });
+  await baseRestore.runtime.restore("parent-1");
+  assert.equal(baseRestore.runtime.get(handle.runId).children[0].workspace.integration.state, "review_pending");
+  assert.equal(baseWorkspaces.cleaned.length, 0);
+
+  const appliedWorkspaces = fakeWorkspaceManager({ destinationKind: "reviewed" });
+  const appliedRestore = runtimeFixture({ repository: memoryRepository([applying]), workspaces: appliedWorkspaces.manager });
+  await appliedRestore.runtime.restore("parent-1");
+  assert.equal(appliedRestore.runtime.get(handle.runId).children[0].workspace.integration.state, "applied");
+  assert.equal(appliedWorkspaces.cleaned[0].expectedRevision, review.revision);
+
+  const changedWorkspaces = fakeWorkspaceManager({ destinationKind: "changed" });
+  const changedRestore = runtimeFixture({ repository: memoryRepository([applying]), workspaces: changedWorkspaces.manager });
+  await changedRestore.runtime.restore("parent-1");
+  const changed = changedRestore.runtime.get(handle.runId).children[0].workspace.integration;
+  assert.equal(changed.state, "conflict");
+  assert.match(changed.message, /other changes/);
+
+  const discarding = structuredClone(reviewed);
+  discarding.children[0].workspace.integration = { state: "discarding", review };
+  const discardWorkspaces = fakeWorkspaceManager();
+  const discardRestore = runtimeFixture({ repository: memoryRepository([discarding]), workspaces: discardWorkspaces.manager });
+  await discardRestore.runtime.restore("parent-1");
+  assert.equal(discardRestore.runtime.get(handle.runId).children[0].workspace.integration.state, "discarded");
+  assert.equal(discardWorkspaces.cleaned[0].expectedRevision, review.revision);
+
+  const cleanupPending = structuredClone(reviewed);
+  cleanupPending.children[0].workspace.integration = {
+    state: "applied",
+    revision: review.revision,
+    appliedAt: new Date(0).toISOString(),
+  };
+  const cleanupWorkspaces = fakeWorkspaceManager();
+  const cleanupRestore = runtimeFixture({ repository: memoryRepository([cleanupPending]), workspaces: cleanupWorkspaces.manager });
+  await cleanupRestore.runtime.restore("parent-1");
+  assert.equal(cleanupWorkspaces.cleaned[0].expectedRevision, review.revision);
+});
+
 test("restore reconciles a finalized run whose completion delivery was pending", async () => {
   const original = runtimeFixture();
   const handle = await original.runtime.start(startInput());
@@ -520,7 +582,7 @@ test("restore reconciles a finalized run whose completion delivery was pending",
 
 test("bounded projections preserve text and structured truncation", () => {
   const run = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: "run-1",
     parent: { sessionId: "parent-1", leafId: null, inputGeneration: 0 },
     recordRef: "/tmp/run.json",
@@ -577,7 +639,28 @@ test("the maximum batch projection stays within its aggregate byte limit", () =>
     resolved: { model: { provider: "openai", id: "sol" }, reasoning: "max", context: "fresh", skills: [], tools: ["read"], output: "text" },
     sessionDir: `/tmp/child-${index}`,
     sessionFile: `/tmp/child-${index}/${"s".repeat(1000)}.jsonl`,
-    workspace: { kind: "existing", cwd: "/tmp", owner: "external" },
+    workspace: {
+      kind: "temporary",
+      sourceCwd: "/tmp/repo",
+      repoRoot: "/tmp/repo",
+      relativeCwd: "",
+      worktreePath: `/tmp/worktree-${index}`,
+      branch: `pi-delegate/run-max/child-${index}`,
+      baseCommit: "base-commit",
+      patchPath: `/tmp/${"p".repeat(1000)}-${index}.patch`,
+      manifestPath: `/tmp/${"m".repeat(1000)}-${index}.json`,
+      integration: {
+        state: "review_pending",
+        review: {
+          revision: `tree-${index}`,
+          baseTree: "tree-base",
+          summary: { filesChanged: 1, additions: 1, deletions: 0, stat: "1 file changed, 1 insertion(+)" },
+          patchPath: `/tmp/${"p".repeat(1000)}-${index}.patch`,
+          manifestPath: `/tmp/${"m".repeat(1000)}-${index}.json`,
+          reviewedAt: timestamp,
+        },
+      },
+    },
     latestActivity: { kind: "waiting", summary: "activity ".repeat(500), observedAt: timestamp },
     failure: {
       message: "provider failure ".repeat(1000),
@@ -588,7 +671,7 @@ test("the maximum batch projection stays within its aggregate byte limit", () =>
     usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2, cost: 0 },
   }));
   const run = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: "run-max",
     parent: { sessionId: "parent-1", leafId: null, inputGeneration: 0 },
     recordRef: `/tmp/${"r".repeat(3000)}/run.json`,
@@ -602,4 +685,261 @@ test("the maximum batch projection stays within its aggregate byte limit", () =>
   assert.ok(Buffer.byteLength(JSON.stringify(view), "utf8") <= 32 * 1024);
   assert.equal(view.children.length + (view.omittedChildren ?? 0), 32);
   assert.equal(view.truncated, true);
+  assert.equal(view.children.length, 32);
+  assert.equal(view.children.every((child) => child.workspace?.state === "review_pending"), true);
+  assert.equal(view.children.every((child) => child.workspace?.revision?.startsWith("tree-")), true);
+  assert.equal(view.children.every((child) => child.workspace?.patchRef && child.workspace?.manifestRef), true);
+});
+
+function fakeWorkspaceManager(options = {}) {
+  const prepared = [];
+  const inspected = [];
+  const asserted = [];
+  const applied = [];
+  const cleaned = [];
+  let currentRevision = options.revision ?? "tree-reviewed";
+  let prepareCount = 0;
+  let cleanupFailures = options.cleanupFailures ?? 0;
+  const manager = {
+    async prepare(input) {
+      prepareCount++;
+      if (options.failPrepareAt === prepareCount) throw new Error("worktree creation failed");
+      const workspace = {
+        kind: "temporary",
+        sourceCwd: input.sourceCwd,
+        repoRoot: input.sourceCwd,
+        relativeCwd: "",
+        worktreePath: input.worktreePath,
+        branch: `pi-delegate/${input.runId}/${input.childId}`,
+        baseCommit: "base-commit",
+        patchPath: input.patchPath,
+        manifestPath: input.manifestPath,
+        integration: { state: "working" },
+      };
+      prepared.push(workspace);
+      return structuredClone(workspace);
+    },
+    async inspect(workspace) {
+      inspected.push(workspace);
+      if (options.inspectGate) await options.inspectGate.promise;
+      if (options.noChanges) return { kind: "no_changes" };
+      return {
+        kind: "changes",
+        review: {
+          revision: currentRevision,
+          baseTree: "tree-base",
+          summary: { filesChanged: 2, additions: 3, deletions: 1, stat: "2 files changed, 3 insertions(+), 1 deletion(-)" },
+          patchPath: workspace.patchPath,
+          manifestPath: workspace.manifestPath,
+        },
+      };
+    },
+    async inspectDestination(_workspace, review) {
+      const kind = options.destinationKind ?? "changed";
+      if (kind === "base") return { kind, revision: review.baseTree };
+      if (kind === "reviewed") return { kind, revision: review.revision };
+      return { kind, revision: "tree-other", message: "destination contains other changes" };
+    },
+    async assertRevision(_workspace, revision) {
+      asserted.push(revision);
+      if (revision !== currentRevision) throw new Error(`Temporary workspace changed after review: ${currentRevision}`);
+    },
+    async apply(workspace, review) {
+      applied.push({ workspace, review });
+      if (options.applyError) throw options.applyError;
+    },
+    async cleanup(workspace, expectedRevision) {
+      cleaned.push({ workspace, expectedRevision });
+      if (options.cleanupConflict) throw new WorkspaceConflictError("temporary workspace changed before cleanup");
+      if (cleanupFailures > 0) {
+        cleanupFailures--;
+        throw new Error("cleanup is temporarily blocked");
+      }
+    },
+  };
+  return {
+    manager,
+    prepared,
+    inspected,
+    asserted,
+    applied,
+    cleaned,
+    setRevision(value) { currentRevision = value; },
+  };
+}
+
+test("reviews and applies an exact temporary workspace revision", async () => {
+  const workspaces = fakeWorkspaceManager();
+  const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+  const handle = await runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  assert.equal(workspaces.prepared.length, 1);
+  assert.equal(children.launches[0].input.child.workspace.kind, "temporary");
+  assert.equal(children.launches[0].input.child.workspace.worktreePath, "/tmp/delegate/parent-1/run-1/worktrees/child-2");
+
+  children.launches[0].done.resolve(success("implementation complete"));
+  await settle();
+  assert.equal(runNeedsControl(runtime.get(handle.runId)), true);
+
+  const reviewed = await runtime.review(handle.runId);
+  const integration = reviewed.children[0].workspace.integration;
+  assert.equal(integration.state, "review_pending");
+  assert.equal(integration.review.revision, "tree-reviewed");
+  const view = projectRun(reviewed);
+  assert.equal(view.children[0].workspace.state, "review_pending");
+  assert.equal(view.children[0].workspace.revision, "tree-reviewed");
+
+  const applied = await runtime.apply(handle.runId, undefined, "tree-reviewed");
+  assert.equal(applied.children[0].workspace.integration.state, "applied");
+  assert.deepEqual(workspaces.asserted, ["tree-reviewed"]);
+  assert.equal(workspaces.applied.length, 1);
+  assert.equal(workspaces.cleaned.length, 1);
+  assert.equal(runNeedsControl(applied), false);
+});
+
+test("serializes concurrent workspace actions for one child", async () => {
+  const inspectGate = deferred();
+  const workspaces = fakeWorkspaceManager({ inspectGate });
+  const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+  const handle = await runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  children.launches[0].done.resolve(success("done"));
+  await settle();
+
+  const reviewing = runtime.review(handle.runId);
+  const applying = runtime.apply(handle.runId, undefined, "tree-reviewed");
+  await tick();
+  assert.equal(workspaces.inspected.length, 1);
+  assert.equal(workspaces.applied.length, 0);
+  inspectGate.resolve();
+  await Promise.all([reviewing, applying]);
+  assert.equal(runtime.get(handle.runId).children[0].workspace.integration.state, "applied");
+  assert.equal(workspaces.applied.length, 1);
+});
+
+test("preserves later temporary edits during apply and discard cleanup", async () => {
+  const applyWorkspaces = fakeWorkspaceManager({ cleanupConflict: true });
+  const applyFixture = runtimeFixture({ workspaces: applyWorkspaces.manager });
+  const applyHandle = await applyFixture.runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  applyFixture.children.launches[0].done.resolve(success("done"));
+  await settle();
+  await applyFixture.runtime.review(applyHandle.runId);
+  const applied = await applyFixture.runtime.apply(applyHandle.runId, undefined, "tree-reviewed");
+  assert.equal(applied.children[0].workspace.integration.state, "applied");
+  assert.match(applied.children[0].workspace.integration.cleanupError, /changed before cleanup/);
+
+  const discardWorkspaces = fakeWorkspaceManager({ cleanupConflict: true });
+  const discardFixture = runtimeFixture({ workspaces: discardWorkspaces.manager });
+  const discardHandle = await discardFixture.runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  discardFixture.children.launches[0].done.resolve(success("done"));
+  await settle();
+  await discardFixture.runtime.review(discardHandle.runId);
+  const discarded = await discardFixture.runtime.discard(discardHandle.runId, undefined, "tree-reviewed");
+  assert.equal(discarded.children[0].workspace.integration.state, "conflict");
+  assert.match(discarded.children[0].workspace.integration.message, /changed before cleanup/);
+});
+
+test("returns a no-change workspace to review when it changes before cleanup", async () => {
+  const workspaces = fakeWorkspaceManager({ noChanges: true, cleanupConflict: true });
+  const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+  const handle = await runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  children.launches[0].done.resolve(success("done"));
+  await settle();
+
+  const reviewed = await runtime.review(handle.runId);
+  assert.equal(reviewed.children[0].workspace.integration.state, "working");
+  assert.match(reviewed.children[0].workspace.integration.message, /changed before cleanup/);
+  assert.equal(runNeedsControl(reviewed), true);
+});
+
+test("preserves a reviewed workspace after stale revision and destination conflict", async () => {
+  const workspaces = fakeWorkspaceManager({ applyError: new WorkspaceConflictError("destination changed") });
+  const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+  const handle = await runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  children.launches[0].done.resolve(success("done"));
+  await settle();
+  await runtime.review(handle.runId);
+
+  workspaces.setRevision("tree-newer");
+  await assert.rejects(runtime.apply(handle.runId, undefined, "tree-reviewed"), /changed after review/);
+  assert.equal(runtime.get(handle.runId).children[0].workspace.integration.state, "review_pending");
+  assert.equal(workspaces.cleaned.length, 0);
+
+  workspaces.setRevision("tree-reviewed");
+  const conflicted = await runtime.apply(handle.runId, undefined, "tree-reviewed");
+  assert.equal(conflicted.children[0].workspace.integration.state, "conflict");
+  assert.match(conflicted.children[0].workspace.integration.message, /destination changed/);
+  assert.equal(workspaces.cleaned.length, 0);
+
+  const discarded = await runtime.discard(handle.runId, undefined, "tree-reviewed");
+  assert.equal(discarded.children[0].workspace.integration.state, "discarded");
+  assert.equal(workspaces.cleaned.length, 1);
+});
+
+test("keeps failed and cancelled temporary workspaces available for review", async () => {
+  const workspaces = fakeWorkspaceManager();
+  const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+  const handle = await runtime.start(startInput({
+    workspace: "temporary",
+    tasks: [{ task: "fails", label: "fails" }, { task: "cancelled", label: "cancelled" }],
+  }));
+  await settle();
+  children.launches[0].done.resolve(failure("implementation failed"));
+  await settle();
+  const secondId = runtime.get(handle.runId).children[1].id;
+  await runtime.cancel(handle.runId, secondId);
+  assert.equal(workspaces.cleaned.length, 0);
+
+  await runtime.review(handle.runId, runtime.get(handle.runId).children[0].id);
+  await runtime.review(handle.runId, secondId);
+  assert.deepEqual(runtime.get(handle.runId).children.map((child) => child.workspace.integration.state), ["review_pending", "review_pending"]);
+  assert.equal(workspaces.cleaned.length, 0);
+});
+
+test("cleans an unchanged temporary workspace after review", async () => {
+  const workspaces = fakeWorkspaceManager({ noChanges: true });
+  const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+  const handle = await runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  children.launches[0].done.resolve(success("no changes"));
+  await settle();
+
+  const reviewed = await runtime.review(handle.runId);
+  assert.equal(reviewed.children[0].workspace.integration.state, "no_changes");
+  assert.equal(workspaces.cleaned.length, 1);
+});
+
+test("keeps cleanup failures manageable until an explicit retry succeeds", async () => {
+  const workspaces = fakeWorkspaceManager({ noChanges: true, cleanupFailures: 1 });
+  const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+  const handle = await runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  children.launches[0].done.resolve(success("no changes"));
+  await settle();
+
+  const reviewed = await runtime.review(handle.runId);
+  assert.equal(reviewed.children[0].workspace.integration.state, "no_changes");
+  assert.match(reviewed.children[0].workspace.integration.cleanupError, /temporarily blocked/);
+  assert.equal(runNeedsControl(reviewed), true);
+
+  const cleaned = await runtime.cleanup(handle.runId);
+  assert.equal(cleaned.children[0].workspace.integration.cleanupError, undefined);
+  assert.equal(runNeedsControl(cleaned), false);
+  await assert.rejects(runtime.cleanup(handle.runId), /no failed cleanup/);
+});
+
+test("rolls back prepared worktrees when a temporary batch cannot be created", async () => {
+  const workspaces = fakeWorkspaceManager({ failPrepareAt: 2 });
+  const { runtime } = runtimeFixture({ workspaces: workspaces.manager });
+  await assert.rejects(runtime.start(startInput({
+    workspace: "temporary",
+    tasks: [{ task: "one", label: "one" }, { task: "two", label: "two" }],
+  })), /worktree creation failed/);
+  assert.equal(workspaces.prepared.length, 1);
+  assert.equal(workspaces.cleaned.length, 1);
+  assert.deepEqual(runtime.list(), []);
 });

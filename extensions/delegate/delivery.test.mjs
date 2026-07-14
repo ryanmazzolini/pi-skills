@@ -55,6 +55,43 @@ test("delivers an authorized aggregate completion with one persisted event ident
   assert.deepEqual(sent[0].metadata, { kind: "result", eventId: "run-1:result" });
 });
 
+test("completion delivery tells the parent to review a temporary writer", async () => {
+  const sent = [];
+  const delivery = createParentDelivery({
+    current: () => ({ sessionId: "parent-1", inputGeneration: 1, branchIds: ["leaf-1"] }),
+    send: (content) => sent.push(content),
+  });
+  const temporaryView = structuredClone(view);
+  temporaryView.children[0].workspace = { kind: "temporary", state: "working" };
+  temporaryView.children[0].result.value = "x".repeat(40_000);
+
+  assert.equal(await delivery.deliver(run(), temporaryView), "delivered");
+  assert.ok(Buffer.byteLength(sent[0], "utf8") <= 32 * 1024);
+  assert.match(sent[0], /delegate_control action=review/);
+  assert.match(sent[0], /childId=child-1/);
+  assert.match(sent[0], /Full run: \/tmp\/run.json/);
+});
+
+test("completion delivery preserves temporary review evidence references", async () => {
+  const sent = [];
+  const delivery = createParentDelivery({
+    current: () => ({ sessionId: "parent-1", inputGeneration: 1, branchIds: ["leaf-1"] }),
+    send: (content) => sent.push(content),
+  });
+  const reviewedView = structuredClone(view);
+  reviewedView.children[0].workspace = {
+    kind: "temporary",
+    state: "review_pending",
+    revision: "tree-reviewed",
+    patchRef: "/tmp/review.patch",
+    manifestRef: "/tmp/review.manifest.json",
+  };
+
+  assert.equal(await delivery.deliver(run(), reviewedView), "delivered");
+  assert.match(sent[0], /Patch: \/tmp\/review\.patch/);
+  assert.match(sent[0], /Manifest: \/tmp\/review\.manifest\.json/);
+});
+
 test("attention and final completion have distinct idempotency keys", async () => {
   const sent = [];
   const delivery = createParentDelivery({

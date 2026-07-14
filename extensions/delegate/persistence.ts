@@ -7,6 +7,7 @@ import {
 	type RunPaths,
 	type RunRepository,
 } from "./runtime.ts";
+import { temporaryWorkspaceBranch } from "./workspace.ts";
 
 function safeSegment(value: string): string {
 	const safe = value.replace(/[^A-Za-z0-9._-]/g, "_");
@@ -18,7 +19,6 @@ function normalizeDelegationRun(value: unknown): DelegationRun | undefined {
 	if (!value || typeof value !== "object") return undefined;
 	const candidate = value as Record<string, unknown>;
 	if (candidate.schemaVersion === 1) {
-		candidate.schemaVersion = RUN_SCHEMA_VERSION;
 		const children = Array.isArray(candidate.children) ? candidate.children : [];
 		for (const value of children) {
 			if (!value || typeof value !== "object") continue;
@@ -32,6 +32,7 @@ function normalizeDelegationRun(value: unknown): DelegationRun | undefined {
 				.map((skill) => typeof skill === "string" ? { name: skill, filePath: "" } : skill);
 		}
 	}
+	if (candidate.schemaVersion === 1 || candidate.schemaVersion === 2) candidate.schemaVersion = RUN_SCHEMA_VERSION;
 	const run = candidate as unknown as Partial<DelegationRun>;
 	if (run.schemaVersion !== RUN_SCHEMA_VERSION
 		|| typeof run.id !== "string"
@@ -53,9 +54,13 @@ export class FileRunRepository implements RunRepository {
 
 	paths(parentSessionId: string, runId: string, childId: string): RunPaths {
 		const runDir = this.runDir(parentSessionId, runId);
+		const safeChildId = safeSegment(childId);
 		return {
 			runFile: join(runDir, "run.json"),
-			childSessionDir: join(runDir, "children", safeSegment(childId)),
+			childSessionDir: join(runDir, "children", safeChildId),
+			worktreeDir: join(runDir, "worktrees", safeChildId),
+			patchFile: join(runDir, "patches", `${safeChildId}.patch`),
+			manifestFile: join(runDir, "patches", `${safeChildId}.manifest.json`),
 		};
 	}
 
@@ -109,9 +114,16 @@ export class FileRunRepository implements RunRepository {
 		const expectedRunFile = join(this.runDir(run.parent.sessionId, run.id), "run.json");
 		if (run.recordRef !== expectedRunFile) throw new Error(`Delegation run ${run.id} has an invalid record path`);
 		for (const child of run.children) {
-			const expectedSessionDir = this.paths(run.parent.sessionId, run.id, child.id).childSessionDir;
-			if (child.sessionDir !== expectedSessionDir) {
+			const expected = this.paths(run.parent.sessionId, run.id, child.id);
+			if (child.sessionDir !== expected.childSessionDir) {
 				throw new Error(`Delegation child ${child.id} has an invalid session path`);
+			}
+			if (child.workspace.kind === "temporary"
+				&& (child.workspace.worktreePath !== expected.worktreeDir
+					|| child.workspace.patchPath !== expected.patchFile
+					|| child.workspace.manifestPath !== expected.manifestFile
+					|| child.workspace.branch !== temporaryWorkspaceBranch(run.id, child.id))) {
+				throw new Error(`Delegation child ${child.id} has invalid temporary workspace ownership`);
 			}
 		}
 	}

@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { isAbsolute, relative, sep } from "node:path";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
@@ -12,15 +13,16 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
-import type {
-	AttentionKind,
-	ChildOutcome,
-	ChildOutputContract,
-	ChildSessionAdapter,
-	ChildUsage,
-	DelegatedChild,
-	ResolvedSkill,
-	RunningChild,
+import {
+	childWorkspaceCwd,
+	type AttentionKind,
+	type ChildOutcome,
+	type ChildOutputContract,
+	type ChildSessionAdapter,
+	type ChildUsage,
+	type DelegatedChild,
+	type ResolvedSkill,
+	type RunningChild,
 } from "./runtime.ts";
 
 export const DEFAULT_CHILD_TOOLS = ["read", "bash", "edit", "write"] as const;
@@ -127,6 +129,7 @@ export async function createChildResourceLoader(
 	cwd: string,
 	agentDir = getAgentDir(),
 	selectedSkillNames: readonly string[] = [],
+	additionalGuidance: readonly string[] = [],
 ): Promise<{
 	loader: DefaultResourceLoader;
 	settingsManager: SettingsManager;
@@ -144,7 +147,7 @@ export async function createChildResourceLoader(
 		noPromptTemplates: true,
 		noThemes: true,
 		systemPromptOverride: () => undefined,
-		appendSystemPromptOverride: () => [CHILD_GUIDANCE],
+		appendSystemPromptOverride: () => [CHILD_GUIDANCE, ...additionalGuidance],
 		...(requested.length > 0
 			? {
 				skillsOverride: (base) => ({
@@ -231,15 +234,26 @@ export function createRuntimeTools(
 	return [attentionTool, finalTool];
 }
 
+export function resolvedSkillIdentity(child: DelegatedChild, skill: ResolvedSkill, actual: boolean): string {
+	if (child.workspace.kind !== "temporary") return `${skill.name}\u0000${skill.filePath}`;
+	const root = actual ? child.workspace.worktreePath : child.workspace.repoRoot;
+	const path = relative(root, skill.filePath);
+	if (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path)) {
+		return `${skill.name}\u0000<repository>/${path}`;
+	}
+	return `${skill.name}\u0000${skill.filePath}`;
+}
+
 function sessionManagerFor(child: DelegatedChild, resume: boolean): SessionManager {
+	const cwd = childWorkspaceCwd(child.workspace);
 	if (resume) {
 		if (!child.sessionFile) throw new Error(`Child ${child.id} has no persisted session to resume`);
-		return SessionManager.open(child.sessionFile, child.sessionDir, child.workspace.cwd);
+		return SessionManager.open(child.sessionFile, child.sessionDir, cwd);
 	}
 	if (child.resolved.context === "fork") {
 		const source = child.contextSource;
 		if (!source) throw new Error("Forked child context requires a persisted parent session");
-		const manager = SessionManager.forkFrom(source.sessionFile, child.workspace.cwd, child.sessionDir);
+		const manager = SessionManager.forkFrom(source.sessionFile, cwd, child.sessionDir);
 		if (source.leafId) {
 			if (!manager.getEntry(source.leafId)) throw new Error(`Parent context leaf ${source.leafId} is unavailable`);
 			manager.branch(source.leafId);
@@ -248,7 +262,7 @@ function sessionManagerFor(child: DelegatedChild, resume: boolean): SessionManag
 		}
 		return manager;
 	}
-	return SessionManager.create(child.workspace.cwd, child.sessionDir);
+	return SessionManager.create(cwd, child.sessionDir);
 }
 
 async function createChild(
@@ -263,16 +277,20 @@ async function createChild(
 	await mkdir(child.sessionDir, { recursive: true, mode: 0o700 });
 	if (signal.aborted) throw new Error("Child start cancelled");
 	const agentDir = getAgentDir();
+	const cwd = childWorkspaceCwd(child.workspace);
 	const { loader, settingsManager, resolvedSkills } = await createChildResourceLoader(
-		child.workspace.cwd,
+		cwd,
 		agentDir,
 		child.resolved.skills.map((skill) => skill.name),
+		child.workspace.kind === "temporary"
+			? ["This is an extension-owned temporary workspace. Do not commit, create branches, or change Git history; leave filesystem changes for parent review."]
+			: [],
 	);
 	const expectedSkills = child.resolved.skills
-		.map((skill) => `${skill.name}\u0000${skill.filePath}`)
+		.map((skill) => resolvedSkillIdentity(child, skill, false))
 		.sort();
 	const actualSkills = resolvedSkills
-		.map((skill) => `${skill.name}\u0000${skill.filePath}`)
+		.map((skill) => resolvedSkillIdentity(child, skill, true))
 		.sort();
 	if (JSON.stringify(actualSkills) !== JSON.stringify(expectedSkills)) {
 		throw new Error("Delegated skill resolution changed before child launch");
@@ -289,7 +307,7 @@ async function createChild(
 	);
 	const runtimeToolNames = customTools.map((tool) => tool.name);
 	const { session } = await createAgentSession({
-		cwd: child.workspace.cwd,
+		cwd,
 		agentDir,
 		model,
 		modelRegistry,

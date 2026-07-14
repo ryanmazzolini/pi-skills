@@ -23,6 +23,7 @@ import {
 	type RunView,
 } from "./runtime.ts";
 import { createDelegateUi, type DelegateUi } from "./ui.ts";
+import { createGitWorkspaceManager } from "./workspace.ts";
 
 const TaskParams = Type.Object({
 	task: Type.String({ minLength: 1, description: "One self-contained task" }),
@@ -33,7 +34,8 @@ const DelegateParams = Type.Object({
 	task: Type.Optional(Type.String({ minLength: 1, description: "One self-contained task to delegate" })),
 	label: Type.Optional(Type.String({ minLength: 1, description: "Label for task; only valid with task" })),
 	tasks: Type.Optional(Type.Array(TaskParams, { minItems: 1, maxItems: 32, description: "A homogeneous labeled task batch" })),
-	cwd: Type.Optional(Type.String({ minLength: 1, description: "Existing working directory; defaults to the parent cwd" })),
+	cwd: Type.Optional(Type.String({ minLength: 1, description: "Working directory or clean source directory; defaults to the parent cwd" })),
+	workspace: Type.Optional(Type.String({ enum: ["existing", "temporary"], description: "Use the existing directory or an extension-owned reviewable temporary worktree" })),
 	context: Type.Optional(Type.String({ enum: ["fresh", "fork"], description: "Fresh agent context or a full parent-session fork" })),
 	skills: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { uniqueItems: true, description: "Explicit skill names" })),
 	tools: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { uniqueItems: true, description: "Explicit built-in coding tool allowlist" })),
@@ -43,10 +45,11 @@ const DelegateParams = Type.Object({
 }, { additionalProperties: false });
 
 const DelegateControlParams = Type.Object({
-	action: Type.String({ enum: ["status", "wait", "steer", "reply", "cancel", "resume"], description: "Lifecycle operation" }),
+	action: Type.String({ enum: ["status", "wait", "steer", "reply", "cancel", "resume", "review", "apply", "discard", "cleanup"], description: "Lifecycle or temporary-workspace operation" }),
 	runId: Type.String({ minLength: 1, description: "Agent run identifier" }),
 	childId: Type.Optional(Type.String({ minLength: 1, description: "Optional agent identifier; omission targets the run or unique eligible agent" })),
 	message: Type.Optional(Type.String({ minLength: 1, description: "Required for steer and reply" })),
+	revision: Type.Optional(Type.String({ minLength: 1, description: "Required reviewed revision for apply and discard" })),
 	timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 600_000, description: "Wait timeout; work keeps running" })),
 }, { additionalProperties: false });
 
@@ -77,9 +80,27 @@ function renderedResult(child: RunView["children"][number]): string {
 	return child.result.kind === "text" ? child.result.value : JSON.stringify(child.result.value);
 }
 
-function toolText(result: RunView): string {
+export function toolText(result: RunView): string {
 	const lines = [`Agents ${result.status}: ${result.runId}`];
-	for (const child of result.children) lines.push(`${child.label}: ${child.state} — ${renderedResult(child)}`);
+	for (const child of result.children) {
+		lines.push(`${child.label}: ${child.state} — ${renderedResult(child)}`);
+		if (child.workspace) {
+			const revision = child.workspace.revision ? ` · ${child.workspace.revision}` : "";
+			lines.push(`  Workspace: ${child.workspace.state}${revision}`);
+			if (child.workspace.message) lines.push(`  Workspace note: ${child.workspace.message}`);
+			if (child.workspace.cleanupError) lines.push(`  Cleanup failed: ${child.workspace.cleanupError}`);
+			if (child.workspace.patchRef) lines.push(`  Patch: ${child.workspace.patchRef}`);
+			if (child.workspace.manifestRef) lines.push(`  Manifest: ${child.workspace.manifestRef}`);
+			if (child.workspace.state === "working"
+				&& (child.state === "completed" || child.state === "failed" || child.state === "cancelled")) {
+				lines.push("  Next: review this child with delegate_control");
+			}
+			if ((child.workspace.state === "review_pending" || child.workspace.state === "conflict") && child.workspace.revision) {
+				lines.push(`  Next: apply or discard revision ${child.workspace.revision} with delegate_control`);
+			}
+			if (child.workspace.cleanupError) lines.push("  Next: retry cleanup with delegate_control action=cleanup");
+		}
+	}
 	lines.push(`Full run: ${result.recordRef}`);
 	return lines.join("\n");
 }
@@ -246,14 +267,18 @@ function outputContract(value: Record<string, unknown> | undefined): ResolvedChi
 	return { schema: structuredClone(value) };
 }
 
-function validateControl(params: {
+export function validateControl(params: {
 	action: string;
 	message?: string;
+	revision?: string;
 	timeoutMs?: number;
 }): void {
 	const needsMessage = params.action === "steer" || params.action === "reply";
 	if (needsMessage && !params.message?.trim()) throw new Error(`${params.action} requires message`);
 	if (!needsMessage && params.message !== undefined) throw new Error(`message is not valid for ${params.action}`);
+	const needsRevision = params.action === "apply" || params.action === "discard";
+	if (needsRevision && !params.revision?.trim()) throw new Error(`${params.action} requires revision`);
+	if (!needsRevision && params.revision !== undefined) throw new Error(`revision is not valid for ${params.action}`);
 	if (params.action !== "wait" && params.timeoutMs !== undefined) throw new Error(`timeoutMs is only valid for wait`);
 }
 
@@ -304,11 +329,12 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 	const delegateTool: ToolDefinition<typeof DelegateParams, DelegateToolDetails> = {
 		name: "delegate",
 		label: "Agents",
-		description: "Start one agent or a homogeneous labeled agent batch and immediately return a live handle. Shared options can select cwd, fresh or forked context, named skills, coding tools, an exact model/reasoning route, and structured output. Agents never inherit ambient extensions or delegation capability.",
+		description: "Start one agent or a homogeneous labeled agent batch and immediately return a live handle. Shared options can select an existing directory or reviewable temporary worktree, fresh or forked context, named skills, coding tools, an exact model/reasoning route, and structured output. Agents never inherit ambient extensions or delegation capability.",
 		promptSnippet: "Start focused agent work without blocking the parent turn",
 		promptGuidelines: [
 			"Use delegate when isolated context, independent judgment, or concurrency materially helps; continue useful parent work after it returns.",
 			"Use tasks for homogeneous parallel work. Use separate delegate calls when agents need different resources or models.",
+			"Use a temporary workspace for an isolated writer, then review its exact revision before explicitly applying or discarding it.",
 			"Do not call delegate and immediately wait when useful independent parent work remains.",
 		],
 		renderShell: "self",
@@ -337,6 +363,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 			const handle = await requireRuntime().start({
 				tasks,
 				cwd,
+				workspace: params.workspace === "temporary" ? "temporary" : "existing",
 				parent: {
 					sessionId: ctx.sessionManager.getSessionId(),
 					leafId: ctx.sessionManager.getLeafId(),
@@ -381,7 +408,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 	const controlTool: ToolDefinition<typeof DelegateControlParams, DelegateControlDetails> = {
 		name: "delegate_control",
 		label: "Agent Control",
-		description: "Inspect, wait for, steer, reply to, cancel, or resume an agent run. Status is a one-time snapshot; wait is the blocking completion path. Wait timeout or cancellation affects only the wait. Steer and reply target one eligible agent. Resume may target one interrupted agent or every interrupted agent in a run. Invalid IDs, fields, and transitions are tool errors; agent failures are returned as run data.",
+		description: "Inspect, wait for, steer, reply to, cancel, or resume an agent run. Review, apply, discard, and cleanup manage finalized temporary workspaces by exact revision and explicit recovery. Status is a one-time snapshot; wait is the blocking completion path. Invalid IDs, fields, and transitions are tool errors; agent failures are returned as run data.",
 		promptSnippet: "Control one existing agent run without polling",
 		promptGuidelines: [
 			"Choose one result path per dependency: continue and rely on automatic delivery, or call wait once when blocked. Reserve status for one-time inspection after a state change. Switch modes or retry only after an explicit failure or timeout.",
@@ -417,6 +444,14 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 					: before.children.find((child) => child.state === "interrupted");
 				if (!eligible) throw new Error(`Run ${params.runId} has no interrupted agent to resume`);
 				run = await activeRuntime.resume(params.runId, params.childId, launchResourcesForChild(ctx, eligible), currentOrigin(ctx, inputGeneration));
+			} else if (params.action === "review") {
+				run = await activeRuntime.review(params.runId, params.childId);
+			} else if (params.action === "apply") {
+				run = await activeRuntime.apply(params.runId, params.childId, params.revision!);
+			} else if (params.action === "discard") {
+				run = await activeRuntime.discard(params.runId, params.childId, params.revision!);
+			} else if (params.action === "cleanup") {
+				run = await activeRuntime.cleanup(params.runId, params.childId);
 			} else {
 				throw new Error(`Unsupported agent control action: ${params.action}`);
 			}
@@ -471,27 +506,64 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("agents", {
-		description: "Open the current agent run: /agents [list|<run-id>|use [<run-id>]|cancel <run-id>]",
+		description: "Open or manage agent runs: /agents [list|<run-id>|use|cancel|review|apply|discard|cleanup]",
 		async handler(args, ctx) {
 			currentContext = ctx;
-			const [action, runId] = args.trim().split(/\s+/, 2);
+			const [action, first, second, third] = args.trim().split(/\s+/, 4);
 			const activeRuntime = requireRuntime();
-			if (action === "cancel" || action === "use") {
+			if (action === "cancel" || action === "use" || action === "review" || action === "apply" || action === "discard" || action === "cleanup") {
 				if (action === "cancel") {
-					if (!runId) {
+					if (!first) {
 						ctx.ui.notify("Usage: /agents cancel <run-id>", "warning");
 						return;
 					}
-					await activeRuntime.cancel(runId);
-					ctx.ui.notify(`Cancelled ${runId}`, "info");
-				} else {
-					const held = runId ? activeRuntime.get(runId) : currentHeldRun(activeRuntime.list());
+					await activeRuntime.cancel(first);
+					ctx.ui.notify(`Cancelled ${first}`, "info");
+				} else if (action === "use") {
+					const held = first ? activeRuntime.get(first) : currentHeldRun(activeRuntime.list());
 					if (!held) {
-						ctx.ui.notify(runId ? `Unknown agent run: ${runId}` : "No held agent update is ready.", "warning");
+						ctx.ui.notify(first ? `Unknown agent run: ${first}` : "No held agent update is ready.", "warning");
 						return;
 					}
 					await activeRuntime.useHeld(held.id, currentOrigin(ctx, inputGeneration));
 					ctx.ui.notify(`Added ${held.id} to the current conversation`, "info");
+				} else if (action === "cleanup") {
+					if (!first) {
+						ctx.ui.notify("Usage: /agents cleanup <run-id> [child-id]", "warning");
+						return;
+					}
+					const cleaned = await activeRuntime.cleanup(first, second);
+					const child = second
+						? cleaned.children.find((candidate) => candidate.id === second)
+						: cleaned.children.find((candidate) => candidate.workspace.kind === "temporary");
+					const integration = child?.workspace.kind === "temporary" ? child.workspace.integration : undefined;
+					const failed = !!(integration && "cleanupError" in integration && integration.cleanupError);
+					ctx.ui.notify(failed ? `Cleanup still failed: ${first}` : `Cleanup completed: ${first}`, failed ? "warning" : "info");
+				} else if (action === "review") {
+					if (!first) {
+						ctx.ui.notify("Usage: /agents review <run-id> [child-id]", "warning");
+						return;
+					}
+					const reviewed = await activeRuntime.review(first, second);
+					const child = second
+						? reviewed.children.find((candidate) => candidate.id === second)
+						: reviewed.children.find((candidate) => candidate.workspace.kind === "temporary");
+					const integration = child?.workspace.kind === "temporary" ? child.workspace.integration : undefined;
+					const revision = integration?.state === "review_pending" ? ` at ${integration.review.revision}` : "";
+					ctx.ui.notify(`Reviewed ${first}${revision}`, "info");
+				} else {
+					if (!first || !second) {
+						ctx.ui.notify(`Usage: /agents ${action} <run-id> <revision> [child-id]`, "warning");
+						return;
+					}
+					const changed = action === "apply"
+						? await activeRuntime.apply(first, third, second)
+						: await activeRuntime.discard(first, third, second);
+					const child = third
+						? changed.children.find((candidate) => candidate.id === third)
+						: changed.children.find((candidate) => candidate.workspace.kind === "temporary");
+					const state = child?.workspace.kind === "temporary" ? child.workspace.integration.state : "unknown";
+					ctx.ui.notify(`${action === "apply" ? "Apply" : "Discard"} ${state}: ${first}`, state === "conflict" ? "warning" : "info");
 				}
 				syncControlTool();
 				return;
@@ -568,6 +640,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 			repository,
 			children: createPiChildSessionAdapter(),
 			delivery,
+			workspaces: createGitWorkspaceManager(),
 			maxActiveChildren: 3,
 		});
 		delegateUi = createDelegateUi(runtime);
