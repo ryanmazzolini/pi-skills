@@ -38,8 +38,8 @@ function compactDuration(elapsed: number): string {
 	return `${minutes}m ${seconds % 60}s`;
 }
 
-function formatDuration(startedAt: string): string {
-	return compactDuration(Date.now() - Date.parse(startedAt));
+function formatDuration(startedAt: string, now = Date.now()): string {
+	return compactDuration(now - Date.parse(startedAt));
 }
 
 function resultText(result: NonNullable<RunView["children"][number]["result"]>, expanded = false): string {
@@ -104,9 +104,11 @@ export function describeLatestActivity(
 		: child.latestActivity.summary;
 }
 
-function stateIcon(state: DelegatedChild["state"], theme: Theme): string {
+function stateIcon(state: DelegatedChild["state"], theme: Theme, animated = true): string {
 	if (state === "running" || state === "starting" || state === "queued") {
-		const frame = SPINNER[Math.floor(Date.now() / SPINNER_FRAME_MS) % SPINNER.length] ?? "⠋";
+		const frame = animated
+			? SPINNER[Math.floor(Date.now() / SPINNER_FRAME_MS) % SPINNER.length] ?? "⠋"
+			: "◐";
 		return theme.fg(state === "queued" ? "muted" : "warning", frame);
 	}
 	if (state === "completed") return theme.fg("success", "✓");
@@ -118,10 +120,7 @@ function stateIcon(state: DelegatedChild["state"], theme: Theme): string {
 
 function runIcon(run: DelegationRun, theme: Theme): string {
 	const status = deriveRunStatus(run);
-	if (status === "running" || status === "queued") {
-		const frame = SPINNER[Math.floor(Date.now() / SPINNER_FRAME_MS) % SPINNER.length] ?? "⠋";
-		return theme.fg("warning", frame);
-	}
+	if (status === "running" || status === "queued") return theme.fg("warning", "◐");
 	if (status === "completed") return theme.fg("success", "✓");
 	if (status === "failed") return theme.fg("error", "✗");
 	if (status === "needs_attention") return theme.fg("warning", "?");
@@ -130,11 +129,36 @@ function runIcon(run: DelegationRun, theme: Theme): string {
 	return theme.fg("warning", "◐");
 }
 
+function liveRunRenderSignature(run: DelegationRun): string {
+	return JSON.stringify({
+		delivery: run.delivery.state,
+		children: run.children.map((child) => ({
+			state: child.state,
+			activity: [child.latestActivity.kind, child.latestActivity.summary],
+			attention: child.attention
+				? [
+					child.attention.id,
+					child.attention.kind,
+					child.attention.question,
+					child.attention.context,
+					child.attention.notification.state,
+				]
+				: undefined,
+			result: child.result ? [child.result.kind, child.result.completedAt] : undefined,
+			failure: child.failure
+				? [child.failure.message, child.failure.stopReason, child.failure.failedAt]
+				: undefined,
+			workspace: child.workspace.kind === "temporary" ? child.workspace.integration : undefined,
+		})),
+	});
+}
+
 class LiveRunComponent implements Component {
 	private readonly runtime: DelegateRuntime;
 	private readonly runId: string;
 	private expanded: boolean;
 	private theme: Theme;
+	private renderedAt = Date.now();
 
 	constructor(runtime: DelegateRuntime, runId: string, expanded: boolean, theme: Theme) {
 		this.runtime = runtime;
@@ -146,6 +170,7 @@ class LiveRunComponent implements Component {
 	update(expanded: boolean, theme: Theme): void {
 		this.expanded = expanded;
 		this.theme = theme;
+		this.renderedAt = Date.now();
 	}
 
 	render(width: number): string[] {
@@ -159,9 +184,9 @@ class LiveRunComponent implements Component {
 			const child = run.children[0]!;
 			lines.push(
 				`${runIcon(run, this.theme)} ${this.theme.fg("toolTitle", this.theme.bold(child.label))} `
-				+ this.theme.fg("dim", `${status} · ${formatDuration(run.createdAt)}`),
+				+ this.theme.fg("dim", `${status} · ${formatDuration(run.createdAt, this.renderedAt)}`),
 			);
-			const activity = describeLatestActivity(run);
+			const activity = describeLatestActivity(run, this.renderedAt);
 			lines.push(this.theme.fg(activity.startsWith("Still running") ? "warning" : "muted", `  ${activity}`));
 			if (child.attention) lines.push(this.theme.fg("warning", `  ?  ${child.attention.question}`));
 			if (!this.expanded && child.result) {
@@ -179,14 +204,14 @@ class LiveRunComponent implements Component {
 		} else {
 			lines.push(
 				`${runIcon(run, this.theme)} ${this.theme.fg("toolTitle", this.theme.bold(`${run.children.length} agents`))} `
-				+ this.theme.fg("dim", `${status} · ${formatDuration(run.createdAt)}`),
+				+ this.theme.fg("dim", `${status} · ${formatDuration(run.createdAt, this.renderedAt)}`),
 			);
 			const visibleChildren = this.expanded ? run.children : run.children.slice(0, 6);
 			for (const child of visibleChildren) {
 				const index = run.children.indexOf(child);
-				const activity = describeLatestActivity(run, Date.now(), 10_000, index);
+				const activity = describeLatestActivity(run, this.renderedAt, 10_000, index);
 				const detail = child.state === "completed" || child.state === "cancelled" ? child.state : `${child.state} · ${activity}`;
-				lines.push(`${stateIcon(child.state, this.theme)} ${this.theme.fg("accent", child.label)} ${this.theme.fg("dim", detail)}`);
+				lines.push(`${stateIcon(child.state, this.theme, false)} ${this.theme.fg("accent", child.label)} ${this.theme.fg("dim", detail)}`);
 			}
 			if (!this.expanded && run.children.length > visibleChildren.length) {
 				lines.push(this.theme.fg("dim", `… ${run.children.length - visibleChildren.length} more · /agents`));
@@ -196,7 +221,7 @@ class LiveRunComponent implements Component {
 
 		if (this.expanded) {
 			for (const child of run.children) {
-				lines.push("", `${stateIcon(child.state, this.theme)} ${this.theme.bold(child.label)} ${this.theme.fg("dim", child.state)}`);
+				lines.push("", `${stateIcon(child.state, this.theme, false)} ${this.theme.bold(child.label)} ${this.theme.fg("dim", child.state)}`);
 				lines.push(this.theme.fg("dim", "Task"));
 				lines.push(...wrapTextWithAnsi(child.task, Math.max(1, width)));
 				if (child.attention) lines.push(this.theme.fg("warning", `Needs ${child.attention.kind}: ${child.attention.question}`));
@@ -679,31 +704,32 @@ export interface DelegateUi {
 
 export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 	const invalidators = new Map<string, () => void>();
-	const isAnimating = (run: DelegationRun): boolean => run.children.some((child) =>
-		child.state === "queued" || child.state === "starting" || child.state === "running",
-	);
+	const renderSignatures = new Map<string, string>();
 	const canChange = (run: DelegationRun): boolean => runNeedsControl(run);
 	const unsubscribe = runtime.subscribe((run) => {
-		invalidators.get(run.id)?.();
-		if (!canChange(run)) invalidators.delete(run.id);
-	});
-	const timer = setInterval(() => {
-		for (const [runId, invalidate] of [...invalidators]) {
-			const run = runtime.get(runId);
-			if (!run || !canChange(run)) {
-				invalidators.delete(runId);
-				continue;
-			}
-			if (isAnimating(run)) invalidate();
+		const invalidate = invalidators.get(run.id);
+		if (!invalidate) return;
+		const signature = liveRunRenderSignature(run);
+		if (renderSignatures.get(run.id) !== signature) {
+			renderSignatures.set(run.id, signature);
+			invalidate();
 		}
-	}, SPINNER_FRAME_MS);
-	timer.unref?.();
+		if (!canChange(run)) {
+			invalidators.delete(run.id);
+			renderSignatures.delete(run.id);
+		}
+	});
 
 	return {
 		renderRun(runId, expanded, theme, invalidate, previous) {
 			const run = runtime.get(runId);
-			if (run && canChange(run)) invalidators.set(runId, invalidate);
-			else invalidators.delete(runId);
+			if (run && canChange(run)) {
+				invalidators.set(runId, invalidate);
+				renderSignatures.set(runId, liveRunRenderSignature(run));
+			} else {
+				invalidators.delete(runId);
+				renderSignatures.delete(runId);
+			}
 			if (previous instanceof LiveRunComponent) {
 				previous.update(expanded, theme);
 				return previous;
@@ -753,9 +779,9 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 			);
 		},
 		dispose() {
-			clearInterval(timer);
 			unsubscribe();
 			invalidators.clear();
+			renderSignatures.clear();
 		},
 	};
 }

@@ -382,6 +382,8 @@ interface QueueItem {
 	sequence: number;
 }
 
+const ACTIVITY_HEARTBEAT_MS = 5_000;
+
 const ZERO_USAGE: ChildUsage = {
 	input: 0,
 	output: 0,
@@ -1419,8 +1421,12 @@ export class DelegateRuntime {
 		const run = this.runs.get(runId);
 		const child = run?.children.find((candidate) => candidate.id === childId);
 		if (!run || !child || (child.state !== "starting" && child.state !== "running")) return;
-		child.latestActivity = this.activity(value.kind, value.summary);
-		run.updatedAt = this.timestamp();
+		const next = this.activity(value.kind, value.summary);
+		const unchanged = child.latestActivity.kind === next.kind && child.latestActivity.summary === next.summary;
+		const elapsed = Math.max(0, Date.parse(next.observedAt) - Date.parse(child.latestActivity.observedAt));
+		if (unchanged && elapsed < ACTIVITY_HEARTBEAT_MS) return;
+		child.latestActivity = next;
+		run.updatedAt = next.observedAt;
 		this.emit(run);
 		await this.persist(run);
 	}
