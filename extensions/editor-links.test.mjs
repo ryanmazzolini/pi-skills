@@ -4,7 +4,19 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import { linkifyText } from "./editor-links.ts";
+import {
+  createBashToolDefinition,
+  createWriteToolDefinition,
+  initTheme,
+} from "@earendil-works/pi-coding-agent";
+import { getCapabilities, setCapabilities } from "@earendil-works/pi-tui";
+import {
+  linkifyRenderedPaths,
+  linkifyText,
+  linkifyToolDefinition,
+  linkifyToolOutput,
+  registerBuiltInToolLinks,
+} from "./editor-links.ts";
 
 function fixture(t) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "editor-links-test-"));
@@ -15,10 +27,20 @@ function fixture(t) {
   return { cwd, report };
 }
 
+function bridgeTarget(bridgeUrl) {
+  return new URL(bridgeUrl).searchParams.get("url");
+}
+
 function editorTarget(markdown) {
   const bridgeUrl = markdown.match(/\]\((http:\/\/[^ )]+)/)?.[1];
   assert.ok(bridgeUrl, `missing bridge URL in ${markdown}`);
-  return new URL(bridgeUrl).searchParams.get("url");
+  return bridgeTarget(bridgeUrl);
+}
+
+function osc8Url(text) {
+  const url = text.match(/\x1b\]8;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/)?.[1];
+  assert.ok(url, `missing OSC 8 URL in ${JSON.stringify(text)}`);
+  return url;
 }
 
 test("rewrites an existing local Markdown destination", (t) => {
@@ -45,13 +67,13 @@ test("preserves a Markdown title when rewriting its destination", (t) => {
   assert.equal(editorTarget(result), `zed://file${pathToFileURL(report).pathname}`);
 });
 
-test("does not rewrite images, external links, anchors, inline code, or missing files", (t) => {
+test("does not rewrite images, external links, anchors, inline prose, or missing files", (t) => {
   const { cwd } = fixture(t);
   const input = [
     "![report](.plans/session-audit/findings.md)",
     "[site](https://example.com/report)",
     "[section](#findings)",
-    "`[report](.plans/session-audit/findings.md)`",
+    "`open .plans/session-audit/findings.md later`",
     "[missing](.plans/session-audit/missing.md)",
   ].join("\n");
 
@@ -65,4 +87,161 @@ test("continues to linkify a bare existing path", (t) => {
 
   assert.match(result, /^See \[\.plans\/session-audit\/findings\.md\]\(http:/);
   assert.equal(editorTarget(result), `zed://file${pathToFileURL(report).pathname}`);
+});
+
+test("linkifies an exact path formatted as inline code", (t) => {
+  const { cwd, report } = fixture(t);
+
+  const result = linkifyText("Latest modified file: `.plans/session-audit/findings.md`", cwd);
+
+  assert.match(result, /^Latest modified file: \[`\.plans\/session-audit\/findings\.md`\]\(http:/);
+  assert.equal(editorTarget(result), `zed://file${pathToFileURL(report).pathname}`);
+});
+
+test("rewrites a tool renderer file hyperlink", (t) => {
+  const { report } = fixture(t);
+  const input = `\x1b]8;;${pathToFileURL(report).href}\x1b\\${report}\x1b]8;;\x1b\\`;
+
+  const result = linkifyToolOutput(input);
+
+  assert.equal(bridgeTarget(osc8Url(result)), `zed://file${pathToFileURL(report).pathname}`);
+  assert.match(result, new RegExp(report.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("preserves non-file tool hyperlinks", () => {
+  const input = "\x1b]8;;https://example.com/report\x07report\x1b]8;;\x07";
+
+  assert.equal(linkifyToolOutput(input), input);
+});
+
+test("linkifies existing paths in ANSI-styled bash output", (t) => {
+  const { cwd, report } = fixture(t);
+  const input = "\x1b[38;5;250m.plans/session-audit/findings.md\x1b[39m";
+
+  const result = linkifyRenderedPaths(input, cwd);
+
+  assert.equal(bridgeTarget(osc8Url(result)), `zed://file${pathToFileURL(report).pathname}`);
+  assert.match(result, /\.plans\/session-audit\/findings\.md/);
+});
+
+test("leaves missing paths in bash output unchanged", (t) => {
+  const { cwd } = fixture(t);
+  const input = "\x1b[38;5;250m.plans/session-audit/missing.md\x1b[39m";
+
+  assert.equal(linkifyRenderedPaths(input, cwd), input);
+});
+
+test("rewrites paths rendered by the built-in bash tool", (t) => {
+  const { cwd, report } = fixture(t);
+  initTheme("dark");
+  const definition = linkifyToolDefinition(createBashToolDefinition(cwd), {
+    result: (text) => linkifyRenderedPaths(text, cwd),
+  });
+  const context = {
+    args: { command: "find .plans -type f" },
+    toolCallId: "bash-test",
+    invalidate() {},
+    lastComponent: undefined,
+    state: {},
+    cwd,
+    executionStarted: true,
+    argsComplete: true,
+    isPartial: false,
+    expanded: false,
+    showImages: true,
+    isError: false,
+  };
+
+  const component = definition.renderResult(
+    { content: [{ type: "text", text: ".plans/session-audit/findings.md" }] },
+    { expanded: false, isPartial: false },
+    {},
+    context,
+  );
+  const output = component.render(120).find((line) => line.includes(".plans/"));
+
+  assert.ok(output);
+  assert.equal(bridgeTarget(osc8Url(output)), `zed://file${pathToFileURL(report).pathname}`);
+});
+
+test("overrides only untouched built-in path tools", () => {
+  const registered = [];
+  const sourceInfo = (source) => ({ sourceInfo: { source } });
+  const pi = {
+    getAllTools: () => [
+      { name: "read", ...sourceInfo("builtin") },
+      { name: "write", ...sourceInfo("builtin") },
+      { name: "edit", ...sourceInfo("another-extension") },
+      { name: "ls", ...sourceInfo("builtin") },
+      { name: "bash", ...sourceInfo("builtin") },
+    ],
+    registerTool: (definition) => registered.push(definition.name),
+  };
+
+  registerBuiltInToolLinks(pi, process.cwd());
+
+  assert.deepEqual(registered, ["read", "write", "ls", "bash"]);
+});
+
+test("rewrites the built-in write tool path without changing its label", (t) => {
+  const { cwd, report } = fixture(t);
+  const previousCapabilities = getCapabilities();
+  setCapabilities({ images: null, trueColor: true, hyperlinks: true });
+  t.after(() => setCapabilities(previousCapabilities));
+  const definition = linkifyToolDefinition(createWriteToolDefinition(cwd));
+  const theme = {
+    fg: (_color, text) => text,
+    bold: (text) => text,
+  };
+  const context = {
+    args: {},
+    toolCallId: "write-test",
+    invalidate() {},
+    lastComponent: undefined,
+    state: {},
+    cwd,
+    executionStarted: true,
+    argsComplete: true,
+    isPartial: false,
+    expanded: false,
+    showImages: true,
+    isError: false,
+  };
+
+  const component = definition.renderCall(
+    { path: ".plans/session-audit/findings.md", content: "" },
+    theme,
+    context,
+  );
+  const output = component.render(120)[0];
+
+  assert.match(output, /write .*\.plans\/session-audit\/findings\.md/);
+  assert.equal(bridgeTarget(osc8Url(output)), `zed://file${pathToFileURL(report).pathname}`);
+});
+
+test("preserves renderer component reuse while rewriting its output", (t) => {
+  const { report } = fixture(t);
+  const input = `\x1b]8;;${pathToFileURL(report).href}\x1b\\report\x1b]8;;\x1b\\`;
+  let invalidations = 0;
+  const child = {
+    render: () => [input],
+    invalidate: () => invalidations++,
+  };
+  const receivedPrevious = [];
+  const definition = {
+    renderCall(_args, _theme, context) {
+      receivedPrevious.push(context.lastComponent);
+      return context.lastComponent ?? child;
+    },
+  };
+  const wrapped = linkifyToolDefinition(definition);
+
+  const first = wrapped.renderCall({}, {}, { lastComponent: undefined });
+  const second = wrapped.renderCall({}, {}, { lastComponent: first });
+  first.invalidate();
+
+  assert.equal(bridgeTarget(osc8Url(first.render(120)[0])), `zed://file${pathToFileURL(report).pathname}`);
+  assert.strictEqual(second, first);
+  assert.strictEqual(receivedPrevious[1], child);
+  assert.equal(invalidations, 1);
 });
