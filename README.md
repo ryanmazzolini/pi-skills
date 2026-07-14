@@ -85,6 +85,7 @@ This README is the map. The family README files have the details.
 | `teach` | Run a tight learning loop with short lessons, practice, feedback, and earned durable artifacts | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/teach) |
 | `writing-great-skills` | User-invoked reference for writing predictable, low-context-load skills | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/writing-great-skills) |
 | `handoff` | Write a date-stamped `.plans/` handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
+| `agent-coordination` | Select configured lightweight, balanced, or deep model and reasoning routes before delegating agent work | — |
 | `tiger-team` | Orchestrate pi-subagents implementers and reviewers across deterministic ticket worktrees with integration, security scrutiny, and fix loops | [pi-subagents](https://github.com/nicobailon/pi-subagents) |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
 | `daily-report` | Generate and reconcile OKF-compatible activity reports from local Git plus optional GitHub and Shortcut evidence | [OKF v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) |
