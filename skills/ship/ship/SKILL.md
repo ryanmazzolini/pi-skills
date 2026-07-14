@@ -51,6 +51,8 @@ Record implementation outcomes and verification with the relevant slice before s
 
 ## Recover safely
 
+On resume, reconcile current work with the last approved goal and Now, then recommend the smallest path to the next useful checkpoint.
+
 On cold resume, reconstruct the goal, open questions, completed work, and ready set from local files. For interrupted work, inspect the repository, branch or worktree, available run state, and recorded evidence before deciding what remains. Present uncertainty before any retry that could overwrite work or duplicate side effects.
 
 For an old RPI workflow, preserve its files. Infer a proposed state and dependency graph from their content, then confirm ambiguous progress or dependencies before writing any migration. There is no `rpi` alias or bulk migration.

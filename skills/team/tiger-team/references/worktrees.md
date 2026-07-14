@@ -10,16 +10,16 @@ Ticket folder:
 <workspace-root>/worktrees/<ticket-slug>/
 ```
 
-Slice worktree:
+Work-unit worktree:
 
 ```text
-<ticket-folder>/<repo>-<slice-slug>/
+<ticket-folder>/<repo>-<work-unit-slug>/
 ```
 
-Slice branch:
+Work-unit branch:
 
 ```text
-<type>/<ticket-id>/<short-description>-<slice-slug>
+<type>/<ticket-id>/<short-description>-<work-unit-slug>
 ```
 
 Examples:
@@ -44,7 +44,7 @@ Integration worktree/branch:
 
 ## Creation Rules
 
-1. Reuse an existing matching worktree if it points at the intended repo and its status is safe for the slice.
+1. Reuse an existing matching worktree if it points at the intended repo and its status is safe for the work unit.
 2. Propose paths, branches, and base ref before creating worktrees unless the user already approved tiger-team worktree creation.
 3. Create from the approved base ref, usually the parent worktree's `HEAD`.
 4. Use semantic suffixes (`-auth`, `-checkout-ui`, `-concourse-deploy`, `-integrate`) rather than nested branch paths under the main ticket branch; this avoids Git ref conflicts if `feat/sc-123/short-description` already exists.
@@ -54,17 +54,17 @@ Integration worktree/branch:
 Command shape:
 
 ```bash
-git worktree add -b <branch> <ticket-folder>/<repo>-<slice-slug> <base-ref>
+git worktree add -b <branch> <ticket-folder>/<repo>-<work-unit-slug> <base-ref>
 ```
 
 ## Local Commit Policy
 
-Local commits make integration and review easier because the parent or integration worker can inspect, cherry-pick, merge, or range-diff slice branches.
+Local commits make integration and review easier because the parent or integration worker can inspect, cherry-pick, merge, or range-diff work-unit branches.
 
 Because repo rules require asking before commits:
 
 - During alignment, ask whether local commits are approved for this tiger-team run.
-- If approved, workers may create local commits only on their assigned slice branch, with Conventional Commit messages, and must not push or open PRs.
+- If approved, workers may create local commits only on their assigned work-unit branch, with Conventional Commit messages, and must not push or open PRs.
 - If not approved, workers leave uncommitted diffs in their assigned worktree and report changed files.
 - Integration/fix workers follow the same policy for the integration branch.
 
