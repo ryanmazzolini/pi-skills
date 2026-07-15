@@ -74,6 +74,12 @@ Avoid broad home-directory scans. Use targeted, shallow `find` commands.
 3. Propose the workspace folder, the worktree for the first PR (and base branches for any planned stack), and branch names.
 4. Ask before running `mkdir`, `git worktree add`, branch creation, or checkout.
 
+## Offer a Herdr handoff
+
+Once the ticket folder and first PR worktree are ready, load the model-invoked `herdr` skill and follow its Pi conversation handoff when the current agent is Pi, `HERDR_ENV=1`, and the Pi session is still rooted outside the ticket folder.
+
+Propose the ticket folder as the Herdr cwd so one session can reach every repo worktree for the ticket, and use the ticket slug as the workspace label. The `herdr` skill owns confirmation, transfer, and source-pane cleanup.
+
 ## Branch names
 
 When a ticket exists, keep its id visible:

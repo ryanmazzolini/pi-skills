@@ -64,6 +64,7 @@ A few things to know up front:
 | [Obsidian CLI](https://obsidian.md/help/cli) | `obsidian-vault`, `inbox-wiki`, `vault-cleanup` | Requires Obsidian desktop CLI to be enabled |
 | Notion CLI (`ntn`) | `notion-cli` | Installed with mise; requires Notion auth/token setup |
 | [agent-browser](https://github.com/vercel-labs/agent-browser) | `agent-browser` | Browser automation CLI |
+| [Herdr](https://herdr.dev/) | `herdr` | Required only when controlling a Herdr-managed terminal session |
 
 ## Skill families
 
@@ -79,6 +80,7 @@ This README is the map. The family README files have the details.
 |-------|-------------|------------|
 | `ticket-workspace` | Create or reuse workspaces — one folder per ticket or ticketless quick fix, one git worktree per PR | — |
 | `ticket-workspace-cleanup` | User-invoked cleanup for completed ticket workspace folders after git-state checks | — |
+| `herdr` | Control Herdr and safely hand off an active Pi conversation to another workspace | [Herdr](https://herdr.dev/) |
 | `commit-simple` | Branch, commit, and push changes | — |
 | `commit-pr` | Create or update draft pull requests | — |
 | `research` | Decision-first technical research with bounded evidence gathering | — |
