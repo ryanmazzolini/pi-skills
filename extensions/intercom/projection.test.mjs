@@ -1,0 +1,197 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { INTERCOM_LIMITS, isMessage } from "./client.ts";
+import { INBOUND_DELIVERY_LIMITS, InboundDelivery, deliverInboundMessage } from "./index.ts";
+import { connectNew, isolatedIntercom, startOwnedBroker, stopChild, waitEvent } from "../../tests/intercom/helpers.mjs";
+import {
+	INTERCOM_PROJECTION_MAX_BYTES,
+	INTERCOM_TRUNCATION_NOTICE,
+	projectAskReply,
+	projectInboundEntry,
+	projectPendingEntries,
+	projectSessionList,
+	projectionBytes,
+} from "./projection.ts";
+
+function session(id, overrides = {}) {
+	return { id, name: `name-${id}`, cwd: "/repo", model: "test", pid: 1, startedAt: 1, lastActivity: 1, status: "idle", ...overrides };
+}
+
+function entry(from, message, receivedAt = 1) {
+	return { from, message, receivedAt, replyable: message.expectsReply === true };
+}
+
+function assertBounded(value, label) {
+	assert.ok(projectionBytes(value) <= INTERCOM_PROJECTION_MAX_BYTES, `${label} exceeded projection cap`);
+}
+
+test("multibyte inbound projection is UTF-8 bounded, actionable, quoted, and compactly persisted", () => {
+	const messageId = "ask-\"\\\n";
+	const inbound = entry(
+		session("peer-full-authoritative-id", { name: "🙂".repeat(1_000), cwd: `/${"界".repeat(1_000)}` }),
+		{ id: messageId, timestamp: 7, expectsReply: true, content: { text: "🙂".repeat(100_000) } },
+	);
+	const projected = projectInboundEntry(inbound);
+	assertBounded(projected.text, "multibyte inbound text");
+	assert.equal(projected.bytes, projectionBytes(projected.text));
+	assert.equal(projected.truncated, true);
+	assert.match(projected.text, /peer-full-authoritative-id/);
+	assert.ok(projected.text.includes(`replyTo: ${JSON.stringify(messageId)}`));
+	assert.ok(projected.text.endsWith(INTERCOM_TRUNCATION_NOTICE));
+	assert.deepEqual(projected.details, {
+		fromPeerId: "peer-full-authoritative-id",
+		messageId,
+		timestamp: 7,
+		receivedAt: 1,
+		expectsReply: true,
+		replyable: true,
+		attachmentCount: 0,
+		truncated: true,
+	});
+	assertBounded(projected.details, "multibyte inbound details");
+	assert.doesNotMatch(JSON.stringify(projected.details), /🙂/u);
+
+	const calls = [];
+	deliverInboundMessage({ sendMessage: (...args) => calls.push(args) }, inbound);
+	assertBounded(calls[0][0].content, "persisted inbound content");
+	assertBounded(calls[0][0].details, "persisted inbound details");
+	assert.equal(calls[0][0].details.entries[0].fromPeerId, "peer-full-authoritative-id");
+	assert.equal("message" in calls[0][0].details.entries[0], false);
+});
+
+test("maximum field-legal text and attachment combination projects without retaining its wire payload", () => {
+	const attachments = Array.from({ length: INTERCOM_LIMITS.maxAttachments }, (_, index) => ({
+		type: "file",
+		name: `${index}${"n".repeat(INTERCOM_LIMITS.maxAttachmentNameBytes - String(index).length)}`,
+		content: "界".repeat(INTERCOM_LIMITS.maxAttachmentTotalBytes / INTERCOM_LIMITS.maxAttachments / 3),
+		language: "typescript",
+	}));
+	const message = {
+		id: "maximum-message-id",
+		timestamp: 11,
+		expectsReply: true,
+		content: { text: "🙂".repeat(INTERCOM_LIMITS.maxMessageTextBytes / 4), attachments },
+	};
+	assert.equal(isMessage(message), true);
+	const projected = projectInboundEntry(entry(session("maximum-peer-id"), message));
+	assertBounded(projected.text, "maximum legal message");
+	assert.equal(projected.truncated, true);
+	assert.match(projected.text, /maximum-peer-id/);
+	assert.match(projected.text, /maximum-message-id/);
+	assert.equal(projected.details.attachmentCount, INTERCOM_LIMITS.maxAttachments);
+	assert.ok(projectionBytes(projected.details) < 1_024);
+});
+
+test("maximum encodable message remains bounded after a real broker and client round trip", async (t) => {
+	const { paths } = await isolatedIntercom(t, "projection-wire-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const sender = await connectNew(paths, "sender");
+	const recipient = await connectNew(paths, "recipient");
+	t.after(async () => Promise.allSettled([sender.disconnect(), recipient.disconnect()]));
+	const messageId = "maximum-wire-message";
+	const received = waitEvent(recipient, "message", (_from, message) => message.id === messageId, 5_000);
+	const result = await sender.send(recipient.sessionId, {
+		messageId,
+		text: "x".repeat(INTERCOM_LIMITS.maxMessageTextBytes),
+		attachments: [{
+			type: "file",
+			name: "maximum.bin",
+			content: "y".repeat(INTERCOM_LIMITS.maxAttachmentContentBytes),
+		}],
+	});
+	assert.equal(result.delivered, true);
+	const [from, message] = await received;
+	const projected = projectInboundEntry(entry(from, message));
+	assertBounded(projected.text, "maximum wire message");
+	assert.equal(projected.truncated, true);
+	assert.equal(projected.details.messageId, messageId);
+});
+
+test("list projection bounds 32 maximum-metadata sessions while preserving every full broker ID", () => {
+	const metadata = "界".repeat(Math.floor(INTERCOM_LIMITS.maxSessionStringBytes / 3));
+	const sessions = Array.from({ length: 32 }, (_, index) => session(
+		`broker-derived-full-session-id-${String(index).padStart(2, "0")}`,
+		{ name: metadata, cwd: metadata, model: metadata, status: metadata },
+	));
+	const projected = projectSessionList(sessions, sessions[0]);
+	assertBounded(projected.text, "32-session list");
+	assert.equal(projected.truncated, true);
+	for (const peer of sessions) assert.ok(projected.text.includes(peer.id), `missing ${peer.id}`);
+	const details = { currentSessionId: sessions[0].id, sessionIds: sessions.map((peer) => peer.id), count: sessions.length, truncated: true };
+	assertBounded(details, "32-session details");
+	assert.doesNotMatch(JSON.stringify(details), /界/u);
+});
+
+test("large ask replies and 64-entry pending results retain authoritative IDs under the cap", () => {
+	const from = session("replying-peer-full-id", { name: "界".repeat(1_000), cwd: "🙂".repeat(1_000) });
+	const reply = { id: "large-reply-message-id", timestamp: 20, replyTo: "request-id", content: { text: "答".repeat(100_000) } };
+	const projectedReply = projectAskReply(from, reply);
+	assertBounded(projectedReply.text, "large ask reply");
+	assert.match(projectedReply.text, /replying-peer-full-id/);
+	assert.equal(projectedReply.details.messageId, "large-reply-message-id");
+	assert.equal(projectedReply.details.fromPeerId, "replying-peer-full-id");
+
+	const pending = Array.from({ length: 64 }, (_, index) => entry(
+		session(`pending-peer-full-id-${index}`, { name: "界".repeat(1_000) }),
+		{ id: `pending-message-full-id-${index}`, timestamp: index, expectsReply: true, content: { text: "🙂".repeat(1_000) } },
+		index,
+	));
+	const projectedPending = projectPendingEntries(pending, 1_000);
+	assertBounded(projectedPending.text, "pending result");
+	for (const item of pending) {
+		assert.ok(projectedPending.text.includes(item.from.id));
+		assert.ok(projectedPending.text.includes(item.message.id));
+	}
+});
+
+test("inbound delivery independently bounds raw traffic, projected queue memory, batches, and details", async () => {
+	const calls = [];
+	const limits = {
+		...INBOUND_DELIVERY_LIMITS,
+		perSenderMessages: 10,
+		perSenderBytes: 1_024,
+		globalMessages: 10,
+		globalBytes: 1_024,
+		pendingMessages: 10,
+		pendingBytes: INTERCOM_PROJECTION_MAX_BYTES,
+		automaticTurns: 2,
+		flushDelayMs: 0,
+	};
+	const delivery = new InboundDelivery({ sendMessage: (...args) => calls.push(args) }, () => 1, limits);
+	const maximumFirst = entry(session("large-first-peer"), {
+		id: "large-first-id",
+		timestamp: 1,
+		content: { text: `unique-start-${"🙂".repeat(100_000)}-unique-raw-tail` },
+	});
+	assert.equal(delivery.record(maximumFirst), true);
+	assert.equal(delivery.pending.length, 1);
+	assert.deepEqual(Object.keys(delivery.pending[0]).sort(), ["bytes", "details", "text", "truncated"]);
+	assert.equal("message" in delivery.pending[0], false);
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	assertBounded(calls[0][0].content, "first automatic message");
+	assertBounded(calls[0][0].details, "first automatic details");
+	assert.equal(JSON.stringify(calls[0][0].details).includes("unique-raw-tail"), false);
+	delivery.dispose();
+
+	const batchCalls = [];
+	const batch = new InboundDelivery(
+		{ sendMessage: (...args) => batchCalls.push(args) },
+		() => 1,
+		{ ...INBOUND_DELIVERY_LIMITS, perSenderBytes: 200_000, globalBytes: 500_000, flushDelayMs: 0 },
+	);
+	for (let index = 0; index < 4; index++) {
+		assert.equal(batch.record(entry(session(`batch-peer-${index}`), {
+			id: `batch-message-${index}`,
+			timestamp: index,
+			content: { text: "界".repeat(3_000) },
+		})), true);
+	}
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	const delivered = batchCalls.find((call) => call[1].triggerTurn);
+	assert.equal(delivered[0].details.count, 4);
+	assertBounded(delivered[0].content, "automatic inbound batch");
+	assertBounded(delivered[0].details, "automatic inbound batch details");
+	assert.equal("message" in delivered[0].details.entries[0], false);
+	batch.dispose();
+});

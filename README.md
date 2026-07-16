@@ -55,7 +55,7 @@ A few things to know up front:
 
 ## Optional tooling
 
-`pi` is the package-wide base dependency. `daily-report` also requires Git; the tools below are optional and only needed for matching skills or report sources.
+`pi` and Node.js 24 or newer are package-wide base dependencies. Node must be available as `node` on `PATH`; it runs package scripts and the owned intercom broker process. `daily-report` also requires Git; the tools below are optional and only needed for matching skills or report sources.
 
 | Tool | Used by | Notes |
 |------|---------|-------|
