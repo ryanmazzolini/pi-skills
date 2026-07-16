@@ -1,6 +1,6 @@
 ---
 name: "ship"
-description: Advance durable multi-session work to its next human checkpoint. Use when planning or continuing sizeable work across sessions, or resuming an interrupted local workflow.
+description: Route work to its next human checkpoint. Use at the outset of potentially sizeable work to decide whether it needs a durable workflow, or when resuming work represented by local workflow artifacts.
 ---
 
 # Ship
