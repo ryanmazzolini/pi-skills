@@ -1,6 +1,6 @@
 ---
 name: "align"
-description: Align the critical path to the smallest useful release. Use when the user wants to be grilled, clarify requirements, or align on a design.
+description: Align the critical path to the smallest useful release. Use when ship routes work with open requirements, UX/DX, scope, or high-level shape decisions, or when the user explicitly asks to be grilled.
 ---
 
 # Align

@@ -1,6 +1,6 @@
 ---
 name: "slice-plan"
-description: Slice approved Now scope into a compact dependency-shaped plan. Use after align or when ship reaches planning.
+description: Slice approved Now scope into a compact dependency-shaped plan. Use when ship routes settled alignment to planning.
 ---
 
 # Slice Plan
