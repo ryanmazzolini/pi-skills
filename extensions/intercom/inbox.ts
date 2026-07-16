@@ -113,6 +113,11 @@ export class IntercomInbox {
 			: "Multiple pending intercom asks; select one with replyTo (or narrow with to)");
 	}
 
+	has(messageId: string): boolean {
+		this.prune();
+		return this.asks.has(messageId);
+	}
+
 	markReplied(messageId: string, authoritativeSenderId?: string): boolean {
 		const entry = this.asks.get(messageId);
 		if (!entry || (authoritativeSenderId !== undefined && entry.from.id !== authoritativeSenderId)) return false;

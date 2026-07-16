@@ -30,7 +30,9 @@ test("inbox prunes expiry on receipt and clears asks from disconnected senders",
 	let now = 1_000;
 	const inbox = new IntercomInbox(100, () => now);
 	inbox.record(session("one"), ask("a"));
+	assert.equal(inbox.has("a"), true);
 	now = 1_101;
+	assert.equal(inbox.has("a"), false);
 	inbox.record(session("two"), ask("b"));
 	assert.deepEqual(inbox.list().map((entry) => entry.message.id), ["b"]);
 	inbox.removeSender("two");

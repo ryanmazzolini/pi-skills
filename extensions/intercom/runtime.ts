@@ -138,7 +138,18 @@ export class IntercomRuntime extends EventEmitter {
 	): Promise<RuntimeSendResult & { replyTo: string }> {
 		throwIfAborted(signal);
 		await this.ensureConnected();
-		const target = this.inbox.select(options);
+		// A transcript can outlive the local inbox. Fallback is deliberately limited to an absent
+		// exact ID and an exact authoritative broker session ID; never reinterpret ambiguity,
+		// sender mismatches, or a self-declared name as permission to route elsewhere.
+		if (options.to && options.replyTo !== undefined && !this.inbox.has(options.replyTo)) {
+			const sessions = await this.client.listSessions(signal);
+			const peer = sessions.find((session) => session.id === options.to);
+			if (!peer) throw new Error(`No pending intercom ask with message ID ${JSON.stringify(options.replyTo)}`);
+			this.assertNotSelf(peer.id);
+			const routed = await this.client.send(peer.id, { text, attachments: options.attachments, replyTo: options.replyTo }, signal);
+			return { ...routed, to: peer, replyTo: options.replyTo };
+		}
+		const target: InboxEntry = this.inbox.select(options);
 		this.assertNotSelf(target.from.id);
 		const routed = await this.client.send(target.from.id, {
 			text,

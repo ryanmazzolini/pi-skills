@@ -90,6 +90,30 @@ test("delayed reply acknowledgement cannot clear a reused ID from another author
 	await runtime.dispose();
 });
 
+test("expired transcript replies direct-route only with an exact target and reply ID", async () => {
+	const sender = peer("sender-full-id", "worker");
+	const client = new FakeClient([peer("self", "caller"), sender]);
+	const runtime = new IntercomRuntime({ client });
+	await assert.rejects(runtime.reply("answer", { replyTo: "expired-ask" }), /No pending/);
+	const result = await runtime.reply("answer", { to: sender.id, replyTo: "expired-ask" });
+	assert.equal(result.to.id, sender.id);
+	assert.equal(result.replyTo, "expired-ask");
+	assert.deepEqual(client.sent[0], { to: sender.id, options: { text: "answer", attachments: undefined, replyTo: "expired-ask" } });
+	await runtime.dispose();
+});
+
+test("expired reply fallback refuses names and inbox sender mismatches", async () => {
+	const sender = peer("sender-full-id", "worker");
+	const other = peer("other-full-id", "other");
+	const client = new FakeClient([peer("self", "caller"), sender, other]);
+	const runtime = new IntercomRuntime({ client });
+	await assert.rejects(runtime.reply("answer", { to: "worker", replyTo: "expired" }), /No pending/);
+	client.emit("message", sender, { id: "ask", timestamp: 1, expectsReply: true, content: { text: "question" } });
+	await assert.rejects(runtime.reply("answer", { to: other.id, replyTo: "ask" }), /is not from/);
+	assert.equal(client.sent.length, 0);
+	await runtime.dispose();
+});
+
 test("generic send and ask clear an exact inbox ID only for the resolved authoritative sender", async () => {
 	const sender = peer("sender-full-id", "worker");
 	const other = peer("other-full-id", "other");
