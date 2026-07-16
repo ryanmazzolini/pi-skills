@@ -7,6 +7,9 @@
   "bin": {
     "daily-report": "skills/notes/daily-report/scripts/daily-report.mjs"
   },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "npm run validate:skills && npm run typecheck:extensions && node --test",
     "typecheck:extensions": "tsc --noEmit -p tsconfig.extensions.json",
