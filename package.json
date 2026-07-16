@@ -5,7 +5,8 @@
   "description": "Opinionated pi skills — planning, git workflows, code review, and dev conventions",
   "keywords": ["pi-package"],
   "bin": {
-    "daily-report": "skills/notes/daily-report/scripts/daily-report.mjs"
+    "daily-report": "skills/notes/daily-report/scripts/daily-report.mjs",
+    "scheduled-jobs": "bin/scheduled-jobs.mjs"
   },
   "engines": {
     "node": ">=24"
