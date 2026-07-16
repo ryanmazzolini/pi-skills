@@ -17,15 +17,6 @@
       ]
     },
     {
-      "name": "team",
-      "source": "./skills/team",
-      "description": "Tiger-team implementation and review orchestration with host-provided subagents",
-      "strict": false,
-      "skills": [
-        "./tiger-team"
-      ]
-    },
-    {
       "name": "commit",
       "source": "./skills/commit",
       "description": "Git commit and pull request workflows",

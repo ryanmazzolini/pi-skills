@@ -99,6 +99,6 @@ Use project language for goals and slice names. Use implementation names only in
 
 ## Review the plan
 
-After drafting, rerun the scope gate and dependency checks. Write or update `{workflow-dir}/plan.md`, then present Now and Later, the dependency shape, the current ready set, and your recommended next slice or safe asynchronous wave. Ask the user or active workflow coordinator to correct the scope, slices, and dependencies.
+After drafting, rerun the scope gate and dependency checks. Write or update `{workflow-dir}/plan.md`, then follow `../ship/references/review-gate.md` before presenting the completed plan for approval. Present Now and Later, the dependency shape, the current ready set, the review evidence, and your recommended next slice or safe asynchronous wave. Ask the user to correct the scope, slices, and dependencies.
 
-The plan is ready when both gates pass, each slice can be picked up cold, and the human or coordinator confirms the proposed shape. Stop there; execution belongs to `ship` or the chosen coordinator.
+The plan is ready when both gates pass, each slice can be picked up cold, its review findings are closed or explicitly deferred, and the human confirms the proposed shape. Stop there; execution returns to `ship`.

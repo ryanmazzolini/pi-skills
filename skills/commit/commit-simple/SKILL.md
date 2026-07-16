@@ -8,10 +8,11 @@ description: Branch, commit, and push changes. Use when preparing a commit or pu
 ## Workflow
 
 1. Inspect the current branch, expected base, working tree, staged changes, and diff.
-2. Propose any branch change, commit split, and Conventional Commit message(s).
-3. After confirmation, create the branch if needed and commit.
-4. Offer to push after the commit.
-5. If the user wants a pull request, suggest `commit-pr` as the next step.
+2. Before asking the user to approve a commit, ensure the exact proposed diff has current independent review under `../../ship/ship/references/review-gate.md`. Reuse evidence only while its target is unchanged; a narrow mechanical diff may use the configured lightweight route.
+3. Propose any branch change, commit split, and Conventional Commit message(s), including review and validation status.
+4. After confirmation, create the branch if needed and commit.
+5. Offer to push after the commit.
+6. If the user wants a pull request, suggest `commit-pr` as the next step.
 
 ## Cherry-picks
 

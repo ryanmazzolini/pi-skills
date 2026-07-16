@@ -9,11 +9,12 @@ description: Create or update a draft pull request from the current branch. Use 
 
 1. Identify the expected base, then inspect the commits, `git diff <base>...HEAD --stat`, full branch diff, and existing PR status. Resolve unexpected commits or files before drafting.
 2. Run targeted checks for diagnosis and the repository's expected regression checks for final validation.
-3. If expected checks are blocked or impractical, state exactly what did not run and why, then ask whether to proceed.
-4. Draft a clear PR title and a slim body with `Description`, `Details`, and `Testing`.
-5. Show the full PR title, body, base branch, and validation status; ask for confirmation or edits.
-6. After confirmation, push if needed and create or update the draft PR.
-7. Show the PR URL and offer next steps.
+3. If expected checks are blocked or impractical, state exactly what did not run and why, then ask how to handle the validation gap. This resolves validation handling only; independent review and PR approval remain separate required checkpoints.
+4. Ensure the exact branch diff has current independent review under `../../ship/ship/references/review-gate.md`. Reuse evidence only while its target is unchanged.
+5. Draft a clear PR title and a slim body with `Description`, `Details`, and `Testing`.
+6. Show the full PR title, body, base branch, review evidence, and validation status; ask for confirmation or edits.
+7. After confirmation, push if needed and create or update the draft PR.
+8. Show the PR URL and offer next steps.
 
 ## Rules
 
