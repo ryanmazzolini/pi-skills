@@ -1,6 +1,6 @@
 ---
 name: "ship"
-description: Route work to its next human checkpoint. Use at the outset of potentially sizeable work to decide whether it needs a durable workflow, or when resuming work represented by local workflow artifacts.
+description: Route work to its next human checkpoint. Use at the outset of potentially sizeable work, when one-session work grows into multi-step implementation or delivery, after context compaction, or when resuming local workflow artifacts.
 ---
 
 # Ship
@@ -24,6 +24,10 @@ A new workflow normally contains `alignment.md` and, after alignment, `plan.md`.
 
 Map the repo to a vault: repos under `~/git/` use `~/work-notes`; repos under `~/personal/` use `~/personal/notes`; ask when neither fits. Before new alignment, read `projects/<repo-name>/` in that vault—`index.md` first when present, then only relevant recent notes. Say briefly what you found or that no project folder exists.
 
+## Promote growing work
+
+Reassess the one-session path when investigation starts substantial production edits, scope gains another independently reviewable outcome, or work becomes multi-repo, worktree, PR, or deployment shaped. When work has become durable, preserve existing edits, state why, create or reuse workflow artifacts, and reconcile them with live repository state. Establish or update the alignment and plan enough to identify a human-confirmed current slice before further production edits. Do not migrate workspaces without confirmation.
+
 ## Infer the next activity
 
 Read the local artifacts and follow the unresolved work. Review and approval states take priority over execution and graduation:
@@ -42,9 +46,11 @@ If the state is genuinely ambiguous, state your interpretation and ask one direc
 
 Alignment asks one human-owned question at a time. Planning proposes the dependency shape and ready set. Implementation completes and verifies one confirmed ready slice. When that slice contains independent work units whose parallelism outweighs integration cost, load `references/implementation-wave.md`; otherwise implement synchronously or delegate one bounded task.
 
+Before substantial production edits, verify the outcome and current slice; live repository, cwd, branch, and worktree; authorized scope and work that must be preserved; known sibling work; and the real validation seam and failure path. Proceed without ceremony when these are clear. Ask only about a consequential gap; for durable work on a default or shared dirty branch, propose `ticket-workspace`, while a safe localized one-session fix may continue normally.
+
 Before implementing an interface-facing slice, return to `align` if its primary UX/DX walkthrough is not explicit. Once the experience is settled, use `shape-first` when local interfaces or structure remain uncertain. Before code, apply `simplest-sufficient-change` to choose the first repo-native option that fully satisfies the slice; this is an implementation lens, not another human checkpoint. Return to `align` when implementation reveals a change to the settled experience, requirements, scope, or high-level solution shape.
 
-Record implementation outcomes and verification with the relevant slice before stopping. Before presenting a completed alignment, plan, implementation, or delivery artifact for human approval, load `references/review-gate.md`; the coordinating thread chooses review lenses, reviewer count, model size, and reasoning depth. A blocking question or progress update is not a review checkpoint. Keep the conversational update brief; add orientation, recovery detail, or a question only when it helps the human act.
+Record material decisions, scope changes, implementation outcomes, and review or verification evidence in the workflow artifact as they occur, and with the relevant slice once a plan exists. Before presenting a completed alignment, plan, implementation, or delivery artifact for human approval, load `references/review-gate.md`; the coordinating thread chooses review lenses, reviewer count, model size, and reasoning depth. A blocking question or progress update is not a review checkpoint. Keep the conversational update brief; add orientation, recovery detail, or a question only when it helps the human act.
 
 ## Confirm ready work
 
@@ -54,7 +60,7 @@ Record implementation outcomes and verification with the relevant slice before s
 
 On resume, reconcile current work with the last approved goal and Now, then recommend the smallest path to the next useful checkpoint.
 
-On cold resume, reconstruct the goal, open questions, completed work, and ready set from local files. For interrupted work, inspect the repository, branch or worktree, available run state, and recorded evidence before deciding what remains. Present uncertainty before any retry that could overwrite work or duplicate side effects.
+Treat context compaction as a cold resume. Use its summary only to locate evidence; reread local workflow files and inspect live repository, branch or worktree, run state, and recorded evidence. Reconstruct the goal, current slice, open questions, completed work, ready set, and next checkpoint before continuing implementation. Present uncertainty before any retry that could overwrite work or duplicate side effects.
 
 For an old RPI workflow, preserve its files. Infer a proposed state and dependency graph from their content, then confirm ambiguous progress or dependencies before writing any migration. There is no `rpi` alias or bulk migration.
 
