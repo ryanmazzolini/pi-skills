@@ -1,0 +1,196 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { run } from "./scheduled-jobs.mjs";
+
+function fixture(t) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduled-jobs-cli-test-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const home = path.join(base, "home");
+  const bin = path.join(base, "bin");
+  const configHome = path.join(base, "config");
+  const stateHome = path.join(base, "state");
+  const temporary = path.join(base, "tmp");
+  for (const directory of [home, bin, temporary, path.join(configHome, "pi-scheduler")]) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+  fs.symlinkSync(process.execPath, path.join(bin, "node"));
+  fs.writeFileSync(path.join(bin, "launchctl"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const scriptPath = path.join(base, "job.mjs");
+  fs.writeFileSync(scriptPath, "console.log('cli lifecycle output')\n");
+  const manifestPath = path.join(configHome, "pi-scheduler", "jobs.json");
+  fs.writeFileSync(manifestPath, JSON.stringify({
+    version: 1,
+    jobs: {
+      "test:cli": {
+        description: "CLI lifecycle fixture",
+        schedule: "30 17 * * 1-5",
+        argv: ["node", scriptPath],
+        requiredCommands: [],
+        optionalCommands: [],
+      },
+    },
+  }));
+  const env = {
+    HOME: home,
+    USER: "scheduler-test",
+    TMPDIR: temporary,
+    XDG_CONFIG_HOME: configHome,
+    XDG_STATE_HOME: stateHome,
+    PATH: bin,
+    LANG: "C",
+  };
+  const launchd = { loaded: new Set(), disabled: new Set() };
+  const commandRunner = (_executable, argv) => {
+    const [command, first, second] = argv;
+    if (command === "print" && (first === `gui/${process.getuid()}` || first === `user/${process.getuid()}`)) return "";
+    if (command === "print") {
+      if (launchd.loaded.has(first)) return "";
+      throw new Error("not loaded");
+    }
+    if (command === "print-disabled") {
+      return `disabled services = {\n${[...launchd.disabled].map((label) => `  "${label}" => true`).join("\n")}\n}\n`;
+    }
+    if (command === "disable") {
+      launchd.disabled.add(first.slice(first.lastIndexOf("/") + 1));
+      return "";
+    }
+    if (command === "enable") {
+      launchd.disabled.delete(first.slice(first.lastIndexOf("/") + 1));
+      return "";
+    }
+    if (command === "bootstrap") {
+      const plist = fs.readFileSync(second, "utf8");
+      const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)[1];
+      launchd.loaded.add(`${first}/${label}`);
+      return "";
+    }
+    if (command === "bootout") {
+      launchd.loaded.delete(first);
+      return "";
+    }
+    throw new Error(`unexpected launchctl argv: ${argv.join(" ")}`);
+  };
+  return {
+    env,
+    manifestPath,
+    runtime: {
+      env,
+      platform: "darwin",
+      adapterOptions: { commandRunner, uid: process.getuid() },
+    },
+  };
+}
+
+function json(result) {
+  return JSON.parse(result.stdout);
+}
+
+test("CLI completes the disabled install, run, enable, disable, logs, and remove flow", async (t) => {
+  const value = fixture(t);
+  const id = "global:test:cli";
+  const inspected = await run(
+    ["inspect", id, "--manifest", value.manifestPath, "--json"],
+    value.runtime,
+  );
+  const candidateDigest = json(inspected).candidate.digest;
+
+  const installed = await run(
+    [
+      "install",
+      id,
+      "--manifest",
+      value.manifestPath,
+      "--expected-candidate-digest",
+      candidateDigest,
+      "--json",
+    ],
+    value.runtime,
+  );
+  let status = json(installed).result;
+  assert.equal(status.metadata.revision, 1);
+  assert.equal(status.metadata.enabled, false);
+  assert.equal(status.adapter.loaded, false);
+
+  const plist = fs.readFileSync(status.adapter.plistPath, "utf8");
+  const argumentsBody = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(plist)[1];
+  const emittedArguments = [...argumentsBody.matchAll(/<string>([^<]*)<\/string>/g)]
+    .map((match) => match[1].replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
+  const scheduled = spawnSync(emittedArguments[0], emittedArguments.slice(1), {
+    encoding: "utf8",
+    env: status.snapshot.environment,
+  });
+  assert.equal(scheduled.status, 0, scheduled.stderr);
+
+  const ran = await run(
+    [
+      "run",
+      id,
+      "--expected-installed-digest",
+      status.metadata.digest,
+      "--expected-revision",
+      String(status.metadata.revision),
+      "--json",
+    ],
+    value.runtime,
+  );
+  assert.equal(json(ran).result.status, "ok");
+
+  const enabled = await run(
+    [
+      "enable",
+      id,
+      "--expected-installed-digest",
+      status.metadata.digest,
+      "--expected-revision",
+      String(status.metadata.revision),
+      "--json",
+    ],
+    value.runtime,
+  );
+  status = json(enabled).result;
+  assert.equal(status.metadata.revision, 2);
+  assert.equal(status.metadata.enabled, true);
+  assert.equal(status.adapter.loaded, true);
+
+  const statusResult = await run(["status", id, "--json"], value.runtime);
+  assert.equal(json(statusResult).result.drift.enabled, false);
+
+  const logs = await run(["logs", id, "--lines", "50", "--json"], value.runtime);
+  assert.match(json(logs).result.content, /cli lifecycle output/);
+
+  const disabled = await run(
+    [
+      "disable",
+      id,
+      "--expected-installed-digest",
+      status.metadata.digest,
+      "--expected-revision",
+      String(status.metadata.revision),
+      "--json",
+    ],
+    value.runtime,
+  );
+  status = json(disabled).result;
+  assert.equal(status.metadata.revision, 3);
+  assert.equal(status.metadata.enabled, false);
+  assert.equal(status.adapter.loaded, false);
+
+  const removed = await run(
+    [
+      "remove",
+      id,
+      "--expected-installed-digest",
+      status.metadata.digest,
+      "--expected-revision",
+      String(status.metadata.revision),
+      "--json",
+    ],
+    value.runtime,
+  );
+  assert.equal(json(removed).result.removed, true);
+  assert.equal(json(await run(["status", id, "--json"], value.runtime)).result.installed, false);
+});
