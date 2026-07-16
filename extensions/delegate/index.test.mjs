@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import delegateExtension, { currentDelegationRun, currentHeldRun, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
+import delegateExtension, { currentDelegationRun, currentHeldRun, delegateLaunchText, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
 
 test("validates the one-or-batch task boundary", () => {
   assert.deepEqual(normalizeTasks({ task: " Read it " }), [{ task: "Read it", label: "Read it" }]);
@@ -63,6 +63,18 @@ test("requires exact reviewed revisions only for apply and discard", () => {
   assert.throws(() => validateControl({ action: "status", message: "extra" }), /message is not valid/);
 });
 
+test("keeps launch identifiers in an explicit internal orchestration block", () => {
+  const text = delegateLaunchText({
+    runId: "run-secret",
+    recordRef: "/tmp/run.json",
+    children: [{ childId: "child-secret", label: "README audit", state: "starting" }],
+  });
+  assert.match(text, /^Started agent README audit\./);
+  assert.match(text, /<internal_delegate_handle>{"runId":"run-secret"}<\/internal_delegate_handle>/);
+  assert.match(text, /Never repeat the internal handle/);
+  assert.doesNotMatch(text, /Run ID:|\. Run:/);
+});
+
 test("recommends temporary workspace review only after the child is finalized", () => {
   const view = {
     runId: "run-1",
@@ -104,7 +116,7 @@ test("selects the newest manageable run for the no-argument agents command", () 
   assert.equal(currentHeldRun([delivered]), undefined);
 });
 
-test("registers a small execution tool and separate control tool", () => {
+test("registers a small execution tool and separate control tool", async () => {
   const tools = [];
   const commands = [];
   const events = [];
@@ -127,6 +139,7 @@ test("registers a small execution tool and separate control tool", () => {
   assert.deepEqual(delegate.parameters.properties.workspace.enum, ["existing", "temporary"]);
   assert.deepEqual(Object.keys(delegate.parameters.properties.tasks.items.properties), ["task", "label"]);
   assert.equal(delegate.renderShell, "self");
+  assert.match(delegate.promptGuidelines.join("\n"), /Never repeat them in user-facing prose/);
   assert.deepEqual(delegate.prepareArguments({ task: "Inspect it", tools: ["read"] }), { task: "Inspect it", tools: ["read"] });
   assert.throws(
     () => delegate.prepareArguments({ task: "Inspect it", acceptance: "attested" }),
@@ -140,11 +153,31 @@ test("registers a small execution tool and separate control tool", () => {
   const renderedCall = delegate.renderCall({ tasks: Array.from({ length: 4 }, (_, index) => ({ task: `task ${index}` })) }, theme).render(100).join("\n");
   assert.match(renderedCall, /agents 4 tasks/);
   assert.doesNotMatch(renderedCall, /delegate|children/);
-  assert.deepEqual(tools[1].parameters.properties.action.enum, ["status", "wait", "steer", "reply", "cancel", "resume", "review", "apply", "discard", "cleanup"]);
-  assert.deepEqual(Object.keys(tools[1].parameters.properties), ["action", "runId", "childId", "message", "revision", "timeoutMs"]);
-  assert.match(tools[1].promptGuidelines.join("\n"), /Choose one result path/);
-  assert.match(tools[1].promptGuidelines.join("\n"), /Reserve status for one-time inspection/);
+  const control = tools[1];
+  assert.deepEqual(control.parameters.properties.action.enum, ["status", "wait", "steer", "reply", "cancel", "resume", "review", "apply", "discard", "cleanup"]);
+  assert.deepEqual(Object.keys(control.parameters.properties), ["action", "runId", "childId", "message", "revision", "timeoutMs"]);
+  const waitArgs = { action: "wait", runId: "run-secret" };
+  assert.deepEqual(control.renderCall(waitArgs, theme, { expanded: false }).render(100), []);
+  assert.deepEqual(
+    control.renderResult({ content: [{ type: "text", text: "done" }] }, { expanded: false }, theme, { args: waitArgs }).render(100),
+    [],
+  );
+  assert.match(control.renderCall(waitArgs, theme, { expanded: true }).render(100).join("\n"), /run-secret/);
+  assert.doesNotMatch(
+    control.renderCall({ action: "status", runId: "run-secret" }, theme, { expanded: false }).render(100).join("\n"),
+    /run-secret/,
+  );
+  assert.match(control.promptGuidelines.join("\n"), /Choose one result path/);
+  assert.match(control.promptGuidelines.join("\n"), /Reserve status for one-time inspection/);
+  assert.match(control.promptGuidelines.join("\n"), /Never repeat them in user-facing prose/);
   assert.deepEqual(commands.map((command) => command.name), ["agents"]);
   assert.equal(events.some((event) => event.name === "session_start"), true);
-  assert.equal(events.some((event) => event.name === "session_shutdown"), true);
+  const shutdown = events.find((event) => event.name === "session_shutdown");
+  assert.ok(shutdown);
+  const widgets = [];
+  await shutdown.handler({}, {
+    mode: "tui",
+    ui: { setWidget: (...args) => widgets.push(args) },
+  });
+  assert.deepEqual(widgets, [["delegate-agent-status", undefined]]);
 });
