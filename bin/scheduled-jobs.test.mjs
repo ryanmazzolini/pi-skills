@@ -172,6 +172,35 @@ test("an installed snapshot reconciles daily-report under the fixed scheduler en
   assert.match(fs.readFileSync(reportPath, "utf8"), /Generated through the installed snapshot/);
 });
 
+test("doctor fails when an installed executable becomes unsafe outside the caller PATH", async (t) => {
+  const value = fixture(t);
+  const helper = path.join(value.bin, "helper");
+  fs.writeFileSync(helper, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const manifest = JSON.parse(fs.readFileSync(value.manifestPath, "utf8"));
+  manifest.jobs["test:cli"].optionalCommands = ["helper"];
+  fs.writeFileSync(value.manifestPath, JSON.stringify(manifest));
+  const id = "global:test:cli";
+  const inspected = await run(["inspect", id, "--manifest", value.manifestPath, "--json"], value.runtime);
+  await run([
+    "install", id,
+    "--manifest", value.manifestPath,
+    "--expected-candidate-digest", json(inspected).candidate.digest,
+    "--json",
+  ], value.runtime);
+
+  fs.chmodSync(helper, 0o777);
+  const alternateBin = path.join(path.dirname(value.env.HOME), "alternate-bin");
+  fs.mkdirSync(alternateBin);
+  fs.symlinkSync(process.execPath, path.join(alternateBin, "node"));
+  fs.writeFileSync(path.join(alternateBin, "launchctl"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const runtime = { ...value.runtime, env: { ...value.env, PATH: alternateBin } };
+
+  await assert.rejects(
+    run(["doctor", id, "--manifest", value.manifestPath, "--json"], runtime),
+    (error) => error.code === "INSTALLED_UNHEALTHY" && /writable/.test(error.message),
+  );
+});
+
 test("CLI completes the disabled install, run, enable, disable, logs, and remove flow", async (t) => {
   const value = fixture(t);
   const id = "global:test:cli";

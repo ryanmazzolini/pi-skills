@@ -127,6 +127,17 @@ function requireAvailableInstallation(installation) {
   return installation;
 }
 
+function requireHealthyInstallation(installation) {
+  requireAvailableInstallation(installation);
+  if (installation.installed && installation.health !== "ok") {
+    throw new SchedulerError(
+      installation.healthReason || `Installed job state is ${installation.health}.`,
+      { code: "INSTALLED_UNHEALTHY", exitCode: 4, details: installation },
+    );
+  }
+  return installation;
+}
+
 function commandInspect(command, positionals, options, env, platform, adapterOptions) {
   const id = requireJobId(positionals, command);
   const declaration = declaredJob(id, options.manifestPath, env);
@@ -141,7 +152,7 @@ function commandInspect(command, positionals, options, env, platform, adapterOpt
     ? { ...currentInstallation, definitionDrift: currentInstallation.metadata?.digest !== candidate.digest }
     : currentInstallation;
   if (command === "doctor") {
-    requireAvailableInstallation(installation);
+    requireHealthyInstallation(installation);
     const unavailableOptionalCommands = Object.entries(candidate.contract.optionalCommands)
       .filter(([, executable]) => executable === null)
       .map(([name]) => name);
