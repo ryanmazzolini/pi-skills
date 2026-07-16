@@ -26,12 +26,13 @@ Map the repo to a vault: repos under `~/git/` use `~/work-notes`; repos under `~
 
 ## Infer the next activity
 
-Read the local artifacts and follow the unresolved work:
+Read the local artifacts and follow the unresolved work. Review and approval states take priority over execution and graduation:
 
+- A completed artifact without current independent review → run the adaptive review gate.
+- Reviewed work awaiting human review → present the review evidence and wait.
 - An open human decision about requirements, UX/DX flow, scope, or high-level shape → use `align`.
 - Settled alignment without a plan → use `slice-plan`.
 - A plan with ready slices → recommend the next synchronous slice or safe asynchronous wave.
-- Completed work awaiting human review → wait for review.
 - Interrupted or ambiguous work → reconcile it before recommending continuation or retry.
 - All planned work complete → graduate the durable summary.
 
@@ -39,15 +40,15 @@ If the state is genuinely ambiguous, state your interpretation and ask one direc
 
 ## Advance one checkpoint
 
-Alignment asks one human-owned question at a time. Planning proposes the dependency shape and ready set. Implementation completes and verifies one confirmed ready slice, or hands a confirmed ready wave to the active workflow coordinator.
+Alignment asks one human-owned question at a time. Planning proposes the dependency shape and ready set. Implementation completes and verifies one confirmed ready slice. When that slice contains independent work units whose parallelism outweighs integration cost, load `references/implementation-wave.md`; otherwise implement synchronously or delegate one bounded task.
 
 Before implementing an interface-facing slice, return to `align` if its primary UX/DX walkthrough is not explicit. Once the experience is settled, use `shape-first` when local interfaces or structure remain uncertain. Before code, apply `simplest-sufficient-change` to choose the first repo-native option that fully satisfies the slice; this is an implementation lens, not another human checkpoint. Return to `align` when implementation reveals a change to the settled experience, requirements, scope, or high-level solution shape.
 
-Record implementation outcomes and verification with the relevant slice before stopping. Keep the conversational update brief; add orientation, recovery detail, or a question only when it helps the human act.
+Record implementation outcomes and verification with the relevant slice before stopping. Before presenting a completed alignment, plan, implementation, or delivery artifact for human approval, load `references/review-gate.md`; the coordinating thread chooses review lenses, reviewer count, model size, and reasoning depth. A blocking question or progress update is not a review checkpoint. Keep the conversational update brief; add orientation, recovery detail, or a question only when it helps the human act.
 
 ## Confirm ready work
 
-`plan.md` dependencies—not section order—determine the ready set. Recommend what should run next and why. Confirm the recommendation with the user or active workflow coordinator before dispatch. The coordinator owns the concurrency policy.
+`plan.md` dependencies—not section order—determine the ready set. Recommend what should run next and why. Confirm the recommendation with the user before dispatch. The Ship coordinating thread owns the concurrency policy.
 
 ## Recover safely
 
@@ -59,7 +60,7 @@ For an old RPI workflow, preserve its files. Infer a proposed state and dependen
 
 ## Human review artifacts
 
-When markdown is insufficient for a consequential review, load `references/review-artifacts.md` and generate the smallest artifact whose shape fits the question.
+Apply `references/review-gate.md` before each human review checkpoint. When markdown is insufficient for a consequential review, load `references/review-artifacts.md` and generate the smallest artifact whose shape fits the question.
 
 ## Graduate
 

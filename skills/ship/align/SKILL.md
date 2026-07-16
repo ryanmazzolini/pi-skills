@@ -70,7 +70,7 @@ Concrete scenarios are often the shortest route to a precise requirement. Prefer
 
 Alignment passes its scope gate when Now and Later are explicit and non-contradictory, the primary UX/DX walkthrough is confirmed when applicable, and every human decision capable of materially changing Now is settled. Keep remaining low-risk uncertainty in assumptions and future behavior in Later.
 
-Summarize the goal, **Now**, **Later**, the confirmed experience when applicable, assumptions, and any open blocker. Ask the user to confirm shared understanding. Planning begins after confirmation.
+Summarize the goal, **Now**, **Later**, the confirmed experience when applicable, assumptions, and any open blocker. Before asking the user to approve the completed alignment artifact, follow `../ship/references/review-gate.md`; a blocking alignment question does not require review. Planning begins after human confirmation.
 
 ## Durable language and decisions
 

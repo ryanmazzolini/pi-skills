@@ -20,11 +20,10 @@ Use `pi config` to enable or disable individual skills after install.
 /plugin install ship@ryan-pi-skills
 /plugin install commit@ryan-pi-skills
 /plugin install productivity@ryan-pi-skills
-/plugin install team@ryan-pi-skills
 /plugin install typescript-nextjs@ryan-pi-skills
 ```
 
-The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) points directly at canonical skill directories; grouped families use `skills/<namespace>/<skill>`. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple` and `/team:tiger-team`.
+The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) points directly at canonical skill directories; grouped families use `skills/<namespace>/<skill>`. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple` and `/ship:ship`.
 
 ## Update
 
@@ -72,7 +71,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `ship` | Durable-work family: `align` requirements and shape, build a dependency-shaped plan, then advance through confirmed checkpoints with `ship` | [`skills/ship/ship/SKILL.md`](./skills/ship/ship/SKILL.md) | [`skills/ship/ship/references/review-artifacts.md`](./skills/ship/ship/references/review-artifacts.md) |
+| `ship` | Durable-work family: `align` requirements and shape, build a dependency-shaped plan, then advance through confirmed checkpoints with `ship` | [`skills/ship/ship/SKILL.md`](./skills/ship/ship/SKILL.md) | [`implementation-wave.md`](./skills/ship/ship/references/implementation-wave.md), [`review-gate.md`](./skills/ship/ship/references/review-gate.md), [`review-artifacts.md`](./skills/ship/ship/references/review-artifacts.md) |
 
 ## Standalone skills
 
@@ -88,7 +87,6 @@ This README is the map. The family README files have the details.
 | `writing-great-skills` | User-invoked reference for writing predictable, low-context-load skills | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/writing-great-skills) |
 | `handoff` | Write a date-stamped `.plans/` handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
 | `agent-coordination` | Select configured lightweight, balanced, or deep model and reasoning routes before delegating agent work | — |
-| `tiger-team` | Orchestrate host-provided task agents across deterministic ticket worktrees with integration, security scrutiny, and fix loops | — |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
 | `daily-report` | Generate and reconcile OKF-compatible activity reports from local Git plus optional GitHub and Shortcut evidence | [OKF v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) |
 | `inbox-wiki` | Triage vault inbox captures into immutable raw sources and durable notes with human approval | — |
