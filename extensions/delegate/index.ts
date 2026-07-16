@@ -6,7 +6,7 @@ import {
 	type ExtensionContext,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Container, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import { createPiChildSessionAdapter, resolveChildResources } from "./child-session.ts";
 import { createParentDelivery, type DeliveryMetadata } from "./delivery.ts";
@@ -45,6 +45,7 @@ const DelegateParams = Type.Object({
 }, { additionalProperties: false });
 
 const DELEGATE_PARAM_NAMES = new Set(Object.keys(DelegateParams.properties));
+const DELEGATE_STATUS_WIDGET = "delegate-agent-status";
 
 const DelegateControlParams = Type.Object({
 	action: Type.String({ enum: ["status", "wait", "steer", "reply", "cancel", "resume", "review", "apply", "discard", "cleanup"], description: "Lifecycle or temporary-workspace operation" }),
@@ -80,6 +81,14 @@ function taskLabel(task: string): string {
 function renderedResult(child: RunView["children"][number]): string {
 	if (!child.result) return child.error?.message ?? child.attention?.question ?? child.lastActivity.summary;
 	return child.result.kind === "text" ? child.result.value : JSON.stringify(child.result.value);
+}
+
+export function delegateLaunchText(handle: DelegateHandle): string {
+	const started = handle.children.length === 1
+		? `Started agent ${handle.children[0]?.label ?? "task"}.`
+		: `Started ${handle.children.length} agents.`;
+	const internal = JSON.stringify({ runId: handle.runId });
+	return `${started}\n<internal_delegate_handle>${internal}</internal_delegate_handle>\nNever repeat the internal handle in user-facing text.`;
 }
 
 export function toolText(result: RunView): string {
@@ -313,6 +322,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 	let currentContext: ExtensionContext | undefined;
 	let inputGeneration = 0;
 	let runtimeSubscription: (() => void) | undefined;
+	let pinnedStatus: ReturnType<DelegateUi["createStatus"]> | undefined;
 
 	const requireRuntime = (): DelegateRuntime => {
 		if (!runtime) throw new Error("Agent runtime is not ready");
@@ -338,6 +348,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 			"Use tasks for homogeneous parallel work. Use separate delegate calls when agents need different resources or models.",
 			"Use a temporary workspace for an isolated writer, then review its exact revision before explicitly applying or discarding it.",
 			"Do not call delegate and immediately wait when useful independent parent work remains.",
+			"Treat delegate run and child IDs as internal orchestration data. Never repeat them in user-facing prose; direct users to /agents for diagnostics.",
 		],
 		renderShell: "self",
 		parameters: DelegateParams,
@@ -387,12 +398,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 			});
 			syncControlTool();
 			return {
-				content: [{
-					type: "text",
-					text: handle.children.length === 1
-						? `Started agent ${handle.children[0]?.label ?? "task"}. Run: ${handle.runId}`
-						: `Started ${handle.children.length} agents. Run: ${handle.runId}`,
-				}],
+				content: [{ type: "text", text: delegateLaunchText(handle) }],
 				details: handle,
 			};
 		},
@@ -412,7 +418,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 				const content = result.content[0];
 				return new Text(content?.type === "text" ? content.text : "Agent run unavailable", 0, 0);
 			}
-			return delegateUi.renderRun(runId, options.expanded, theme, context.invalidate, context.lastComponent);
+			return delegateUi.renderLaunch(result.details, options.expanded, theme);
 		},
 	};
 
@@ -423,6 +429,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 		promptSnippet: "Control one existing agent run without polling",
 		promptGuidelines: [
 			"Choose one result path per dependency: continue and rely on automatic delivery, or call wait once when blocked. Reserve status for one-time inspection after a state change. Switch modes or retry only after an explicit failure or timeout.",
+			"Treat delegate run and child IDs as internal orchestration data. Never repeat them in user-facing prose; direct users to /agents for diagnostics.",
 		],
 		parameters: DelegateControlParams,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -470,14 +477,17 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 			syncControlTool();
 			return { content: [{ type: "text", text: toolText(view) }], details: { view } };
 		},
-		renderCall(args, theme) {
+		renderCall(args, theme, context) {
+			if (args.action === "wait" && !context.expanded) return new Container();
+			const target = context.expanded ? ` ${theme.fg("accent", args.runId)}` : "";
 			return new Text(
-				`${theme.fg("toolTitle", theme.bold("agents "))}${args.action} ${theme.fg("accent", args.runId)}`,
+				`${theme.fg("toolTitle", theme.bold("agents "))}${args.action}${target}`,
 				0,
 				0,
 			);
 		},
-		renderResult(result, options, theme) {
+		renderResult(result, options, theme, context) {
+			if (context.args.action === "wait" && !options.expanded) return new Container();
 			const view = result.details?.view;
 			if (!view) {
 				const content = result.content[0];
@@ -602,12 +612,18 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 
 	pi.on("input", (event, ctx) => {
 		currentContext = ctx;
-		if (event.source !== "extension") inputGeneration++;
+		if (event.source !== "extension") {
+			pinnedStatus?.dismissTerminal();
+			inputGeneration++;
+		}
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		currentContext = ctx;
 		inputGeneration = persistedInputGeneration(ctx);
+		pinnedStatus?.dispose();
+		pinnedStatus = undefined;
+		if (ctx.mode === "tui") ctx.ui.setWidget(DELEGATE_STATUS_WIDGET, undefined);
 		runtimeSubscription?.();
 		delegateUi?.dispose();
 		if (runtime) await runtime.dispose();
@@ -658,9 +674,23 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 		runtimeSubscription = runtime.subscribe(() => syncControlTool());
 		await runtime.restore(ctx.sessionManager.getSessionId());
 		syncControlTool();
+		if (ctx.mode === "tui") {
+			const mountedUi = delegateUi;
+			ctx.ui.setWidget(
+				DELEGATE_STATUS_WIDGET,
+				(tui, theme) => {
+					pinnedStatus = mountedUi.createStatus(tui, theme);
+					return pinnedStatus;
+				},
+				{ placement: "aboveEditor" },
+			);
+		}
 	});
 
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", async (_event, ctx) => {
+		pinnedStatus?.dispose();
+		pinnedStatus = undefined;
+		if (ctx.mode === "tui") ctx.ui.setWidget(DELEGATE_STATUS_WIDGET, undefined);
 		currentContext = undefined;
 		runtimeSubscription?.();
 		runtimeSubscription = undefined;

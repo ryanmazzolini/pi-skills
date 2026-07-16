@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-tui";
 import {
 	deriveRunStatus,
-	runNeedsControl,
+	type DelegateHandle,
 	type DelegateRuntime,
 	type DelegatedChild,
 	type DelegationRun,
@@ -21,6 +21,10 @@ import {
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_FRAME_MS = 200;
+const TERMINAL_RETENTION_MS = 30_000;
+const STALE_ACTIVITY_MS = 10_000;
+const MAX_PINNED_ROWS = 6;
+const NARROW_WIDGET_WIDTH = 72;
 const NARROW_OVERLAY_WIDTH = 80;
 const MAX_HISTORY_EVENTS = 100;
 const MAX_HISTORY_READ_BYTES = 512 * 1024;
@@ -36,10 +40,6 @@ function compactDuration(elapsed: number): string {
 	if (seconds < 60) return `${seconds}s`;
 	const minutes = Math.floor(seconds / 60);
 	return `${minutes}m ${seconds % 60}s`;
-}
-
-function formatDuration(startedAt: string, now = Date.now()): string {
-	return compactDuration(now - Date.parse(startedAt));
 }
 
 function resultText(result: NonNullable<RunView["children"][number]["result"]>, expanded = false): string {
@@ -104,10 +104,16 @@ export function describeLatestActivity(
 		: child.latestActivity.summary;
 }
 
-function stateIcon(state: DelegatedChild["state"], theme: Theme, animated = true): string {
+function stateIcon(
+	state: DelegatedChild["state"],
+	theme: Theme,
+	animated = true,
+	now = Date.now(),
+	frameMs = SPINNER_FRAME_MS,
+): string {
 	if (state === "running" || state === "starting" || state === "queued") {
 		const frame = animated
-			? SPINNER[Math.floor(Date.now() / SPINNER_FRAME_MS) % SPINNER.length] ?? "⠋"
+			? SPINNER[Math.floor(now / frameMs) % SPINNER.length] ?? "⠋"
 			: "◐";
 		return theme.fg(state === "queued" ? "muted" : "warning", frame);
 	}
@@ -118,136 +124,222 @@ function stateIcon(state: DelegatedChild["state"], theme: Theme, animated = true
 	return theme.fg("muted", "○");
 }
 
-function runIcon(run: DelegationRun, theme: Theme): string {
-	const status = deriveRunStatus(run);
-	if (status === "running" || status === "queued") return theme.fg("warning", "◐");
-	if (status === "completed") return theme.fg("success", "✓");
-	if (status === "failed") return theme.fg("error", "✗");
-	if (status === "needs_attention") return theme.fg("warning", "?");
-	if (status === "interrupted") return theme.fg("warning", "■");
-	if (status === "cancelled") return theme.fg("muted", "○");
-	return theme.fg("warning", "◐");
+export interface PinnedStatusOptions {
+	now?: () => number;
+	spinnerFrameMs?: number;
+	terminalRetentionMs?: number;
+	staleAfterMs?: number;
+	maxRows?: number;
+	narrowWidth?: number;
 }
 
-function liveRunRenderSignature(run: DelegationRun): string {
-	return JSON.stringify({
-		delivery: run.delivery.state,
-		children: run.children.map((child) => ({
-			state: child.state,
-			activity: [child.latestActivity.kind, child.latestActivity.summary],
-			attention: child.attention
-				? [
-					child.attention.id,
-					child.attention.kind,
-					child.attention.question,
-					child.attention.context,
-					child.attention.notification.state,
-				]
-				: undefined,
-			result: child.result ? [child.result.kind, child.result.completedAt] : undefined,
-			failure: child.failure
-				? [child.failure.message, child.failure.stopReason, child.failure.failedAt]
-				: undefined,
-			workspace: child.workspace.kind === "temporary" ? child.workspace.integration : undefined,
-		})),
+interface PinnedChildRow {
+	run: DelegationRun;
+	child: DelegatedChild;
+	order: number;
+}
+
+function terminalTimestamp(run: DelegationRun, child: DelegatedChild): number {
+	const value = child.result?.completedAt
+		?? child.failure?.failedAt
+		?? child.latestActivity.observedAt
+		?? run.updatedAt;
+	const parsed = Date.parse(value);
+	return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function pinnedPriority(state: DelegatedChild["state"]): number {
+	if (state === "needs_attention") return 0;
+	if (state === "failed") return 1;
+	if (state === "interrupted") return 2;
+	if (state === "running" || state === "starting") return 3;
+	if (state === "queued") return 4;
+	if (state === "completed") return 5;
+	return 6;
+}
+
+function pinnedStateSummary(child: DelegatedChild, now: number, staleAfterMs: number): string {
+	if (child.state === "needs_attention") {
+		const kind = child.attention?.kind ?? "attention";
+		const question = child.attention?.question;
+		return question ? `Needs ${kind}: ${question}` : "Needs attention";
+	}
+	if (child.state === "failed") return `Failed${child.failure?.message ? `: ${child.failure.message}` : ""}`;
+	if (child.state === "interrupted") return "Interrupted · resume in /agents";
+	if (child.state === "completed") return "Completed";
+	if (child.state === "cancelled") return "Cancelled";
+	if (child.state === "queued") return `Queued · ${child.latestActivity.summary}`;
+
+	const observedAt = Date.parse(child.latestActivity.observedAt);
+	const age = Number.isFinite(observedAt) ? Math.max(0, now - observedAt) : 0;
+	if (age >= staleAfterMs) {
+		return `Still running · ${child.latestActivity.summary} · quiet ${compactDuration(age)}`;
+	}
+	return child.state === "starting"
+		? `Starting · ${child.latestActivity.summary}`
+		: child.latestActivity.summary;
+}
+
+function statusCounts(rows: PinnedChildRow[]): string[] {
+	const counts = new Map<string, number>();
+	for (const { child } of rows) {
+		const label = child.state === "starting" || child.state === "running" ? "running" : child.state.replace("_", " ");
+		counts.set(label, (counts.get(label) ?? 0) + 1);
+	}
+	const order = ["needs attention", "failed", "interrupted", "running", "queued", "completed", "cancelled"];
+	return order.flatMap((label) => {
+		const count = counts.get(label);
+		return count ? [`${count} ${label}`] : [];
 	});
 }
 
-class LiveRunComponent implements Component {
+export class PinnedAgentStatusComponent implements Component {
 	private readonly runtime: DelegateRuntime;
-	private readonly runId: string;
-	private expanded: boolean;
-	private theme: Theme;
-	private renderedAt = Date.now();
+	private readonly tui: Pick<TUI, "requestRender">;
+	private readonly theme: Theme;
+	private readonly now: () => number;
+	private readonly spinnerFrameMs: number;
+	private readonly terminalRetentionMs: number;
+	private readonly staleAfterMs: number;
+	private readonly maxRows: number;
+	private readonly narrowWidth: number;
+	private readonly terminalUntil = new Map<string, number>();
+	private readonly dismissedTerminal = new Set<string>();
+	private readonly unsubscribe: () => void;
+	private readonly timer: ReturnType<typeof setInterval>;
+	private disposed = false;
 
-	constructor(runtime: DelegateRuntime, runId: string, expanded: boolean, theme: Theme) {
+	constructor(
+		runtime: DelegateRuntime,
+		tui: Pick<TUI, "requestRender">,
+		theme: Theme,
+		options: PinnedStatusOptions = {},
+	) {
 		this.runtime = runtime;
-		this.runId = runId;
-		this.expanded = expanded;
+		this.tui = tui;
 		this.theme = theme;
-	}
-
-	update(expanded: boolean, theme: Theme): void {
-		this.expanded = expanded;
-		this.theme = theme;
-		this.renderedAt = Date.now();
+		this.now = options.now ?? Date.now;
+		this.spinnerFrameMs = options.spinnerFrameMs ?? SPINNER_FRAME_MS;
+		this.terminalRetentionMs = options.terminalRetentionMs ?? TERMINAL_RETENTION_MS;
+		this.staleAfterMs = options.staleAfterMs ?? STALE_ACTIVITY_MS;
+		this.maxRows = options.maxRows ?? MAX_PINNED_ROWS;
+		this.narrowWidth = options.narrowWidth ?? NARROW_WIDGET_WIDTH;
+		for (const run of runtime.list()) this.trackTerminalChildren(run, false);
+		this.unsubscribe = runtime.subscribe((run) => {
+			this.trackTerminalChildren(run, true);
+			this.tui.requestRender();
+		});
+		this.timer = setInterval(() => {
+			if (this.disposed) return;
+			const now = this.now();
+			const nextTerminalExpiry = this.nextTerminalExpiry();
+			const rows = this.visibleRows(now);
+			if (rows.some(({ child }) => child.state === "queued" || child.state === "starting" || child.state === "running")
+				|| (nextTerminalExpiry !== undefined && nextTerminalExpiry <= now)) {
+				this.tui.requestRender();
+			}
+		}, this.spinnerFrameMs);
+		this.timer.unref?.();
 	}
 
 	render(width: number): string[] {
-		const run = this.runtime.get(this.runId);
-		if (!run) return [truncateToWidth(this.theme.fg("warning", `Unknown agent run ${this.runId}`), width)];
-		const status = deriveRunStatus(run);
-		if (run.children.length === 0) return [truncateToWidth(this.theme.fg("warning", "Agent run has no agents"), width)];
-
-		const lines: string[] = [];
-		if (run.children.length === 1) {
-			const child = run.children[0]!;
-			lines.push(
-				`${runIcon(run, this.theme)} ${this.theme.fg("toolTitle", this.theme.bold(child.label))} `
-				+ this.theme.fg("dim", `${status} · ${formatDuration(run.createdAt, this.renderedAt)}`),
-			);
-			const activity = describeLatestActivity(run, this.renderedAt);
-			lines.push(this.theme.fg(activity.startsWith("Still running") ? "warning" : "muted", `  ${activity}`));
-			if (child.attention) lines.push(this.theme.fg("warning", `  ?  ${child.attention.question}`));
-			if (!this.expanded && child.result) {
-				const preview = child.result.kind === "text"
-					? child.result.value.split("\n", 1)[0]?.trim()
-					: JSON.stringify(child.result.value);
-				if (preview) lines.push(this.theme.fg("dim", `  ⎿  ${preview}`));
-			}
-			if (!this.expanded && child.failure) lines.push(this.theme.fg("error", `  ⎿  ${child.failure.message}`));
-			if (!this.expanded && child.workspace.kind === "temporary" && isFinalState(child.state)) {
-				const integration = child.workspace.integration;
-				const workspaceState = integration.state === "working" ? "review required" : integration.state.replace("_", " ");
-				lines.push(this.theme.fg(integration.state === "conflict" ? "warning" : "dim", `  Workspace: ${workspaceState}`));
-			}
-		} else {
-			lines.push(
-				`${runIcon(run, this.theme)} ${this.theme.fg("toolTitle", this.theme.bold(`${run.children.length} agents`))} `
-				+ this.theme.fg("dim", `${status} · ${formatDuration(run.createdAt, this.renderedAt)}`),
-			);
-			const visibleChildren = this.expanded ? run.children : run.children.slice(0, 6);
-			for (const child of visibleChildren) {
-				const index = run.children.indexOf(child);
-				const activity = describeLatestActivity(run, this.renderedAt, 10_000, index);
-				const detail = child.state === "completed" || child.state === "cancelled" ? child.state : `${child.state} · ${activity}`;
-				lines.push(`${stateIcon(child.state, this.theme, false)} ${this.theme.fg("accent", child.label)} ${this.theme.fg("dim", detail)}`);
-			}
-			if (!this.expanded && run.children.length > visibleChildren.length) {
-				lines.push(this.theme.fg("dim", `… ${run.children.length - visibleChildren.length} more · /agents`));
-			}
+		const safeWidth = Math.max(1, width);
+		const now = this.now();
+		const rows = this.visibleRows(now);
+		if (rows.length === 0) return [];
+		const longestElapsed = Math.max(...rows.map(({ run, child }) => this.elapsedFor(run, child, now)));
+		const counts = statusCounts(rows);
+		const header = this.theme.bold(`Agents · ${counts.join(" · ")} · ${compactDuration(longestElapsed)}`);
+		if (safeWidth < this.narrowWidth) {
+			const compactCounts = counts.map((count) => count.replace("needs attention", "attention").replace("completed", "done"));
+			const compactHeader = this.theme.bold(`Agents · ${compactCounts.join(" · ")} · ${compactDuration(longestElapsed)}`);
+			const suffix = this.theme.fg("dim", " · /agents");
+			if (safeWidth <= visibleWidth(suffix)) return [truncateToWidth(this.theme.fg("dim", "/agents"), safeWidth)];
+			return [`${truncateToWidth(compactHeader, safeWidth - visibleWidth(suffix))}${suffix}`];
 		}
-		if (!this.expanded && run.children.length <= 6) lines.push(this.theme.fg("dim", "  Open: /agents"));
 
-		if (this.expanded) {
-			for (const child of run.children) {
-				lines.push("", `${stateIcon(child.state, this.theme, false)} ${this.theme.bold(child.label)} ${this.theme.fg("dim", child.state)}`);
-				lines.push(this.theme.fg("dim", "Task"));
-				lines.push(...wrapTextWithAnsi(child.task, Math.max(1, width)));
-				if (child.attention) lines.push(this.theme.fg("warning", `Needs ${child.attention.kind}: ${child.attention.question}`));
-				if (child.result) {
-					lines.push(this.theme.fg("dim", "Final answer"));
-					lines.push(...wrapTextWithAnsi(
-						child.result.kind === "text" ? child.result.value : JSON.stringify(child.result.value, null, 2),
-						Math.max(1, width),
-					));
-				}
-				if (child.failure) lines.push(this.theme.fg("error", `Error: ${child.failure.message}`));
-				const workspaceLines = temporaryWorkspaceLines(run.id, child, this.theme);
-				if (workspaceLines.length > 0) lines.push(this.theme.fg("dim", "Workspace"), ...workspaceLines);
-			}
-			lines.push("", this.theme.fg("dim", `Run: ${run.id}`));
-			lines.push(this.theme.fg("dim", `Record: ${run.recordRef}`));
-			if (run.delivery.state === "held") lines.push(this.theme.fg("warning", "Add result here: /agents use"));
-			if (status === "running" || status === "queued" || status === "needs_attention") {
-				lines.push(this.theme.fg("dim", "Open: /agents"));
-				lines.push(this.theme.fg("dim", `Cancel: /agents cancel ${run.id}`));
-			}
+		const prioritized = [...rows].sort((left, right) => pinnedPriority(left.child.state) - pinnedPriority(right.child.state) || left.order - right.order);
+		const visible = prioritized.slice(0, this.maxRows);
+		const lines = [header];
+		for (const { run, child } of visible) {
+			const icon = stateIcon(child.state, this.theme, true, now, this.spinnerFrameMs);
+			const label = this.theme.fg("accent", child.label);
+			const detail = this.theme.fg(
+				child.state === "failed" ? "error" : child.state === "needs_attention" || child.state === "interrupted" ? "warning" : "dim",
+				`${pinnedStateSummary(child, now, this.staleAfterMs)} · ${compactDuration(this.elapsedFor(run, child, now))}`,
+			);
+			lines.push(`${icon} ${label} · ${detail}`);
 		}
-		return lines.map((line) => truncateToWidth(line, Math.max(1, width)));
+		if (prioritized.length > visible.length) {
+			lines.push(this.theme.fg("dim", `… ${prioritized.length - visible.length} more · /agents`));
+		}
+		return lines.map((line) => truncateToWidth(line, safeWidth));
 	}
 
 	invalidate(): void {}
+
+	dismissTerminal(): void {
+		if (this.terminalUntil.size === 0) return;
+		for (const childId of this.terminalUntil.keys()) this.dismissedTerminal.add(childId);
+		this.terminalUntil.clear();
+		this.tui.requestRender();
+	}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		clearInterval(this.timer);
+		this.unsubscribe();
+	}
+
+	private visibleRows(now = this.now()): PinnedChildRow[] {
+		const runs = this.runtime.list().sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+		const rows: PinnedChildRow[] = [];
+		let order = 0;
+		for (const run of runs) {
+			for (const child of run.children) {
+				const terminal = isFinalState(child.state);
+				const until = terminal ? this.terminalUntil.get(child.id) : undefined;
+				if (!terminal || (until !== undefined && until > now)) rows.push({ run, child, order });
+				if (terminal && until !== undefined && until <= now) this.terminalUntil.delete(child.id);
+				order++;
+			}
+		}
+		return rows;
+	}
+
+	private trackTerminalChildren(run: DelegationRun, newlyObserved: boolean): void {
+		const now = this.now();
+		for (const child of run.children) {
+			if (!isFinalState(child.state)) {
+				this.terminalUntil.delete(child.id);
+				this.dismissedTerminal.delete(child.id);
+				continue;
+			}
+			if (this.dismissedTerminal.has(child.id) || this.terminalUntil.has(child.id)) continue;
+			const endedAt = newlyObserved ? Math.max(now, terminalTimestamp(run, child)) : terminalTimestamp(run, child);
+			const until = endedAt + this.terminalRetentionMs;
+			if (until > now) this.terminalUntil.set(child.id, until);
+		}
+	}
+
+	private elapsedFor(run: DelegationRun, child: DelegatedChild, now: number): number {
+		const startedAt = Date.parse(run.createdAt);
+		const paused = child.state === "needs_attention" || child.state === "interrupted";
+		const pausedAt = Date.parse(child.latestActivity.observedAt);
+		const end = isFinalState(child.state)
+			? terminalTimestamp(run, child)
+			: paused && Number.isFinite(pausedAt)
+				? pausedAt
+				: now;
+		return Math.max(0, end - (Number.isFinite(startedAt) ? startedAt : end));
+	}
+
+	private nextTerminalExpiry(): number | undefined {
+		let next: number | undefined;
+		for (const value of this.terminalUntil.values()) next = next === undefined ? value : Math.min(next, value);
+		return next;
+	}
 }
 
 function textParts(content: unknown): string[] {
@@ -696,45 +788,30 @@ export class RunOverlayComponent implements Component {
 }
 
 export interface DelegateUi {
-	renderRun(runId: string, expanded: boolean, theme: Theme, invalidate: () => void, previous?: Component): Component;
+	createStatus(tui: Pick<TUI, "requestRender">, theme: Theme, options?: PinnedStatusOptions): PinnedAgentStatusComponent;
+	renderLaunch(handle: DelegateHandle, expanded: boolean, theme: Theme): Component;
 	renderCompletion(view: RunView, expanded: boolean, theme: Theme): Component;
 	openRun(runId: string, context: ExtensionContext): Promise<void>;
 	dispose(): void;
 }
 
 export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
-	const invalidators = new Map<string, () => void>();
-	const renderSignatures = new Map<string, string>();
-	const canChange = (run: DelegationRun): boolean => runNeedsControl(run);
-	const unsubscribe = runtime.subscribe((run) => {
-		const invalidate = invalidators.get(run.id);
-		if (!invalidate) return;
-		const signature = liveRunRenderSignature(run);
-		if (renderSignatures.get(run.id) !== signature) {
-			renderSignatures.set(run.id, signature);
-			invalidate();
-		}
-		if (!canChange(run)) {
-			invalidators.delete(run.id);
-			renderSignatures.delete(run.id);
-		}
-	});
-
 	return {
-		renderRun(runId, expanded, theme, invalidate, previous) {
-			const run = runtime.get(runId);
-			if (run && canChange(run)) {
-				invalidators.set(runId, invalidate);
-				renderSignatures.set(runId, liveRunRenderSignature(run));
-			} else {
-				invalidators.delete(runId);
-				renderSignatures.delete(runId);
+		createStatus(tui, theme, options) {
+			return new PinnedAgentStatusComponent(runtime, tui, theme, options);
+		},
+		renderLaunch(handle, expanded, theme) {
+			const count = handle.children.length;
+			const title = count === 1 ? handle.children[0]?.label ?? "Agent" : `${count} agents`;
+			let text = `${theme.fg("accent", "↗")} ${theme.bold(title)} ${theme.fg("dim", "started")}`;
+			if (expanded) {
+				if (count > 1) {
+					for (const child of handle.children) text += `\n  ${theme.fg("accent", child.label)} ${theme.fg("dim", child.state)}`;
+				}
+				text += `\n${theme.fg("dim", `Run: ${handle.runId}`)}`;
+				text += `\n${theme.fg("dim", `Record: ${handle.recordRef}`)}`;
 			}
-			if (previous instanceof LiveRunComponent) {
-				previous.update(expanded, theme);
-				return previous;
-			}
-			return new LiveRunComponent(runtime, runId, expanded, theme);
+			return new Text(text, 0, 0);
 		},
 		renderCompletion(view, expanded, theme) {
 			let text = `${view.status === "completed" ? theme.fg("success", "✓") : theme.fg("warning", view.status === "needs_attention" ? "?" : "◐")} `;
@@ -764,8 +841,10 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 			}
 			const hidden = view.children.length - visibleChildren.length + (view.omittedChildren ?? 0);
 			if (hidden > 0) text += `\n  ${theme.fg("dim", `… ${hidden} more · /agents`)}`;
-			if (expanded) text += `\n${theme.fg("dim", `Full run: ${view.recordRef}`)}`;
-			else if (hidden === 0) text += `\n  ${theme.fg("dim", "Open: /agents")}`;
+			if (expanded) {
+				text += `\n${theme.fg("dim", `Run: ${view.runId}`)}`;
+				text += `\n${theme.fg("dim", `Record: ${view.recordRef}`)}`;
+			} else if (hidden === 0) text += `\n  ${theme.fg("dim", "Open: /agents")}`;
 			return new Text(text, 0, 0);
 		},
 		async openRun(runId, context) {
@@ -778,10 +857,6 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 				},
 			);
 		},
-		dispose() {
-			unsubscribe();
-			invalidators.clear();
-			renderSignatures.clear();
-		},
+		dispose() {},
 	};
 }

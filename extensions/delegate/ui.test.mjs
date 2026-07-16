@@ -42,90 +42,65 @@ function run(state = "running", observedAt = new Date(0).toISOString(), count = 
   };
 }
 
-test("reuses the live component and invalidates only for visible changes", () => {
-  let listener;
-  const activeRun = run();
-  const runtime = {
-    subscribe(callback) { listener = callback; return () => {}; },
-    get: () => structuredClone(activeRun),
+function runtimeFor(...initialRuns) {
+  const runs = new Map(initialRuns.map((value) => [value.id, structuredClone(value)]));
+  const listeners = new Set();
+  let unsubscribed = false;
+  return {
+    runtime: {
+      subscribe(callback) {
+        listeners.add(callback);
+        return () => { listeners.delete(callback); unsubscribed = true; };
+      },
+      get(runId) { return structuredClone(runs.get(runId)); },
+      list() { return [...runs.values()].map((value) => structuredClone(value)); },
+    },
+    emit(next) {
+      runs.set(next.id, structuredClone(next));
+      for (const listener of listeners) listener(structuredClone(next));
+    },
+    get unsubscribed() { return unsubscribed; },
   };
-  const ui = createDelegateUi(runtime);
-  let invalidations = 0;
-  const invalidate = () => { invalidations++; };
+}
 
-  const first = ui.renderRun("run-1", false, theme, invalidate);
-  const second = ui.renderRun("run-1", true, theme, invalidate, first);
-  assert.equal(second, first);
+test("pinned status is label-first, UUID-free, and shows live elapsed time", () => {
+  let now = 19_000;
+  const activeRun = run("running", new Date(17_000).toISOString(), 2);
+  const harness = runtimeFor(activeRun);
+  const ui = createDelegateUi(harness.runtime);
+  const component = ui.createStatus({ requestRender() {} }, theme, { now: () => now });
+  const rendered = component.render(120).join("\n");
 
-  listener(activeRun);
-  assert.equal(invalidations, 0);
-  const changedRun = structuredClone(activeRun);
-  changedRun.children[0].latestActivity = {
-    kind: "tool",
-    summary: "read: src/cache.ts",
-    observedAt: new Date().toISOString(),
-  };
-  listener(changedRun);
-  assert.equal(invalidations, 1);
-  ui.dispose();
+  assert.match(rendered, /Agents · 2 running · 19s/);
+  assert.match(rendered, /Reader 1 · Thinking · 19s/);
+  assert.match(rendered, /Reader 2 · Thinking · 19s/);
+  assert.match(rendered, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
+  assert.doesNotMatch(rendered, /run-1|child-1/);
+  now++;
+  component.dispose();
 });
 
-test("background live rows do not request animation renders without state changes", async () => {
-  const activeRun = run("running", new Date().toISOString());
-  const runtime = {
-    subscribe() { return () => {}; },
-    get: () => structuredClone(activeRun),
-  };
-  const ui = createDelegateUi(runtime);
-  let invalidations = 0;
-  const component = ui.renderRun("run-1", false, theme, () => { invalidations++; });
+test("pinned spinner and elapsed display redraw independently of runtime activity", async () => {
+  let now = 1_000;
+  const activeRun = run("running", new Date(900).toISOString());
+  const harness = runtimeFor(activeRun);
+  const ui = createDelegateUi(harness.runtime);
+  let renders = 0;
+  const component = ui.createStatus(
+    { requestRender() { renders++; } },
+    theme,
+    { now: () => now, spinnerFrameMs: 20 },
+  );
   const before = component.render(100);
+  now += 60;
+  await new Promise((resolve) => setTimeout(resolve, 30));
 
-  await new Promise((resolve) => setTimeout(resolve, 450));
-
-  assert.equal(invalidations, 0);
-  assert.deepEqual(component.render(100), before);
-  ui.dispose();
+  assert.ok(renders > 0);
+  assert.notDeepEqual(component.render(100), before);
+  component.dispose();
 });
 
-test("invalidates only the changed run, retains paused rows, and detaches settled rows", () => {
-  let listener;
-  const firstRun = run();
-  const secondRun = structuredClone(firstRun);
-  secondRun.id = "run-2";
-  secondRun.children[0].id = "child-2";
-  const runs = new Map([[firstRun.id, firstRun], [secondRun.id, secondRun]]);
-  const runtime = {
-    subscribe(callback) { listener = callback; return () => {}; },
-    get: (runId) => structuredClone(runs.get(runId)),
-  };
-  const ui = createDelegateUi(runtime);
-  let firstInvalidations = 0;
-  let secondInvalidations = 0;
-  ui.renderRun("run-1", false, theme, () => { firstInvalidations++; });
-  ui.renderRun("run-2", false, theme, () => { secondInvalidations++; });
-
-  const attentionRun = structuredClone(firstRun);
-  attentionRun.children[0].state = "needs_attention";
-  runs.set(attentionRun.id, attentionRun);
-  listener(attentionRun);
-  assert.deepEqual([firstInvalidations, secondInvalidations], [1, 0]);
-
-  const resumedRun = structuredClone(firstRun);
-  runs.set(resumedRun.id, resumedRun);
-  listener(resumedRun);
-  assert.deepEqual([firstInvalidations, secondInvalidations], [2, 0]);
-
-  const completedRun = structuredClone(firstRun);
-  completedRun.children[0].state = "completed";
-  runs.set(completedRun.id, completedRun);
-  listener(completedRun);
-  listener(secondRun);
-  assert.deepEqual([firstInvalidations, secondInvalidations], [3, 0]);
-  ui.dispose();
-});
-
-test("quiet active work says it is still running and reports activity age", () => {
+test("quiet active work reports activity age only after the stale threshold", () => {
   const activeRun = run("running", new Date(0).toISOString());
   assert.equal(
     describeLatestActivity(activeRun, 15_000, 10_000),
@@ -135,22 +110,192 @@ test("quiet active work says it is still running and reports activity age", () =
     describeLatestActivity(activeRun, 5_000, 10_000),
     "Thinking · 5s ago",
   );
+
+  const harness = runtimeFor(activeRun);
+  const component = createDelegateUi(harness.runtime).createStatus(
+    { requestRender() {} },
+    theme,
+    { now: () => 15_000 },
+  );
+  assert.match(component.render(120).join("\n"), /Still running · Thinking · quiet 15s · 15s/);
+  component.dispose();
 });
 
-test("collapsed cards make the no-argument agents view discoverable", () => {
-  const activeRun = run("running", new Date().toISOString());
-  const runtime = {
-    subscribe() { return () => {}; },
-    get: () => structuredClone(activeRun),
+test("pinned status prioritizes attention, caps rows, and collapses on narrow terminals", () => {
+  const activeRun = run("running", new Date(19_000).toISOString(), 9);
+  activeRun.children[7].state = "needs_attention";
+  activeRun.children[7].attention = {
+    id: "attention-1",
+    kind: "decision",
+    question: "Choose the cache policy",
+    requestedAt: new Date(19_500).toISOString(),
+    notification: { state: "pending" },
   };
-  const ui = createDelegateUi(runtime);
-  assert.match(ui.renderRun("run-1", false, theme, () => {}).render(100).join("\n"), /Open: \/agents/);
-  ui.dispose();
+  activeRun.children[8].state = "interrupted";
+  const harness = runtimeFor(activeRun);
+  const component = createDelegateUi(harness.runtime).createStatus(
+    { requestRender() {} },
+    theme,
+    { now: () => 20_000 },
+  );
+  const wide = component.render(140);
+  const rendered = wide.join("\n");
+
+  assert.equal(wide.length, 8);
+  assert.match(rendered, /Reader 8 · Needs decision: Choose the cache policy/);
+  assert.match(rendered, /Reader 9 · Interrupted · resume in \/agents/);
+  assert.match(rendered, /… 3 more · \/agents/);
+  assert.deepEqual(component.render(140), wide);
+  const narrow = component.render(60);
+  assert.equal(narrow.length, 1);
+  assert.match(narrow[0], /^Agents ·/);
+  assert.match(narrow[0], /\/agents$/);
+  assert.ok(visibleWidth(narrow[0]) <= 60);
+  component.dispose();
 });
 
-test("temporary workspace state and exact review controls remain visible", async () => {
+test("extreme narrow status remains width-safe with ANSI styling", () => {
+  const ansiTheme = {
+    fg: (_color, text) => `\u001b[31m${text}\u001b[0m`,
+    bg: (_color, text) => text,
+    bold: (text) => `\u001b[1m${text}\u001b[0m`,
+  };
+  const component = createDelegateUi(runtimeFor(run("running", new Date().toISOString())).runtime).createStatus(
+    { requestRender() {} },
+    ansiTheme,
+  );
+  for (const width of [1, 5, 10]) {
+    const lines = component.render(width);
+    assert.equal(lines.length, 1);
+    assert.ok(visibleWidth(lines[0]) <= width);
+  }
+  assert.match(component.render(10)[0], /\/agents/);
+  component.dispose();
+});
+
+test("every lifecycle state has explicit text and a non-color icon", () => {
+  const lifecycleRun = run("running", new Date(19_000).toISOString(), 8);
+  const states = ["queued", "starting", "running", "needs_attention", "completed", "failed", "cancelled", "interrupted"];
+  lifecycleRun.children.forEach((child, index) => { child.state = states[index]; });
+  lifecycleRun.children[3].attention = {
+    id: "attention-1",
+    kind: "approval",
+    question: "Apply the patch?",
+    requestedAt: new Date(20_000).toISOString(),
+    notification: { state: "pending" },
+  };
+  lifecycleRun.children[4].result = { kind: "text", value: "Done", completedAt: new Date(20_000).toISOString() };
+  lifecycleRun.children[5].failure = {
+    message: "Tests failed",
+    lastActivity: lifecycleRun.children[5].latestActivity,
+    failedAt: new Date(20_000).toISOString(),
+  };
+  for (const child of lifecycleRun.children.slice(4)) {
+    child.latestActivity.observedAt = new Date(20_000).toISOString();
+  }
+  const component = createDelegateUi(runtimeFor(lifecycleRun).runtime).createStatus(
+    { requestRender() {} },
+    theme,
+    { now: () => 20_000, maxRows: 8 },
+  );
+  const rendered = component.render(160).join("\n");
+
+  assert.match(rendered, /Reader 1 · Queued/);
+  assert.match(rendered, /Reader 2 · Starting/);
+  assert.match(rendered, /Reader 3 · Thinking/);
+  assert.match(rendered, /\? Reader 4 · Needs approval/);
+  assert.match(rendered, /✓ Reader 5 · Completed/);
+  assert.match(rendered, /✗ Reader 6 · Failed: Tests failed/);
+  assert.match(rendered, /○ Reader 7 · Cancelled/);
+  assert.match(rendered, /■ Reader 8 · Interrupted/);
+  component.dispose();
+});
+
+test("terminal outcomes remain briefly and then clear", () => {
+  let now = 10_000;
+  const activeRun = run("running", new Date(9_000).toISOString());
+  const harness = runtimeFor(activeRun);
+  const component = createDelegateUi(harness.runtime).createStatus(
+    { requestRender() {} },
+    theme,
+    { now: () => now, terminalRetentionMs: 30_000 },
+  );
+  const completedRun = structuredClone(activeRun);
+  completedRun.children[0].state = "completed";
+  completedRun.children[0].result = { kind: "text", value: "Done", completedAt: new Date(now).toISOString() };
+  completedRun.children[0].latestActivity = { kind: "message", summary: "Completed", observedAt: new Date(now).toISOString() };
+  harness.emit(completedRun);
+
+  assert.match(component.render(100).join("\n"), /✓ Reader 1 · Completed · 10s/);
+  now = 39_999;
+  assert.notDeepEqual(component.render(100), []);
+  now = 40_001;
+  assert.deepEqual(component.render(100), []);
+  component.dispose();
+});
+
+test("a new user turn dismisses retained outcomes without hiding active work", () => {
+  const mixedRun = run("running", new Date(9_000).toISOString(), 2);
+  mixedRun.children[1].state = "completed";
+  mixedRun.children[1].result = { kind: "text", value: "Done", completedAt: new Date(10_000).toISOString() };
+  mixedRun.children[1].latestActivity = { kind: "message", summary: "Completed", observedAt: new Date(10_000).toISOString() };
+  const harness = runtimeFor(mixedRun);
+  let renders = 0;
+  const component = createDelegateUi(harness.runtime).createStatus(
+    { requestRender() { renders++; } },
+    theme,
+    { now: () => 10_000 },
+  );
+  assert.match(component.render(120).join("\n"), /Reader 2 · Completed/);
+
+  component.dismissTerminal();
+
+  let rendered = component.render(120).join("\n");
+  assert.match(rendered, /Reader 1 · Thinking/);
+  assert.doesNotMatch(rendered, /Reader 2|completed/);
+  assert.equal(renders, 1);
+
+  harness.emit(mixedRun);
+  rendered = component.render(120).join("\n");
+  assert.match(rendered, /Reader 1 · Thinking/);
+  assert.doesNotMatch(rendered, /Reader 2|completed/);
+  component.dispose();
+});
+
+test("pinned status disposes its timer and runtime subscription", async () => {
+  const harness = runtimeFor(run("running", new Date().toISOString()));
+  let renders = 0;
+  const component = createDelegateUi(harness.runtime).createStatus(
+    { requestRender() { renders++; } },
+    theme,
+    { spinnerFrameMs: 10 },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.ok(renders > 0);
+  component.dispose();
+  const afterDispose = renders;
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(renders, afterDispose);
+  assert.equal(harness.unsubscribed, true);
+});
+
+test("inline launch records stay static and hide identifiers until expanded", () => {
+  const ui = createDelegateUi(runtimeFor().runtime);
+  const handle = {
+    runId: "run-secret",
+    recordRef: "/tmp/run-secret.json",
+    children: [{ childId: "child-secret", label: "Continuity audit", state: "starting" }],
+  };
+  const normal = ui.renderLaunch(handle, false, theme).render(100).join("\n");
+  assert.match(normal, /Continuity audit started/);
+  assert.doesNotMatch(normal, /run-secret|child-secret/);
+  const expanded = ui.renderLaunch(handle, true, theme).render(100).join("\n");
+  assert.match(expanded, /Run: run-secret/);
+  assert.match(expanded, /Record: \/tmp\/run-secret\.json/);
+});
+
+test("temporary workspace review controls remain in the detailed overlay", () => {
   const completedRun = run("completed", new Date().toISOString());
-  completedRun.delivery = { state: "delivered", deliveredAt: new Date().toISOString() };
   completedRun.children[0].workspace = {
     kind: "temporary",
     sourceCwd: "/tmp/source",
@@ -161,60 +306,30 @@ test("temporary workspace state and exact review controls remain visible", async
     baseCommit: "base",
     patchPath: "/tmp/review.patch",
     manifestPath: "/tmp/review.json",
-    integration: { state: "working" },
-  };
-  let listener;
-  const runtime = {
-    subscribe(callback) { listener = callback; return () => {}; },
-    get: () => structuredClone(completedRun),
-  };
-  const ui = createDelegateUi(runtime);
-  const component = ui.renderRun("run-1", false, theme, () => {});
-  assert.match(component.render(100).join("\n"), /Workspace: review required/);
-
-  completedRun.children[0].workspace.integration = {
-    state: "review_pending",
-    review: {
-      revision: "tree-reviewed",
-      baseTree: "tree-base",
-      summary: { filesChanged: 1, additions: 2, deletions: 0, stat: "1 file changed, 2 insertions(+)" },
-      patchPath: "/tmp/review.patch",
-      manifestPath: "/tmp/review.json",
-      reviewedAt: new Date().toISOString(),
+    integration: {
+      state: "review_pending",
+      review: {
+        revision: "tree-reviewed",
+        baseTree: "tree-base",
+        summary: { filesChanged: 1, additions: 2, deletions: 0, stat: "1 file changed, 2 insertions(+)" },
+        patchPath: "/tmp/review.patch",
+        manifestPath: "/tmp/review.json",
+        reviewedAt: new Date().toISOString(),
+      },
     },
   };
-  listener(completedRun);
-  assert.match(component.render(140).join("\n"), /Workspace: review pending/);
-  const expandedReview = ui.renderRun("run-1", true, theme, () => {}, component).render(180).join("\n");
-  assert.match(expandedReview, /\/agents apply run-1 tree-reviewed child-1/);
-  assert.match(expandedReview, /Manifest: \/tmp\/review\.json/);
-
-  completedRun.children[0].workspace.integration = {
-    state: "no_changes",
-    reviewedAt: new Date().toISOString(),
-    cleanupError: "worktree is busy",
-  };
-  listener(completedRun);
-  const cleanup = component.render(180).join("\n");
-  assert.match(cleanup, /Cleanup failed: worktree is busy/);
-  assert.match(cleanup, /\/agents cleanup run-1 child-1/);
-  ui.dispose();
-});
-
-test("collapsed multi-child cards cap their transcript footprint", () => {
-  const activeRun = run("running", new Date().toISOString(), 32);
-  const runtime = {
-    subscribe() { return () => {}; },
-    get: () => structuredClone(activeRun),
-  };
-  const ui = createDelegateUi(runtime);
-  const component = ui.renderRun("run-1", false, theme, () => {});
-  const lines = component.render(100);
-  assert.ok(lines.length <= 8);
-  assert.match(lines.join("\n"), /32 agents/);
-  assert.doesNotMatch(lines.join("\n"), /delegated children/);
-  assert.match(lines.join("\n"), /26 more/);
-  ui.dispose();
+  const overlay = new RunOverlayComponent(
+    runtimeFor(completedRun).runtime,
+    "run-1",
+    { requestRender() {}, terminal: { rows: 30 } },
+    theme,
+    () => {},
+    async () => [],
+  );
+  const rendered = overlay.render(160).join("\n");
+  assert.match(rendered, /\/agents apply run-1 tree-reviewed child-1/);
+  assert.match(rendered, /Manifest: \/tmp\/review\.json/);
+  overlay.dispose();
 });
 
 test("child history keeps structured Pi-like events and hides runtime terminal tools", async (t) => {
