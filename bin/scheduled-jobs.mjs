@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   SchedulerError,
@@ -9,6 +10,21 @@ import {
   loadDeclarations,
   resolveCandidate,
 } from "../lib/scheduled-jobs/index.mjs";
+import {
+  disableJob,
+  enableJob,
+  installJob,
+  installedStatus,
+  removeJob,
+  updateJob,
+} from "../lib/scheduled-jobs/lifecycle.mjs";
+import {
+  executeInstalled,
+  readInstalled,
+  readLog,
+  stateRoot as resolvedStateRoot,
+  verifyInstalledShims,
+} from "../lib/scheduled-jobs/runtime.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 
@@ -17,34 +33,69 @@ function usage() {
   scheduled-jobs list --manifest PATH [--json]
   scheduled-jobs inspect JOB_ID --manifest PATH [--adapter auto|cron] [--json]
   scheduled-jobs doctor JOB_ID --manifest PATH [--adapter auto|cron] [--json]
+  scheduled-jobs install JOB_ID --manifest PATH --expected-candidate-digest DIGEST [--json]
+  scheduled-jobs update JOB_ID --manifest PATH --expected-candidate-digest DIGEST --expected-installed-digest DIGEST --expected-revision N [--json]
+  scheduled-jobs run JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
+  scheduled-jobs enable JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
+  scheduled-jobs disable JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
+  scheduled-jobs remove JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
+  scheduled-jobs status JOB_ID [--json]
+  scheduled-jobs logs JOB_ID [--lines N] [--json]
 
 PATH must be the fixed global manifest or an exact Git-root .pi/scheduler.json.
-The CLI performs no project discovery. These commands never install or run jobs.`;
+The CLI performs no project discovery and never prompts. Install creates a disabled job.`;
+}
+
+function integerOption(argument, value, minimum, maximum) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new SchedulerUsageError(`${argument} must be an integer from ${minimum} to ${maximum}.`);
+  }
+  return parsed;
 }
 
 function parseArguments(argv) {
   const options = { adapter: "auto", json: false };
   const positionals = [];
+  const valuedOptions = new Set([
+    "--manifest",
+    "--adapter",
+    "--expected-candidate-digest",
+    "--expected-installed-digest",
+    "--expected-revision",
+    "--lines",
+    "--state-root",
+  ]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--json") options.json = true;
     else if (argument === "--help" || argument === "-h") options.help = true;
-    else if (argument === "--manifest" || argument === "--adapter") {
+    else if (valuedOptions.has(argument)) {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new SchedulerUsageError(`${argument} requires a value.`);
       index += 1;
       if (argument === "--manifest") options.manifestPath = value;
-      else options.adapter = value;
+      else if (argument === "--adapter") options.adapter = value;
+      else if (argument === "--expected-candidate-digest") options.expectedCandidateDigest = value;
+      else if (argument === "--expected-installed-digest") options.expectedInstalledDigest = value;
+      else if (argument === "--expected-revision") options.expectedRevision = integerOption(argument, value, 1, Number.MAX_SAFE_INTEGER);
+      else if (argument === "--state-root") options.stateRoot = value;
+      else options.lines = integerOption(argument, value, 1, 10_000);
     } else if (argument.startsWith("--")) throw new SchedulerUsageError(`Unknown option: ${argument}`);
     else positionals.push(argument);
   }
   return { options, positionals };
 }
 
-function selectDeclaration(positionals, declarations, command) {
+function requireJobId(positionals, command) {
   if (positionals.length !== 1) throw new SchedulerUsageError(`${command} requires one JOB_ID.`);
-  const declaration = declarations.find((item) => item.id === positionals[0]);
-  if (!declaration) throw new SchedulerUsageError(`Unknown declared job: ${positionals[0]}`);
+  return positionals[0];
+}
+
+function declaredJob(id, manifestPath, env) {
+  const declarations = loadDeclarations({ manifestPath, env });
+  const declaration = declarations.find((item) => item.id === id);
+  if (!declaration) throw new SchedulerUsageError(`Unknown declared job: ${id}`);
   return declaration;
 }
 
@@ -65,28 +116,101 @@ function commandList(positionals, options, env) {
   return { command: "list", jobs: declarations.map(declarationSummary) };
 }
 
-function commandInspect(command, positionals, options, env, platform) {
-  const declarations = loadDeclarations({ manifestPath: options.manifestPath, env });
-  const declaration = selectDeclaration(positionals, declarations, command);
-  const candidate = resolveCandidate(declaration, { adapter: options.adapter, env, platform });
+function commandInspect(command, positionals, options, env, platform, adapterOptions) {
+  const id = requireJobId(positionals, command);
+  const declaration = declaredJob(id, options.manifestPath, env);
+  const candidate = resolveCandidate(declaration, {
+    adapter: options.adapter,
+    env,
+    platform,
+    runnerPath: fs.realpathSync(SCRIPT_PATH),
+  });
+  const currentInstallation = installedStatus(id, { env, adapterOptions });
+  const installation = currentInstallation.installed
+    ? { ...currentInstallation, definitionDrift: currentInstallation.metadata?.digest !== candidate.digest }
+    : currentInstallation;
   if (command === "doctor") {
     const unavailableOptionalCommands = Object.entries(candidate.contract.optionalCommands)
       .filter(([, executable]) => executable === null)
       .map(([name]) => name);
+    let installedCommands = installation.installed ? "unhealthy" : "not-installed";
+    if (installation.health === "ok") {
+      verifyInstalledShims(readInstalled(id, env));
+      installedCommands = "ok";
+    }
     return {
       command,
       status: "ok",
       candidate,
+      installation,
       diagnostics: {
         manifest: "ok",
         requiredCommands: "ok",
+        installedCommands,
         unavailableOptionalCommands,
         adapter: candidate.contract.adapter.selected,
         warning: candidate.contract.adapter.warning ?? null,
       },
     };
   }
-  return { command, candidate };
+  return { command, candidate, installation };
+}
+
+function lifecycleInput(id, options, runtime) {
+  const { env, platform, adapterOptions } = runtime;
+  return {
+    id,
+    env,
+    runnerPath: fs.realpathSync(SCRIPT_PATH),
+    adapterOptions,
+    expectedCandidateDigest: options.expectedCandidateDigest,
+    expectedInstalledDigest: options.expectedInstalledDigest,
+    expectedRevision: options.expectedRevision,
+    candidateOptions: {
+      adapter: options.adapter,
+      env,
+      platform,
+      runnerPath: fs.realpathSync(SCRIPT_PATH),
+    },
+    loadDeclaration: () => declaredJob(id, options.manifestPath, env),
+  };
+}
+
+async function executeCommand(command, positionals, options, runtime) {
+  const { platform, adapterOptions } = runtime;
+  let env = runtime.env;
+  if (options.stateRoot !== undefined) {
+    if (!path.isAbsolute(options.stateRoot)) throw new SchedulerUsageError("--state-root must be absolute.");
+    const requestedRoot = path.resolve(options.stateRoot);
+    env = { ...env, XDG_STATE_HOME: path.dirname(requestedRoot) };
+    if (resolvedStateRoot(env) !== requestedRoot) {
+      throw new SchedulerUsageError("--state-root must identify the canonical pi-scheduler state directory.");
+    }
+  }
+  if (command === "list") return commandList(positionals, options, env);
+  if (command === "inspect" || command === "doctor") {
+    return commandInspect(command, positionals, options, env, platform, adapterOptions);
+  }
+  const id = requireJobId(positionals, command);
+  const operationRuntime = { ...runtime, env };
+  if (command === "install") return { command, result: installJob(lifecycleInput(id, options, operationRuntime)) };
+  if (command === "update") return { command, result: updateJob(lifecycleInput(id, options, operationRuntime)) };
+  if (command === "enable") return { command, result: enableJob(lifecycleInput(id, options, operationRuntime)) };
+  if (command === "disable") return { command, result: disableJob(lifecycleInput(id, options, operationRuntime)) };
+  if (command === "remove") return { command, result: removeJob(lifecycleInput(id, options, operationRuntime)) };
+  if (command === "run" || command === "_run-installed") {
+    return {
+      command,
+      result: await executeInstalled(id, {
+        env,
+        expectedDigest: options.expectedInstalledDigest,
+        expectedRevision: options.expectedRevision,
+      }),
+    };
+  }
+  if (command === "status") return { command, result: installedStatus(id, { env, adapterOptions }) };
+  if (command === "logs") return { command, result: readLog(id, { env, lines: options.lines ?? 200 }) };
+  throw new SchedulerUsageError(`Unknown command: ${command}`);
 }
 
 function humanCandidate(result) {
@@ -99,46 +223,67 @@ function humanCandidate(result) {
     `Schedule: ${display(contract.schedule)}`,
     `Adapter: ${display(contract.adapter.selected)} (${display(contract.adapter.mode)})`,
     `Argv: ${JSON.stringify(contract.argv.map(display))}`,
-    `Working directory: ${display(contract.workingDirectory ?? "HOME")}`,
+    `Working directory: ${display(contract.workingDirectory)}`,
     `Timeout: ${contract.timeoutSeconds}s`,
+    `Scheduler node: ${display(contract.schedulerNode)}`,
+    `Scheduler runner: ${display(contract.schedulerRunner)}`,
+    `Scheduler state: ${display(contract.scheduler.root)}`,
+    `Shim PATH: ${display(contract.scheduler.shimsDirectory)}`,
+    `Log: ${display(contract.scheduler.logPath)}`,
     `Source: ${display(contract.sourcePath)}`,
     "Required commands:",
     ...Object.entries(contract.requiredCommands).map(([name, executable]) => `  ${display(name)}: ${display(executable)}`),
     "Optional commands:",
     ...Object.entries(contract.optionalCommands).map(([name, executable]) => `  ${display(name)}: ${display(executable ?? "unavailable")}`),
+    `Installation: ${result.installation.installed ? `${result.installation.health}, revision ${result.installation.metadata?.revision ?? "unknown"}` : "not installed"}`,
   ];
   if (contract.adapter.warning) lines.push(`Warning: ${display(contract.adapter.warning)}`);
   if (result.diagnostics) lines.push("Status: ok");
   return lines.join("\n");
 }
 
-export function run(argv, { env = process.env, platform = process.platform } = {}) {
+function humanResult(result) {
+  if (result.command === "list") return humanList(result);
+  if (result.command === "inspect" || result.command === "doctor") return humanCandidate(result);
+  if (result.command === "logs") return result.result.content || `No log output at ${result.result.logPath}`;
+  return JSON.stringify(result.result, null, 2);
+}
+
+export async function run(argv, {
+  env = process.env,
+  platform = process.platform,
+  adapterOptions,
+} = {}) {
   const [command, ...rest] = argv;
   const { options, positionals } = parseArguments(rest);
   if (options.help || command === "help" || command === "--help" || command === "-h" || command === undefined) {
     return { exitCode: 0, stdout: usage(), json: options.json };
   }
-  let result;
-  if (command === "list") result = commandList(positionals, options, env);
-  else if (command === "inspect" || command === "doctor") {
-    result = commandInspect(command, positionals, options, env, platform);
-  } else throw new SchedulerUsageError(`Unknown command: ${command}`);
+  const result = await executeCommand(command, positionals, options, {
+    env,
+    platform,
+    adapterOptions,
+  });
   return {
     exitCode: 0,
-    stdout: options.json ? JSON.stringify({ ok: true, ...result }, null, 2) : command === "list" ? humanList(result) : humanCandidate(result),
+    stdout: options.json ? JSON.stringify({ ok: true, ...result }, null, 2) : humanResult(result),
     json: options.json,
   };
 }
 
-export function main(argv = process.argv.slice(2), runtime = {}) {
+export async function main(argv = process.argv.slice(2), runtime = {}) {
   try {
-    const result = run(argv, runtime);
+    const result = await run(argv, runtime);
     process.stdout.write(`${result.stdout}\n`);
     return result.exitCode;
   } catch (error) {
     const normalized = error instanceof SchedulerError
       ? error
-      : new SchedulerError(error.message || String(error), { code: "INTERNAL", exitCode: 1 });
+      : new SchedulerError(error.message || String(error), {
+          code: error.code === "LAUNCHD_ADAPTER" ? "LIFECYCLE" : "INTERNAL",
+          exitCode: error.code === "LAUNCHD_ADAPTER" ? 8 : 1,
+          details: error.details,
+        });
     const wantsJson = argv.includes("--json");
     if (wantsJson) {
       process.stderr.write(`${JSON.stringify({
@@ -159,4 +304,4 @@ function isMain() {
   }
 }
 
-if (isMain()) process.exitCode = main();
+if (isMain()) process.exitCode = await main();
