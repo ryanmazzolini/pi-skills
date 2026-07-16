@@ -166,7 +166,7 @@ test("inbound delivery independently bounds raw traffic, projected queue memory,
 	});
 	assert.equal(delivery.record(maximumFirst), true);
 	assert.equal(delivery.pending.length, 1);
-	assert.deepEqual(Object.keys(delivery.pending[0]).sort(), ["bytes", "details", "text", "truncated"]);
+	assert.deepEqual(Object.keys(delivery.pending[0]).sort(), ["bytes", "details", "text", "truncated", "view"]);
 	assert.equal("message" in delivery.pending[0], false);
 	await new Promise((resolve) => setTimeout(resolve, 10));
 	assertBounded(calls[0][0].content, "first automatic message");

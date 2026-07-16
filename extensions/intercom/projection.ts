@@ -28,8 +28,16 @@ export interface CompactInboundDetails {
 	truncated: boolean;
 }
 
+/** Bounded display-only fields. Authoritative transport metadata stays in CompactInboundDetails. */
+export interface IntercomMessageView {
+	fromName?: string;
+	preview: string;
+	previewTruncated: boolean;
+}
+
 export interface InboundProjection extends TextProjection {
 	details: CompactInboundDetails;
+	view: IntercomMessageView;
 }
 
 function byteLength(value: string): number {
@@ -104,7 +112,7 @@ function peerMessageSegments(
 	replyable: boolean,
 ): ProjectionSegment[] {
 	const replyHint = message.expectsReply && replyable
-		? `\n\nTo reply explicitly, use intercom({ action: "reply", replyTo: ${JSON.stringify(message.id)}, message: "..." }).`
+		? `\n\nTo reply explicitly, use intercom({ action: "reply", to: ${JSON.stringify(from.id)}, replyTo: ${JSON.stringify(message.id)}, message: "..." }).`
 		: "";
 	return [
 		{ text: `${title}\nBroker-derived session ID: ${JSON.stringify(from.id)}` },
@@ -131,15 +139,25 @@ export function compactInboundDetails(entry: InboxEntry, truncated: boolean): Co
 	};
 }
 
+function intercomMessageView(from: SessionInfo, message: Message): IntercomMessageView {
+	const fullPreview = sanitizeSelfDeclaredMetadata(message.content.text);
+	const preview = truncateUtf8(fullPreview, 256);
+	return {
+		...(from.name === undefined ? {} : { fromName: truncateUtf8(sanitizeSelfDeclaredMetadata(from.name), 256) }),
+		preview,
+		previewTruncated: preview !== fullPreview,
+	};
+}
+
 export function projectInboundEntry(entry: InboxEntry): InboundProjection {
 	const projected = projectSegments(peerMessageSegments("**📨 Intercom message**", entry.from, entry.message, entry.replyable !== false));
-	return { ...projected, details: compactInboundDetails(entry, projected.truncated) };
+	return { ...projected, details: compactInboundDetails(entry, projected.truncated), view: intercomMessageView(entry.from, entry.message) };
 }
 
 export function projectAskReply(from: SessionInfo, message: Message): InboundProjection {
 	const entry: InboxEntry = { from, message, receivedAt: Date.now(), replyable: false };
 	const projected = projectSegments(peerMessageSegments("**Reply to intercom ask**", from, message, false));
-	return { ...projected, details: compactInboundDetails(entry, projected.truncated) };
+	return { ...projected, details: compactInboundDetails(entry, projected.truncated), view: intercomMessageView(from, message) };
 }
 
 function sessionSegments(session: SessionInfo, current: SessionInfo, prefix = ""): ProjectionSegment[] {

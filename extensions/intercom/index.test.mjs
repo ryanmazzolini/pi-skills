@@ -31,8 +31,8 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	};
 	intercomExtension(pi);
 	assert.deepEqual(tools.map((tool) => tool.name), ["intercom"]);
-	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "send", "ask", "reply", "pending", "status"]);
-	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "to", "message", "attachments", "replyTo"]);
+	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "send", "ask", "reply", "pending", "operations", "cancel", "status"]);
+	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "to", "message", "attachments", "replyTo", "operationId", "limit"]);
 	assert.deepEqual(commands, []);
 	assert.deepEqual(shortcuts, []);
 	assert.equal(tools.some((tool) => tool.name === "contact_supervisor"), false);
@@ -49,6 +49,8 @@ test("validates action-specific fields while preserving attachment and reply sel
 	assert.throws(() => validateIntercomAction({ action: "ask", message: "question" }), /requires to/);
 	assert.throws(() => validateIntercomAction({ action: "pending", message: "extra" }), /not valid/);
 	assert.throws(() => validateIntercomAction({ action: "status", replyTo: "extra" }), /not valid/);
+	assert.doesNotThrow(() => validateIntercomAction({ action: "operations", limit: 1 }));
+	assert.throws(() => validateIntercomAction({ action: "cancel" }), /requires operationId/);
 });
 
 test("uses the legacy unnamed alias and preserves attachment bodies", () => {
@@ -73,6 +75,40 @@ test("delivers inbound peer messages through normal persistent Pi message behavi
 	assert.match(calls[0][0].content, /replyTo: \"ask-1\"/);
 	assert.match(calls[0][0].content, /context body/);
 	assert.deepEqual(calls[0][1], { deliverAs: "steer", triggerTurn: true });
+});
+
+test("intercom message renderer uses native expansion for compact bubbles and metadata", () => {
+	const renderers = new Map();
+	intercomExtension({ registerTool() {}, registerMessageRenderer: (type, renderer) => renderers.set(type, renderer), on() {}, getSessionName: () => undefined });
+	const renderer = renderers.get("intercom_message");
+	const theme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
+	const message = { content: "**📨 Intercom message**\nBroker session ID: peer-1\n\n---\n\nFirst body", details: { count: 2, entries: [
+		{ fromPeerId: "peer-1", messageId: "ask-1", expectsReply: true, replyable: true },
+		{ fromPeerId: "peer-2", messageId: "ask-2", expectsReply: false, replyable: false },
+	], views: [
+		{ fromName: "worker", preview: "First body", previewTruncated: false },
+		{ preview: "Second body", previewTruncated: false },
+	] } };
+	const collapsed = renderer(message, { expanded: false }, theme).render(120).join("\n");
+	assert.match(collapsed, /2 messages/);
+	assert.doesNotMatch(collapsed, /Broker session ID/);
+	const expanded = renderer(message, { expanded: true }, theme).render(120).join("\n");
+	assert.match(expanded, /Broker session ID: peer-1/);
+	assert.match(expanded, /First body/);
+	assert.equal(message.content.includes("First body"), true);
+
+	const single = { content: "**📨 Intercom message**\nBroker-derived session ID: peer-1\n\n---\n\nSafe preview plus hidden raw body and attachment", details: { entries: [{ fromPeerId: "peer-1", messageId: "message-1", expectsReply: false, replyable: false, attachmentCount: 1, truncated: false }], views: [{ fromName: "worker", preview: "Safe preview", previewTruncated: true }] } };
+	const singleCollapsed = renderer(single, { expanded: false }, theme).render(120).join("\n");
+	assert.match(singleCollapsed, /Safe preview/);
+	assert.match(singleCollapsed, /Ctrl\+O to expand/);
+	assert.doesNotMatch(singleCollapsed, /hidden raw body/);
+	assert.match(renderer(single, { expanded: true }, theme).render(120).join("\n"), /hidden raw body/);
+
+	const operationRenderer = renderers.get("intercom_operation");
+	const failure = operationRenderer({ content: "full failure", details: { operationId: "op", sequence: 1, kind: "send", state: "failed", acceptedAt: 1, targetPeerId: "peer-1", reason: "not connected" } }, { expanded: false }, theme).render(120).join("\n");
+	assert.match(failure, /send failed/);
+	assert.match(failure, /peer-1/);
+	assert.match(failure, /not connected/);
 });
 
 test("renders authoritative full IDs and sanitizes self-declared identity metadata", () => {
@@ -286,23 +322,25 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	const incoming = waitEvent(peer, "message", (_from, message) => message.content.text === "compact-outgoing-secret");
 	const sent = await execute({ action: "send", to: "worker", message: "compact-outgoing-secret" });
 	await incoming;
-	assert.match(sent.content[0].text, new RegExp(peer.sessionId));
-	assert.match(sent.content[0].text, /self-declared name/);
-	assert.equal(sent.details.targetPeerId, peer.sessionId);
+	assert.match(sent.content[0].text, /accepted as/);
+	assert.equal(sent.details.state, "queued");
+	await waitFor(() => audits.find((audit) => audit.type === "intercom_sent"), 2_000);
 	const sentAudit = audits.find((audit) => audit.type === "intercom_sent");
 	assert.equal(sentAudit.data.targetPeerId, peer.sessionId);
 	assert.equal(sentAudit.data.payloadStored, false);
 	assert.equal(JSON.stringify(sentAudit).includes("compact-outgoing-secret"), false);
+	const operationList = await execute({ action: "operations", limit: 32 });
+	assert.ok(Buffer.byteLength(JSON.stringify(operationList.details), "utf8") <= INTERCOM_PROJECTION_MAX_BYTES);
+	assert.equal(JSON.stringify(operationList.details).includes("compact-outgoing-secret"), false);
 
 	const questionIncoming = waitEvent(peer, "message", (_from, message) => message.expectsReply === true);
-	const asking = execute({ action: "ask", to: "worker", message: "large reply please" });
+	const asking = await execute({ action: "ask", to: "worker", message: "large reply please" });
+	assert.equal(asking.details.state, "queued");
 	const [, question] = await questionIncoming;
 	await peer.send(ownedId, { messageId: "large-reply-message-id", text: "答".repeat(80_000), replyTo: question.id });
-	const answer = await asking;
-	assert.ok(Buffer.byteLength(answer.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
-	assert.equal(answer.details.fromPeerId, peer.sessionId);
-	assert.equal(answer.details.replyMessageId, "large-reply-message-id");
-	assert.equal(answer.details.truncated, true);
+	const completion = await waitFor(() => delivered.find((call) => call[0].customType === "intercom_operation" && /ask reply received/.test(call[0].content)), 2_000);
+	assert.match(completion[0].content, /答/);
+	assert.equal(JSON.stringify(completion[0].details).includes("答"), false);
 	const receivedAudit = audits.find((audit) => audit.type === "intercom_received");
 	assert.equal(receivedAudit.data.fromPeerId, peer.sessionId);
 	assert.equal(receivedAudit.data.payloadStored, false);
@@ -336,13 +374,14 @@ test("tool execution throws action-qualified operational failures and status sur
 
 	const tools = [];
 	const handlers = new Map();
+	const delivered = [];
 	const pi = {
 		registerTool: (tool) => tools.push(tool),
 		registerMessageRenderer() {},
 		on: (name, handler) => handlers.set(name, handler),
 		getSessionName: () => "harness",
 		appendEntry() {},
-		sendMessage() {},
+		sendMessage: (...args) => delivered.push(args),
 	};
 	intercomExtension(pi);
 	const ctx = {
@@ -361,14 +400,16 @@ test("tool execution throws action-qualified operational failures and status sur
 	assert.equal(status.details.connected, false);
 	assert.match(status.details.initialConnectionError, /not a real directory/);
 	assert.match(status.content[0].text, /Initial connection error/);
-	for (const [action, params] of [
-		["list", { action: "list" }],
-		["send", { action: "send", to: "peer", message: "hello" }],
-		["ask", { action: "ask", to: "peer", message: "question" }],
-		["reply", { action: "reply", message: "answer" }],
+	await assert.rejects(execute({ action: "list" }), /Intercom list failed:/);
+	for (const params of [
+		{ action: "send", to: "peer", message: "hello" },
+		{ action: "ask", to: "peer", message: "question" },
+		{ action: "reply", message: "answer" },
 	]) {
-		await assert.rejects(execute(params), new RegExp(`Intercom ${action} failed:`));
+		const receipt = await execute(params);
+		assert.equal(receipt.details.state, "queued");
 	}
+	await waitFor(() => delivered.find((call) => call[0].customType === "intercom_operation" && /failed/.test(call[0].content)), 2_000);
 	await handlers.get("session_shutdown")();
 	await assert.rejects(execute({ action: "pending" }), /Intercom pending failed:/);
 	const disconnected = await execute({ action: "status" });
