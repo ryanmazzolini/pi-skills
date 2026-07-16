@@ -4,7 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { resolveExecutable } from "../lib/scheduled-jobs/index.mjs";
 import { run } from "./scheduled-jobs.mjs";
+
+const DAILY_REPORT_CLI = fileURLToPath(new URL("../skills/notes/daily-report/scripts/daily-report.mjs", import.meta.url));
 
 function fixture(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduled-jobs-cli-test-"));
@@ -75,6 +79,7 @@ function fixture(t) {
     throw new Error(`unexpected launchctl argv: ${argv.join(" ")}`);
   };
   return {
+    bin,
     env,
     manifestPath,
     runtime: {
@@ -88,6 +93,84 @@ function fixture(t) {
 function json(result) {
   return JSON.parse(result.stdout);
 }
+
+test("an installed snapshot reconciles daily-report under the fixed scheduler environment", async (t) => {
+  const value = fixture(t);
+  const git = resolveExecutable("git", process.env);
+  assert.ok(git, "git is required for the daily-report fixture");
+  fs.symlinkSync(git, path.join(value.bin, "git"));
+  fs.writeFileSync(
+    path.join(value.bin, "pi"),
+    "#!/bin/sh\ncat >/dev/null\nprintf '# Work report — scheduled fixture\\n\\n## Summary\\n\\nGenerated through the installed snapshot.\\n'\n",
+    { mode: 0o755 },
+  );
+  const vault = path.join(path.dirname(value.env.HOME), "vault");
+  const repositories = path.join(path.dirname(value.env.HOME), "repos");
+  fs.mkdirSync(vault);
+  fs.mkdirSync(repositories);
+  const configPath = path.join(path.dirname(value.env.HOME), "daily-report.json");
+  fs.writeFileSync(configPath, JSON.stringify({
+    version: 1,
+    defaults: { timezone: "UTC", maxReconcileDays: 1 },
+    profiles: {
+      work: {
+        vault,
+        gitRoots: [repositories],
+        reportDirectory: "daily-reports",
+        schedule: "legacy value ignored during cutover",
+        github: { enabled: true },
+        shortcut: { enabled: true },
+      },
+    },
+  }));
+  fs.writeFileSync(value.manifestPath, JSON.stringify({
+    version: 1,
+    jobs: {
+      "daily-report:fixture": {
+        description: "Daily-report installed snapshot fixture",
+        schedule: "30 17 * * 1-5",
+        argv: ["node", DAILY_REPORT_CLI, "reconcile", "work", "--config", configPath, "--max-days", "1"],
+        requiredCommands: ["pi", "git"],
+        optionalCommands: ["gh", "short"],
+      },
+    },
+  }));
+
+  const directDoctor = spawnSync(process.execPath, [DAILY_REPORT_CLI, "doctor", "work", "--config", configPath], {
+    encoding: "utf8",
+    env: value.env,
+  });
+  assert.equal(directDoctor.status, 0, directDoctor.stderr);
+  assert.match(directDoctor.stdout, /GitHub: unavailable/);
+  assert.match(directDoctor.stdout, /Shortcut: unavailable/);
+
+  const id = "global:daily-report:fixture";
+  const inspected = await run(["inspect", id, "--manifest", value.manifestPath, "--json"], value.runtime);
+  const candidateDigest = json(inspected).candidate.digest;
+  const installed = await run([
+    "install", id,
+    "--manifest", value.manifestPath,
+    "--expected-candidate-digest", candidateDigest,
+    "--json",
+  ], value.runtime);
+  const status = json(installed).result;
+  const doctor = await run(["doctor", id, "--manifest", value.manifestPath, "--json"], value.runtime);
+  assert.equal(json(doctor).diagnostics.installedCommands, "ok");
+  assert.deepEqual(json(doctor).diagnostics.unavailableOptionalCommands, ["gh", "short"]);
+
+  const ran = await run([
+    "run", id,
+    "--expected-installed-digest", status.metadata.digest,
+    "--expected-revision", String(status.metadata.revision),
+    "--json",
+  ], value.runtime);
+  assert.equal(json(ran).result.status, "ok");
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "UTC" });
+  const reportPath = path.join(vault, "daily-reports", today.slice(0, 4), `${today}.md`);
+  assert.equal(fs.existsSync(reportPath), true);
+  assert.match(fs.readFileSync(reportPath, "utf8"), /generation_status: partial/);
+  assert.match(fs.readFileSync(reportPath, "utf8"), /Generated through the installed snapshot/);
+});
 
 test("CLI completes the disabled install, run, enable, disable, logs, and remove flow", async (t) => {
   const value = fixture(t);

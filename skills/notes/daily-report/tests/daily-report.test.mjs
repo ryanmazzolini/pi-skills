@@ -11,27 +11,14 @@ import {
   collectGit,
   collectGithub,
   collectShortcut,
-  cronBlock,
   dateWindow,
   ensureReportPath,
-  launchdDefinition,
-  nativeSchedule,
-  readCrontab,
   reconcileDates,
   renderFrontmatter,
-  replaceCronBlock,
   reportGenerationStatus,
   resolveExecutable,
   resolveProfile,
-  systemdDefinitions,
 } from "../scripts/daily-report-lib.mjs";
-import {
-  installLaunchd,
-  installSystemd,
-  removeLaunchd,
-  removeSystemd,
-} from "../scripts/daily-report.mjs";
-
 const TEST_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(TEST_DIRECTORY, "../scripts/daily-report.mjs");
 const GIT = resolveExecutable("git");
@@ -46,7 +33,7 @@ function writeExecutable(filePath, content) {
   fs.writeFileSync(filePath, content, { mode: 0o755 });
 }
 
-function testConfig(base, optionalEnabled = true) {
+function testConfig(base, optionalEnabled = true, legacySchedule) {
   const vault = path.join(base, "vault");
   const gitRoot = path.join(base, "repos");
   fs.mkdirSync(vault, { recursive: true });
@@ -62,6 +49,7 @@ function testConfig(base, optionalEnabled = true) {
           vault,
           gitRoots: [gitRoot],
           reportDirectory: "daily-reports",
+          ...(legacySchedule === undefined ? {} : { schedule: legacySchedule }),
           github: { enabled: optionalEnabled },
           shortcut: { enabled: optionalEnabled },
         },
@@ -185,351 +173,6 @@ test("reconcileDates applies a rolling calendar-day cap and weekday filter", () 
     "2026-07-08",
     "2026-07-09",
   ]);
-});
-
-test("cron block replacement is idempotent and preserves unrelated entries", (t) => {
-  const base = temporaryDirectory(t);
-  const profile = { name: "work", schedule: "30 17 * * 1-5" };
-  const tools = { pi: "/opt/bin/pi", git: "/usr/bin/git" };
-  const block = cronBlock({
-    profile,
-    configPath: path.join(base, "set%tings.json"),
-    tools,
-    scriptPath: "/opt/daily report.mjs",
-    env: { XDG_STATE_HOME: path.join(base, "state%dir") },
-  });
-  const original = "0 9 * * * /usr/bin/example\n";
-  const once = replaceCronBlock(original, block.marker, block.text);
-  const twice = replaceCronBlock(once, block.marker, block.text);
-  assert.equal(twice, once);
-  assert.match(once, /\/usr\/bin\/example/);
-  assert.equal((once.match(/# BEGIN daily-report:work/g) || []).length, 1);
-  assert.match(once, /set\\%tings\.json/);
-  assert.match(once, /state\\%dir/);
-});
-
-test("native schedule parsing supports fixed times and numeric weekdays", () => {
-  assert.deepEqual(nativeSchedule("30 17 * * 1-5"), {
-    hour: 17,
-    minute: 30,
-    weekdays: [1, 2, 3, 4, 5],
-  });
-  assert.deepEqual(nativeSchedule("0 9 * * 7,1"), {
-    hour: 9,
-    minute: 0,
-    weekdays: [0, 1],
-  });
-  assert.equal(nativeSchedule("*/15 9 * * 1-5"), undefined);
-  assert.equal(nativeSchedule("30 17 1 * *"), undefined);
-});
-
-test("launchd definition uses calendar intervals and absolute command paths", (t) => {
-  const base = temporaryDirectory(t);
-  const definition = launchdDefinition({
-    profile: { name: "work", schedule: "30 17 * * 1-5" },
-    configPath: path.join(base, "settings & reports.json"),
-    tools: { pi: "/opt/bin/pi", git: "/usr/bin/git" },
-    scriptPath: "/opt/daily report.mjs",
-    env: {
-      PATH: "/wrapper/bin:/usr/bin",
-      XDG_STATE_HOME: path.join(base, "state"),
-    },
-    homeDirectory: base,
-  });
-  assert.equal(
-    definition.plistPath,
-    path.join(base, "Library", "LaunchAgents", "com.llm-wiki.daily-report.work.plist"),
-  );
-  assert.match(definition.plist, /<key>RunAtLoad<\/key>\n  <true\/>/);
-  assert.match(definition.plist, /<key>Weekday<\/key>\n        <integer>1<\/integer>/);
-  assert.match(definition.plist, /<integer>5<\/integer>/);
-  assert.match(definition.plist, /settings &amp; reports\.json/);
-  assert.match(definition.plist, /<string>\/opt\/daily report\.mjs<\/string>/);
-  assert.match(definition.plist, /<string>\/wrapper\/bin:\/usr\/bin:/);
-});
-
-test("systemd definitions use a persistent user timer", (t) => {
-  const base = temporaryDirectory(t);
-  const definitions = systemdDefinitions({
-    profile: { name: "work", schedule: "30 17 * * 1-5" },
-    configPath: path.join(base, "settings.json"),
-    tools: { pi: "/opt/bin/pi", git: "/usr/bin/git" },
-    scriptPath: "/opt/daily report.mjs",
-    env: { XDG_CONFIG_HOME: path.join(base, "config") },
-    homeDirectory: base,
-  });
-  assert.equal(
-    definitions.timerPath,
-    path.join(base, "config", "systemd", "user", "daily-report-work.timer"),
-  );
-  assert.match(definitions.timer, /OnCalendar=Mon,Tue,Wed,Thu,Fri \*-\*-\* 17:30:00/);
-  assert.match(definitions.timer, /Persistent=true/);
-  assert.match(definitions.service, /ExecStart="[^"]+node" "\/opt\/daily report\.mjs"/);
-  assert.match(definitions.service, /"--config" ".*settings\.json"/);
-});
-
-test("launchd update restores a previously loaded job after bootstrap failure", (t) => {
-  const base = temporaryDirectory(t);
-  const label = "com.llm-wiki.daily-report.work";
-  const plistPath = path.join(base, "Library", "LaunchAgents", `${label}.plist`);
-  fs.mkdirSync(path.dirname(plistPath), { recursive: true });
-  fs.writeFileSync(plistPath, "previous plist\n");
-  const launchctl = path.join(base, "launchctl");
-  writeExecutable(
-    launchctl,
-    `#!${process.execPath}
-const fs = require('node:fs');
-const [command, target, plist] = process.argv.slice(2);
-if (command === 'print') process.exit(0);
-if (command === 'bootout' || command === 'enable') process.exit(0);
-if (command === 'bootstrap') {
-  if (fs.readFileSync(plist, 'utf8') === 'previous plist\\n') process.exit(0);
-  console.error('simulated bootstrap failure');
-  process.exit(1);
-}
-process.exit(2);
-`,
-  );
-  const result = installLaunchd(
-    { name: "work", schedule: "30 17 * * 1-5" },
-    path.join(base, "settings.json"),
-    { tools: { pi: "/opt/bin/pi", git: "/usr/bin/git" } },
-    { env: { XDG_STATE_HOME: path.join(base, "state") }, homeDirectory: base, launchctl },
-  );
-  assert.equal(result.ok, false);
-  assert.equal(result.preserved, true);
-  assert.equal(fs.readFileSync(plistPath, "utf8"), "previous plist\n");
-});
-
-test("launchd removal keeps its plist when bootout fails", (t) => {
-  const base = temporaryDirectory(t);
-  const label = "com.llm-wiki.daily-report.work";
-  const plistPath = path.join(base, "Library", "LaunchAgents", `${label}.plist`);
-  fs.mkdirSync(path.dirname(plistPath), { recursive: true });
-  fs.writeFileSync(plistPath, "existing plist\n");
-  const launchctl = path.join(base, "launchctl");
-  writeExecutable(
-    launchctl,
-    `#!${process.execPath}
-const command = process.argv[2];
-if (command === 'print') process.exit(0);
-if (command === 'bootout') { console.error('still loaded'); process.exit(1); }
-process.exit(2);
-`,
-  );
-  assert.throws(
-    () => removeLaunchd({ name: "work" }, { homeDirectory: base, launchctl }),
-    /still loaded/,
-  );
-  assert.equal(fs.existsSync(plistPath), true);
-});
-
-test("launchd unsupported schedule removes the old job before cron fallback", (t) => {
-  const base = temporaryDirectory(t);
-  const label = "com.llm-wiki.daily-report.work";
-  const plistPath = path.join(base, "Library", "LaunchAgents", `${label}.plist`);
-  fs.mkdirSync(path.dirname(plistPath), { recursive: true });
-  fs.writeFileSync(plistPath, "existing plist\n");
-  const launchctl = path.join(base, "launchctl");
-  writeExecutable(
-    launchctl,
-    `#!${process.execPath}
-const command = process.argv[2];
-if (command === 'print' || command === 'bootout') process.exit(0);
-process.exit(2);
-`,
-  );
-  const result = installLaunchd(
-    { name: "work", schedule: "*/15 9 * * 1-5" },
-    path.join(base, "settings.json"),
-    { tools: { pi: "/opt/bin/pi", git: "/usr/bin/git" } },
-    { homeDirectory: base, launchctl },
-  );
-  assert.equal(result.ok, false);
-  assert.equal(result.preserved, false);
-  assert.equal(fs.existsSync(plistPath), false);
-});
-
-test("launchd failed bootout suppresses cron fallback even without an old plist", (t) => {
-  const base = temporaryDirectory(t);
-  const label = "com.llm-wiki.daily-report.work";
-  const plistPath = path.join(base, "Library", "LaunchAgents", `${label}.plist`);
-  const launchctl = path.join(base, "launchctl");
-  writeExecutable(
-    launchctl,
-    `#!${process.execPath}
-const command = process.argv[2];
-if (command === 'print') process.exit(0);
-if (command === 'bootout') { console.error('still loaded'); process.exit(1); }
-process.exit(2);
-`,
-  );
-  const result = installLaunchd(
-    { name: "work", schedule: "30 17 * * 1-5" },
-    path.join(base, "settings.json"),
-    { tools: { pi: "/opt/bin/pi", git: "/usr/bin/git" } },
-    { env: { XDG_STATE_HOME: path.join(base, "state") }, homeDirectory: base, launchctl },
-  );
-  assert.equal(result.ok, false);
-  assert.equal(result.preserved, true);
-  assert.equal(fs.existsSync(plistPath), false);
-});
-
-test("launchd bootstrap failure does not preserve a loaded job without its old plist", (t) => {
-  const base = temporaryDirectory(t);
-  const label = "com.llm-wiki.daily-report.work";
-  const plistPath = path.join(base, "Library", "LaunchAgents", `${label}.plist`);
-  const launchctl = path.join(base, "launchctl");
-  writeExecutable(
-    launchctl,
-    `#!${process.execPath}
-const command = process.argv[2];
-if (command === 'print' || command === 'bootout') process.exit(0);
-if (command === 'bootstrap') { console.error('simulated bootstrap failure'); process.exit(1); }
-process.exit(2);
-`,
-  );
-  const result = installLaunchd(
-    { name: "work", schedule: "30 17 * * 1-5" },
-    path.join(base, "settings.json"),
-    { tools: { pi: "/opt/bin/pi", git: "/usr/bin/git" } },
-    { env: { XDG_STATE_HOME: path.join(base, "state") }, homeDirectory: base, launchctl },
-  );
-  assert.equal(result.ok, false);
-  assert.equal(result.preserved, false);
-  assert.equal(fs.existsSync(plistPath), false);
-  assert.match(result.reason, /plist did not exist/);
-});
-
-test("systemd unsupported schedule removes old units before cron fallback", (t) => {
-  const base = temporaryDirectory(t);
-  const env = { XDG_CONFIG_HOME: path.join(base, "config") };
-  const unitDirectory = path.join(env.XDG_CONFIG_HOME, "systemd", "user");
-  const servicePath = path.join(unitDirectory, "daily-report-work.service");
-  const timerPath = path.join(unitDirectory, "daily-report-work.timer");
-  fs.mkdirSync(unitDirectory, { recursive: true });
-  fs.writeFileSync(servicePath, "existing service\n");
-  fs.writeFileSync(timerPath, "existing timer\n");
-  const systemctl = path.join(base, "systemctl");
-  writeExecutable(
-    systemctl,
-    `#!${process.execPath}
-const command = process.argv[3];
-if (command === 'show-environment' || command === 'is-enabled' || command === 'is-active' || command === 'disable' || command === 'daemon-reload') process.exit(0);
-process.exit(2);
-`,
-  );
-  const result = installSystemd(
-    { name: "work", schedule: "*/15 9 * * 1-5" },
-    path.join(base, "settings.json"),
-    { tools: { pi: "/opt/bin/pi", git: "/usr/bin/git" } },
-    { env, homeDirectory: base, systemctl },
-  );
-  assert.equal(result.ok, false);
-  assert.equal(result.preserved, false);
-  assert.equal(fs.existsSync(servicePath), false);
-  assert.equal(fs.existsSync(timerPath), false);
-});
-
-test("systemd removal reload failure still permits cron fallback", (t) => {
-  const base = temporaryDirectory(t);
-  const env = { XDG_CONFIG_HOME: path.join(base, "config") };
-  const unitDirectory = path.join(env.XDG_CONFIG_HOME, "systemd", "user");
-  const servicePath = path.join(unitDirectory, "daily-report-work.service");
-  const timerPath = path.join(unitDirectory, "daily-report-work.timer");
-  fs.mkdirSync(unitDirectory, { recursive: true });
-  fs.writeFileSync(servicePath, "existing service\n");
-  fs.writeFileSync(timerPath, "existing timer\n");
-  const systemctl = path.join(base, "systemctl");
-  writeExecutable(
-    systemctl,
-    `#!${process.execPath}
-const command = process.argv[3];
-if (command === 'show-environment' || command === 'is-enabled' || command === 'is-active' || command === 'disable') process.exit(0);
-if (command === 'daemon-reload') { console.error('reload failed'); process.exit(1); }
-process.exit(2);
-`,
-  );
-  const result = installSystemd(
-    { name: "work", schedule: "*/15 9 * * 1-5" },
-    path.join(base, "settings.json"),
-    { tools: { pi: "/opt/bin/pi", git: "/usr/bin/git" } },
-    { env, homeDirectory: base, systemctl },
-  );
-  assert.equal(result.ok, false);
-  assert.equal(result.preserved, false);
-  assert.equal(fs.existsSync(servicePath), false);
-  assert.equal(fs.existsSync(timerPath), false);
-});
-
-test("systemd update restores enabled active units after enable failure", (t) => {
-  const base = temporaryDirectory(t);
-  const env = { XDG_CONFIG_HOME: path.join(base, "config") };
-  const unitDirectory = path.join(env.XDG_CONFIG_HOME, "systemd", "user");
-  const servicePath = path.join(unitDirectory, "daily-report-work.service");
-  const timerPath = path.join(unitDirectory, "daily-report-work.timer");
-  fs.mkdirSync(unitDirectory, { recursive: true });
-  fs.writeFileSync(servicePath, "previous service\n");
-  fs.writeFileSync(timerPath, "previous timer\n");
-  const systemctl = path.join(base, "systemctl");
-  writeExecutable(
-    systemctl,
-    `#!${process.execPath}
-const args = process.argv.slice(2);
-if (args[1] === 'show-environment' || args[1] === 'is-enabled' || args[1] === 'is-active' || args[1] === 'daemon-reload' || args[1] === 'disable' || args[1] === 'start') process.exit(0);
-if (args[1] === 'enable' && args.includes('--now')) { console.error('simulated enable failure'); process.exit(1); }
-if (args[1] === 'enable') process.exit(0);
-process.exit(2);
-`,
-  );
-  const result = installSystemd(
-    { name: "work", schedule: "30 17 * * 1-5" },
-    path.join(base, "settings.json"),
-    { tools: { pi: "/opt/bin/pi", git: "/usr/bin/git" } },
-    { env, homeDirectory: base, systemctl },
-  );
-  assert.equal(result.ok, false);
-  assert.equal(result.preserved, true);
-  assert.equal(fs.readFileSync(servicePath, "utf8"), "previous service\n");
-  assert.equal(fs.readFileSync(timerPath, "utf8"), "previous timer\n");
-});
-
-test("systemd removal keeps unit files when disable fails", (t) => {
-  const base = temporaryDirectory(t);
-  const env = { XDG_CONFIG_HOME: path.join(base, "config") };
-  const unitDirectory = path.join(env.XDG_CONFIG_HOME, "systemd", "user");
-  const servicePath = path.join(unitDirectory, "daily-report-work.service");
-  const timerPath = path.join(unitDirectory, "daily-report-work.timer");
-  fs.mkdirSync(unitDirectory, { recursive: true });
-  fs.writeFileSync(servicePath, "existing service\n");
-  fs.writeFileSync(timerPath, "existing timer\n");
-  const systemctl = path.join(base, "systemctl");
-  writeExecutable(
-    systemctl,
-    `#!${process.execPath}
-const args = process.argv.slice(2);
-if (args[1] === 'show-environment' || args[1] === 'is-enabled' || args[1] === 'is-active') process.exit(0);
-if (args[1] === 'disable') { console.error('still active'); process.exit(1); }
-process.exit(2);
-`,
-  );
-  assert.throws(
-    () => removeSystemd({ name: "work" }, { env, homeDirectory: base, systemctl }),
-    /still enabled or active/,
-  );
-  assert.equal(fs.existsSync(servicePath), true);
-  assert.equal(fs.existsSync(timerPath), true);
-});
-
-test("crontab read accepts only a known empty-crontab diagnostic", (t) => {
-  const base = temporaryDirectory(t);
-  const denied = path.join(base, "denied-crontab");
-  writeExecutable(denied, "#!/bin/sh\necho 'permission denied' >&2\nexit 1\n");
-  assert.throws(() => readCrontab(denied), /permission denied/);
-
-  const empty = path.join(base, "empty-crontab");
-  writeExecutable(empty, "#!/bin/sh\necho 'no crontab for test' >&2\nexit 1\n");
-  assert.equal(readCrontab(empty), "");
 });
 
 test("local Git collector includes only configured author activity in the window", (t) => {
@@ -659,6 +302,29 @@ test("missing optional CLIs still writes a partial report and exits successfully
   assert.match(report, /> Source coverage: Git available; GitHub and Shortcut unavailable\./);
   const promptEvidence = fs.readFileSync(capturePath, "utf8");
   assert.doesNotMatch(promptEvidence, /reason|warning/i);
+});
+
+test("reconcile tolerates a legacy schedule key during the cutover window", (t) => {
+  const { base, env } = fakeCommandEnvironment(t);
+  const { configPath, vault } = testConfig(base, true, "not a cron expression anymore");
+  const result = spawnSync(
+    process.execPath,
+    [CLI_PATH, "reconcile", "work", "--config", configPath, "--max-days", "1"],
+    { env, encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const date = new Date().toISOString().slice(0, 10);
+  const reportPath = path.join(vault, "daily-reports", date.slice(0, 4), `${date}.md`);
+  assert.equal(reportGenerationStatus(reportPath), "partial");
+  assert.match(result.stdout, /Reconciled 1 eligible date: 1 written, 0 skipped, 1 partial\./);
+});
+
+test("legacy scheduler lifecycle commands are unavailable", () => {
+  for (const command of ["install-schedule", "remove-schedule", "install-cron", "remove-cron"]) {
+    const result = spawnSync(process.execPath, [CLI_PATH, command], { encoding: "utf8" });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, new RegExp(`Unknown command: ${command}`));
+  }
 });
 
 test("disabled optional sources produce a complete report", (t) => {

@@ -1,6 +1,6 @@
 ---
 name: "daily-report"
-description: Generate or reconcile evidence-backed daily work and personal reports from local Git, GitHub, and Shortcut activity. Use when setting up, running, scheduling, or repairing daily reports in an Obsidian vault.
+description: Generate or reconcile evidence-backed daily work and personal reports from local Git, GitHub, and Shortcut activity. Use when setting up, running, or repairing daily reports in an Obsidian vault.
 ---
 
 # Daily Report
@@ -21,14 +21,9 @@ node scripts/daily-report.mjs reconcile work --max-days 7 --refresh-partial
 
 `install-cli` creates `~/.local/bin/daily-report` without replacing an unrelated path. After that, use the shorter `daily-report ...` form. Use `--config <path>` to override configuration discovery. Add `--force` to replace an existing report.
 
-Install or remove the host's preferred scheduler with:
+## Scheduling
 
-```bash
-node scripts/daily-report.mjs install-schedule work
-node scripts/daily-report.mjs remove-schedule work
-```
-
-`install-schedule` prefers launchd on macOS and a systemd user timer on Linux, then falls back to cron when the native scheduler or schedule shape is unavailable. Use `install-cron` and `remove-cron` only when explicitly choosing cron.
+Daily-report owns report generation and reconciliation, not host scheduling. Use the shared `scheduled-jobs` CLI to declare and operate a job whose argv invokes `daily-report reconcile PROFILE --config <absolute-config-path>`. Keep cadence, adapter lifecycle, and scheduler logs in `scheduled-jobs`.
 
 ## Rules
 
