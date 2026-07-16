@@ -116,6 +116,17 @@ function commandList(positionals, options, env) {
   return { command: "list", jobs: declarations.map(declarationSummary) };
 }
 
+function requireAvailableInstallation(installation) {
+  if (installation.installed && installation.health === "unavailable") {
+    throw new SchedulerError(installation.healthReason || "Installed scheduler adapter is unavailable.", {
+      code: "ADAPTER_UNAVAILABLE",
+      exitCode: 4,
+      details: installation,
+    });
+  }
+  return installation;
+}
+
 function commandInspect(command, positionals, options, env, platform, adapterOptions) {
   const id = requireJobId(positionals, command);
   const declaration = declaredJob(id, options.manifestPath, env);
@@ -130,6 +141,7 @@ function commandInspect(command, positionals, options, env, platform, adapterOpt
     ? { ...currentInstallation, definitionDrift: currentInstallation.metadata?.digest !== candidate.digest }
     : currentInstallation;
   if (command === "doctor") {
+    requireAvailableInstallation(installation);
     const unavailableOptionalCommands = Object.entries(candidate.contract.optionalCommands)
       .filter(([, executable]) => executable === null)
       .map(([name]) => name);
@@ -208,7 +220,9 @@ async function executeCommand(command, positionals, options, runtime) {
       }),
     };
   }
-  if (command === "status") return { command, result: installedStatus(id, { env, adapterOptions }) };
+  if (command === "status") {
+    return { command, result: requireAvailableInstallation(installedStatus(id, { env, adapterOptions })) };
+  }
   if (command === "logs") return { command, result: readLog(id, { env, lines: options.lines ?? 200 }) };
   throw new SchedulerUsageError(`Unknown command: ${command}`);
 }
@@ -277,11 +291,12 @@ export async function main(argv = process.argv.slice(2), runtime = {}) {
     process.stdout.write(`${result.stdout}\n`);
     return result.exitCode;
   } catch (error) {
+    const adapterError = new Set(["LAUNCHD_ADAPTER", "SYSTEMD_ADAPTER", "CRON_ADAPTER"]).has(error.code);
     const normalized = error instanceof SchedulerError
       ? error
       : new SchedulerError(error.message || String(error), {
-          code: error.code === "LAUNCHD_ADAPTER" ? "LIFECYCLE" : "INTERNAL",
-          exitCode: error.code === "LAUNCHD_ADAPTER" ? 8 : 1,
+          code: adapterError ? "LIFECYCLE" : "INTERNAL",
+          exitCode: adapterError ? 8 : 1,
           details: error.details,
         });
     const wantsJson = argv.includes("--json");
