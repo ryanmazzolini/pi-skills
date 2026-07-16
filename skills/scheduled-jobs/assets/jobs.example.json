@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "jobs": {
+    "reports:work": {
+      "description": "Reconcile the work report on weekday afternoons",
+      "schedule": "30 17 * * 1-5",
+      "argv": [
+        "node",
+        "/absolute/path/to/report.mjs",
+        "reconcile",
+        "work",
+        "--config",
+        "/absolute/path/to/report-config.json"
+      ],
+      "requiredCommands": [
+        "pi",
+        "git"
+      ],
+      "optionalCommands": [
+        "gh"
+      ],
+      "timeoutSeconds": 1800
+    }
+  }
+}
