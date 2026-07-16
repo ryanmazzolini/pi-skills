@@ -54,7 +54,7 @@ A few things to know up front:
 
 ## Optional tooling
 
-`pi` and Node.js 24 or newer are package-wide base dependencies. Node must be available as `node` on `PATH`; it runs package scripts and the owned intercom broker process. `daily-report` also requires Git; the tools below are optional and only needed for matching skills or report sources.
+`pi` and Node.js 24 or newer are package-wide base dependencies. Node must be available as `node` on `PATH`; it runs package scripts, the owned intercom broker process, and installed scheduled-job snapshots. `daily-report` also requires Git. The shared `scheduled-jobs` CLI uses launchd on macOS, systemd user timers on Linux, or `crontab` as a warned fallback. The tools below are optional and only needed for matching skills or report sources.
 
 | Tool | Used by | Notes |
 |------|---------|-------|
@@ -88,7 +88,8 @@ This README is the map. The family README files have the details.
 | `handoff` | Write a date-stamped `.plans/` handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
 | `agent-coordination` | Select configured lightweight, balanced, or deep model and reasoning routes before delegating agent work | — |
 | `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
-| `daily-report` | Generate and reconcile OKF-compatible activity reports from local Git plus optional GitHub and Shortcut evidence | [OKF v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) |
+| `daily-report` | Generate and reconcile OKF-compatible activity reports from local Git plus optional GitHub and Shortcut evidence; use `scheduled-jobs` for recurring execution | [OKF v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) |
+| `scheduled-jobs` | Declare, inspect, and operate reviewed recurring local jobs through the shared scheduler CLI | [`manifest-v1.md`](./skills/scheduled-jobs/references/manifest-v1.md) |
 | `inbox-wiki` | Triage vault inbox captures into immutable raw sources and durable notes with human approval | — |
 | `vault-cleanup` | Audit and optionally repair vault metadata, links, assets, indexes, and legacy structure without inbox intake | — |
 | `obsidian-vault` | Use the Obsidian CLI for vault-aware note workflows | [Obsidian CLI](https://obsidian.md/help/cli) |
@@ -120,6 +121,14 @@ This README is the map. The family README files have the details.
 |-----------|-------------|
 | `delegate` | Runs task-shaped Pi child sessions asynchronously with bounded result delivery, lifecycle controls, persistent inspection, and review-before-apply temporary worktrees |
 | `editor-links` | Opens assistant file paths, built-in file-tool links, and existing paths in Bash output in Zed via a localhost bridge (Ghostty only opens http links) |
+| `scheduled-jobs` | Adds the human-only `/scheduler` interface for global and exact-current-project job inspection, confirmed lifecycle operations, and logs |
+
+## Command-line tools
+
+| Command | Description |
+|---------|-------------|
+| `daily-report` | Generate or reconcile configured daily reports |
+| `scheduled-jobs` | Inspect exact manifests and perform digest/revision-bound scheduler lifecycle operations without prompting |
 
 ## Contributing
 

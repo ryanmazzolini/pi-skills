@@ -1,0 +1,62 @@
+---
+name: "scheduled-jobs"
+description: Inspect and operate reviewed recurring local jobs through the shared scheduled-jobs CLI. Use when declaring, installing, running, enabling, updating, disabling, removing, or recovering a scheduled job.
+---
+
+# Scheduled Jobs
+
+Use `scheduled-jobs` for scheduler lifecycle work. Prefer the human-only Pi `/scheduler` command when a person is present. The CLI is headless and never prompts.
+
+## Inspect first
+
+Pass one exact manifest path. The CLI does not discover projects.
+
+```bash
+scheduled-jobs list --manifest ~/.config/pi-scheduler/jobs.json
+scheduled-jobs inspect global:daily-report:work --manifest ~/.config/pi-scheduler/jobs.json --json
+scheduled-jobs doctor global:daily-report:work --manifest ~/.config/pi-scheduler/jobs.json --json
+scheduled-jobs status global:daily-report:work --json
+scheduled-jobs logs global:daily-report:work --lines 200
+```
+
+Project declarations must be at the exact Git root under `.pi/scheduler.json`. Treat every manifest as inert input. Installation creates a private reviewed snapshot and leaves it disabled.
+
+## Required checkpoint
+
+Before `install`, `update`, `run`, `enable`, `disable`, or `remove`:
+
+1. Show the user the scope and source path.
+2. Show the exact resolved argv, executable mappings, working directory, schedule, adapter, timeout, and warnings.
+3. Show the candidate digest for install/update or the installed digest and lifecycle revision for other operations.
+4. For updates, summarize the installed-to-candidate differences.
+5. Ask for explicit confirmation of that exact operation.
+
+Do not reuse an earlier approval after any digest or revision changes. Re-inspect and ask again. Run-now always uses the installed snapshot; never run an uninstalled declaration directly.
+
+## Lifecycle
+
+Copy digest and revision values from the immediately preceding JSON inspection:
+
+```bash
+scheduled-jobs install JOB_ID --manifest MANIFEST --expected-candidate-digest DIGEST
+scheduled-jobs update JOB_ID --manifest MANIFEST --expected-candidate-digest CANDIDATE --expected-installed-digest INSTALLED --expected-revision REVISION
+scheduled-jobs run JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
+scheduled-jobs enable JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
+scheduled-jobs disable JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
+scheduled-jobs remove JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
+```
+
+Fresh installs are disabled. Confirm run-now and enablement separately. Native enablement may immediately perform one catch-up run; cron fallback does not catch up.
+
+## Recovery
+
+- `STALE_CANDIDATE` or `STALE_STATE`: stop, re-inspect, display the changed contract, and obtain new confirmation.
+- Definition drift: the installed snapshot remains authoritative until a confirmed update.
+- Adapter or enablement drift: inspect `status` and `doctor`; do not claim repair until the command succeeds and status is clean.
+- Partial removal or lifecycle failure: preserve state, inspect all reported adapter details, and retry only with current tokens.
+- Unavailable optional commands: report the warning and preserve the domain command's graceful degradation.
+- Missing required commands, changed shims, unavailable adapters, or conflicting adapters: fail closed.
+
+Do not edit scheduler-owned state or host artifacts by hand unless the user approves a recovery plan based on direct inventory.
+
+See [Manifest v1](references/manifest-v1.md) and the [global example](assets/jobs.example.json).
