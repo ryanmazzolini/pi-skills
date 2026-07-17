@@ -63,8 +63,8 @@ function runtimeFor(...initialRuns) {
   };
 }
 
-test("pinned status is label-first, UUID-free, and shows live elapsed time", () => {
-  let now = 19_000;
+test("pinned status is label-first, UUID-free, and reports elapsed time", () => {
+  const now = 19_000;
   const activeRun = run("running", new Date(17_000).toISOString(), 2);
   const harness = runtimeFor(activeRun);
   const ui = createDelegateUi(harness.runtime);
@@ -74,9 +74,8 @@ test("pinned status is label-first, UUID-free, and shows live elapsed time", () 
   assert.match(rendered, /Agents · 2 running · 19s/);
   assert.match(rendered, /Reader 1 · Thinking · 19s/);
   assert.match(rendered, /Reader 2 · Thinking · 19s/);
-  assert.match(rendered, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
+  assert.match(rendered, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Reader 1/);
   assert.doesNotMatch(rendered, /run-1|child-1/);
-  now++;
   component.dispose();
 });
 
@@ -92,6 +91,7 @@ test("pinned spinner and elapsed display redraw independently of runtime activit
     { now: () => now, spinnerFrameMs: 20 },
   );
   const before = component.render(100);
+  assert.notEqual(component.animationTimer, undefined);
   now += 60;
   await new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -211,6 +211,26 @@ test("every lifecycle state has explicit text and a non-color icon", () => {
   component.dispose();
 });
 
+test("pinned status never emits embedded terminal lines from multiline failures", () => {
+  const failedRun = run("failed", new Date().toISOString());
+  failedRun.children[0].failure = {
+    message: "No API key found for openai-codex.\n\nUse /login to log in.\n  /opt/pi/docs/providers.md",
+    lastActivity: failedRun.children[0].latestActivity,
+    failedAt: new Date().toISOString(),
+  };
+  const component = createDelegateUi(runtimeFor(failedRun).runtime).createStatus(
+    { requestRender() {} },
+    theme,
+  );
+  const lines = component.render(120);
+
+  assert.equal(component.animationTimer, undefined);
+  assert.equal(lines.every((line) => !/[\r\n]/.test(line)), true);
+  assert.match(lines.join("\n"), /Failed: No API key found for openai-codex\./);
+  assert.doesNotMatch(lines.join("\n"), /Use \/login/);
+  component.dispose();
+});
+
 test("terminal outcomes remain briefly and then clear", () => {
   let now = 10_000;
   const activeRun = run("running", new Date(9_000).toISOString());
@@ -230,6 +250,31 @@ test("terminal outcomes remain briefly and then clear", () => {
   now = 39_999;
   assert.notDeepEqual(component.render(100), []);
   now = 40_001;
+  assert.deepEqual(component.render(100), []);
+  component.dispose();
+});
+
+test("terminal outcomes request one expiry redraw without polling active work", async () => {
+  const completedAt = Date.now();
+  const activeRun = run("running", new Date(completedAt).toISOString());
+  const harness = runtimeFor(activeRun);
+  let renders = 0;
+  const component = createDelegateUi(harness.runtime).createStatus(
+    { requestRender() { renders++; } },
+    theme,
+    { terminalRetentionMs: 20 },
+  );
+  const completedRun = structuredClone(activeRun);
+  completedRun.children[0].state = "completed";
+  completedRun.children[0].result = { kind: "text", value: "Done", completedAt: new Date(completedAt).toISOString() };
+  completedRun.children[0].latestActivity = { kind: "message", summary: "Completed", observedAt: new Date(completedAt).toISOString() };
+  harness.emit(completedRun);
+  const rendersAfterCompletion = renders;
+  assert.equal(component.animationTimer, undefined);
+
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  assert.equal(renders, rendersAfterCompletion + 1);
   assert.deepEqual(component.render(100), []);
   component.dispose();
 });
@@ -262,7 +307,7 @@ test("a new user turn dismisses retained outcomes without hiding active work", (
   component.dispose();
 });
 
-test("pinned status disposes its timer and runtime subscription", async () => {
+test("pinned status disposes its animation timer and runtime subscription", async () => {
   const harness = runtimeFor(run("running", new Date().toISOString()));
   let renders = 0;
   const component = createDelegateUi(harness.runtime).createStatus(
@@ -273,6 +318,7 @@ test("pinned status disposes its timer and runtime subscription", async () => {
   await new Promise((resolve) => setTimeout(resolve, 25));
   assert.ok(renders > 0);
   component.dispose();
+  assert.equal(component.animationTimer, undefined);
   const afterDispose = renders;
   await new Promise((resolve) => setTimeout(resolve, 25));
   assert.equal(renders, afterDispose);

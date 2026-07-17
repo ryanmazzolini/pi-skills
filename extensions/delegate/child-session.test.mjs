@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createChildResourceLoader, createRuntimeTools, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
+import { childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-resources-test-"));
@@ -30,6 +30,17 @@ function fixture(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { agentDir, cwd };
 }
+
+test("child sessions reuse the parent model runtime", () => {
+  const modelRuntime = { getAuth() {} };
+  const modelRegistry = { runtime: modelRuntime };
+
+  assert.equal(childSessionModelRuntime(modelRegistry), modelRuntime);
+  assert.throws(
+    () => childSessionModelRuntime({}),
+    /Parent Pi model runtime is unavailable/,
+  );
+});
 
 test("child resources keep AGENTS.md while excluding ambient resources", async (t) => {
   const { cwd, agentDir } = fixture(t);

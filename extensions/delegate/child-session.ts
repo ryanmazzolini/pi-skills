@@ -31,6 +31,18 @@ export const AVAILABLE_CHILD_TOOLS = ["read", "bash", "edit", "write", "grep", "
 const ATTENTION_TOOL = "delegate_attention";
 const FINAL_TOOL = "delegate_final";
 
+type ChildModelRuntime = NonNullable<CreateAgentSessionOptions["modelRuntime"]>;
+
+export function childSessionModelRuntime(modelRegistry: ExtensionContext["modelRegistry"]): ChildModelRuntime {
+	// Extension contexts expose a compatibility facade, while SDK child sessions
+	// require the canonical runtime that owns refreshed OAuth credentials.
+	const runtime = Reflect.get(modelRegistry, "runtime") as unknown;
+	if (!runtime || typeof runtime !== "object" || typeof Reflect.get(runtime, "getAuth") !== "function") {
+		throw new Error("Parent Pi model runtime is unavailable; delegate requires Pi 0.80.10 or newer");
+	}
+	return runtime as ChildModelRuntime;
+}
+
 const CHILD_GUIDANCE = [
 	"You are a delegated child working for a parent Pi session.",
 	"Complete only the assigned task and return a concise final answer with concrete evidence.",
@@ -310,7 +322,7 @@ async function createChild(
 		cwd,
 		agentDir,
 		model,
-		modelRegistry,
+		modelRuntime: childSessionModelRuntime(modelRegistry),
 		thinkingLevel: child.resolved.reasoning as CreateAgentSessionOptions["thinkingLevel"],
 		tools: [...child.resolved.tools, ...runtimeToolNames],
 		customTools,
