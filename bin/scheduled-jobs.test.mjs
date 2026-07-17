@@ -117,7 +117,6 @@ test("an installed snapshot reconciles daily-report under the fixed scheduler en
         vault,
         gitRoots: [repositories],
         reportDirectory: "daily-reports",
-        schedule: "legacy value ignored during cutover",
         github: { enabled: true },
         shortcut: { enabled: true },
       },
