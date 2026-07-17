@@ -21,6 +21,7 @@ import {
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_FRAME_MS = 200;
+const PINNED_SPINNER_FRAME_MS = 80; // Match Pi's built-in Loader.
 const TERMINAL_RETENTION_MS = 30_000;
 const STALE_ACTIVITY_MS = 10_000;
 const MAX_PINNED_ROWS = 6;
@@ -158,6 +159,10 @@ function pinnedPriority(state: DelegatedChild["state"]): number {
 	return 6;
 }
 
+function firstDisplayLine(value: string): string {
+	return value.split(/[\r\n]+/).map((line) => line.trim()).find(Boolean) ?? "";
+}
+
 function pinnedStateSummary(child: DelegatedChild, now: number, staleAfterMs: number): string {
 	if (child.state === "needs_attention") {
 		const kind = child.attention?.kind ?? "attention";
@@ -206,7 +211,8 @@ export class PinnedAgentStatusComponent implements Component {
 	private readonly terminalUntil = new Map<string, number>();
 	private readonly dismissedTerminal = new Set<string>();
 	private readonly unsubscribe: () => void;
-	private readonly timer: ReturnType<typeof setInterval>;
+	private animationTimer: ReturnType<typeof setInterval> | undefined;
+	private expiryTimer: ReturnType<typeof setTimeout> | undefined;
 	private disposed = false;
 
 	constructor(
@@ -219,7 +225,7 @@ export class PinnedAgentStatusComponent implements Component {
 		this.tui = tui;
 		this.theme = theme;
 		this.now = options.now ?? Date.now;
-		this.spinnerFrameMs = options.spinnerFrameMs ?? SPINNER_FRAME_MS;
+		this.spinnerFrameMs = options.spinnerFrameMs ?? PINNED_SPINNER_FRAME_MS;
 		this.terminalRetentionMs = options.terminalRetentionMs ?? TERMINAL_RETENTION_MS;
 		this.staleAfterMs = options.staleAfterMs ?? STALE_ACTIVITY_MS;
 		this.maxRows = options.maxRows ?? MAX_PINNED_ROWS;
@@ -227,19 +233,12 @@ export class PinnedAgentStatusComponent implements Component {
 		for (const run of runtime.list()) this.trackTerminalChildren(run, false);
 		this.unsubscribe = runtime.subscribe((run) => {
 			this.trackTerminalChildren(run, true);
+			this.syncAnimationTimer();
+			this.scheduleTerminalExpiry();
 			this.tui.requestRender();
 		});
-		this.timer = setInterval(() => {
-			if (this.disposed) return;
-			const now = this.now();
-			const nextTerminalExpiry = this.nextTerminalExpiry();
-			const rows = this.visibleRows(now);
-			if (rows.some(({ child }) => child.state === "queued" || child.state === "starting" || child.state === "running")
-				|| (nextTerminalExpiry !== undefined && nextTerminalExpiry <= now)) {
-				this.tui.requestRender();
-			}
-		}, this.spinnerFrameMs);
-		this.timer.unref?.();
+		this.syncAnimationTimer();
+		this.scheduleTerminalExpiry();
 	}
 
 	render(width: number): string[] {
@@ -263,10 +262,10 @@ export class PinnedAgentStatusComponent implements Component {
 		const lines = [header];
 		for (const { run, child } of visible) {
 			const icon = stateIcon(child.state, this.theme, true, now, this.spinnerFrameMs);
-			const label = this.theme.fg("accent", child.label);
+			const label = this.theme.fg("accent", firstDisplayLine(child.label));
 			const detail = this.theme.fg(
 				child.state === "failed" ? "error" : child.state === "needs_attention" || child.state === "interrupted" ? "warning" : "dim",
-				`${pinnedStateSummary(child, now, this.staleAfterMs)} · ${compactDuration(this.elapsedFor(run, child, now))}`,
+				`${firstDisplayLine(pinnedStateSummary(child, now, this.staleAfterMs))} · ${compactDuration(this.elapsedFor(run, child, now))}`,
 			);
 			lines.push(`${icon} ${label} · ${detail}`);
 		}
@@ -282,13 +281,16 @@ export class PinnedAgentStatusComponent implements Component {
 		if (this.terminalUntil.size === 0) return;
 		for (const childId of this.terminalUntil.keys()) this.dismissedTerminal.add(childId);
 		this.terminalUntil.clear();
+		this.scheduleTerminalExpiry();
 		this.tui.requestRender();
 	}
 
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		clearInterval(this.timer);
+		if (this.animationTimer) clearInterval(this.animationTimer);
+		this.animationTimer = undefined;
+		if (this.expiryTimer) clearTimeout(this.expiryTimer);
 		this.unsubscribe();
 	}
 
@@ -323,6 +325,37 @@ export class PinnedAgentStatusComponent implements Component {
 		}
 	}
 
+	private syncAnimationTimer(): void {
+		const active = this.runtime.list().some((run) => run.children.some((child) =>
+			child.state === "queued" || child.state === "starting" || child.state === "running",
+		));
+		if (!active || this.disposed) {
+			if (this.animationTimer) clearInterval(this.animationTimer);
+			this.animationTimer = undefined;
+			return;
+		}
+		if (this.animationTimer) return;
+		this.animationTimer = setInterval(() => {
+			if (!this.disposed) this.tui.requestRender();
+		}, this.spinnerFrameMs);
+		this.animationTimer.unref?.();
+	}
+
+	private scheduleTerminalExpiry(): void {
+		if (this.expiryTimer) clearTimeout(this.expiryTimer);
+		this.expiryTimer = undefined;
+		if (this.disposed || this.terminalUntil.size === 0) return;
+		const nextExpiry = Math.min(...this.terminalUntil.values());
+		this.expiryTimer = setTimeout(() => {
+			this.expiryTimer = undefined;
+			if (this.disposed) return;
+			this.visibleRows(this.now());
+			this.tui.requestRender();
+			this.scheduleTerminalExpiry();
+		}, Math.max(0, nextExpiry - this.now()));
+		this.expiryTimer.unref?.();
+	}
+
 	private elapsedFor(run: DelegationRun, child: DelegatedChild, now: number): number {
 		const startedAt = Date.parse(run.createdAt);
 		const paused = child.state === "needs_attention" || child.state === "interrupted";
@@ -333,12 +366,6 @@ export class PinnedAgentStatusComponent implements Component {
 				? pausedAt
 				: now;
 		return Math.max(0, end - (Number.isFinite(startedAt) ? startedAt : end));
-	}
-
-	private nextTerminalExpiry(): number | undefined {
-		let next: number | undefined;
-		for (const value of this.terminalUntil.values()) next = next === undefined ? value : Math.min(next, value);
-		return next;
 	}
 }
 
