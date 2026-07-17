@@ -33,7 +33,7 @@ function writeExecutable(filePath, content) {
   fs.writeFileSync(filePath, content, { mode: 0o755 });
 }
 
-function testConfig(base, optionalEnabled = true, legacySchedule) {
+function testConfig(base, optionalEnabled = true) {
   const vault = path.join(base, "vault");
   const gitRoot = path.join(base, "repos");
   fs.mkdirSync(vault, { recursive: true });
@@ -49,7 +49,6 @@ function testConfig(base, optionalEnabled = true, legacySchedule) {
           vault,
           gitRoots: [gitRoot],
           reportDirectory: "daily-reports",
-          ...(legacySchedule === undefined ? {} : { schedule: legacySchedule }),
           github: { enabled: optionalEnabled },
           shortcut: { enabled: optionalEnabled },
         },
@@ -304,19 +303,20 @@ test("missing optional CLIs still writes a partial report and exits successfully
   assert.doesNotMatch(promptEvidence, /reason|warning/i);
 });
 
-test("reconcile tolerates a legacy schedule key during the cutover window", (t) => {
-  const { base, env } = fakeCommandEnvironment(t);
-  const { configPath, vault } = testConfig(base, true, "not a cron expression anymore");
+test("removed legacy schedule fields fail with shared-scheduler guidance", (t) => {
+  const base = temporaryDirectory(t);
+  const { configPath } = testConfig(base, false);
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  config.profiles.work.schedule = "30 17 * * 1-5";
+  fs.writeFileSync(configPath, JSON.stringify(config));
+
   const result = spawnSync(
     process.execPath,
-    [CLI_PATH, "reconcile", "work", "--config", configPath, "--max-days", "1"],
-    { env, encoding: "utf8" },
+    [CLI_PATH, "doctor", "work", "--config", configPath],
+    { encoding: "utf8" },
   );
-  assert.equal(result.status, 0, result.stderr);
-  const date = new Date().toISOString().slice(0, 10);
-  const reportPath = path.join(vault, "daily-reports", date.slice(0, 4), `${date}.md`);
-  assert.equal(reportGenerationStatus(reportPath), "partial");
-  assert.match(result.stdout, /Reconciled 1 eligible date: 1 written, 0 skipped, 1 partial\./);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /schedule is no longer supported; declare cadence with scheduled-jobs/);
 });
 
 test("legacy scheduler lifecycle commands are unavailable", () => {

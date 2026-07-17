@@ -285,8 +285,9 @@ export function resolveProfile(config, profileName) {
     ),
   };
 
-  // Temporary Slice E cutover compatibility: rawProfile.schedule is intentionally
-  // neither validated nor returned. Slice F removes this tolerance and the active key.
+  if (Object.hasOwn(rawProfile, "schedule")) {
+    throw new DailyReportError(`${profileName}.schedule is no longer supported; declare cadence with scheduled-jobs.`);
+  }
 
   return {
     name: profileName,
