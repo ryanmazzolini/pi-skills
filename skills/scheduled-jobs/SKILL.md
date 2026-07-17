@@ -54,8 +54,10 @@ Fresh installs are disabled. Confirm run-now and enablement separately. Native e
 - Definition drift: the installed snapshot remains authoritative until a confirmed update.
 - Adapter or enablement drift: inspect `status` and `doctor`; do not claim repair until the command succeeds and status is clean.
 - Partial removal or lifecycle failure: preserve state, inspect all reported adapter details, and retry only with current tokens.
+- Safe package-manager retarget at an installed stable command path: revalidation succeeds without a lifecycle update.
+- Structurally valid disabled snapshot with an unhealthy command binding: a confirmed exact-token update may replace it; adapter drift, changed shims, unsafe scheduler runtime, and enabled unhealthy snapshots remain blocked.
 - Unavailable optional commands: report the warning and preserve the domain command's graceful degradation.
-- Missing required commands, changed shims, unavailable adapters, or conflicting adapters: fail closed.
+- Missing or unsafe command targets, changed shim bindings, unavailable adapters, or conflicting adapters: fail closed.
 
 Do not edit scheduler-owned state or host artifacts by hand unless the user approves a recovery plan based on direct inventory.
 
