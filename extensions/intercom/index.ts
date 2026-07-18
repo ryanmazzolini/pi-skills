@@ -382,17 +382,17 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "intercom",
 		label: "Intercom",
-		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; list discovers peers and full broker IDs; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports connectivity and startup diagnostics.",
+		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; list discovers peers and full broker IDs; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current session's broker ID, connectivity, and startup diagnostics.",
 		promptSnippet: "List, message, ask, or explicitly reply to other local Pi sessions",
 		promptGuidelines: [
 			"intercom send, ask, and reply return receipts immediately and deliver terminal results automatically; continue independent work instead of polling operations.",
+			"Use intercom status for the current session's broker ID and intercom list to discover other sessions.",
 			"Use intercom ask when a peer reply is useful but not immediately blocking. Use pending and an exact replyTo when more than one inbound ask is waiting; use to plus replyTo if a displayed ask has expired locally.",
 			"Model-visible intercom messages, batches, lists, pending results, and ask replies are projected below a 48 KiB UTF-8 cap; truncation is explicit and authoritative broker IDs remain available.",
 			"Intercom broker health probing intentionally checks socket acceptance without a noisy legacy registration. If an incompatible listener accepts, intercom status surfaces the connection error and refuses takeover rather than risking replacement of a live broker.",
 		],
 		parameters: IntercomParams,
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-			context = ctx;
+		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 			try {
 				validateIntercomAction(params);
 				if (params.action === "status" && !runtime) {
