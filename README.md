@@ -46,7 +46,7 @@ Checks `SKILL.md` frontmatter, pi skill-loader diagnostics, and Claude marketpla
 This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.
 
 A few things to know up front:
-- Ship is the canonical durable-work router. It fires on its own for multi-session work and advances vault context → `align` → `slice-plan` → confirmed ready work → review → a high-level vault distillate.
+- Ship is the canonical durable-work router. It fires on its own for multi-session work and advances vault context → `align` → `slice-plan` → confirmed ready work → review → a high-level vault distillate. Invoke `ship-coach` explicitly to follow the same workflow through guided human practice and feedback.
 - Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
 - Claude-exposed skill families are grouped under `skills/<plugin>/<skill>`; standalone skills stay under `skills/<skill>`.
 - Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
@@ -71,7 +71,7 @@ This README is the map. The family README files have the details.
 
 | Family | Overview | Docs | References |
 |--------|----------|------|------------|
-| `ship` | Durable-work family: `align` requirements and shape, build a dependency-shaped plan, then advance through confirmed checkpoints with `ship` | [`skills/ship/ship/SKILL.md`](./skills/ship/ship/SKILL.md) | [`implementation-wave.md`](./skills/ship/ship/references/implementation-wave.md), [`review-gate.md`](./skills/ship/ship/references/review-gate.md), [`review-artifacts.md`](./skills/ship/ship/references/review-artifacts.md) |
+| `ship` | Durable-work family: `align` requirements and shape, build a dependency-shaped plan, advance through confirmed checkpoints with `ship`, or explicitly add guided human practice with `ship-coach` | [`ship`](./skills/ship/ship/SKILL.md), [`ship-coach`](./skills/ship/ship-coach/SKILL.md) | [`implementation-wave.md`](./skills/ship/ship/references/implementation-wave.md), [`review-gate.md`](./skills/ship/ship/references/review-gate.md), [`review-artifacts.md`](./skills/ship/ship/references/review-artifacts.md) |
 
 ## Standalone skills
 
@@ -101,6 +101,7 @@ This README is the map. The family README files have the details.
 | `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
 | `shape-first` | Human-in-the-loop coding loop for domain shapes, boundaries, TODOs, implementation, and drift checks | [ThePrimeagen](https://youtu.be/Aie0nYktsNA) |
 | `diagnosing-bugs` | Fast path for localized failures and a tight red-capable loop for hard, flaky, environment-specific, or performance bugs | [mattpocock diagnosing-bugs](https://github.com/mattpocock/skills/tree/main/skills/engineering/diagnosing-bugs) |
+| `ship-coach` | User-invoked Ship overlay for guided production practice, feedback, and fading support | — |
 | `align` | One-question alignment for non-functional requirements, functional behavior, and high-level solution shape; preserves adaptive `alignment.md` context and durable decisions | [mattpocock grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
 | `slice-plan` | Turn approved alignment into dependency-shaped `plan.md` artifacts of cold-pickup vertical slices | — |
 | `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
