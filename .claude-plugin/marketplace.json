@@ -12,6 +12,7 @@
       "strict": false,
       "skills": [
         "./ship",
+        "./ship-coach",
         "./align",
         "./slice-plan"
       ]
