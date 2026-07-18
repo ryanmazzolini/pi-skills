@@ -38,6 +38,7 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	assert.equal(tools.some((tool) => tool.name === "contact_supervisor"), false);
 	assert.match(tools[0].description, /routed to the peer socket/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /exact replyTo/);
+	assert.match(tools[0].promptGuidelines.join("\n"), /status for the current session's broker ID/);
 	assert.equal(events.some((event) => event.name === "session_start"), true);
 	assert.equal(events.some((event) => event.name === "session_shutdown"), true);
 });
@@ -310,7 +311,9 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	};
 	await handlers.get("session_start")({}, ctx);
 	t.after(() => handlers.get("session_shutdown")());
-	const execute = (params) => tools[0].execute("call", params, undefined, undefined, ctx);
+	// Pi creates a fresh ExtensionContext for each tool execution; exercising that contract
+	// prevents a tool call from poisoning later asynchronous inbound delivery.
+	const execute = (params) => tools[0].execute("call", params, undefined, undefined, { ...ctx });
 	await waitFor(async () => (await execute({ action: "status" })).details.connected, 2_000);
 	const ownedId = (await peer.listSessions()).find((item) => item.name === "caller").id;
 
@@ -348,6 +351,8 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	for (const audit of audits) assert.ok(Buffer.byteLength(JSON.stringify(audit.data)) <= INTERCOM_PROJECTION_MAX_BYTES);
 
 	await peer.send(ownedId, { messageId: "", text: "pending-secret".repeat(1_000), expectsReply: true });
+	const inbound = await waitFor(() => delivered.find((call) => call[0].customType === "intercom_message"), 2_000);
+	assert.match(inbound[0].content, /pending-secret/);
 	const pending = await waitFor(async () => {
 		const result = await execute({ action: "pending" });
 		return result.details.count === 1 ? result : undefined;
