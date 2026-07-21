@@ -5,64 +5,34 @@ description: "Research technical questions and decisions. Use when the user asks
 
 # Research
 
-Support a decision with the smallest evidence pass that can justify or change it.
+Find enough evidence to support a decision, then stop.
 
-## 1. Define the decision
+## Understand the decision
 
-Inspect the local code and documentation that constrain the question. Identify the decision, the user's constraints, and whether the result belongs in the conversation or a file.
+Read the local code and documentation first. Identify the decision, its constraints, and where the result should go: the conversation, a file, or a public destination.
 
-When the request names a GitHub issue such as `gh#123` or `#123`, use `gh issue view` when the CLI is available. Otherwise work from the topic and local context.
+When the request names a GitHub issue such as `gh#123` or `#123`, look it up with `gh issue view` when available. Otherwise work from the stated topic and local context.
 
-Ask only when a missing answer would change the research or its destination.
+Ask only when an answer would change the research or its destination. Begin when the decision, constraints, and destination are clear.
 
-Complete when the decision, constraints, and destination are clear.
+## Gather enough evidence
 
-## 2. Gather the evidence
+Start with local evidence. If external evidence is needed, make one broad pass of 2–4 different queries, then read the strongest current primary sources. Search again only for a fact that could change the decision.
 
-Start with local evidence. When external evidence is needed, make one broad pass of 2–4 varied searches, then read the strongest primary sources. Search again only for a decision-critical fact that remains missing.
+Consider only options that meet the user's constraints. Keep raw notes, source inventories, and rejected paths out of anything written for the reader.
 
-Prefer current primary sources. Compare only options that satisfy the user's constraints. Keep raw notes, source inventories, and discarded paths out of the reader-facing result.
+Stop when the evidence supports a recommendation, important gaps are clear, and more searching is unlikely to change the decision. Do not reopen research after the user chooses a direction unless new evidence reveals a blocker.
 
-Stop when the recommendation is supported, material gaps are named, and another search is unlikely to change the decision. After the user approves a direction, resume research only when new evidence creates a blocker.
+## Explain the decision
 
-## 3. Write for the reader
+Put the recommendation and its practical effect first. Then give the evidence that matters, important trade-offs or unknowns, and any viable alternative a reasonable reader might choose. Cite the local or primary sources behind important claims.
 
-Lead with the recommendation. Use only the sections the reader needs:
+Choose the form that best serves the decision: prose for reasoning, bullets for choices or actions, and a table only when it makes a comparison clearer. Add headings, background, diagrams, or a next step only when they help the reader act. Do not add empty sections or follow a report template for its own sake.
 
-```markdown
-# {Topic}
+Finish when the reader can act without reading the sources and can see every important uncertainty.
 
-## Recommendation
+## Deliver the result
 
-[The recommended decision and its practical effect.]
-
-## Why
-
-[The evidence and constraints that support it.]
-
-## Important trade-offs and unknowns
-
-[Material costs, risks, and unresolved facts.]
-
-## Viable alternatives
-
-[Include only when another option could reasonably be chosen.]
-
-## Next action
-
-[The smallest useful next step.]
-
-## Sources
-
-- [Primary source](url) — why it matters
-```
-
-Add background explanation, diagrams, or comparison tables only when they help the reader understand or make the decision.
-
-Complete when the reader can act without reading the sources and every material uncertainty is visible.
-
-## 4. Deliver the result
-
-- For inline output, present the result in the conversation.
+- For inline output, put the result in the conversation.
 - For a file, write to the agreed path.
-- Before publishing to a GitHub issue or another public surface, show the destination and proposed body. Confirm publication and whether AI attribution is wanted.
+- Before posting to a GitHub issue or any other public destination, show the destination and proposed body. Confirm publication and ask whether AI attribution is wanted.

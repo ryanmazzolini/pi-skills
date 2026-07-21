@@ -1,137 +1,39 @@
 ---
 name: "simplify-codebase-architecture"
-description:
-  Find refactor opportunities that make code semantically smaller — delete shallow abstraction,
-  merge coupled code, deepen modules. Use when improving or simplifying architecture, questioning
-  abstractions, or reducing mock-heavy tests.
+description: "Find refactors that remove repeated decisions and needless layers. Use when simplifying code structure, questioning an abstraction, joining code that changes together, giving one module ownership of a workflow, or reducing mock-heavy tests."
 ---
 
 # Simplify Codebase Architecture
 
-Make the program simpler to understand and change. The goal is not more layers, more interfaces, or
-more "clean" shapes. The goal is fewer concepts a maintainer must hold in their head while preserving
-the behavior the product needs.
+Make the code easier to understand and change by removing knowledge that several places must carry. Moving files or adding layers is not simplification by itself.
 
-A refactor makes code semantically smaller when fewer places need to know the same rule, invariant,
-ordering constraint, lifecycle decision, or error-handling behavior.
+A useful module hides decisions callers would otherwise repeat. An abstraction is too thin when using it requires nearly as much knowledge as its implementation. Add a name only when it captures behavior already present in the code.
 
-Read [LANGUAGE.md](LANGUAGE.md) for vocabulary. Read [REFERENCE.md](REFERENCE.md) when judging
-whether an abstraction pays rent, classifying dependencies, or drafting a refactor note.
+## Explore
 
-## Principles
+Read the affected code, tests, nearby documentation, and relevant recent history. Follow evidence, not a preferred pattern. Look for repeated rules, ordering, error handling, ownership, or coordinated changes; pass-through wrappers; behavior split so no place owns it; helpers extracted only for test access while the workflow remains untested; and performance or operational limits hidden by a layer.
 
-- Prefer evidence-led simplification over pattern-led redesign.
-- Prefer deleting, inlining, or merging proven complexity before adding a new seam.
-- Accept some duplication while the shape is still unclear. Compress only after repeated knowledge is
-  visible.
-- Add new concepts or nomenclature only when the name lets maintainers stop carrying concrete
-  details in their heads. A good name compresses existing behavior; it does not invent a category the
-  code has not earned.
-- Prefer tests that exercise stable behavior through the module interface over tests that mock
-  internal choreography.
-- Stop if the best answer is "do nothing yet." Not every rough edge deserves architecture work.
-- Stop and confirm with the user before changing production code, tests, module structure, public
-  interfaces, configuration, or durable docs.
+In a broad or unfamiliar area, inspect a few representative paths first. Expand only when they show the same pressure. A pattern usually needs three examples; two high-risk call sites can be enough. Stop when each candidate you plan to present has file paths and a clear statement of the knowledge those places repeat. If the evidence is weak, recommend waiting.
 
-## Process
+## Classify and present candidates
 
-### 1. Explore for pressure
+Choose the smallest move that removes the repeated knowledge:
 
-Read the code, tests, nearby docs, and recent change history when useful. Let the investigation be
-led by places where understanding or changing the code requires unnecessary work.
+- **Delete** useless indirection or behavior-free tests.
+- **Inline** an abstraction that costs callers more than it hides.
+- **Merge** pieces that own one behavior and change together.
+- **Deepen** a module so a small interface owns a real workflow.
+- **Wait** when too few examples show the right shape.
+- **Add a seam** only for real variation, a required boundary, or a realistic local substitute. Read [REFERENCE.md](REFERENCE.md) before proposing one or choosing an unusual dependency or testing strategy.
 
-Look for evidence such as:
+Present a short, ranked list of the strongest candidates. For each, give the evidence, proposed move, what it removes, main risk, and a reversible first step. Ask which one the user wants to explore. Do not design an interface before the user chooses.
 
-- the same decision, invariant, error handling, or ordering rule repeated across call sites
-- concepts split across many files where no file owns the whole behavior
-- wrappers whose interface is nearly as complicated as their implementation
-- tests that mock internal choreography instead of verifying user-visible outcomes
-- pure functions extracted mainly for test access while bugs live in orchestration
-- changes that require coordinated edits across several modules that always move together
-- abstractions named after patterns rather than domain behavior
-- performance or operational constraints hidden by abstraction: hot paths, data volume, allocation,
-  latency, retries, resource ownership, concurrency, or failure modes
+## Design the chosen move
 
-For broad or unfamiliar codebases, sample a few representative paths first; only expand the search if
-the evidence points to repeated pressure. Exploration is done when each candidate cluster has
-concrete code evidence attached — file paths and the repeated knowledge they share — not a hunch.
+State the behavior to own, the knowledge callers should lose, the constraints and migration risk, and the stable behavior the tests should cover. Read [REFERENCE.md](REFERENCE.md) if the dependencies or tests need its guidance.
 
-### 2. Classify what the code wants
+For a clear delete, inline, or merge, give the direct design. Offer two or three designs only when their trade-offs are real. For each design, describe the interface, errors, side effects, and non-obvious rules; what callers no longer need to know; the dependency and test approach; and failure modes. Show a short caller example when the interface changes.
 
-For each suspicious cluster, decide which move would make the code semantically smaller:
+Recommend one path. Say why it fits this codebase, what to delete or merge first, which stable behavior tests replace old internal tests, and the smallest reversible first step.
 
-- **Delete**: remove pass-through modules, indirection, or tests that add no behavior.
-- **Inline**: move code back to the caller when the abstraction is thinner than the call-site burden.
-- **Merge**: combine tightly coupled pieces behind one module when callers repeat its decisions.
-- **Deepen**: create or reshape a module so a small interface hides a real workflow.
-- **Wait**: leave duplication alone when there are not enough examples to see the right shape.
-- **Seam**: introduce an adapter only for genuine variability, cross-process boundaries, external
-  systems, or realistic local substitutes.
-
-Use the dependency categories in [REFERENCE.md](REFERENCE.md) before proposing seams or adapters.
-
-### 3. Present candidates
-
-Present a short numbered list of the highest-value opportunities. Write each candidate as a concise
-review note, not boilerplate. Make the code evidence, simplifying move, expected deletion or
-reduction, risk, and reversible first step easy to see. Use bullets only where they improve scanning.
-
-Do not propose a final interface yet. Ask:
-
-```text
-Which of these would you like to explore?
-```
-
-### 4. Design the chosen move
-
-After the user picks a candidate, frame the problem before designing:
-
-- behavior the module should own
-- knowledge callers should stop needing
-- dependencies and their category from [REFERENCE.md](REFERENCE.md)
-- constraints that make the straightforward solution hard
-- migration risk and what can be done incrementally
-
-When the tradeoff is real, produce two or three meaningfully different designs, not a large menu. For
-an obvious delete, inline, or merge, say so and keep it direct.
-
-Useful design angles:
-
-- **Direct module**: merge behavior with minimal new structure.
-- **Deep workflow**: expose one small entry point that owns a full sequence of decisions.
-- **Explicit seam**: use only when a dependency boundary or real variability demands it.
-
-For each design include:
-
-1. interface contract, including non-obvious invariants and errors
-2. short caller example
-3. what callers no longer need to know
-4. dependency and testing strategy
-5. trade-offs and failure modes
-
-### 5. Recommend one path
-
-Give a strong recommendation. Prefer the smallest change that removes the most repeated knowledge.
-
-Include:
-
-- which design to choose
-- why it beats the alternatives in this codebase
-- what to delete or merge first
-- what tests should replace old tests
-- a reversible first step
-
-Ask whether the user wants an implementation plan or local architecture note before writing durable
-docs or changing code.
-
-### 6. Optional architecture note
-
-If the user agrees, draft a concise local note using the template in [REFERENCE.md](REFERENCE.md).
-Prefer a project-appropriate planning location such as:
-
-```text
-.plans/YYYY-MM-DD-[slug]-simplification-note/simplification-note.md
-```
-
-Keep the note durable: describe ownership, behavior, and migration strategy more than fragile file
-paths.
+Ask whether the user wants an implementation plan or a local architecture note. Wait for confirmation before changing production code, tests, interfaces, configuration, or durable documentation. Write a note only if the user chooses one, using the template in [REFERENCE.md](REFERENCE.md).
