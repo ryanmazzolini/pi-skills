@@ -1,106 +1,86 @@
 ---
 name: "shape-first"
-description: "Use for human-in-the-loop non-trivial code changes: confirm the UX/DX flow, then model domain shapes and an idiomatic boundary before implementing."
+description: "Shape a non-trivial code change with human checkpoints before implementation. Use when it is unsafe to jump straight from the request to edits."
 ---
 
 # Shape First
 
-Use when a code change is too big to safely jump straight into edits.
+A **shape** is the data this change needs and the rules that data must follow, written in the repository's usual form. A **boundary** is the smallest normal code entry point callers use while the implementation stays hidden.
 
-This is a checkpoint loop:
+Work in this order:
 
 ```text
 discover → experience → shapes → boundary → TODOs → code → drift check
 ```
 
-After each phase, show the result, recommend the next move, and wait for the user.
+At each checkpoint, show only what the user needs to confirm, recommend one next move, and wait. Start the next step after confirmation. Reuse confirmed work unless new evidence conflicts with it. If the work uncovers scope outside confirmed Now, stop for a scope decision.
 
 ## Discover
 
-Read the code path touched by the change.
+Inspect the affected code, tests, documentation, and existing alignment. Identify patterns to follow, domain names already in use, and constraints that affect the change.
 
-Produce:
-
-- files and patterns to follow
-- existing domain names already used
-- constraints that affect the design
-
-Done when you can say where the change should probably live and what existing pattern it should follow.
+Done when the likely home for the change and the existing pattern it should follow are clear.
 
 ## Experience
 
-Reuse the confirmed alignment flow when one exists; do not reopen it merely because implementation is starting. If the change preserves every user- and caller-facing interface, state what experience must remain unchanged and continue to Shapes. Otherwise, describe one concrete UX/DX walkthrough before modeling data or APIs.
+Reuse a walkthrough already confirmed during alignment. Reopen only the part contradicted by new evidence. If every user- and caller-facing interaction stays the same, state what must remain unchanged.
 
-Produce:
+Otherwise, describe one Now walkthrough in user or caller language:
 
-- the person or caller and desired outcome
-- the entry point and smallest happy path
-- choices, feedback, waiting, and completion
-- how they leave, resume, retry, or recover
-- what changes from the current experience
+- who starts, where, and for what outcome
+- the smallest successful path, including choices, feedback, waiting, and completion
+- how they leave, resume, retry, and recover
+- what differs from today's experience
 
-For UI, say what the person sees and can do. For an API, CLI, event, or library, say what the caller sends, receives, retries, and handles. Use user or caller language rather than proposed type names or internal status values.
+For UI work, describe what the person sees and can do. For an API, CLI, event, or library, describe what the caller sends, receives, retries, and handles. Leave proposed types, schemas, and internal statuses for later.
 
-Done when the user can recognize and confirm the complete Now flow, or when preserving the existing experience is explicit.
+Done when the user confirms the complete Now flow or the unchanged experience.
 
 ## Shapes
 
-Turn the approved experience into the smallest domain model needed for this change.
+Model only the data and rules needed for the approved experience. Use existing domain language and the repository's normal types, records, states, events, schemas, props, fixtures, or similar structures.
 
-Produce:
+Show:
 
-- domain nouns involved
-- fields, values, states, or lifecycle
-- rules or invariants that must hold
-- where each shape comes from or is stored
-- one concrete example when useful
+- domain nouns and required fields or values
+- states, lifecycle, and rules that must remain true
+- where the data comes from or is stored
+- which experience step each shape supports
+- one ordinary example when it makes a rule clearer
 
-Use the codebase's normal form: types, structs, classes, schemas, records, props, states, events, plain objects, or test data.
-
-Done when the user can see what data exists, what can change, what must stay true, and which experience step each shape supports.
+Done when the user can see what exists, what may change, what must remain true, and why each shape is needed now.
 
 ## Boundary
 
-Choose the smallest normal code boundary for this repo.
+Choose the smallest repo-native entry point through which a caller can complete the approved experience. Use domain names. State its inputs, outputs, side effects, errors, location, and why it is enough.
 
-Produce:
+When creating or changing a module boundary or public API, apply [`design-an-interface`](../design-an-interface/SKILL.md) before recommending one option. Prefer existing patterns. Add an abstraction only when the current change requires it and simpler repo-native options do not work.
 
-- the function, method, class, module export, route, component props, service object, or similar surface
-- inputs, outputs, side effects, and errors
-- where it should live
-- why this boundary is enough
-
-Use domain names. Do not invent extra abstraction or a language-level interface unless that is already the repo's idiom.
-
-Done when a caller can complete the approved flow without knowing the change's internals.
+Done when callers can complete the flow without knowing the implementation and every part of the boundary traces to a current need.
 
 ## TODOs
 
-Turn the approved shapes and boundary into an ordered checklist.
+Turn the approved shapes and boundary into an ordered checklist. Each TODO names the file or code surface it changes and an observable completion signal, such as caller behavior, a test, or a repository check.
 
-Each TODO should name the file or surface it changes and have a visible completion signal.
-
-Done when every approved shape rule and boundary behavior is covered by a TODO, or intentionally left out.
+Done when every approved shape requirement and boundary behavior is covered or explicitly left out.
 
 ## Code
 
-Before editing, apply `simplest-sufficient-change` to the approved TODOs. If the first sufficient option changes the approved contract, return to Boundary.
+Before editing, apply [`simplest-sufficient-change`](../simplest-sufficient-change/SKILL.md) to the approved TODOs. If the simplest sufficient option changes the approved experience, shapes, or boundary, return to that checkpoint.
 
-Implement the approved TODOs in order. Keep edits narrow. Run the relevant check.
+Implement the confirmed TODOs in order. Keep edits narrow and run the repository's relevant checks. Report whether they passed and name every skipped check with its reason.
 
-Done when the TODOs are complete, the check has run, and any skipped check has a reason.
+Done when every TODO's completion signal is met and the checks pass, or a concrete blocker is reported.
 
 ## Drift check
 
-Compare the code to the approved shapes, boundary, and TODOs.
+Compare the implementation with the approved experience, shapes, boundary, and TODOs:
 
-Classify drift:
+- **no drift:** recommend finishing
+- **TODO drift:** return to TODOs, update and confirm them, then resume Code
+- **boundary drift:** return to Boundary
+- **shape drift:** return to Shapes
+- **experience drift:** return to Experience
+- **scope drift:** stop and ask whether the added scope belongs in Now
 
-- no drift: finish
-- TODO drift: update TODOs and continue
-- boundary drift: return to Boundary
-- shape drift: return to Shapes
-- experience drift: return to Experience
-- scope drift: stop and ask
-
-Recommend one next move and wait for the user.
+Recommend one return path or finish, then wait for the user.

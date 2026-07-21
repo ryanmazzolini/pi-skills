@@ -6,151 +6,45 @@ license: "MIT; adapted from mattpocock/skills"
 
 # Diagnosing Bugs
 
-Choose the smallest branch that fits the evidence.
+Build the smallest tight feedback loop that can go red on the user's exact symptom. Run it before diagnosing or fixing. Let observed evidence drive the diagnosis.
 
-## Localized failure
+A usable loop has one command you have already run. Record the command and its exact output. It exercises the real bug path, distinguishes the reported failure from nearby failures, and can turn red before the fix and green after it. It should run in seconds, not minutes, where practical. For a flaky bug, use a pinned, measured reproduction rate instead of demanding identical verdicts.
 
-Use the fast path when the error identifies a narrow violated contract and one command can reproduce it:
+If no such loop is possible, stop. Report what you tried and request the missing environment access, a captured artifact such as a HAR/log/core dump/timestamped recording, or approval for temporary production instrumentation. Resume diagnosis only when evidence can flow back into a loop.
 
-1. Run that command and observe the exact failure.
-2. State the evidenced cause. Use the full loop if the cause remains uncertain.
-3. Add or tighten a regression assertion at the real seam. If no correct test seam exists, document that gap and keep the reproducer as regression evidence.
-4. Apply the narrow fix, rerun the reproducer, then run the repo's expected regression checks.
+## Localized fast path
 
-Completion: the original failure is green, regression evidence covers it, and broader validation has run or its blocker is explicit.
+Use this path only when an error identifies a narrow violated contract and one command reproduces it:
 
-## Uncertain failure
+1. Run the command and capture the exact failure.
+2. State the evidenced cause. Switch to the full loop if the cause remains uncertain.
+3. Add or tighten regression coverage at the seam that exercises the real bug pattern. If no correct seam exists, record the gap and retain the reproducer as evidence.
+4. Apply the narrow fix, rerun the original command, then run the repository's expected broader validation.
 
-Use the full loop below for hard, flaky, environment-specific, or performance bugs. Skip a phase only when the evidence makes its purpose unnecessary, and state why.
+Stop when the exact original failure is green, regression evidence covers it, and broader validation has passed or its blocker is explicit.
 
-When exploring the codebase, read `CONTEXT.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
+## Uncertain-bug full loop
 
-## Phase 1 — Build a feedback loop
+Use the full loop for hard, flaky, environment-specific, or performance bugs. Read nearby `CONTEXT.md` and architecture decision records when they exist. Skip a step only when evidence already fulfills its purpose, and state why.
 
-**This is the skill.** Everything else is mechanical. If you have a **tight** pass/fail signal for the bug — one that goes red on _this_ bug — you will find the cause; bisection, hypothesis-testing, and instrumentation all just consume it. If you don't have one, no amount of staring at code will save you.
+Read [SPECIALIZED-LOOPS.md](SPECIALIZED-LOOPS.md) when an ordinary automated command cannot expose the bug, or when the bug is flaky, environment-specific, performance-related, or requires a human action.
 
-Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give up.**
+1. **Build and tighten the loop.** Prefer the narrowest automated command that reaches the real path and asserts the exact symptom. Run it at least once and record the command and exact output. Reduce setup, sharpen the assertion, and control time, randomness, filesystem, network, and other sources of noise. Do not form a causal theory until this red-capable loop exists.
 
-### Ways to construct one — try them in roughly this order
+2. **Reproduce and minimize.** Confirm across repeated runs that the loop shows the user's reported error, wrong output, or slow timing—not a nearby failure. Capture that exact symptom. Remove inputs, callers, configuration, data, and steps one at a time, rerunning after each removal. Stop minimizing when every remaining element is load-bearing: removing any one makes the loop green.
 
-1. **Failing test** at whatever seam reaches the bug — unit, integration, e2e.
-2. **Curl / HTTP script** against a running dev server.
-3. **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot.
-4. **Headless browser script** (Playwright / Puppeteer) — drives the UI, asserts on DOM/console/network.
-5. **Replay a captured trace.** Save a real network request / payload / event log to disk; replay it through the code path in isolation.
-6. **Throwaway harness.** Spin up a minimal subset of the system (one service, mocked deps) that exercises the bug code path with a single function call.
-7. **Property / fuzz loop.** If the bug is "sometimes wrong output", run 1000 random inputs and look for the failure mode.
-8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check, repeat" so you can `git bisect run` it.
-9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.
-10. **HITL bash script.** Last resort. If a human must click, drive _them_ with `scripts/hitl-loop.template.sh` so the loop is still structured. Captured output feeds back to you.
+3. **Rank hypotheses and checkpoint.** Before testing, write 3–5 ranked hypotheses. Make each falsifiable: name the change or observation that would support or reject it. Show the concise ranked list to the user so domain knowledge can reorder it; if they are unavailable, continue with the stated ranking rather than blocking.
 
-Build the right feedback loop, and the bug is 90% fixed.
+4. **Probe one prediction at a time.** Prefer a debugger or REPL, then targeted instrumentation at boundaries that distinguish the ranked hypotheses. Tag every temporary log with one unique cleanup prefix such as `[DEBUG-a4f2]`. For performance bugs, measure a stable baseline on a named workload and use timing, profiles, query plans, or bisection before changing code; compare the same measurement after the fix.
 
-### Tighten the loop
+5. **Lock down the bug and fix it.** Put the regression test where it exercises the real bug pattern. Include the actual caller chain only when it matters. Turn the minimized reproducer into a failing test and observe it fail before applying the narrow fix. If no such test point exists, document the architectural gap instead of adding a shallow test that gives false confidence. After the fix, observe the regression test pass and rerun the original, unminimized loop.
 
-Treat the loop as a product. Once you have _a_ loop, **tighten** it:
+6. **Clean up and validate.** Remove all tagged instrumentation and grep for its prefix; delete throwaway harnesses unless they are intentionally retained as named regression tooling. Verify the original exact symptom is gone, the regression test passes or the seam gap is documented, the performance baseline improved when applicable, and the repository's full expected validation passes. Report any validation blocker explicitly.
 
-- Can I make it faster? (Cache setup, skip unrelated init, narrow the test scope.)
-- Can I make the signal sharper? (Assert on the specific symptom, not "didn't crash".)
-- Can I make it more deterministic? (Pin time, seed RNG, isolate filesystem, freeze network.)
+## After either path
 
-A 30-second flaky loop is barely better than no loop; a 2-second deterministic one is tight — a debugging superpower.
+After verifying the fix, state the confirmed cause and evidence and record them in the commit or PR message. Then ask what would have prevented the bug. If the evidence reveals hidden coupling, tangled callers, or no good test point, recommend the `simplify-codebase-architecture` skill with those specifics. Do not let architectural follow-up delay or replace the verified fix.
 
-### Non-deterministic bugs
+## Communication
 
-The goal is not a clean repro but a **higher reproduction rate**. Loop the trigger 100×, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not — keep raising the rate until it's debuggable.
-
-### Environment-specific bugs
-
-Build the smallest matrix that distinguishes the environments: timezone, locale, runtime version, configuration, data shape, or deployed revision. Hold the input constant and vary one difference at a time.
-
-Completion: one command produces the failing and passing verdict under named environment settings, or the missing environment access is explicit.
-
-### When you genuinely cannot build a loop
-
-Stop and say so explicitly. List what you tried. Ask the user for: (a) access to whatever environment reproduces it, (b) a captured artifact (HAR file, log dump, core dump, screen recording with timestamps), or (c) permission to add temporary production instrumentation. Do **not** proceed to hypothesise without a loop.
-
-### Completion criterion — a tight loop that goes red
-
-Phase 1 is done when the loop is **tight** and **red-capable**: you can name **one command** — a script path, a test invocation, a curl — that you have **already run at least once** (paste the invocation and its output), and that is:
-
-- [ ] **Red-capable** — it drives the actual bug code path and asserts the **user's exact symptom**, so it can go red on this bug and green once fixed. Not "runs without erroring" — it must be able to _catch this specific bug_.
-- [ ] **Deterministic** — same verdict every run (flaky bugs: a pinned, high reproduction rate, per above).
-- [ ] **Fast** — seconds, not minutes.
-- [ ] **Agent-runnable** — you can run it unattended; a human in the loop only via `scripts/hitl-loop.template.sh`.
-
-If you catch yourself reading code to build a theory before this command exists, **stop — jumping straight to a hypothesis is the exact failure this skill prevents.** No red-capable command, no Phase 2.
-
-## Phase 2 — Reproduce + minimise
-
-Run the loop. Watch it go red — the bug appears.
-
-Confirm:
-
-- [ ] The loop produces the failure mode the **user** described — not a different failure that happens to be nearby. Wrong bug = wrong fix.
-- [ ] The failure is reproducible across multiple runs (or, for non-deterministic bugs, reproducible at a high enough rate to debug against).
-- [ ] You have captured the exact symptom (error message, wrong output, slow timing) so later phases can verify the fix actually addresses it.
-
-### Minimise
-
-Once it's red, shrink the repro to the **smallest scenario that still goes red**. Cut inputs, callers, config, data, and steps **one at a time**, re-running the loop after each cut — keep only what's load-bearing for the failure.
-
-Why bother: a minimal repro shrinks the hypothesis space in Phase 3 (fewer moving parts left to suspect) and becomes the clean regression test in Phase 5.
-
-Done when **every remaining element is load-bearing** — removing any one of them makes the loop go green.
-
-Do not proceed until you have reproduced **and** minimised.
-
-## Phase 3 — Hypothesise
-
-Generate **3–5 ranked hypotheses** before testing any of them. Single-hypothesis generation anchors on the first plausible idea.
-
-Each hypothesis must be **falsifiable**: state the prediction it makes.
-
-> Format: "If <X> is the cause, then <changing Y> will make the bug disappear / <changing Z> will make it worse."
-
-If you cannot state the prediction, the hypothesis is a vibe — discard or sharpen it.
-
-**Show the ranked list to the user before testing.** They often have domain knowledge that re-ranks instantly ("we just deployed a change to #3"), or know hypotheses they've already ruled out. Cheap checkpoint, big time saver. Don't block on it — proceed with your ranking if the user is AFK.
-
-## Phase 4 — Instrument
-
-Each probe must map to a specific prediction from Phase 3. **Change one variable at a time.**
-
-Tool preference:
-
-1. **Debugger / REPL inspection** if the env supports it. One breakpoint beats ten logs.
-2. **Targeted logs** at the boundaries that distinguish hypotheses.
-3. Never "log everything and grep".
-
-**Tag every debug log** with a unique prefix, e.g. `[DEBUG-a4f2]`. Cleanup at the end becomes a single grep. Untagged logs survive; tagged logs die.
-
-**Perf branch.** For performance regressions, logs are usually wrong. Instead: establish a baseline measurement (timing harness, `performance.now()`, profiler, query plan), then bisect. Measure first, fix second.
-
-## Phase 5 — Fix + regression test
-
-Write the regression test **before the fix** — but only if there is a **correct seam** for it.
-
-A correct seam is one where the test exercises the **real bug pattern** as it occurs at the call site. If the only available seam is too shallow (single-caller test when the bug needs multiple callers, unit test that can't replicate the chain that triggered the bug), a regression test there gives false confidence.
-
-**If no correct seam exists, that itself is the finding.** Note it. The codebase architecture is preventing the bug from being locked down. Flag this for the next phase.
-
-If a correct seam exists:
-
-1. Turn the minimised repro into a failing test at that seam.
-2. Watch it fail.
-3. Apply the fix.
-4. Watch it pass.
-5. Re-run the Phase 1 feedback loop against the original (un-minimised) scenario.
-
-## Phase 6 — Cleanup + post-mortem
-
-Required before declaring done:
-
-- [ ] Original repro no longer reproduces (re-run the Phase 1 loop)
-- [ ] Regression test passes (or absence of seam is documented)
-- [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
-- [ ] Throwaway prototypes deleted (or moved to a clearly-marked debug location)
-- [ ] The hypothesis that turned out correct is stated in the commit / PR message — so the next debugger learns
-
-**Then ask: what would have prevented this bug?** If the answer involves architectural change (no good test seam, tangled callers, hidden coupling) hand off to the `simplify-codebase-architecture` skill with the specifics. Make the recommendation **after** the fix is in, not before — you have more information now than when you started.
+Keep the investigation internally thorough. Keep user updates concise: report the working loop, the ranked-hypothesis checkpoint, the confirmed cause, the fix and regression seam, and final validation or blockers. Do not narrate routine searches or every failed probe.
