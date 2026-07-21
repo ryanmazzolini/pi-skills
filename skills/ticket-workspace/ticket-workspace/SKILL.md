@@ -5,97 +5,82 @@ description: "Create, find, or reuse workspaces with one git worktree per PR. Us
 
 # Ticket Workspace
 
-A ticket gets one workspace folder. Inside it, each PR gets its own git worktree, so any PR can be cut, revised, or rebased without switching branches anywhere:
+Keep one workspace folder for the ticket or approved ticketless fix, with one git worktree for each real PR:
 
 ```text
 <workspace-root>/worktrees/<ticket-slug>/<pr-worktree>/
 ```
 
-Examples:
+Add a worktree only when work on that PR is ready to begin and the user has confirmed its folder, branch, and base. This keeps every PR independently revisable and rebaseable without branch switching.
+
+## Shape the workspace
+
+- Name a single-PR worktree after its repo: `api/`.
+- Give each PR in a same-repo stack its own worktree. Name later worktrees `<repo>-<pr-slug>`, such as `api-graphql/`. Base each new branch on the preceding PR branch, not the default branch. After amending an earlier PR, rebase every later worktree in order.
+- Give each repo in a multi-repo change its own worktree or stack inside the same ticket folder.
+- Choose the workspace root explicitly. Roots may include `~/git`, `~/personal`, or a project-specific directory; do not assume `~/git`.
+
+For example:
 
 ```text
-~/git/worktrees/sc-12345-invoice-match/api/           # single PR against api
-~/git/worktrees/sc-12345-invoice-match/api-graphql/   # stacked PR 2, based on api's PR branch
-~/git/worktrees/sc-12345-invoice-match/web/           # separate repo, its own PR or stack
+~/git/worktrees/sc-12345-invoice-match/api/
+~/git/worktrees/sc-12345-invoice-match/api-graphql/
+~/git/worktrees/sc-12345-invoice-match/web/
 ~/personal/worktrees/gh-987-fix-roles/pi-skills/
 ```
 
-`<workspace-root>` is flexible. Do not assume `~/git`; common roots include `~/git`, `~/personal`, and project-specific directories.
-
-## Worktrees are PR-shaped
-
-- One worktree per PR. Add a worktree when its PR becomes real, not upfront.
-- A single PR against a repo names its worktree after the repo (`api/`).
-- Stacked PRs in one repo get one worktree each, named `<repo>-<pr-slug>` (`api/`, then `api-graphql/`). Base each stacked branch on the previous PR's branch, not the default branch.
-- Multi-repo tickets give each repo its own worktree or its own stack.
-- A stack cascades: after amending an earlier PR, rebase the later worktrees onto it.
-
-## Workspace folder names
-
-Use stable, ticket-first names when a ticket exists:
-
-- Shortcut: `sc-<number>-<short-description>`
-- GitHub issue: `gh-<number>-<short-description>` when the repo is clear
-- Multi-repo GitHub issue: `gh-<owner-or-repo>-<number>-<short-description>` when needed
-
-Build the slug from the ticket title: lowercase, short, recognizable, no filler words.
-
-### Ticketless quick fixes
-
-When the user explicitly waives a ticket or issue, use a short descriptive slug without a ticket prefix:
-
-```text
-~/git/worktrees/local-date-spec-flakes/logistics-delivery-service/
-```
-
-Treat the waiver as the ticket decision for the current task. Propose the exact workspace folder, repo worktree, branch, and base in one checkpoint, then follow the normal worktree-per-PR rules.
-
 ## Find existing work first
 
-Before creating anything:
+Before proposing or creating anything:
 
-1. Check whether the current path already contains `/worktrees/<ticket-slug>/...`.
+1. Check whether the current path is already under `/worktrees/<ticket-slug>/`.
 2. Check the current branch for `sc-<digits>`, `ch<digits>`, or `gh-<digits>`.
-3. If the ticket id is known, search likely roots:
-   - parent `worktrees` directories
-   - `~/git/worktrees`
-   - `~/personal/worktrees`
-   - any user-provided root
-4. If more than one match is plausible, ask which to use.
+3. When the ticket id is known, search parent `worktrees` directories, `~/git/worktrees`, `~/personal/worktrees`, and any user-provided root.
+4. Reuse a matching workspace. If multiple workspaces or roots are plausible, ask which one to use.
 
-Avoid broad home-directory scans. Use targeted, shallow `find` commands.
+Use targeted, shallow scans rather than searching the whole home directory. Do not inspect secrets, credential files, or `.env` files while locating roots or repos.
 
-## Create a workspace
+## Name the workspace
 
-1. Start from a Shortcut story or GitHub issue. If missing, ask for one or offer to search unless the user explicitly chooses a ticketless quick fix.
-2. When a ticket exists, fetch its title with available tools:
-   - Shortcut: `short story <id> -q`
-   - GitHub: `gh issue view <number>` from the relevant repo
-3. Propose the workspace folder, the worktree for the first PR (and base branches for any planned stack), and branch names.
-4. Ask before running `mkdir`, `git worktree add`, branch creation, or checkout.
+Start with a Shortcut story or GitHub issue. If none is available, ask for one or offer to search. Create a ticket only after confirmation.
 
-## Offer a Herdr handoff
+When a ticket exists, look up its title before deriving a lowercase, short, recognizable slug without filler words:
 
-Once the ticket folder and first PR worktree are ready, load the model-invoked `herdr` skill and follow its Pi conversation handoff when the current agent is Pi, `HERDR_ENV=1`, and the Pi session is still rooted outside the ticket folder.
+- Shortcut: `short story <id> -q`
+- GitHub: `gh issue view <number>` from the relevant repo
 
-Propose the ticket folder as the Herdr cwd so one session can reach every repo worktree for the ticket, and use the ticket slug as the workspace label. The `herdr` skill owns confirmation, transfer, and source-pane cleanup.
+Use these forms:
 
-## Branch names
+- Shortcut: `sc-<number>-<short-description>`
+- GitHub issue with an unambiguous repo: `gh-<number>-<short-description>`
+- Multi-repo GitHub issue: `gh-<owner-or-repo>-<number>-<short-description>` when needed
 
-When a ticket exists, keep its id visible:
+If the user explicitly waives a ticket for a quick fix, treat that waiver as the ticket decision for this task. Use a short descriptive slug without a ticket prefix, such as `local-date-spec-flakes`.
+
+## Propose, then create
+
+In one checkpoint, propose the exact workspace folder, repo worktree, branch, and base for the first PR, plus the branches and bases of any planned stack. Ask the user to confirm before running `mkdir`, creating a branch, checking out a branch, or running `git worktree add`.
+
+Follow the repository's branch convention while keeping ticket ids visible:
 
 - `feat/sc-12345/short-description`
 - `fix/sc-12345/short-description`
 - `chore/gh-987/short-description`
 
-For a ticketless quick fix, use `{type}/{short-description}`, such as `fix/local-date-spec-flakes`.
+For an approved ticketless quick fix, use `{type}/{short-description}`, such as `fix/local-date-spec-flakes`.
 
-Follow the repo's branch convention when it has one.
+After confirmation, create only the approved folder, branch, and worktree. Keep later PR worktrees deferred until those PRs become real.
 
-## Rules
+## Offer the Herdr handoff
 
-- Treat the ticket or quick-fix workspace as the unit of work.
-- Reuse existing workspaces; do not create duplicates.
-- Keep root selection flexible and explicit; ask before choosing between plausible roots.
-- Do not create tickets, worktrees, branches, commits, pushes, or PRs without confirmation.
-- Do not access secrets, credential files, or `.env` files while discovering roots or repos.
+After the ticket folder and first PR worktree are ready, load the model-invoked `herdr` skill and follow its Pi conversation handoff only when all of these are true:
+
+- the current agent is Pi
+- `HERDR_ENV=1`
+- the Pi session is still rooted outside the ticket folder
+
+Propose the ticket folder as the Herdr cwd so the session can reach every repo worktree, and use the ticket slug as the workspace label. Let the `herdr` skill control its separate confirmation, transfer, verification, and source-pane cleanup.
+
+## Keep consent explicit
+
+Also require confirmation before creating tickets, committing, pushing, or opening PRs. Reuse existing work instead of creating duplicates.

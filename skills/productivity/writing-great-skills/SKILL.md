@@ -9,7 +9,9 @@ license: "MIT; adapted from mattpocock/skills"
 
 Write only what changes the agent's behavior. Keep the skill short enough to follow while doing the work.
 
-Before rewriting an existing skill, inspect its current behavior and recent fixes. Afterward, confirm that every behavior worth keeping still has a clear instruction.
+Before rewriting an existing skill, identify what each section is trying to make the agent do and check recent fixes for why it exists. Keep, change, or remove behavior deliberately. Afterward, confirm that every kept behavior still has a clear instruction and that any change to conditions, stopping points, optional choices, or handoffs was intentional.
+
+Use bullets for separate rules and prose for ideas that depend on each other. Choose the shortest form that keeps the intent clear.
 
 ## Recipe
 
