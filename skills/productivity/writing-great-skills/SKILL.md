@@ -9,6 +9,8 @@ license: "MIT; adapted from mattpocock/skills"
 
 Write only what changes the agent's behavior. Keep the skill short enough to follow while doing the work.
 
+Before rewriting an existing skill, inspect its current behavior and recent fixes. Afterward, confirm that every behavior worth keeping still has a clear instruction.
+
 ## Recipe
 
 1. **Name the behavior.** State what the skill should make the agent do. Give it a clear, memorable name.
