@@ -50,7 +50,9 @@ Before substantial production edits, verify:
 
 Proceed without ceremony when these are clear. Ask only about a gap that could change the work. For durable work on a default branch or shared dirty branch, propose `ticket-workspace`. A safe, local one-session fix may continue in place.
 
-For an interface-facing slice, return to `align` if the primary UX/DX walkthrough is not explicit. Once the experience is settled, use `shape-first` when local interfaces, data rules, or code structure still need shaping. Before code, apply `simplest-sufficient-change`; it is an implementation lens, not another approval step. Return to `align` if implementation changes the settled experience, requirements, scope, or high-level solution direction.
+For an interface-facing slice, return to `align` if the primary UX/DX walkthrough is not explicit. During alignment, a user-approved [`prototype`](../prototype/SKILL.md) may answer one consequential experiential question that inspection and conversation cannot settle. Treat it as evidence gathering and resume alignment afterward; it does not satisfy planning or implementation gates.
+
+Once the experience is settled, use `shape-first` when local interfaces, data rules, or code structure still need shaping. Before code, apply `simplest-sufficient-change`; it is an implementation lens, not another approval step. Return to `align` if implementation changes the settled experience, requirements, scope, or high-level solution direction.
 
 Record material decisions, scope changes, implementation results, and review or validation evidence as they happen. Once a plan exists, keep slice-specific evidence with its slice.
 

@@ -33,6 +33,14 @@ Describe the walkthrough in user or caller language with ordinary values, not pr
 
 When solution shaping is needed, use the domain-shape and boundary guidance in `../../architecture/shape-first/SKILL.md`. Stop at what planning needs. Leave local interfaces, structure, TODOs, and code to later work. Reopen only the parts changed by later answers.
 
+## Prototype what words cannot settle
+
+When investigation and questioning expose one consequential decision that the user cannot judge without seeing or using something, pause alignment and use [`prototype`](../prototype/SKILL.md). Do not prototype when further inspection, a simple sketch, or an easy-to-reverse assumption can settle the decision.
+
+Before prototyping, name the single question, the minimum fidelity needed, and what observation will settle it. Ask the user to approve this interruption as the current one-question turn unless they already requested a prototype.
+
+Afterward, keep the verdict and its effect on alignment, discard the prototype by default, and resume the decision it interrupted. A prototype supplies evidence; it does not complete alignment or authorize planning or production implementation.
+
 ## Ask the next question
 
 Before each question, consider the likely answers and how each would change the work. Prefer the decision only the user can make that has the greatest effect on Now, the primary experience, an important constraint, observable behavior, or the solution direction. If two decisions matter equally, ask about the one that is harder to reverse.
