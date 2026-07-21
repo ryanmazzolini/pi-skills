@@ -24,6 +24,8 @@ Inspect `herdr workspace list` for the proposed label. If it already exists, ask
 
 ## Start the destination
 
+Preserve whichever pane the user currently has focused throughout these background steps. Follow the skill's focus-preservation rule around every topology mutation.
+
 1. Create the approved workspace without stealing focus:
 
    ```bash
@@ -53,13 +55,15 @@ The destination is ready only when all three checks pass. A failed check leaves 
 
 ## Transfer ownership
 
-Focus the destination workspace, then submit a takeover prompt to its Pi pane with `herdr pane run`. Include the expected cwd, source session path, and source pane ID. Direct the destination session to:
+Preserve the user's currently focused pane while submitting a takeover prompt to the destination Pi pane with `herdr pane run`. Include the destination workspace ID, expected cwd, source session path, and source pane ID. Direct the destination session to:
 
-1. verify its own Herdr pane, cwd, and Pi session path
-2. preserve the source pane if any value is wrong
-3. close the recorded source pane with `herdr pane close <source-pane>` when every value matches
-4. report takeover to the user and continue from the inherited conversation
+1. verify its own Herdr pane, workspace, cwd, and Pi session path without changing focus
+2. preserve the source pane and the user's current focus if any value is wrong
+3. only when every value matches, focus the destination pane with `herdr agent focus <destination-pane>` as the final visible handoff
+4. close the recorded source pane with `herdr pane close <source-pane>`
+5. verify the destination pane remains focused and immediately restore it if closing the source moved focus
+6. report takeover to the user and continue from the inherited conversation
 
-After submitting that prompt, the source session makes no further mutations. The destination confirms takeover by completing its checks before source cleanup, so an interrupted launch fails safe with the source still running.
+Do not focus the source or destination while launching, waiting, inspecting, or submitting the takeover prompt. After submitting that prompt, the source session makes no further mutations. The destination confirms takeover before the focus transition and source cleanup, so an interrupted launch fails safe with the source still running and the user's focus unchanged.
 
-The handoff is complete when the destination has verified the expected cwd and a distinct Pi session path, successfully closed the recorded source pane, and reported takeover to the user.
+The handoff is complete when the destination has verified the expected workspace, cwd, and a distinct Pi session path, closed the recorded source pane, verified its pane remains focused, and reported takeover to the user.
