@@ -7,31 +7,17 @@ description: Create or update a draft pull request from the current branch. Use 
 
 ## Workflow
 
-1. Identify the expected base, then inspect the commits, `git diff <base>...HEAD --stat`, full branch diff, and existing PR status. Resolve unexpected commits or files before drafting.
-2. Run targeted checks for diagnosis and the repository's expected regression checks for final validation.
-3. If expected checks are blocked or impractical, state exactly what did not run and why, then ask how to handle the validation gap. This resolves validation handling only; independent review and PR approval remain separate required checkpoints.
-4. Ensure the exact branch diff has current independent review under `../../ship/ship/references/review-gate.md`. Reuse evidence only while its target is unchanged.
-5. Draft a clear PR title and a slim body with `Description`, `Details`, and `Testing`.
-6. Show the full PR title, body, base branch, review evidence, and validation status; ask for confirmation or edits.
-7. After confirmation, push if needed and create or update the draft PR.
-8. Show the PR URL and offer next steps.
+1. Identify the expected base. Inspect the commits, `git diff <base>...HEAD --stat`, the full branch diff, and any existing PR. Resolve unexpected commits or files before drafting.
+2. Run focused checks while diagnosing problems, then run the repository's expected regression checks for final validation. If an expected check is blocked or impractical, say exactly what did not run and why, then ask how to handle the gap. That decision does not replace review or PR approval.
+3. Confirm the exact branch diff has current independent review under [the review gate](../../ship/ship/references/review-gate.md). Reuse review evidence only while its target is unchanged.
+4. Draft a clear title and a slim body from the diff and commits against the base. Use `Description`, `Details`, and `Testing`. When an issue is available from the branch name or user context, use its ID as the Markdown link text, for example `[sc-123](...)`.
+5. Show the full title and body, base branch, review evidence, and validation status. Ask for confirmation or edits.
+6. After explicit approval, push if needed and create or update the PR. Create new PRs as drafts. Show the PR URL and offer next steps.
 
-## Rules
+## PR body
 
-- Draft the PR from the diff and commits against the base branch.
-- Include an issue markdown link (eg. [sc-123](..)) when one is available from the branch name or user context.
-- Keep the PR body slim with these sections:
-  - `Description` — explain the motivation first, then the concrete change.
-  - `Details` — high-level implementation notes only when they add useful context
-  - `Testing` — repo-level verification, relevant full-suite tests/checks, explicit omissions or blockers, and screenshots/videos when UI changed (use tools like Playwright or agent-browser for screenshots).
-- Ask before pushing, creating, or updating a PR.
-- Create PRs as draft first, then offer follow-up actions.
+- `Description` — lead with why the change matters, then explain the resulting product or code behavior.
+- `Details` — include high-level implementation context only when it helps the reviewer.
+- `Testing` — report repository-level validation, relevant full-suite checks, and any omissions or blockers. Include screenshots or video for UI changes.
 
-## PR description style
-
-- Write for a reviewer who has not followed the prior discussion.
-- Lead with why the change matters, then describe what changed.
-- Describe the resulting code/product behavior, not the path taken to get there.
-- Prefer concrete facts over workflow labels: name the old behavior, missing capability, or risk when it matters.
-- Keep it concise; move file-by-file detail to `Details`.
-- Add deep links.
+Write for a reviewer who has not followed the discussion. Prefer concrete facts to workflow labels, omit file-by-file detail unless it helps review, and add useful deep links.

@@ -9,76 +9,14 @@ license: "MIT; adapted from mattpocock/skills"
 
 # Design an Interface
 
-Use the "design it twice" principle: the first interface idea is rarely the best. Generate multiple
-meaningfully different designs, then compare them before implementation.
+Design the boundary from the caller's point of view before implementing it. Aim for a small interface that hides the hard parts.
 
-## Rules
+## Work
 
-- Design only the interface shape; do not implement it unless the user explicitly asks afterward.
-- Optimize for deep modules: small interfaces that hide substantial complexity.
-- Compare designs in prose. Tables are okay for summaries, but the reasoning matters most.
-- If subagents are available, use them to generate independent designs with different constraints.
+1. Inspect the codebase to understand the problem, callers, common operations, current conventions, and constraints. Ask only about choices the code cannot answer.
+2. Sketch two or three credible interfaces with meaningfully different shapes or ownership. For each, show the contract, a short usage example, what it hides, and its main cost. Do not add an alternative that could not reasonably win.
+3. Compare only the differences that affect this decision, such as caller effort, correct use, misuse, testing, compatibility, or future change.
+4. Lead with the recommended interface and why it wins. Then show the alternatives and important tradeoffs. If a hybrid is best, show its concrete interface.
+5. Ask which direction the user wants. Do not implement it until the user explicitly asks.
 
-## Process
-
-### 1. Gather requirements
-
-Understand:
-
-- What problem does this module or API solve?
-- Who are the callers?
-- What are the key operations?
-- What constraints exist? Performance, compatibility, existing patterns, rollout, security, or
-  testing?
-- What should be hidden inside versus exposed?
-- What is the common case?
-
-Ask only the minimum questions needed. If the answer is discoverable in the codebase, inspect the
-code instead of asking.
-
-### 2. Generate designs
-
-Create at least three designs. Use different constraints such as:
-
-- **Minimal surface**: 1-3 methods or entry points max
-- **Flexible surface**: supports many use cases and extension points
-- **Common-case optimized**: makes the primary caller path trivial
-- **Functional style**: data in/data out with explicit effects
-- **Object/service style**: lifecycle or dependency ownership hidden behind an object
-- **Ports & adapters**: useful when crossing owned boundaries or external systems
-
-For each design, provide:
-
-1. interface signature, types, methods, or contract
-2. usage example showing how callers use it
-3. what complexity it hides internally
-4. what it makes easy
-5. what it makes hard
-6. testing implications
-
-### 3. Present designs sequentially
-
-Show each design clearly — name, interface, usage, what it hides, trade-offs — before comparison so
-the user can absorb it.
-
-### 4. Compare designs
-
-Compare on:
-
-- interface simplicity
-- depth: small surface hiding large implementation
-- ease of correct use
-- ease of misuse
-- fit with current callers
-- testing at the boundary
-- implementation flexibility
-- future extension pressure
-
-Highlight where the designs diverge most.
-
-### 5. Recommend
-
-Give your opinionated recommendation. If the best answer is a hybrid, describe the hybrid interface
-explicitly.
-
-End by asking which direction the user wants to take next.
+Favor the common caller path and keep lifecycle, dependencies, policy, and other internal complexity behind the boundary when possible.
