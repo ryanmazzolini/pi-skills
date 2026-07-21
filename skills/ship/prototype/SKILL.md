@@ -1,0 +1,46 @@
+---
+name: "prototype"
+description: Build a throwaway artifact to answer one design question. Use when research and conversation cannot settle how an interface, interaction, or state model should look, behave, or feel.
+license: "MIT; adapted from mattpocock/skills"
+---
+
+# Prototype
+
+Answer one question through experience, then discard the code. A prototype gathers alignment evidence; it is not production implementation.
+
+## Bound the experiment
+
+Run a prototype inside an active alignment. Use the alignment file supplied by the caller; otherwise use the current `alignment.md` or legacy `question.md`. If none exists, return to `align` to create or reuse one and micro-align the experiment before writing code.
+
+Read the alignment and the relevant product surface. State:
+
+- the single question the prototype will answer
+- why inspection, conversation, or a sketch cannot answer it
+- what the user will observe or do to settle the question
+
+If any of these is unclear, ask one direct question and stop. Treat an explicit invocation or approval already given in the conversation or alignment as approval to prototype. Otherwise recommend the experiment and wait for approval before writing code.
+
+Choose the smallest useful form:
+
+- For appearance or information hierarchy, create the smallest UI that can be judged in its real surrounding context. When the direction itself is open, compare two or three structurally different variants.
+- For interaction, behavior, or state, create a tiny interactive application with representative in-memory data and make the relevant state visible after each action.
+
+Use the project's existing runtime, components, and task runner when they improve fidelity. Otherwise prefer a self-contained artifact in the workflow directory. Clearly mark every prototype entry point as throwaway and provide one command or URL to run it.
+
+Before writing, inspect the working tree and record a baseline of the files and pre-existing changes that cleanup must preserve. Keep prototype work in clearly named new paths when practical. If meaningful fidelity requires changing an already-edited file, use precise prototype-only edits or ask before moving the experiment to an isolated workspace.
+
+Keep only what answers the question. Omit production hardening, tests, persistence, abstractions, unrelated paths, and external side effects. Stub real mutations and services. If meaningful evaluation would require production quality or a broad implementation, stop and return that constraint to alignment.
+
+## Hand over recoverably
+
+Before user evaluation, record an open prototype in the active alignment file: its question, location, run command or URL, what to judge, prototype-owned paths or edits, pre-existing work to preserve, and remaining cleanup. Verify that it runs, then give the user the run command or URL and the exact question to judge.
+
+Iterate only while changes remain cheap and continue to answer that same question. Stop when the question is answered or the prototype no longer stays disposable.
+
+When the user settles the question, add the verdict to the open prototype without removing its recovery details, then stop prototype processes. Remove only the recorded prototype-owned paths and edits by default. When the user asks to preserve the prototype, instead move or retain it outside the production path and record its location.
+
+Compare the working tree with the recorded baseline and confirm that no prototype entry point, task, or process remains in the production path. Only then replace the open prototype with the verdict, the evidence needed to understand it, and the affected alignment decisions.
+
+Return to `align` at the decision the prototype interrupted. Do not advance to planning or promote prototype code into production. Later implementation may reproduce the validated behavior under normal project standards.
+
+Keep the user-facing result concise: where to try the prototype and what to judge before the verdict, then the learned decision and cleanup status afterward.
