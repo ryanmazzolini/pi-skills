@@ -13,7 +13,7 @@ description: Settle the smallest useful release before planning. Use when ship f
 
 Use the workflow directory supplied by the caller. Otherwise reuse the relevant directory under `.plans/`, `.plan/`, or `docs/plans/`. For new durable work without a project convention, create `.plans/YYYY-MM-DD-slug/`.
 
-Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. If align starts durable work without the project-vault context from ship, first follow the vault guidance in `../ship/SKILL.md`.
+Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. If align starts durable work without the project-vault context from ship, first follow the vault guidance in `../ship/references/durable-context.md`.
 
 Before asking, compare the user's description with how the system works today. Read relevant docs, code, tests, prior conversation, and workflow files. Use the project's domain language and read relevant `CONTEXT-MAP.md`, `CONTEXT.md`, and architecture decisions. Clarify important differences and terms that hide more than one concept.
 

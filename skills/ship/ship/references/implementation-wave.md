@@ -1,16 +1,19 @@
 # Implementation Wave
 
-Use a coordinated wave only when one confirmed slice contains independent work units whose parallelism is worth the integration cost. Otherwise implement synchronously or delegate one bounded task.
+Use a wave only when one human-confirmed slice contains independent work units and parallel work is worth the cost of combining the results. Otherwise work synchronously or delegate one bounded task.
 
-The coordinating thread owns decomposition, integration, review synthesis, and human decisions. Keep every work unit inside the confirmed slice; implementation agents do not advance later slices, spawn agents, push, or open pull requests.
+The Ship coordinating thread decides how work is split, how much runs at once, how results are combined, and what returns to the human. Agents stay inside their assigned part of the current slice. They do not advance later slices, spawn agents, decide product or architecture questions, push, or open pull requests.
 
 Before dispatch:
 
-- Load `agent-coordination` and select each route from the task's cost and risk.
-- Give each agent the slice outcome, assigned work unit, acceptance criteria, non-goals, relevant context, allowed files or areas, validation expectation, and stop conditions.
-- State the exact cwd and workspace boundary. Parallel writers use isolated workspaces. Let `ticket-workspace` own durable PR-shaped worktrees; use host-provided temporary workspaces for bounded review-before-apply changes. In Pi, use `delegate` for task execution and `delegate_control` only for lifecycle operations; review a temporary writer's exact revision before applying or discarding it.
-- State whether the user approved local commits. Approval applies only to the assigned branch and never includes push or PR authority.
+- Confirm the ready slice and proposed wave with the human.
+- Load `agent-coordination` and choose each route from the work's cost and risk.
+- Give each agent the outcome, assigned work, acceptance criteria, non-goals, relevant evidence, allowed files or areas, validation, stop conditions, exact cwd, and workspace boundary.
+- Put parallel writers in isolated workspaces. Use `ticket-workspace` for durable PR-shaped work and host-provided temporary workspaces for bounded review-before-apply changes. Inspect a temporary writer's exact revision before applying or discarding it.
+- State whether the human approved a local commit. That permission covers only the assigned branch and never grants push or PR authority.
 
-Agents escalate product, API, architecture, scope, ownership, and conflict decisions to the coordinator. Their handoff reports changed files, commit or diff status, validation commands and results, risks, and decisions still needed.
+In Pi, use `delegate` for execution and `delegate_control` only for lifecycle operations.
 
-Inspect and integrate every result into one current target. Resolve straightforward integration mechanically; return consequential choices to the human. After integration, follow `review-gate.md` against the exact integrated target.
+Agents escalate product, API, architecture, scope, ownership, and conflict questions to the coordinator. Their handoff names changed files, diff or commit state, validation and results, risks, and decisions still needed.
+
+The coordinator inspects and combines every result into one current target. Combine straightforward changes directly; return choices that affect behavior or scope to the human. Pushes and pull requests still need their own approval. After integration, apply [review-gate.md](review-gate.md) to the exact integrated target, not the separate work units.
