@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { createDelegateUi, describeLatestActivity, readChildHistory, RunOverlayComponent } from "./ui.ts";
+import { AgentDeskOverlayComponent, createDelegateUi, describeLatestActivity, listDeskAssignments, readChildHistory, RunOverlayComponent } from "./ui.ts";
 
 const theme = {
   fg: (_color, text) => text,
@@ -340,6 +340,421 @@ test("inline launch records stay static and hide identifiers until expanded", ()
   assert.match(expanded, /Record: \/tmp\/run-secret\.json/);
 });
 
+test("agent desk groups assignments once with deterministic lifecycle precedence", () => {
+  const newer = run("running", new Date(2_000).toISOString(), 4);
+  newer.id = "run-newer";
+  newer.createdAt = new Date(2_000).toISOString();
+  newer.children.forEach((child, index) => { child.id = `new-${index + 1}`; });
+  newer.children[0].state = "interrupted";
+  newer.children[1].state = "running";
+  newer.children[2].state = "needs_attention";
+  newer.children[2].attention = {
+    id: "attention-live",
+    kind: "decision",
+    question: "Choose policy",
+    requestedAt: new Date(2_000).toISOString(),
+    notification: { state: "delivered", deliveredAt: new Date(2_100).toISOString() },
+  };
+  newer.children[3].state = "completed";
+  newer.children[3].attention = {
+    id: "attention-stale",
+    kind: "decision",
+    question: "Stale question",
+    requestedAt: new Date(2_000).toISOString(),
+    notification: { state: "held", reason: "session_changed" },
+  };
+  newer.children[3].result = { kind: "text", value: "Done", completedAt: new Date(3_000).toISOString() };
+
+  const older = run("running", new Date(1_000).toISOString(), 2);
+  older.id = "run-older";
+  older.createdAt = new Date(1_000).toISOString();
+  older.children.forEach((child, index) => { child.id = `old-${index + 1}`; });
+  older.children[0].state = "interrupted";
+  older.children[1].state = "failed";
+  older.children[1].failure = {
+    message: "Failed",
+    lastActivity: older.children[1].latestActivity,
+    failedAt: new Date(3_000).toISOString(),
+  };
+
+  const assignments = listDeskAssignments([older, newer]);
+  assert.deepEqual(assignments.map(({ child, section }) => `${section}:${child.id}`), [
+    "recovery:new-1",
+    "recovery:old-1",
+    "managed:new-2",
+    "managed:new-3",
+    "recent:new-4",
+    "recent:old-2",
+  ]);
+});
+
+test("agent desk tie-breaks equal run times and keeps terminal stale attention recent", () => {
+  const makeTerminal = (id, notification) => {
+    const value = run("completed", new Date(2_000).toISOString());
+    value.id = id;
+    value.createdAt = new Date(2_000).toISOString();
+    value.children[0].id = `${id}-child`;
+    value.children[0].state = "completed";
+    value.children[0].result = { kind: "text", value: "Done", completedAt: new Date(3_000).toISOString() };
+    value.children[0].attention = {
+      id: `${id}-attention`,
+      kind: "decision",
+      question: "Stale",
+      requestedAt: new Date(2_000).toISOString(),
+      notification,
+    };
+    return value;
+  };
+  const runB = makeTerminal("run-b", { state: "pending" });
+  const runA = makeTerminal("run-a", { state: "delivered", deliveredAt: new Date(2_100).toISOString() });
+  const runC = makeTerminal("run-c", { state: "held", reason: "session_changed" });
+
+  const assignments = listDeskAssignments([runC, runB, runA]);
+  assert.deepEqual(assignments.map(({ run: value, section }) => `${section}:${value.id}`), [
+    "recent:run-a",
+    "recent:run-b",
+    "recent:run-c",
+  ]);
+});
+
+test("agent desk names conductor ownership and truthful attention delivery states", () => {
+  const mixed = run("running", new Date().toISOString(), 7);
+  mixed.id = "hidden-run-id";
+  mixed.delivery = { state: "held", reason: "user_intervened" };
+  mixed.children[0].state = "interrupted";
+  for (const [index, notification] of [
+    { state: "pending" },
+    { state: "delivered", deliveredAt: new Date().toISOString() },
+    { state: "held", reason: "session_changed" },
+  ].entries()) {
+    const child = mixed.children[index + 1];
+    child.state = "needs_attention";
+    child.attention = {
+      id: `attention-${index}`,
+      kind: "decision",
+      question: `Question ${index}`,
+      requestedAt: new Date().toISOString(),
+      notification,
+    };
+  }
+  mixed.children[4].state = "completed";
+  mixed.children[4].result = { kind: "text", value: "Done", completedAt: new Date().toISOString() };
+  mixed.children[5].state = "failed";
+  mixed.children[5].failure = { message: "Tests failed", lastActivity: mixed.children[5].latestActivity, failedAt: new Date().toISOString() };
+  mixed.children[6].state = "cancelled";
+
+  const component = new AgentDeskOverlayComponent(
+    runtimeFor(mixed).runtime,
+    {},
+    { requestRender() {}, terminal: { rows: 40 } },
+    theme,
+    () => {},
+    { async resume() {} },
+  );
+  const rendered = component.render(140).join("\n");
+
+  assert.match(rendered, /conductor manages subagents/);
+  assert.match(rendered, /NEEDS RECOVERY/);
+  assert.match(rendered, /Reader 1 · sol · Interrupted/);
+  assert.match(rendered, /MANAGED BY CONDUCTOR/);
+  assert.match(rendered, /RECENT/);
+  assert.match(rendered, /Notifying conductor/);
+  assert.match(rendered, /Waiting on conductor/);
+  assert.match(rendered, /Update held · \/agents use/);
+  assert.match(rendered, /Completed · update held · \/agents use/);
+  assert.match(rendered, /Failed · Tests failed · update held · \/agents use/);
+  assert.match(rendered, /Cancelled · update held · \/agents use/);
+  assert.doesNotMatch(rendered, /hidden-run-id/);
+  component.dispose();
+
+  const failedDetail = new AgentDeskOverlayComponent(
+    runtimeFor(mixed).runtime,
+    { childId: "child-6" },
+    { requestRender() {}, terminal: { rows: 24 } },
+    theme,
+    () => {},
+    { async resume() {} },
+  );
+  failedDetail.handleInput("\r");
+  assert.match(failedDetail.render(120).join("\n"), /Run update not added to this branch · \/agents use/);
+  failedDetail.dispose();
+});
+
+test("agent desk honors bare, run, and child initial targets", () => {
+  const newer = run("running", new Date().toISOString(), 2);
+  newer.id = "newer";
+  newer.createdAt = new Date(2_000).toISOString();
+  newer.children[0].id = "newer-running";
+  newer.children[0].label = "Newer running";
+  newer.children[1].id = "newer-interrupted";
+  newer.children[1].label = "Newer interrupted";
+  newer.children[1].state = "interrupted";
+  const older = run("running", new Date().toISOString(), 1);
+  older.id = "older";
+  older.createdAt = new Date(1_000).toISOString();
+  older.children[0].id = "older-running";
+  older.children[0].label = "Older running";
+  const harness = runtimeFor(older, newer);
+  const makeDesk = (target) => new AgentDeskOverlayComponent(
+    harness.runtime,
+    target,
+    { requestRender() {}, terminal: { rows: 30 } },
+    theme,
+    () => {},
+    { async resume() {} },
+  );
+
+  const bare = makeDesk({});
+  assert.match(bare.render(120).join("\n"), /› .*Newer interrupted/);
+  bare.dispose();
+  const runTarget = makeDesk({ runId: "older" });
+  assert.match(runTarget.render(120).join("\n"), /› .*Older running/);
+  runTarget.dispose();
+  const childTarget = makeDesk({ childId: "newer-running" });
+  assert.match(childTarget.render(120).join("\n"), /› .*Newer running/);
+  childTarget.dispose();
+  const mismatchedTarget = makeDesk({ runId: "older", childId: "newer-running" });
+  assert.match(mismatchedTarget.render(120).join("\n"), /› .*Newer interrupted/);
+  mismatchedTarget.dispose();
+  const missingTarget = makeDesk({ childId: "missing" });
+  assert.match(missingTarget.render(120).join("\n"), /› .*Newer interrupted/);
+  missingTarget.dispose();
+});
+
+test("agent desk preserves identity selection across reclassification and opens live detail", () => {
+  const activeRun = run("running", new Date().toISOString(), 2);
+  activeRun.children[0].label = "First assignment";
+  activeRun.children[1].label = "Selected assignment";
+  const harness = runtimeFor(activeRun);
+  const component = new AgentDeskOverlayComponent(
+    harness.runtime,
+    {},
+    { requestRender() {}, terminal: { rows: 24 } },
+    theme,
+    () => {},
+    { async resume() {} },
+  );
+
+  component.handleInput("j");
+  component.handleInput("\r");
+  assert.match(component.render(120).join("\n"), /Agents \/ Selected assignment/);
+
+  const completed = structuredClone(activeRun);
+  completed.children[1].state = "completed";
+  completed.children[1].result = { kind: "text", value: "Selected result", completedAt: new Date().toISOString() };
+  harness.emit(completed);
+  const detail = component.render(120).join("\n");
+  assert.match(detail, /Agents \/ Selected assignment/);
+  assert.match(detail, /Selected result/);
+  assert.doesNotMatch(detail, /First assignment/);
+
+  component.handleInput("\x1b");
+  assert.match(component.render(120).join("\n"), /› .*Selected assignment/);
+  component.dispose();
+});
+
+test("agent desk falls back to the nearest assignment and then an empty state", () => {
+  const activeRun = run("running", new Date().toISOString(), 3);
+  activeRun.children[0].label = "First";
+  activeRun.children[1].label = "Second";
+  activeRun.children[2].label = "Third";
+  const harness = runtimeFor(activeRun);
+  const component = new AgentDeskOverlayComponent(
+    harness.runtime,
+    { childId: "child-2" },
+    { requestRender() {}, terminal: { rows: 24 } },
+    theme,
+    () => {},
+    { async resume() {} },
+  );
+  assert.match(component.render(100).join("\n"), /› .*Second/);
+
+  const removed = structuredClone(activeRun);
+  removed.children.splice(1, 1);
+  harness.emit(removed);
+  assert.match(component.render(100).join("\n"), /› .*Third/);
+
+  const empty = structuredClone(activeRun);
+  empty.children = [];
+  harness.emit(empty);
+  assert.match(component.render(100).join("\n"), /No agent assignments in this session/);
+  component.dispose();
+});
+
+test("agent desk resume locks per child and reports launch errors", async () => {
+  const interrupted = run("interrupted", new Date().toISOString(), 2);
+  interrupted.children[0].label = "First interrupted";
+  interrupted.children[1].label = "Second interrupted";
+  const harness = runtimeFor(interrupted);
+  const calls = [];
+  let resolveFirst;
+  const firstPending = new Promise((resolve) => { resolveFirst = resolve; });
+  const component = new AgentDeskOverlayComponent(
+    harness.runtime,
+    {},
+    { requestRender() {}, terminal: { rows: 24 } },
+    theme,
+    () => {},
+    {
+      resume(_runId, childId) {
+        calls.push(childId);
+        return childId === "child-1" ? firstPending : Promise.reject(new Error("Model unavailable"));
+      },
+    },
+  );
+
+  assert.match(component.render(120).join("\n"), /r\/R resume/);
+  component.handleInput("R");
+  component.handleInput("r");
+  assert.deepEqual(calls, ["child-1"]);
+  assert.match(component.render(120).join("\n"), /First interrupted · sol · Resume requested/);
+  component.handleInput("j");
+  component.handleInput("r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ["child-1", "child-2"]);
+  assert.match(component.render(120).join("\n"), /Second interrupted · sol · Interrupted · Model unavailable/);
+  resolveFirst();
+  await new Promise((resolve) => setImmediate(resolve));
+  component.dispose();
+});
+
+test("agent desk shows queued, starting, running, and re-interrupted resume states", async () => {
+  const interrupted = run("interrupted", new Date().toISOString());
+  const harness = runtimeFor(interrupted);
+  let resolveResume;
+  const resumeGate = new Promise((resolve) => { resolveResume = resolve; });
+  const component = new AgentDeskOverlayComponent(
+    harness.runtime,
+    {},
+    { requestRender() {}, terminal: { rows: 24 } },
+    theme,
+    () => {},
+    { resume: () => resumeGate },
+  );
+
+  component.handleInput("r");
+  assert.match(component.render(100).join("\n"), /Resume requested/);
+  const queued = structuredClone(interrupted);
+  queued.children[0].state = "queued";
+  queued.children[0].latestActivity = { kind: "waiting", summary: "Resume queued for an inference slot", observedAt: new Date().toISOString() };
+  harness.emit(queued);
+  assert.match(component.render(100).join("\n"), /Queued · Resume queued/);
+  resolveResume();
+  await new Promise((resolve) => setImmediate(resolve));
+  for (const [state, summary, expected] of [
+    ["starting", "Restoring the child session", /Starting · Restoring/],
+    ["running", "Running tests", /Running tests/],
+    ["interrupted", "Interrupted again", /Interrupted/],
+  ]) {
+    const update = structuredClone(interrupted);
+    update.children[0].state = state;
+    update.children[0].latestActivity = { kind: "waiting", summary, observedAt: new Date().toISOString() };
+    harness.emit(update);
+    assert.match(component.render(100).join("\n"), expected);
+  }
+  component.dispose();
+});
+
+test("agent desk stays ANSI-safe on narrow and short terminals", () => {
+  const many = run("running", new Date().toISOString(), 12);
+  const ansiTheme = {
+    fg: (_color, text) => `\u001b[31m${text}\u001b[0m`,
+    bg: (_color, text) => `\u001b[40m${text}\u001b[0m`,
+    bold: (text) => `\u001b[1m${text}\u001b[0m`,
+  };
+  const component = new AgentDeskOverlayComponent(
+    runtimeFor(many).runtime,
+    {},
+    { requestRender() {}, terminal: { rows: 6 } },
+    ansiTheme,
+    () => {},
+    { async resume() {} },
+  );
+  for (const width of [10, 40, 79]) {
+    const lines = component.render(width);
+    assert.ok(lines.length <= 6);
+    assert.ok(lines.every((line) => visibleWidth(line) <= width));
+    if (width >= 40) assert.match(lines.join("\n"), /Reader 1/);
+  }
+  component.handleInput("\r");
+  const detail = component.render(40);
+  assert.ok(detail.length <= 6);
+  assert.ok(detail.every((line) => visibleWidth(line) <= 40));
+  assert.match(detail.join("\n"), /Agents \/ Reader 1/);
+  component.dispose();
+});
+
+test("compact Agent Desk detail keeps transcript scrolling truthful", async () => {
+  const activeRun = run("running", new Date().toISOString());
+  activeRun.children[0].sessionFile = "/tmp/child-1/session.jsonl";
+  const runtime = {
+    subscribe() { return () => {}; },
+    get: () => structuredClone(activeRun),
+  };
+  const overlay = new RunOverlayComponent(
+    runtime,
+    "run-1",
+    { requestRender() {}, terminal: { rows: 8 } },
+    theme,
+    () => {},
+    async () => [
+      { kind: "assistant", text: "message 1" },
+      { kind: "assistant", text: "message 2" },
+      { kind: "assistant", text: "message 3" },
+    ],
+    { detailOnly: true },
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const live = overlay.render(60);
+  assert.ok(live.length <= 6);
+  assert.match(live.join("\n"), /Thinking/);
+  assert.match(live.join("\n"), /scroll/);
+  overlay.handleInput("\x1b[A");
+  overlay.handleInput("\x1b[A");
+  assert.match(overlay.render(60).join("\n"), /message 3/);
+  overlay.handleInput("\x1b[A");
+  overlay.handleInput("\x1b[A");
+  const earlier = overlay.render(60).join("\n");
+  assert.match(earlier, /message 2/);
+  assert.doesNotMatch(earlier, /All transcript lines visible/);
+  overlay.handleInput("\x1b[F");
+  assert.match(overlay.render(60).join("\n"), /Thinking/);
+  overlay.dispose();
+});
+
+test("delegate UI closes its Desk and fences an in-flight Resume render", async () => {
+  const harness = runtimeFor(run("interrupted", new Date().toISOString()));
+  const ui = createDelegateUi(harness.runtime);
+  let component;
+  let renders = 0;
+  let resolveResume;
+  const resumeGate = new Promise((resolve) => { resolveResume = resolve; });
+  const opened = ui.openDesk(
+    {},
+    {
+      mode: "tui",
+      ui: {
+        custom(factory) {
+          return new Promise((resolve) => {
+            component = factory({ requestRender() { renders++; }, terminal: { rows: 24 } }, theme, {}, resolve);
+          });
+        },
+      },
+    },
+    { resume: () => resumeGate },
+  );
+  assert.ok(component);
+  component.handleInput("r");
+  ui.dispose();
+  await opened;
+  const afterDispose = renders;
+  resolveResume();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(renders, afterDispose);
+  assert.equal(harness.unsubscribed, true);
+});
+
 test("temporary workspace review controls remain in the detailed overlay", () => {
   const completedRun = run("completed", new Date().toISOString());
   completedRun.children[0].workspace = {
@@ -376,6 +791,21 @@ test("temporary workspace review controls remain in the detailed overlay", () =>
   assert.match(rendered, /\/agents apply run-1 tree-reviewed child-1/);
   assert.match(rendered, /Manifest: \/tmp\/review\.json/);
   overlay.dispose();
+
+  const desk = new AgentDeskOverlayComponent(
+    runtimeFor(completedRun).runtime,
+    {},
+    { requestRender() {}, terminal: { rows: 30 } },
+    theme,
+    () => {},
+    { async resume() {} },
+  );
+  desk.handleInput("\r");
+  const deskDetail = desk.render(160).join("\n");
+  assert.match(deskDetail, /The conductor can apply or discard this reviewed revision/);
+  assert.match(deskDetail, /Manifest: \/tmp\/review\.json/);
+  assert.doesNotMatch(deskDetail, /\/agents apply|\/agents discard/);
+  desk.dispose();
 });
 
 test("child history keeps structured Pi-like events and hides runtime terminal tools", async (t) => {
@@ -494,7 +924,7 @@ test("multi-child overlay supports keyboard navigation, scrolling, narrow widths
   overlay.handleInput("\r");
   const focused = overlay.render(100).join("\n");
   assert.match(focused, /Read module 32/);
-  assert.match(focused, /▶.*Reader 32.*sol · max/);
+  assert.match(focused, /▶.*Reader 32.*openai\/sol · max/);
 
   const narrowLines = overlay.render(60);
   const narrow = narrowLines.join("\n");

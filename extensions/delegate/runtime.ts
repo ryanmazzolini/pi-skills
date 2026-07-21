@@ -870,6 +870,7 @@ export class DelegateRuntime {
 		resources: LaunchResources,
 		origin?: ParentReauthorization,
 	): Promise<DelegationRun> {
+		if (this.disposed) throw new Error("Delegation runtime is not active");
 		const run = this.requireRun(runId);
 		const selected = childId
 			? [this.requireChild(run, childId)]
@@ -878,8 +879,14 @@ export class DelegateRuntime {
 		for (const child of selected) {
 			if (child.state !== "interrupted") throw new Error(`Child ${child.id} is ${child.state}; only interrupted children can resume`);
 		}
+		const parentBefore = clone(run.parent);
 		this.reauthorize(run, origin);
-		for (const child of selected) {
+		const prepared = selected.map((child) => {
+			const before = {
+				state: child.state,
+				pending: child.pending ? clone(child.pending) : undefined,
+				latestActivity: clone(child.latestActivity),
+			};
 			const prior = child.pending;
 			const kind: PendingWorkKind = prior?.kind === "reply" ? "reply" : child.sessionFile ? "resume" : "initial";
 			const message = prior?.message;
@@ -887,11 +894,40 @@ export class DelegateRuntime {
 			child.pending = pending;
 			child.state = "queued";
 			child.latestActivity = this.activity("queued", kind === "reply" ? "Parent reply queued after interruption" : "Resume queued for an inference slot");
+			return { child, before, pending };
+		});
+		run.updatedAt = this.timestamp();
+		try {
+			await this.persist(run);
+			if (this.disposed || prepared.some(({ child, pending }) => child.state !== "queued" || child.pending?.sequence !== pending.sequence)) {
+				throw new Error("Delegation runtime is not active");
+			}
+		} catch (error) {
+			for (const { child, before, pending } of prepared) {
+				if (child.state !== "queued" || child.pending?.sequence !== pending.sequence) continue;
+				child.state = before.state;
+				child.latestActivity = before.latestActivity;
+				if (before.pending) child.pending = before.pending;
+				else delete child.pending;
+			}
+			if (origin
+				&& run.parent.inputGeneration === origin.inputGeneration
+				&& run.parent.leafId === origin.leafId) {
+				run.parent = parentBefore;
+			}
+			run.updatedAt = this.timestamp();
+			try {
+				await this.persist(run);
+			} catch {
+				// Preserve the corrected in-memory state; the original persistence failure remains actionable.
+			}
+			this.emit(run);
+			throw error;
+		}
+		for (const { child, pending } of prepared) {
 			this.launchResources.set(child.id, resources);
 			this.queue.push({ runId, childId: child.id, sequence: pending.sequence });
 		}
-		run.updatedAt = this.timestamp();
-		await this.persist(run);
 		this.emit(run);
 		this.pump();
 		return clone(run);

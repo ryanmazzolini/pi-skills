@@ -22,7 +22,7 @@ import {
 	type ResolvedChildConfig,
 	type RunView,
 } from "./runtime.ts";
-import { createDelegateUi, type DelegateUi } from "./ui.ts";
+import { createDelegateUi, type AgentDeskTarget, type DelegateUi } from "./ui.ts";
 import { createGitWorkspaceManager } from "./workspace.ts";
 
 const TaskParams = Type.Object({
@@ -128,6 +128,13 @@ export function currentDelegationRun(runs: DelegationRun[]): DelegationRun | und
 export function currentHeldRun(runs: DelegationRun[]): DelegationRun | undefined {
 	return newestFirst(runs).find((run) => run.delivery.state === "held"
 		|| run.children.some((child) => child.attention?.notification.state === "held"));
+}
+
+export function agentDeskTarget(runId?: string, childId?: string): AgentDeskTarget {
+	return {
+		...(runId ? { runId } : {}),
+		...(childId ? { childId } : {}),
+	};
 }
 
 async function existingDirectory(parentCwd: string, value: string | undefined): Promise<string> {
@@ -527,7 +534,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("agents", {
-		description: "Open or manage agent runs: /agents [list|<run-id>|use|cancel|review|apply|discard|cleanup]",
+		description: "Open Agent Desk or manage runs: /agents [<run-id> [child-id]|list|use|cancel|review|apply|discard|cleanup]",
 		async handler(args, ctx) {
 			currentContext = ctx;
 			const [action, first, second, third] = args.trim().split(/\s+/, 4);
@@ -597,15 +604,26 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 				pi.appendEntry("delegate-command", { text });
 				return;
 			}
-			const run = action ? activeRuntime.get(action) : currentDelegationRun(activeRuntime.list());
-			if (!run) {
-				ctx.ui.notify(action ? `Unknown agent run: ${action}` : "No agent runs in this session.", "warning");
-				return;
-			}
+			const runs = activeRuntime.list();
+			const targetRun = action ? activeRuntime.get(action) : undefined;
 			if (ctx.mode === "tui" && delegateUi) {
-				await delegateUi.openRun(run.id, ctx);
+				await delegateUi.openDesk(agentDeskTarget(action, first), ctx, {
+					async resume(runId, childId) {
+						const before = activeRuntime.get(runId);
+						if (!before) throw new Error(`Unknown agent run: ${runId}`);
+						const child = before.children.find((candidate) => candidate.id === childId);
+						if (!child) throw new Error(`Unknown agent: ${childId}`);
+						await activeRuntime.resume(runId, childId, launchResourcesForChild(ctx, child), currentOrigin(ctx, inputGeneration));
+						syncControlTool();
+					},
+				});
 			} else {
-				pi.appendEntry("delegate-command", { text: toolText(projectRun(run)) });
+				if (action && !targetRun) {
+					ctx.ui.notify(`Unknown agent run: ${action}`, "warning");
+					return;
+				}
+				const run = targetRun ?? currentDelegationRun(runs);
+				pi.appendEntry("delegate-command", { text: run ? toolText(projectRun(run)) : "No agent runs in this session." });
 			}
 		},
 	});
