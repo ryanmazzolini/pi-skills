@@ -1,113 +1,72 @@
 ---
 name: "align"
-description: Align the critical path to the smallest useful release. Use when ship routes work with open requirements, user or caller experience, scope, or high-level shape decisions, or when the user explicitly asks to be grilled.
+description: Align the smallest useful release before planning. Use when ship finds open decisions about requirements, user or caller experience, scope, or solution direction, or when the user asks to be grilled.
 ---
 
 # Align
 
-Follow the critical path to shared understanding before planning or building. Ask one question at a time, but choose the question that settles the most important later decisions.
+**Be relentless about decisions that can meaningfully change Now or its plan.** Investigate first. Ask one focused question per turn. Stop when no such decision remains.
 
-**Now** is the smallest useful end-to-end release by default. **Later** holds explicitly deferred behavior. Widen Now only when the user asks for a broader release or exhaustive stress test.
+**Now** is the smallest useful end-to-end release. **Later** holds deferred behavior. Widen Now only when the user asks for a broader release or an exhaustive stress test.
 
-Facts come from inspection; decisions come from the human. Read relevant docs, code, tests, prior conversation, and existing artifacts before asking.
+## Keep one current alignment
 
-## Durable alignment
+Use the workflow directory supplied by the caller. Otherwise reuse the relevant directory under `.plans/`, `.plan/`, or `docs/plans/`. For new durable work without a project convention, create `.plans/YYYY-MM-DD-slug/`.
 
-Prefer a workflow directory supplied by the caller. Otherwise reuse the relevant directory under an existing `.plans/`, `.plan/`, or `docs/plans/`; create `.plans/YYYY-MM-DD-slug/` when the work needs to survive the session and no project convention exists.
+Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. If align starts durable work without the project-vault context from ship, first follow the vault guidance in `../ship/SKILL.md`.
 
-New work uses `{workflow-dir}/alignment.md`. Read a legacy `question.md` when that is the existing artifact and keep it as the single source of truth.
+Before asking, compare the user's description with how the system works today. Read relevant docs, code, tests, prior conversation, and workflow files. Use the project's domain language and read relevant `CONTEXT-MAP.md`, `CONTEXT.md`, and architecture decisions. Clarify important differences and terms that hide more than one concept.
 
-Keep the artifact adaptive and compact. It is ready when a fresh session can identify:
+Keep the alignment file short and current. Replace outdated understanding rather than keeping a transcript. Record the actor or caller, outcome, success, Now, Later, confirmed walkthrough when applicable, settled behavior and constraints, needed solution direction, inspected facts, assumptions, contradictions, and open decisions.
 
-- the goal and intended outcome
-- Now and Later
-- the primary experience when Now changes an interface
-- settled requirements and any necessary high-level shape
-- current assumptions the user may still correct
-- any unresolved human decision
+## Settle what planning needs
 
-After meaningful answers, replace superseded understanding rather than preserving a transcript. Keep facts, decisions, assumptions, and open questions current.
+Work from the outcome toward concrete behavior:
 
-## Move from broad to concrete
+1. Identify the actor or caller, desired outcome, observable success, Now, and Later.
+2. When Now changes an interface, confirm one primary UX/DX walkthrough: how the person or caller starts, acts, receives feedback, finishes, leaves, resumes, retries, and recovers.
+3. Resolve constraints that could change the release or experience, such as security, reliability, accessibility, compatibility, performance, viability, or migration.
+4. Settle observable behavior for the normal path, important boundaries, failures, and recovery.
+5. Choose only the solution direction needed to tell meaningfully different plans apart.
 
-Use this as an attention order, not a sequence of mandatory phases:
+Describe the walkthrough in user or caller language with ordinary values, not proposed types, schemas, status values, or architecture. Reuse a confirmed walkthrough unless new evidence changes it.
 
-1. Establish the actor or caller, desired outcome, success, and Now and Later boundary.
-2. When Now changes an interface, describe how the person or caller starts, acts, receives feedback, finishes, resumes, retries, or recovers.
-3. Surface only the constraints that could materially change that scope or experience, such as security, reliability, accessibility, compatibility, performance, viability, or migration.
-4. Resolve observable behavior along the normal path, important boundaries, failures, and recovery.
-5. Settle only the high-level solution shape needed to distinguish materially different plans.
+When solution shaping is needed, use the domain-shape and boundary guidance in `../../architecture/shape-first/SKILL.md`. Stop at what planning needs. Leave local interfaces, structure, TODOs, and code to later work. Reopen only the parts changed by later answers.
 
-For an experience walkthrough, use user or caller language and ordinary values rather than proposed types, schemas, status values, or architecture. Confirm the walkthrough before shaping the solution, but do not turn it into a separate ceremony when it is already clear.
+## Ask the next question
 
-Later answers may change earlier understanding. Revisit the affected branch instead of treating each part as complete forever. When high-level shaping is necessary, use the domain-shape and boundary concepts from `../../architecture/shape-first/SKILL.md`. Leave slice-local interfaces and structure to implementation.
+Before each question, consider the likely answers and how each would change the work. Prefer the decision only the user can make that has the greatest effect on Now, the primary experience, an important constraint, observable behavior, or the solution direction. If two decisions matter equally, ask about the one that is harder to reverse.
 
-Use the project's domain language. Read `CONTEXT-MAP.md`, relevant `CONTEXT.md` files, and architecture decisions when present. Challenge a term that conflicts with the glossary or hides two different concepts.
+Do not ask when inspection can answer, the likely answers produce essentially the same plan, a safe default is easy to reverse, or the matter belongs in Later. Record the fact, assumption, or deferral in the alignment file. State a new assumption briefly when the user may want to correct it. If a wrong assumption could change Now or the plan, make it the next question.
 
-## Choose the next question
-
-Before asking, consider the plausible answers and what each would change. Prefer the question whose plausible answers would change the most downstream decisions across:
-
-- Now or Later scope
-- the primary experience
-- an important constraint
-- observable behavior or verification
-- the high-level shape needed for planning
-
-Break ties in favor of choices that are expensive to reverse and genuinely belong to the human.
-
-Do not ask when inspection can answer the question, the plausible answers lead to essentially the same plan, a safe default is easy to reverse, or the branch belongs in Later. Resolve these cases through inspection, a stated assumption, or deferral instead.
-
-## Ask one question
-
-Ask exactly one direct question in plain language. Explain briefly why it matters and end with:
+Ask exactly one direct question in plain language. Say why it matters when that is not obvious. End with:
 
 > **My recommended answer:** [answer and short reason]
 
-One question may use a concrete scenario and contrast a small number of recognizable outcomes. Do not bundle independent decisions or collect several fields at once.
+If the evidence favors no answer, recommend “No preference yet” and say why. A question may use one concrete scenario and a few recognizable outcomes, but it must not bundle independent decisions.
 
-When new context creates an assumption the user may want to correct, state only that new assumption in natural language before asking the next question. Do not require a fixed heading or repeated sentence pattern. Do not restate the user's answer, repeat earlier assumptions, or mix inferred assumptions with recommendations. If getting the inference wrong could materially change Now, make it the next question instead.
+Keep investigation, option ranking, and file maintenance thorough and internal. Keep each turn to the new evidence or assumption needed for one question. Do not restate answers or turn the conversation into a report.
 
-## Keep the conversation oriented
+When statements conflict, explain only the conflict and ask which understanding is correct. When inspection contradicts current understanding, show the relevant evidence and reopen only the affected decision.
 
-Maintain a current picture of inspected facts, human decisions, assumptions, contradictions, Now and Later, and the most consequential unresolved branches.
+After roughly ten questions, a major scope change, or whenever the conversation becomes hard to follow, give a short summary of what is settled, assumed, and still open. Then continue with one question. This is not an approval checkpoint.
 
-After roughly ten questions, after a material scope change, or whenever the conversation becomes difficult to follow, give a concise conversational summary. State:
+## Narrow or finish
 
-- what is settled
-- what is currently assumed
-- the few outstanding questions that matter most
+Stop the current line of questioning when the remaining uncertainty belongs to another useful outcome, actor, release boundary, or solution direction; sits outside Now; or no longer affects the same plan. Also stop when contradictions prevent a clear Now or questions are collecting detail without reducing uncertainty.
 
-Replace stale understanding rather than replaying the history. This summary helps the human stay oriented; it is not an approval ceremony. Continue with the highest-value outstanding question unless the summary exposes a real scope decision.
+Recommend the smallest useful next move: narrow Now, move the branch to Later, open a linked alignment, or name the decision blocking progress. Continue only when the next answer can still meaningfully change the same release or plan.
 
-When statements conflict, explain the conflict briefly and ask the human to choose or clarify. When a term has two plausible meanings, state them. When inspection contradicts the current understanding, present the evidence and reopen only the affected decision.
+Alignment is complete when the goal, actor or caller, outcome, success, Now, Later, primary walkthrough when applicable, important constraints, observable behavior, and needed solution direction are clear enough to plan, and the user has settled every decision that could meaningfully change Now or the plan.
 
-## Narrow, split, or stop
+Before presenting the completed alignment, follow `../ship/references/review-gate.md`. Resolve factual findings through inspection. Bring only genuine requirement choices back as one-question turns. If independent review is unavailable, state the blocker and stop before requesting approval.
 
-Reassess the conversation when:
+Present a concise summary of the goal, Now, Later, confirmed experience when applicable, current assumptions, and any unresolved blocker. Ask one direct question: is the alignment correct enough to move to planning? Do not ask the user to review a long alignment document.
 
-- the remaining questions describe another independently useful outcome
-- branches have different actors, release boundaries, or solution directions
-- uncertainty outside Now dominates the discussion
-- the next questions no longer affect the same plan
-- contradictions prevent a coherent Now
-- the discussion is collecting details rather than removing meaningful ambiguity
+After approval, hand the alignment back to `ship`, which routes planning to `slice-plan`. Stop before planning or building.
 
-Recommend the smallest useful response: narrow Now, move a branch to Later or a linked alignment, or identify the specific ambiguity that must be resolved before continuing. Question count is a signal, not a quota; continue when the next answer can still materially change the same release and plan.
+## Preserve durable decisions
 
-## Finish alignment
+With the user's approval, a new or sharper domain term may update `CONTEXT.md` using `./CONTEXT-FORMAT.md`. A hard-to-reverse architecture choice with a real trade-off may become an architecture decision record using `./ADR-FORMAT.md`.
 
-Alignment is ready when Now and Later are coherent, the primary experience is confirmed when applicable, consequential constraints are resolved or explicitly assumed, observable behavior is sufficient to plan, and no remaining human-owned question has plausible answers that would materially change the release or plan.
-
-Before presenting the completed alignment summary, follow `../ship/references/review-gate.md`. Treat independent analysis as support for the coordinating thread. Resolve factual corrections directly, and bring only genuine requirement-level ambiguity or choices back into the conversation. Do not ask the human to review a long alignment document.
-
-Summarize the goal, Now, Later, the confirmed experience when applicable, current assumptions, and any unresolved decision. Ask the human to correct that summary or confirm moving to planning.
-
-## Durable language and decisions
-
-After the user resolves knowledge worth preserving beyond this workflow:
-
-- A new or sharpened domain term may update `CONTEXT.md` using `./CONTEXT-FORMAT.md`.
-- A high-reversal-cost architecture decision with a real trade-off may become an architecture decision record using `./ADR-FORMAT.md`.
-
-Keep routine or easily reversed choices in the alignment artifact.
+Keep routine and easily reversed choices in the alignment file. Keep operational history out of the project vault; `ship` handles the high-level vault note at graduation and asks before committing it.
