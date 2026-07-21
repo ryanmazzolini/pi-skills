@@ -43,19 +43,23 @@ Afterward, keep the verdict and its effect on alignment, discard the prototype b
 
 ## Ask the next question
 
-Before each question, consider the likely answers and how each would change the work. Prefer the decision only the user can make that has the greatest effect on Now, the primary experience, an important constraint, observable behavior, or the solution direction. If two decisions matter equally, ask about the one that is harder to reverse.
+Rank open decisions by **impact × uncertainty**. Judge impact by how much the plausible answers would change Now, the primary experience, an important constraint, observable behavior, or the solution direction. Treat a decision that prevents a coherent Now as high impact, and include reversal cost in that judgment. Judge uncertainty by how evenly plausible answers fit inspected evidence and prior decisions—not intuition alone. Ask the highest-ranked decision that only the user can settle.
 
-Do not ask when inspection can answer, the likely answers produce essentially the same plan, a safe default is easy to reverse, or the matter belongs in Later. Record the fact, assumption, or deferral in the alignment file. State a new assumption briefly when the user may want to correct it. If a wrong assumption could change Now or the plan, make it the next question.
+Do not ask when inspection can answer, the plausible answers produce essentially the same plan, a well-supported default has low impact × uncertainty, or the matter belongs in Later. Record the fact, assumption, or deferral in the alignment file. If later evidence raises an assumption's impact × uncertainty, return it to the open decisions and rank it again.
 
-Ask exactly one direct question in plain language. Say why it matters when that is not obvious. End with:
+Ask exactly one direct blocking question in plain language. Say why it matters when that is not obvious. Include:
 
 > **My recommended answer:** [answer and short reason]
 
+When useful, append up to three newly relevant proposals under **Assuming unless you disagree:**. Use short, scoped statements only for well-supported choices with low impact × uncertainty that the user can veto cheaply. If the user answers the blocking question without correcting them, record them as accepted assumptions for the current alignment. Keep a consequential, uncertain trade-off as the blocking question; do not invent assumptions to fill the list.
+
 If the evidence favors no answer, recommend “No preference yet” and say why. A question may use one concrete scenario and a few recognizable outcomes, but it must not bundle independent decisions.
 
-Keep investigation, option ranking, and file maintenance thorough and internal. Keep each turn to the new evidence or assumption needed for one question. Do not restate answers or turn the conversation into a report.
+Keep investigation, option ranking, and file maintenance thorough and internal. Keep each turn to the blocking question, the new evidence needed to answer it, and any newly relevant low-risk assumptions. Do not restate answers or turn the conversation into a report.
 
-When statements conflict, explain only the conflict and ask which understanding is correct. When inspection contradicts current understanding, show the relevant evidence and reopen only the affected decision.
+When statements or inspection contradict current understanding, return only the affected decision to the open queue and rank it again. If it ranks highest, explain only the conflict, show relevant evidence when applicable, and ask which understanding is correct.
+
+Before asking a fourth blocking question, compress the remaining uncertainty: resolve facts through inspection, convert well-supported defaults with low impact × uncertainty to assumptions, move behavior outside Now to Later, and use `prototype` for an experiential question that words cannot settle. Continue only when a remaining decision still ranks high by impact × uncertainty. This is a scope check, not a hard question limit.
 
 After roughly ten questions, a major scope change, or whenever the conversation becomes hard to follow, give a short summary of what is settled, assumed, and still open. Then continue with one question. This is not an approval checkpoint.
 
