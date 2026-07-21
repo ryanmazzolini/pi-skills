@@ -1,31 +1,43 @@
 # Adaptive Review Gate
 
-The coordinating thread owns review strategy. Before presenting a completed alignment summary or asking the human to approve a plan, implementation, or delivery artifact, obtain at least one independent review of its current form. A blocking question, periodic alignment summary, or progress update is not a review checkpoint.
+The Ship coordinating thread owns review strategy. Before presenting a completed alignment summary or asking the human to approve a plan, implementation, or delivery result, get at least one independent review of its current form. A blocking question, short alignment update, or progress report does not need this gate.
 
-## Choose the review
+## Choose enough review
 
-Select the lenses, reviewer count, model size, reasoning level, and sequence from the artifact's novelty, reversibility, blast radius, user visibility, failure modes, validation strength, and prior findings. Load `agent-coordination` before selecting delegated routes; do not hardcode model names here.
+Choose the lenses, reviewer count, model, reasoning depth, and order from how new, hard to reverse, wide-reaching, or visible the work is; what can fail; the strength of validation; and earlier findings. Load `agent-coordination` before choosing delegated routes. Do not hardcode model names here.
 
-Use the smallest review that can credibly challenge the work:
+Use the smallest review that can credibly challenge the result:
 
-- A narrow mechanical artifact may need one lightweight reviewer focused on contract fidelity and unintended changes.
-- An ordinary implementation normally needs one balanced reviewer covering accepted behavior, correctness, regressions, and whether validation exercises the real seam. Add a distinct UX, maintainability, or compatibility lens when it could change the result.
-- Destructive, concurrent, security-sensitive, release, migration, or otherwise high-blast-radius work may need multiple orthogonal reviewers, deeper reasoning, earlier hazard review, and a dedicated security reviewer.
+- Narrow mechanical work may need one lightweight review to check the intended behavior and unintended changes.
+- Ordinary implementation usually needs one balanced review of accepted behavior, correctness, regressions, and whether validation reaches the real user or system boundary. Add a separate UX, maintainability, or compatibility lens only when it could change the result.
+- Destructive, concurrent, security-sensitive, release, or migration work may need several independent lenses, deeper reasoning, earlier hazard review, or a dedicated security reviewer.
 
-Reviewers use fresh context and work read-only. Give each reviewer the current alignment or approved artifact that defines correctness, the exact review target, its assigned lens, relevant repository guidance, and available validation evidence. Review the integrated result rather than isolated implementation units.
+Reviewers start with fresh context and work read-only. Give them the current alignment or approved artifact that defines correctness, the exact target, one clear lens, relevant repository guidance, and available validation. Review the integrated result rather than isolated agent outputs.
 
-## Support alignment without designing implementation
+## Keep alignment review at the alignment level
 
-Independent alignment analysis supports the coordinating thread; it is not another review task for the human. Check for unsupported assumptions, contradictory Now and Later scope, a missing or inconsistent primary experience, overlooked consequential constraints, ambiguous observable behavior, premature solution choices, and unresolved questions whose plausible answers would materially change planning.
+Alignment analysis helps the coordinator; it does not design implementation or create another document for the human to review. Look for unsupported assumptions, conflicting Now and Later scope, a missing primary experience, overlooked constraints, unclear observable behavior, premature solution choices, and open questions whose answers could change planning.
 
-Inspect code when it provides evidence about current behavior or feasibility, but keep findings at the requirement, experience, constraint, or necessary high-level shape. Do not propose files, APIs, schemas, components, classes, tasks, slices, dependencies, or implementation architecture.
+Code may provide evidence about current behavior or feasibility. Keep findings about requirements, experience, constraints, or necessary high-level direction. Do not propose files, APIs, schemas, components, classes, tasks, slices, dependencies, or implementation architecture.
 
-The coordinator applies factual corrections and resolves findings from existing evidence. Turn a finding into one conversational question only when it exposes a genuine human-owned ambiguity or choice. Give the human a concise current summary and focused decisions rather than raw reviewer output or a long artifact to inspect.
+The coordinator corrects facts from evidence. Ask the human only when a finding reveals a real human-owned ambiguity or choice, and ask one decision at a time. Do not expose raw reviewer output.
 
-## Close the gate
+## Close every finding
 
-The coordinator synthesizes findings rather than accepting them mechanically. For alignment, resolve findings from inspection or through the ongoing conversation, then rerun the scope and consistency checks. Surface only a genuine human-owned decision. For plan, implementation, and delivery findings, fix and re-review, defer with an explicit reason the human can approve, or surface the underlying decision. Rerun dependency checks for plans and the repository's expected regression checks for implementation and delivery, plus any scenario-specific check needed to exercise the actual user, runtime, deployment, or failure path.
+Synthesize findings instead of accepting them automatically:
 
-Bind review evidence to an exact target: an artifact revision, commit or range, or working-tree diff fingerprint. Any target change makes the review stale and requires another independent pass; a purely mechanical change can use the configured lightweight route. For durable work, record each completed pass in a separate `review-evidence.md` beside the workflow artifacts, including the target, lenses and routes, finding dispositions, validation, and residual risk. Treat this evidence log as operational metadata outside the reviewed target and deliverable diff; do not amend reviewed alignment, plan, or code merely to record the result. Keep raw reviewer transcripts out of the workflow.
+- Fix a finding and review the changed target again.
+- Defer it only with a clear reason the human can approve.
+- When the underlying choice belongs to the human, ask one focused question and wait.
 
-At an alignment checkpoint, present the current shared understanding, any material correction from independent analysis, and the remaining human-owned decision. For plan, implementation, and delivery checkpoints, summarize the reviewed target, review strategy, closed or deferred findings, validation evidence, and remaining risk. If independent review is unavailable, state the blocker and do not present the completed summary or artifact for approval until review is available.
+For alignment, resolve findings through inspection or the ongoing one-question conversation, then rerun scope and consistency checks. For plans, rerun scope and dependency checks. For implementation and delivery, run the repository's expected regression checks plus any check needed to exercise the actual user, runtime, deployment, or failure path.
+
+Bind review evidence to an exact artifact revision, commit or range, or working-tree diff fingerprint. Any target change makes prior review stale. A purely mechanical correction may use the configured lightweight route.
+
+For durable work, record each completed pass in `review-evidence.md` beside the workflow files. Include the exact target, review lenses and routes, how findings were resolved, validation, and remaining risk. This is a working record, not part of the reviewed target or deliverable diff; do not change reviewed alignment, planning, or code merely to record it. Keep raw transcripts out of the workflow.
+
+## Present the result
+
+At an alignment checkpoint, give the current shared understanding, any important correction, and the one remaining human decision or approval question. For plan, implementation, and delivery checkpoints, summarize the exact target, review approach, closed or approved deferrals, validation, and remaining risk.
+
+If independent review is unavailable, state the blocker and stop before presenting the work as complete or asking for approval.
