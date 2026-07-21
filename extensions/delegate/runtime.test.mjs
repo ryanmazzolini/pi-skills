@@ -528,6 +528,73 @@ test("interrupt and resume preserve child identity and ignore stale completion",
   assert.equal(runtime.get(handle.runId).children[0].result.value, "resumed");
 });
 
+test("resume persistence failure restores an interrupted child and permits retry", async () => {
+  const repository = memoryRepository();
+  const originalSave = repository.save.bind(repository);
+  let failNextSave = false;
+  repository.save = async (run) => {
+    if (failNextSave) {
+      failNextSave = false;
+      throw new Error("disk unavailable");
+    }
+    await originalSave(run);
+  };
+  const { runtime, children } = runtimeFixture({ repository });
+  const handle = await runtime.start(startInput());
+  await settle();
+  await runtime.interruptAll();
+  const childId = handle.children[0].childId;
+
+  failNextSave = true;
+  await assert.rejects(
+    () => runtime.resume(handle.runId, childId, { model: {}, modelRegistry: {} }),
+    /disk unavailable/,
+  );
+  const restored = runtime.get(handle.runId).children[0];
+  assert.equal(restored.state, "interrupted");
+  assert.equal(restored.pending, undefined);
+  assert.equal(repository.records.get(handle.runId).children[0].state, "interrupted");
+  assert.equal(children.launches.length, 1);
+
+  await runtime.resume(handle.runId, childId, { model: {}, modelRegistry: {} });
+  await settle();
+  assert.equal(children.launches.length, 2);
+  assert.equal(runtime.get(handle.runId).children[0].state, "running");
+});
+
+test("runtime disposal fences a resume waiting on persistence", async () => {
+  const repository = memoryRepository();
+  const originalSave = repository.save.bind(repository);
+  const saveStarted = deferred();
+  const saveGate = deferred();
+  let blockQueuedSave = false;
+  repository.save = async (run) => {
+    if (blockQueuedSave && run.children.some((child) => child.state === "queued")) {
+      blockQueuedSave = false;
+      saveStarted.resolve();
+      await saveGate.promise;
+    }
+    await originalSave(run);
+  };
+  const { runtime, children } = runtimeFixture({ repository });
+  const handle = await runtime.start(startInput());
+  await settle();
+  await runtime.interruptAll();
+  const childId = handle.children[0].childId;
+
+  blockQueuedSave = true;
+  const resuming = runtime.resume(handle.runId, childId, { model: {}, modelRegistry: {} });
+  await saveStarted.promise;
+  const disposing = runtime.dispose();
+  saveGate.resolve();
+
+  await assert.rejects(() => resuming, /not active/);
+  await disposing;
+  assert.equal(runtime.get(handle.runId).children[0].state, "interrupted");
+  assert.equal(repository.records.get(handle.runId).children[0].state, "interrupted");
+  assert.equal(children.launches.length, 1);
+});
+
 test("restore converts unfinished work to interrupted without relaunching", async () => {
   const { runtime, repository } = runtimeFixture();
   const handle = await runtime.start(startInput());

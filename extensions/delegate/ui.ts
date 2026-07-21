@@ -47,14 +47,15 @@ function resultText(result: NonNullable<RunView["children"][number]["result"]>, 
 	return result.kind === "text" ? result.value : JSON.stringify(result.value, null, expanded ? 2 : undefined);
 }
 
-function temporaryWorkspaceLines(runId: string, child: DelegatedChild, theme: Theme): string[] {
+function temporaryWorkspaceLines(runId: string, child: DelegatedChild, theme: Theme, showControls = true): string[] {
 	if (child.workspace.kind !== "temporary") return [];
 	const integration = child.workspace.integration;
 	if (integration.state === "working") {
 		const lines = isFinalState(child.state)
-			? [theme.fg("warning", "Temporary workspace ready for review"), theme.fg("dim", `Review: /agents review ${runId} ${child.id}`)]
+			? [theme.fg("warning", showControls ? "Temporary workspace ready for review" : "Temporary workspace ready for conductor review")]
 			: [theme.fg("dim", "Working in an isolated temporary workspace")];
-		if (integration.message) lines.splice(1, 0, theme.fg("warning", integration.message));
+		if (integration.message) lines.push(theme.fg("warning", integration.message));
+		if (showControls && isFinalState(child.state)) lines.push(theme.fg("dim", `Review: /agents review ${runId} ${child.id}`));
 		return lines;
 	}
 	if (integration.state === "review_pending" || integration.state === "conflict") {
@@ -66,8 +67,12 @@ function temporaryWorkspaceLines(runId: string, child: DelegatedChild, theme: Th
 			theme.fg("dim", `Manifest: ${review.manifestPath}`),
 		];
 		if (integration.state === "conflict") lines.push(theme.fg("error", integration.message));
-		lines.push(theme.fg("dim", `Apply: /agents apply ${runId} ${review.revision} ${child.id}`));
-		lines.push(theme.fg("dim", `Discard: /agents discard ${runId} ${review.revision} ${child.id}`));
+		if (showControls) {
+			lines.push(theme.fg("dim", `Apply: /agents apply ${runId} ${review.revision} ${child.id}`));
+			lines.push(theme.fg("dim", `Discard: /agents discard ${runId} ${review.revision} ${child.id}`));
+		} else {
+			lines.push(theme.fg("dim", "The conductor can apply or discard this reviewed revision"));
+		}
 		return lines;
 	}
 	if (integration.state === "applying" || integration.state === "discarding") {
@@ -77,7 +82,7 @@ function temporaryWorkspaceLines(runId: string, child: DelegatedChild, theme: Th
 	const lines = [theme.fg(integration.state === "applied" ? "success" : "dim", `Workspace ${integration.state.replace("_", " ")}`)];
 	if (cleanupError) {
 		lines.push(theme.fg("warning", `Cleanup failed: ${cleanupError}`));
-		lines.push(theme.fg("dim", `Retry cleanup: /agents cleanup ${runId} ${child.id}`));
+		lines.push(theme.fg("dim", showControls ? `Retry cleanup: /agents cleanup ${runId} ${child.id}` : "The conductor can retry cleanup"));
 	}
 	return lines;
 }
@@ -513,6 +518,327 @@ function historyHasResult(history: ChildHistoryEvent[], child: DelegatedChild): 
 	return history.some((event) => event.kind === "assistant" && event.text.trim() === expected);
 }
 
+export type DeskSection = "recovery" | "managed" | "recent";
+
+export interface DeskAssignment {
+	run: DelegationRun;
+	child: DelegatedChild;
+	childIndex: number;
+	section: DeskSection;
+}
+
+export interface AgentDeskTarget {
+	runId?: string;
+	childId?: string;
+}
+
+export interface AgentDeskActions {
+	resume(runId: string, childId: string): Promise<void>;
+}
+
+interface RunOverlayOptions {
+	initialChildId?: string;
+	detailOnly?: boolean;
+}
+
+const DESK_SECTIONS: Array<{ section: DeskSection; label: string }> = [
+	{ section: "recovery", label: "NEEDS RECOVERY" },
+	{ section: "managed", label: "MANAGED BY CONDUCTOR" },
+	{ section: "recent", label: "RECENT" },
+];
+
+function deskSection(child: DelegatedChild): DeskSection {
+	if (child.state === "interrupted") return "recovery";
+	if (child.state === "completed" || child.state === "failed" || child.state === "cancelled") return "recent";
+	return "managed";
+}
+
+export function listDeskAssignments(runs: DelegationRun[]): DeskAssignment[] {
+	const orderedRuns = [...runs].sort((left, right) => {
+		const time = Date.parse(right.createdAt) - Date.parse(left.createdAt);
+		return time || left.id.localeCompare(right.id);
+	});
+	return DESK_SECTIONS.flatMap(({ section }) => orderedRuns.flatMap((run) => run.children.flatMap((child, childIndex) => (
+		deskSection(child) === section ? [{ run, child, childIndex, section }] : []
+	))));
+}
+
+function attentionDeliverySummary(child: DelegatedChild): string {
+	const notification = child.attention?.notification;
+	if (!notification || notification.state === "pending") return "Notifying conductor";
+	if (notification.state === "delivered") return "Waiting on conductor";
+	return "Update held · /agents use";
+}
+
+function deskAssignmentSummary(assignment: DeskAssignment): string {
+	const { run, child } = assignment;
+	if (child.state === "interrupted") return "Interrupted";
+	if (child.state === "needs_attention") return attentionDeliverySummary(child);
+	if (child.state === "queued") return `Queued · ${child.latestActivity.summary}`;
+	if (child.state === "starting") return `Starting · ${child.latestActivity.summary}`;
+	if (child.state === "running") return child.latestActivity.summary;
+	if (child.state === "completed") {
+		return run.delivery.state === "held" ? "Completed · update held · /agents use" : "Completed";
+	}
+	if (child.state === "failed") {
+		const failed = `Failed${child.failure?.message ? ` · ${child.failure.message}` : ""}`;
+		return run.delivery.state === "held" ? `${failed} · update held · /agents use` : failed;
+	}
+	return run.delivery.state === "held" ? "Cancelled · update held · /agents use" : "Cancelled";
+}
+
+interface DeskDisplayLine {
+	text: string;
+	childId?: string;
+}
+
+export class AgentDeskOverlayComponent implements Component {
+	private readonly runtime: DelegateRuntime;
+	private readonly tui: Pick<TUI, "requestRender"> & { terminal?: { rows: number } };
+	private readonly theme: Theme;
+	private readonly done: () => void;
+	private readonly actions: AgentDeskActions;
+	private readonly unsubscribe: () => void;
+	private readonly timer: ReturnType<typeof setInterval>;
+	private readonly resumePending = new Set<string>();
+	private readonly resumeErrors = new Map<string, string>();
+	private selectedChildId: string | undefined;
+	private selectedIndexHint = 0;
+	private detail: RunOverlayComponent | undefined;
+	private disposed = false;
+
+	constructor(
+		runtime: DelegateRuntime,
+		target: AgentDeskTarget,
+		tui: Pick<TUI, "requestRender"> & { terminal?: { rows: number } },
+		theme: Theme,
+		done: () => void,
+		actions: AgentDeskActions,
+	) {
+		this.runtime = runtime;
+		this.tui = tui;
+		this.theme = theme;
+		this.done = done;
+		this.actions = actions;
+		const assignments = this.assignments();
+		const initialIndex = target.childId
+			? assignments.findIndex(({ run, child }) => child.id === target.childId && (!target.runId || run.id === target.runId))
+			: target.runId
+				? assignments.findIndex(({ run }) => run.id === target.runId)
+				: 0;
+		this.selectIndex(assignments, initialIndex >= 0 ? initialIndex : 0);
+		this.unsubscribe = runtime.subscribe(() => {
+			this.reconcileSelection();
+			this.tui.requestRender();
+		});
+		this.timer = setInterval(() => {
+			if (this.disposed) return;
+			const selected = this.selectedAssignment();
+			if (selected && (selected.child.state === "queued" || selected.child.state === "starting" || selected.child.state === "running")) {
+				this.tui.requestRender();
+			}
+		}, SPINNER_FRAME_MS);
+		this.timer.unref?.();
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "ctrl+c")) {
+			this.done();
+			return;
+		}
+		if (this.detail) {
+			this.detail.handleInput(data);
+			return;
+		}
+		if (matchesKey(data, "escape")) {
+			this.done();
+			return;
+		}
+		const assignments = this.assignments();
+		const selectedIndex = this.reconcileSelection(assignments);
+		if ((matchesKey(data, "up") || data === "k") && selectedIndex > 0) {
+			this.selectIndex(assignments, selectedIndex - 1);
+			this.tui.requestRender();
+			return;
+		}
+		if ((matchesKey(data, "down") || data === "j") && selectedIndex >= 0 && selectedIndex < assignments.length - 1) {
+			this.selectIndex(assignments, selectedIndex + 1);
+			this.tui.requestRender();
+			return;
+		}
+		if (matchesKey(data, "return") || matchesKey(data, "right")) {
+			this.openDetail();
+			return;
+		}
+		if (matchesKey(data, "r") || matchesKey(data, "shift+r") || data === "R") void this.resumeSelected();
+	}
+
+	render(width: number): string[] {
+		if (this.detail) return this.detail.render(width);
+		const safeWidth = Math.max(1, width);
+		const innerWidth = Math.max(1, safeWidth - 2);
+		const assignments = this.assignments();
+		const selectedIndex = this.reconcileSelection(assignments);
+		const selected = selectedIndex >= 0 ? assignments[selectedIndex] : undefined;
+		const header = `${this.theme.bold("Agents")} ${this.theme.fg("dim", `· conductor manages subagents · ${assignments.length} assignment${assignments.length === 1 ? "" : "s"}`)}`;
+		if (!selected) {
+			return framedOverlay([
+				truncateToWidth(header, innerWidth),
+				this.theme.fg("borderMuted", "─".repeat(innerWidth)),
+				this.theme.fg("dim", "No agent assignments in this session."),
+				this.theme.fg("dim", "Esc close"),
+			], safeWidth, this.theme);
+		}
+
+		const bodyHeight = this.bodyHeight();
+		const display = this.displayLines(assignments);
+		const selectedLine = Math.max(0, display.findIndex((line) => line.childId === selected.child.id));
+		const maxStart = Math.max(0, display.length - bodyHeight);
+		const start = Math.min(Math.max(0, selectedLine - Math.floor(bodyHeight / 2)), maxStart);
+		const visible = this.maxLines() < 8
+			? [this.assignmentLine(selected, true)]
+			: display.slice(start, start + bodyHeight).map(({ text }) => text);
+		const padded = Array.from({ length: bodyHeight }, (_, index) => visible[index] ?? "");
+		const resume = selected.child.state === "interrupted" && !this.resumePending.has(selected.child.id) ? " · r/R resume" : "";
+		const footer = this.theme.fg("dim", `↑/↓ j/k select · Enter live status${resume} · Esc close`);
+		return framedOverlay([
+			truncateToWidth(header, innerWidth),
+			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
+			...padded.map((line) => truncateToWidth(line, innerWidth)),
+			truncateToWidth(footer, innerWidth),
+		], safeWidth, this.theme);
+	}
+
+	invalidate(): void {
+		this.detail?.invalidate();
+	}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.detail?.dispose();
+		this.detail = undefined;
+		clearInterval(this.timer);
+		this.unsubscribe();
+	}
+
+	private assignments(): DeskAssignment[] {
+		return listDeskAssignments(this.runtime.list());
+	}
+
+	private reconcileSelection(assignments = this.assignments()): number {
+		if (assignments.length === 0) {
+			this.selectedChildId = undefined;
+			this.selectedIndexHint = 0;
+			return -1;
+		}
+		const currentIndex = this.selectedChildId
+			? assignments.findIndex(({ child }) => child.id === this.selectedChildId)
+			: -1;
+		if (currentIndex >= 0) {
+			this.selectedIndexHint = currentIndex;
+			return currentIndex;
+		}
+		this.selectIndex(assignments, Math.min(this.selectedIndexHint, assignments.length - 1));
+		return this.selectedIndexHint;
+	}
+
+	private selectIndex(assignments: DeskAssignment[], index: number): void {
+		if (assignments.length === 0) {
+			this.selectedChildId = undefined;
+			this.selectedIndexHint = 0;
+			return;
+		}
+		const bounded = Math.max(0, Math.min(index, assignments.length - 1));
+		this.selectedIndexHint = bounded;
+		this.selectedChildId = assignments[bounded]?.child.id;
+	}
+
+	private selectedAssignment(): DeskAssignment | undefined {
+		const assignments = this.assignments();
+		const index = this.reconcileSelection(assignments);
+		return index >= 0 ? assignments[index] : undefined;
+	}
+
+	private displayLines(assignments: DeskAssignment[]): DeskDisplayLine[] {
+		const lines: DeskDisplayLine[] = [];
+		for (const { section, label } of DESK_SECTIONS) {
+			const sectionAssignments = assignments.filter((assignment) => assignment.section === section);
+			if (sectionAssignments.length === 0) continue;
+			if (lines.length > 0) lines.push({ text: "" });
+			lines.push({ text: this.theme.fg("dim", label) });
+			for (const assignment of sectionAssignments) {
+				lines.push({ text: this.assignmentLine(assignment, assignment.child.id === this.selectedChildId), childId: assignment.child.id });
+			}
+		}
+		return lines;
+	}
+
+	private assignmentLine(assignment: DeskAssignment, selected: boolean): string {
+		const { child } = assignment;
+		const marker = selected ? this.theme.fg("accent", "›") : " ";
+		const label = selected ? this.theme.fg("accent", child.label) : child.label;
+		const pending = this.resumePending.has(child.id) && child.state === "interrupted";
+		const error = this.resumeErrors.get(child.id);
+		const summary = pending
+			? "Resume requested…"
+			: error && child.state === "interrupted"
+				? `Interrupted · ${error}`
+				: deskAssignmentSummary(assignment);
+		const color = child.state === "failed" ? "error" : child.state === "interrupted" || child.state === "needs_attention" ? "warning" : "dim";
+		const model = this.theme.fg("dim", child.resolved.model.id);
+		return `${marker} ${stateIcon(child.state, this.theme)} ${label} · ${model} · ${this.theme.fg(color, summary)}`;
+	}
+
+	private openDetail(): void {
+		const selected = this.selectedAssignment();
+		if (!selected) return;
+		let detail: RunOverlayComponent;
+		detail = new RunOverlayComponent(
+			this.runtime,
+			selected.run.id,
+			this.tui,
+			this.theme,
+			() => {
+				detail.dispose();
+				if (this.detail === detail) this.detail = undefined;
+				if (!this.disposed) this.tui.requestRender();
+			},
+			readChildHistory,
+			{ initialChildId: selected.child.id, detailOnly: true },
+		);
+		this.detail = detail;
+		this.tui.requestRender();
+	}
+
+	private async resumeSelected(): Promise<void> {
+		if (this.disposed) return;
+		const selected = this.selectedAssignment();
+		if (!selected || selected.child.state !== "interrupted" || this.resumePending.has(selected.child.id)) return;
+		const childId = selected.child.id;
+		this.resumePending.add(childId);
+		this.resumeErrors.delete(childId);
+		this.tui.requestRender();
+		try {
+			await this.actions.resume(selected.run.id, childId);
+		} catch (error) {
+			if (!this.disposed) this.resumeErrors.set(childId, error instanceof Error ? error.message : String(error));
+		} finally {
+			this.resumePending.delete(childId);
+			if (!this.disposed) this.tui.requestRender();
+		}
+	}
+
+	private maxLines(): number {
+		const terminalRows = this.tui.terminal?.rows ?? 24;
+		return Math.max(6, Math.floor(terminalRows * 0.85));
+	}
+
+	private bodyHeight(): number {
+		return Math.max(1, this.maxLines() - 5);
+	}
+}
+
 export class RunOverlayComponent implements Component {
 	private selected = 0;
 	private transcriptFocused = false;
@@ -526,6 +852,7 @@ export class RunOverlayComponent implements Component {
 	private readonly theme: Theme;
 	private readonly done: () => void;
 	private readonly historyLoader: (sessionFile: string) => Promise<ChildHistoryEvent[]>;
+	private readonly options: RunOverlayOptions;
 	private readonly unsubscribe: () => void;
 	private readonly timer: ReturnType<typeof setInterval>;
 	private ticks = 0;
@@ -539,6 +866,7 @@ export class RunOverlayComponent implements Component {
 		theme: Theme,
 		done: () => void,
 		historyLoader: (sessionFile: string) => Promise<ChildHistoryEvent[]> = readChildHistory,
+		options: RunOverlayOptions = {},
 	) {
 		this.runtime = runtime;
 		this.runId = runId;
@@ -546,6 +874,13 @@ export class RunOverlayComponent implements Component {
 		this.theme = theme;
 		this.done = done;
 		this.historyLoader = historyLoader;
+		this.options = options;
+		const initialRun = runtime.get(runId);
+		const initialIndex = options.initialChildId
+			? initialRun?.children.findIndex((child) => child.id === options.initialChildId) ?? -1
+			: 0;
+		this.selected = initialIndex >= 0 ? initialIndex : 0;
+		this.transcriptFocused = options.detailOnly === true;
 		this.unsubscribe = runtime.subscribe((run) => {
 			if (run.id !== runId) return;
 			this.tui.requestRender();
@@ -575,7 +910,9 @@ export class RunOverlayComponent implements Component {
 			return;
 		}
 		if (matchesKey(data, "escape")) {
-			if (this.transcriptFocused) {
+			if (this.options.detailOnly) {
+				this.done();
+			} else if (this.transcriptFocused) {
 				this.transcriptFocused = false;
 				this.tui.requestRender();
 			} else {
@@ -605,8 +942,11 @@ export class RunOverlayComponent implements Component {
 			return;
 		}
 		if (matchesKey(data, "left")) {
-			this.transcriptFocused = false;
-			this.tui.requestRender();
+			if (this.options.detailOnly) this.done();
+			else {
+				this.transcriptFocused = false;
+				this.tui.requestRender();
+			}
 			return;
 		}
 		if (matchesKey(data, "up") || data === "k") {
@@ -651,10 +991,29 @@ export class RunOverlayComponent implements Component {
 
 		const innerWidth = Math.max(1, safeWidth - 2);
 		const held = run.delivery.state === "held" ? this.theme.fg("warning", " · result ready") : "";
-		const header = `${this.theme.bold("Agents")} ${this.theme.fg("accent", run.id)} ${this.theme.fg("dim", `${deriveRunStatus(run)} · ${this.selected + 1}/${run.children.length}`)}${held}`;
+		const header = this.options.detailOnly
+			? `${this.theme.bold(`Agents / ${child.label}`)} ${this.theme.fg("dim", "· conductor manages subagents")}${held}`
+			: `${this.theme.bold("Agents")} ${this.theme.fg("accent", run.id)} ${this.theme.fg("dim", `${deriveRunStatus(run)} · ${this.selected + 1}/${run.children.length}`)}${held}`;
 		const bodyHeight = this.bodyHeight();
 
-		if (innerWidth < NARROW_OVERLAY_WIDTH) {
+		if (this.options.detailOnly && this.maxLines() < 7) {
+			const availableTranscriptLines = Math.max(0, this.maxLines() - 5);
+			const allTranscript = this.transcriptLines(run, child, innerWidth);
+			const transcript = availableTranscriptLines > 0
+				? this.visibleTranscript(allTranscript, availableTranscriptLines)
+				: [];
+			const footer = availableTranscriptLines > 0
+				? this.footerHints(allTranscript.length > availableTranscriptLines)
+				: this.theme.fg("dim", "Compact detail · Esc agents");
+			return framedOverlay([
+				truncateToWidth(header, innerWidth),
+				truncateToWidth(this.childHeader(run, child), innerWidth),
+				...transcript,
+				truncateToWidth(footer, innerWidth),
+			], safeWidth, this.theme);
+		}
+
+		if (this.options.detailOnly || innerWidth < NARROW_OVERLAY_WIDTH) {
 			const transcriptHeight = Math.max(1, bodyHeight - 1);
 			const transcript = this.transcriptLines(run, child, innerWidth);
 			const visibleTranscript = this.visibleTranscript(transcript, transcriptHeight);
@@ -710,11 +1069,11 @@ export class RunOverlayComponent implements Component {
 
 	private maxLines(): number {
 		const terminalRows = this.tui.terminal?.rows ?? 24;
-		return Math.max(7, Math.floor(terminalRows * 0.85));
+		return Math.max(5, Math.floor(terminalRows * 0.85));
 	}
 
 	private bodyHeight(): number {
-		return Math.max(2, this.maxLines() - 5);
+		return Math.max(1, this.maxLines() - 5);
 	}
 
 	private transcriptHeight(): number {
@@ -722,17 +1081,21 @@ export class RunOverlayComponent implements Component {
 	}
 
 	private footerHints(scrollable: boolean): string {
-		const text = !this.transcriptFocused
-			? "↑/↓ j/k select · Enter transcript · Esc close"
-			: scrollable
+		const text = this.options.detailOnly
+			? scrollable
 				? "↑/↓ j/k scroll · PgUp/PgDn page · End live · Enter detail · Esc agents"
-				: "All transcript lines visible · Enter detail · Esc agents";
+				: "All transcript lines visible · Enter detail · Esc agents"
+			: !this.transcriptFocused
+				? "↑/↓ j/k select · Enter transcript · Esc close"
+				: scrollable
+					? "↑/↓ j/k scroll · PgUp/PgDn page · End live · Enter detail · Esc agents"
+					: "All transcript lines visible · Enter detail · Esc agents";
 		return this.theme.fg("dim", text);
 	}
 
 	private childHeader(_run: DelegationRun, child: DelegatedChild): string {
 		const focus = this.transcriptFocused ? `${this.theme.fg("accent", "▶")} ` : "";
-		const route = `${child.resolved.model.id} · ${child.resolved.reasoning}`;
+		const route = `${child.resolved.model.provider}/${child.resolved.model.id} · ${child.resolved.reasoning}`;
 		return `${focus}${stateIcon(child.state, this.theme)} ${this.theme.bold(child.label)} ${this.theme.fg("dim", `${child.state} · ${route}`)}`;
 	}
 
@@ -758,6 +1121,7 @@ export class RunOverlayComponent implements Component {
 		if (child.attention) {
 			if (lines.length > 0) lines.push("");
 			lines.push(this.theme.fg("warning", `? ${child.attention.question}`));
+			lines.push(this.theme.fg("dim", attentionDeliverySummary(child)));
 			if (child.attention.context) lines.push(...wrapTextWithAnsi(this.theme.fg("dim", child.attention.context), width));
 		}
 		if (child.failure) {
@@ -765,7 +1129,7 @@ export class RunOverlayComponent implements Component {
 			lines.push(this.theme.fg("error", `✗ ${child.failure.message}`));
 			if (child.failure.partialOutput && this.expanded) lines.push(...wrapTextWithAnsi(boundedDisplay(child.failure.partialOutput), width));
 		}
-		const workspaceLines = temporaryWorkspaceLines(run.id, child, this.theme);
+		const workspaceLines = temporaryWorkspaceLines(run.id, child, this.theme, !this.options.detailOnly);
 		if (workspaceLines.length > 0) {
 			if (lines.length > 0) lines.push("");
 			lines.push(...workspaceLines.flatMap((line) => wrapTextWithAnsi(line, width)));
@@ -774,9 +1138,9 @@ export class RunOverlayComponent implements Component {
 			if (lines.length > 0) lines.push("");
 			lines.push(this.theme.fg("dim", `${stateIcon(child.state, this.theme)} ${describeLatestActivity(run, Date.now(), 10_000, this.selected)}`));
 		}
-		if (run.delivery.state === "held" && child.result) {
+		if (run.delivery.state === "held" && isFinalState(child.state)) {
 			if (lines.length > 0) lines.push("");
-			lines.push(this.theme.fg("warning", "Result not added to this branch · /agents use"));
+			lines.push(this.theme.fg("warning", "Run update not added to this branch · /agents use"));
 		}
 		return lines.map((line) => truncateToWidth(line, width));
 	}
@@ -818,11 +1182,12 @@ export interface DelegateUi {
 	createStatus(tui: Pick<TUI, "requestRender">, theme: Theme, options?: PinnedStatusOptions): PinnedAgentStatusComponent;
 	renderLaunch(handle: DelegateHandle, expanded: boolean, theme: Theme): Component;
 	renderCompletion(view: RunView, expanded: boolean, theme: Theme): Component;
-	openRun(runId: string, context: ExtensionContext): Promise<void>;
+	openDesk(target: AgentDeskTarget, context: ExtensionContext, actions: AgentDeskActions): Promise<void>;
 	dispose(): void;
 }
 
 export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
+	let closeActiveOverlay: (() => void) | undefined;
 	return {
 		createStatus(tui, theme, options) {
 			return new PinnedAgentStatusComponent(runtime, tui, theme, options);
@@ -874,16 +1239,40 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 			} else if (hidden === 0) text += `\n  ${theme.fg("dim", "Open: /agents")}`;
 			return new Text(text, 0, 0);
 		},
-		async openRun(runId, context) {
-			if (context.mode !== "tui") throw new Error("Agent detail overlay is available only in interactive TUI mode");
-			await context.ui.custom<void>(
-				(tui, theme, _keybindings, done) => new RunOverlayComponent(runtime, runId, tui, theme, done),
-				{
-					overlay: true,
-					overlayOptions: { anchor: "center", width: "90%", maxHeight: "85%", margin: 1 },
-				},
-			);
+		async openDesk(target, context, actions) {
+			if (context.mode !== "tui") throw new Error("Agent Desk is available only in interactive TUI mode");
+			closeActiveOverlay?.();
+			let component: AgentDeskOverlayComponent | undefined;
+			let ownedClose: (() => void) | undefined;
+			try {
+				await context.ui.custom<void>(
+					(tui, theme, _keybindings, done) => {
+						let closed = false;
+						ownedClose = () => {
+							if (closed) return;
+							closed = true;
+							component?.dispose();
+							if (closeActiveOverlay === ownedClose) closeActiveOverlay = undefined;
+							done();
+						};
+						component = new AgentDeskOverlayComponent(runtime, target, tui, theme, ownedClose, actions);
+						closeActiveOverlay = ownedClose;
+						return component;
+					},
+					{
+						overlay: true,
+						overlayOptions: { anchor: "center", width: "90%", maxHeight: "85%", margin: 1 },
+					},
+				);
+			} finally {
+				component?.dispose();
+				if (closeActiveOverlay === ownedClose) closeActiveOverlay = undefined;
+			}
 		},
-		dispose() {},
+		dispose() {
+			const close = closeActiveOverlay;
+			closeActiveOverlay = undefined;
+			close?.();
+		},
 	};
 }

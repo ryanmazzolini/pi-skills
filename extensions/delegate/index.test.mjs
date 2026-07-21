@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import delegateExtension, { currentDelegationRun, currentHeldRun, delegateLaunchText, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
+import delegateExtension, { agentDeskTarget, currentDelegationRun, currentHeldRun, delegateLaunchText, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
 
 test("validates the one-or-batch task boundary", () => {
   assert.deepEqual(normalizeTasks({ task: " Read it " }), [{ task: "Read it", label: "Read it" }]);
@@ -114,6 +114,12 @@ test("selects the newest manageable run for the no-argument agents command", () 
   assert.equal(currentDelegationRun([]), undefined);
   assert.equal(currentHeldRun([held, delivered, active]).id, "held");
   assert.equal(currentHeldRun([delivered]), undefined);
+});
+
+test("builds bare, run-targeted, and child-targeted Agent Desk entry points", () => {
+  assert.deepEqual(agentDeskTarget(), {});
+  assert.deepEqual(agentDeskTarget("run-1"), { runId: "run-1" });
+  assert.deepEqual(agentDeskTarget("missing-run", "child-2"), { runId: "missing-run", childId: "child-2" });
 });
 
 test("registers a small execution tool and separate control tool", async () => {
