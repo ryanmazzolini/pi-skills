@@ -1,6 +1,6 @@
 ---
 name: "obsidian-vault"
-description: Use the Obsidian CLI for vault-aware note workflows. Use when reading, creating, moving, filing, triaging, recovering, or validating notes in an Obsidian vault.
+description: Use the Obsidian CLI when a note task depends on Obsidian features, such as link-safe moves, templates, properties, tasks, note history, sync recovery, or visual checks.
 ---
 
 # Obsidian Vault

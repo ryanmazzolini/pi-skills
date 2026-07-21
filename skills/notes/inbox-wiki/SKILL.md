@@ -1,6 +1,6 @@
 ---
 name: "inbox-wiki"
-description: Organize top-level inbox captures into immutable raw sources and durable wiki or project notes. Use when interactively triaging or ingesting items in an Obsidian vault.
+description: Organize an Obsidian vault's top-level inbox into raw sources and wiki or project notes. Use for interactive inbox triage.
 ---
 
 # Inbox Wiki

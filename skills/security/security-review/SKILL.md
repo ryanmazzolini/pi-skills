@@ -1,6 +1,6 @@
 ---
 name: "security-review"
-description: High-signal application security review that reports only proven, exploitable findings. Use when reviewing code changes for security or OWASP-style risks, or when CI/CD or GitOps changes touch deploy authority.
+description: Review changed code for proven, exploitable security problems. Use for application security or OWASP reviews, and when CI/CD or GitOps changes affect deployment authority.
 ---
 
 # Security Review

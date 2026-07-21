@@ -1,6 +1,6 @@
 ---
 name: "align"
-description: Align the smallest useful release before planning. Use when ship finds open decisions about requirements, user or caller experience, scope, or solution direction, or when the user asks to be grilled.
+description: Settle the smallest useful release before planning. Use when ship finds open decisions about requirements, user or caller experience, scope, or solution direction, or when the user asks to be grilled.
 ---
 
 # Align

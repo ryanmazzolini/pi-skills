@@ -1,6 +1,6 @@
 ---
 name: "simplify-codebase-architecture"
-description: "Find refactors that remove repeated decisions and needless layers. Use when simplifying code structure, questioning an abstraction, joining code that changes together, giving one module ownership of a workflow, or reducing mock-heavy tests."
+description: "Find refactors that remove repeated decisions and needless layers. Use when simplifying code structure, questioning an abstraction, bringing code that changes together under one module, or reducing mock-heavy tests."
 ---
 
 # Simplify Codebase Architecture

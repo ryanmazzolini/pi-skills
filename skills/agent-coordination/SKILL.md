@@ -1,6 +1,6 @@
 ---
 name: "agent-coordination"
-description: "Choose configured model and reasoning routes for delegated agents. Use before calling delegate, especially when deciding whether work is lightweight, balanced, or deep."
+description: "Choose configured models and reasoning levels for delegated agents. Use before calling `delegate` to classify work as lightweight, balanced, or deep."
 ---
 
 # Agent Coordination

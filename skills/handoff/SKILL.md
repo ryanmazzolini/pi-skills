@@ -1,6 +1,6 @@
 ---
 name: "handoff"
-description: Compact the current conversation into a markdown handoff document another agent or fresh session can continue from. Use when passing context across sessions.
+description: Write a Markdown handoff so another agent or fresh session can continue the work. Use when passing context across sessions.
 argument-hint: "What will the next session focus on?"
 license: "MIT; adapted from mattpocock/skills"
 ---

@@ -1,6 +1,6 @@
 ---
 name: "daily-report"
-description: Generate or reconcile evidence-backed daily work and personal reports from local Git, GitHub, and Shortcut activity. Use when setting up, running, or repairing daily reports in an Obsidian vault.
+description: Set up, create, update, or repair evidence-based daily work and personal reports from local Git, GitHub, and Shortcut activity in an Obsidian vault.
 ---
 
 # Daily Report

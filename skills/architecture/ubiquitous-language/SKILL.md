@@ -1,8 +1,8 @@
 ---
 name: "ubiquitous-language"
 description:
-  Extract and harden a DDD-style domain glossary, flagging ambiguous or overloaded terms. Use when
-  defining domain terms or discussing DDD/domain models.
+  Build a domain glossary and flag ambiguous or overloaded terms. Use when defining domain terms or
+  resolving unclear language in DDD or domain models.
 license: "MIT; adapted from mattpocock/skills"
 ---
 
