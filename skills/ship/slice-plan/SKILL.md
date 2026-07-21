@@ -1,51 +1,57 @@
 ---
 name: "slice-plan"
-description: Slice approved Now scope into a compact dependency-shaped plan. Use when ship routes settled alignment to planning.
+description: Turn approved Now scope into a compact plan with explicit dependencies. Use when ship routes settled alignment to planning.
 ---
 
 # Slice Plan
 
-Turn approved Now scope into the smallest implementable `plan.md`. Later is deferred. Every slice must trace to Now.
+Turn approved Now scope into the smallest implementable `plan.md`. Stop before implementation.
 
-## Inputs and scope gate
+## Confirm the planning input
 
-Prefer a workflow directory supplied by the caller. Otherwise reuse the relevant directory under an existing `.plans/`, `.plan/`, or `docs/plans/`; create `.plans/YYYY-MM-DD-slug/` when the plan needs to survive the session and no project convention exists.
+Use the workflow directory supplied by the caller. Otherwise reuse the relevant directory under `.plans/`, `.plan/`, or `docs/plans/`. When the plan needs to survive the session and no project convention exists, use `.plans/YYYY-MM-DD-slug/`.
 
 Read:
 
-1. `{workflow-dir}/alignment.md`, falling back to legacy `question.md`.
-2. Existing `plan.md` when revising rather than starting over.
-3. Relevant `CONTEXT-MAP.md`, `CONTEXT.md`, and ADRs.
-4. Code only far enough to identify real layers, seams, and concrete leaf tasks.
+1. `{workflow-dir}/alignment.md`; fall back to the legacy `question.md` only when `alignment.md` is absent.
+2. Existing `plan.md` when revising a plan.
+3. Relevant `CONTEXT-MAP.md`, `CONTEXT.md`, ADRs, and project documentation.
+4. Inspect code, tests, and history until you can identify current behavior, affected layers, integration boundaries, and concrete leaf tasks.
 
-Before slicing, extract the goal, Now, Later, assumptions, open blockers, and the confirmed UX/DX walkthrough when Now changes an interface. The scope gate passes when Now and Later are explicit and non-contradictory, the primary walkthrough is confirmed when applicable, and every human decision capable of materially changing Now is settled. Otherwise return to `align`. When revising an overbuilt plan, replace its out-of-scope structure with the approved Now scope.
+Compare the approved understanding with the project. Resolve factual assumptions through inspection. Do not base the plan on an unchecked assumption. Return to `align` when project evidence conflicts with approved scope or solution direction, or when a remaining assumption could change the plan.
 
-## Slice the work
+Extract the goal, Now, Later, assumptions, open blockers, and the confirmed UX/DX walkthrough when Now changes an interface. Plan only when:
 
-When Now changes an interface, start from the smallest complete walkthrough a person or caller can recognize. Otherwise, start from the next observable operational outcome. Then use the approved high-level shape and project code to identify the layers the outcome crosses.
+- Now and Later are explicit and consistent.
+- The primary walkthrough is confirmed when applicable.
+- Every decision only the user can make that could meaningfully change Now is settled.
 
-Each ordinary slice is a **tracer bullet**:
+Otherwise return to `align`. When revising an overbuilt plan, remove structure outside approved Now.
 
-- a narrow but complete path through the relevant layers
-- completes a recognizable step of the confirmed UX/DX flow when interface-facing
-- independently demonstrable or verifiable
-- small enough for one fresh context
-- concrete only at task leaves
-- traceable to a requirement in Now
+## Build outcome slices
 
-Build the thinnest useful end-to-end path first, then thicken it only where Now requires more behavior. Rank candidate slices by user value relative to irreversible commitment; prefer early evidence over early infrastructure.
+Start with the smallest complete outcome a user, caller, or operator can recognize. For an interface change, start with a complete step from the confirmed walkthrough. Then identify every project layer needed to make that outcome real.
 
-A sequence such as data → backend → UI or schema → producer → consumer is horizontal even when the final plan becomes end to end. Fold that machinery into the first slice that completes a recognizable flow unless an earlier technical proof can independently stop or reshape the plan; model such a proof as a bounded discovery gate with a stated fallback.
+Use **tracer-bullet slices** for ordinary work. A tracer-bullet slice crosses the layers needed for one narrow, recognizable outcome and stops when that outcome can be demonstrated or verified on its own. Each slice must:
 
-A normal Now often fits in 1–3 slices. For each additional slice, state the independent delivery, safety, migration, or verification boundary that earns it. Fold internal machinery into the first observable slice that needs it. Keep prerequisite research inside the affected slice unless its result could independently stop or reshape the plan; a separate discovery gate must be bounded and state its fallback.
+- fit in one fresh session
+- trace to Now and, when applicable, its walkthrough
+- name implementation details only in concrete leaf tasks
+- include its own verification evidence
 
-Add supporting machinery only when a Now outcome requires it. Place future flexibility in Later.
+Build the thinnest useful end-to-end outcome first. Add behavior only where Now requires it. Prefer early user value and evidence over irreversible structure and infrastructure.
+
+Do not plan horizontal sequences such as data → backend → UI or schema → producer → consumer. Put internal machinery in the first outcome that needs it. Create a separate discovery slice only when its result could stop or reshape the plan; state what it investigates, its bound, and its fallback.
+
+A normal Now often fits in 1–3 slices. Each additional slice must have its own delivery, safety, migration, or verification boundary. Keep other research inside the outcome it supports. Add supporting machinery only when a Now outcome requires it. Put future flexibility in Later.
 
 ## Record dependencies
 
-Give every slice a stable short label and name. Every slice states **Depends on**, including `None`. Dependencies are the single source of truth for execution order; section order is for reading only.
+Give every slice a stable short label and outcome name. Every slice states **Depends on**, including `None`. Name a dependency only when that slice must finish before this one can safely start. This field is the only execution-order authority; section order is only for reading.
 
-After drafting, verify:
+The **ready set** contains every incomplete slice whose dependencies are complete. A chain is valid for linear work. Independent branches may become ready together.
+
+Check the graph after drafting:
 
 - every dependency names an existing slice
 - the graph has no cycles
@@ -53,33 +59,31 @@ After drafting, verify:
 - every Now requirement is covered
 - every slice traces to Now
 
-The **ready set** is every incomplete slice whose dependencies are complete. A simple chain is valid when the work is genuinely linear; branching is equally valid when independent work becomes ready together.
+Use a temporary diagram or review artifact only when it helps explain the graph.
 
-Keep each slice's `Depends on` field authoritative. Generate a temporary diagram or review artifact when it helps a human understand the graph.
+## Handle wide refactors
 
-## Wide refactors
+When a mechanical change cannot stay working because it breaks callers across the codebase, plan **expand → migrate → contract**:
 
-A wide mechanical change may be impossible to ship as ordinary vertical slices because one edit breaks callers across the codebase. Model it as **expand → migrate → contract**:
+1. Add the new form beside the old.
+2. Migrate callers in independently verifiable batches. Branch batches that do not depend on each other.
+3. Remove the old form only after every migration dependency is complete.
 
-1. Expand by adding the new form beside the old.
-2. Migrate callers in independently verifiable batches, branching when batches do not depend on one another.
-3. Contract by removing the old form after every migration dependency is complete.
+Keep each step working and its checks passing when possible. If only final integration can pass, state the exception and add a dependent slice for integration verification.
 
-Keep each step green when possible. If only a final integration point can be green, state that exception and make integration verification an explicit dependent slice.
+## Write the plan
 
-## Plan contract
-
-Keep `plan.md` adaptive, but make it possible for a fresh session to identify:
+Keep `plan.md` short and update it as understanding changes. A fresh session must be able to find:
 
 - the goal and alignment source
 - Now and Later
 - the confirmed UX/DX walkthrough when applicable
-- each slice's observable outcome and actual dependencies
+- every slice's observable outcome and dependencies
 - concrete leaf tasks
 - required verification evidence
 - the Now requirements each slice covers
 
-A canonical slice is compact:
+Use this slice format:
 
 ```md
 ### Slice A — [outcome name]
@@ -95,10 +99,12 @@ Verification: [automated, manual, visual, playtest, or review evidence]
 Covers: [requirements and experience steps in Now]
 ```
 
-Use project language for goals and slice names. Use implementation names only in tasks. Point to alignment or design authorities instead of restating them.
+Use project language for goals and slice names. Use implementation names only in tasks. Point to alignment or design authorities instead of repeating them.
 
-## Review the plan
+## Review and hand off
 
-After drafting, rerun the scope gate and dependency checks. Write or update `{workflow-dir}/plan.md`, then follow `../ship/references/review-gate.md` before presenting the completed plan for approval. Present Now and Later, the dependency shape, the current ready set, the review evidence, and your recommended next slice or safe asynchronous wave. Ask the user to correct the scope, slices, and dependencies.
+Rerun the scope gate and graph checks. Write or update `{workflow-dir}/plan.md`, then follow `../ship/references/review-gate.md`. Close review findings or defer them with an explicit reason before asking for approval.
 
-The plan is ready when both gates pass, each slice can be picked up cold, its review findings are closed or explicitly deferred, and the human confirms the proposed shape. Stop there; execution returns to `ship`.
+Ask one direct question: is the plan correct enough to approve? Include the Now and Later boundary, dependencies, ready work, recommendation, and the review evidence required by the review gate—nothing else.
+
+The plan is ready when the scope and graph checks pass, a fresh session can start every slice, review findings are closed or explicitly deferred, and the user approves the plan. Stop there and return execution to `ship`.
