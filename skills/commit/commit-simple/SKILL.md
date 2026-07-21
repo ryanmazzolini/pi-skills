@@ -1,6 +1,6 @@
 ---
 name: "commit-simple"
-description: Branch, commit, and push changes. Use when preparing a commit or pushing work.
+description: Prepare commits and push work, creating branches when needed. Use when committing, cherry-picking, or pushing changes.
 ---
 
 # Commit

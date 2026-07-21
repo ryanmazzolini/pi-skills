@@ -1,6 +1,6 @@
 ---
 name: "shape-first"
-description: "Shape a non-trivial code change with human checkpoints before implementation. Use when it is unsafe to jump straight from the request to edits."
+description: "Shape a code change with the user before implementation. Use after requirements are clear but the needed data and rules, local interfaces, or code structure are not."
 ---
 
 # Shape First

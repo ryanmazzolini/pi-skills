@@ -1,6 +1,6 @@
 ---
 name: "hci"
-description: Usability heuristics, WCAG accessibility, responsive design, and interaction states. Use when writing or reviewing UI, CSS, or forms, or when designing any human-facing surface such as APIs, CLI output, or error messages.
+description: Apply usability, WCAG accessibility, responsive design, and interaction-state guidance. Use when writing or reviewing UI, CSS, or forms, or when designing any human-facing surface such as APIs, CLI output, or error messages.
 ---
 
 # HCI Standards
