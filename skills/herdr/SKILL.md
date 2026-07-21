@@ -23,9 +23,16 @@ Read opaque IDs and state from command JSON. Target the calling pane with `--cur
 
 ## Control topology
 
-Before creating, moving, focusing, or closing terminal resources, state the intended topology when the user has not already approved those exact changes. Keep background work unfocused unless the requested flow transfers the user's focus.
+Before creating, moving, focusing, or closing terminal resources, state the intended topology when the user has not already approved those exact changes.
 
-Close only resources created during the current flow or resources the user explicitly named. Keep the Herdr server and unrelated panes running.
+Treat focus as user-owned state:
+
+- Read the currently focused pane and its workspace before each topology mutation; do not assume the calling pane is focused.
+- Inspect and control background resources by ID, passing `--no-focus` to `workspace create`, `pane split`, and `pane move`.
+- When closing a background workspace, tab, or pane, restore the previously focused pane immediately with `herdr agent focus <pane-id>` in the same shell operation if Herdr moves focus.
+- Focus a different resource only when the user explicitly requests it or at the final visible transition of an approved conversation handoff.
+
+Close only resources created during the current flow or resources the user explicitly named. Keep the Herdr server and unrelated panes running. After an operation, verify the approved topology and focus, then report the changes concisely.
 
 ## Hand off a Pi conversation
 
