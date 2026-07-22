@@ -1,5 +1,6 @@
 import type { Attachment, Message, SessionInfo } from "./client.ts";
 import type { InboxEntry } from "./inbox.ts";
+import type { SessionTailSnapshot } from "./session-tail.ts";
 
 /** Pi caps tool output at about 50 KiB. Every model-visible intercom projection stays below it. */
 export const INTERCOM_PROJECTION_MAX_BYTES = 48 * 1024;
@@ -94,6 +95,12 @@ export function sanitizeSelfDeclaredMetadata(value: string | undefined): string 
 		.trim();
 }
 
+export function sanitizeTailText(value: string): string {
+	return value
+		.replace(/\r\n?/g, "\n")
+		.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (character) => character === "\n" || character === "\t" ? character : " ");
+}
+
 function declared(value: string | undefined): string {
 	return JSON.stringify(sanitizeSelfDeclaredMetadata(value));
 }
@@ -160,11 +167,49 @@ export function projectAskReply(from: SessionInfo, message: Message): InboundPro
 	return { ...projected, details: compactInboundDetails(entry, projected.truncated), view: intercomMessageView(from, message) };
 }
 
+export function projectSessionTail(snapshot: SessionTailSnapshot, target: SessionInfo): TextProjection {
+	const header = `**Intercom confirmed session tail**\nBroker session ID: ${JSON.stringify(target.id)}\nSelf-declared name: ${declared(target.name)}`;
+	const sourceNotice = `${snapshot.truncated ? "\n\n[Earlier eligible text was omitted by the requested message limit.]" : ""}${snapshot.ignoredFinalFragment ? "\n\n[One incomplete trailing session entry was omitted.]" : ""}`;
+	if (snapshot.events.length === 0) {
+		const text = `${header}\n\nNo eligible completed text or outcomes are present in the advertised branch.${sourceNotice}`;
+		return { text, bytes: byteLength(text), truncated: snapshot.truncated || snapshot.ignoredFinalFragment };
+	}
+	const eventText = snapshot.events.map((event) => event.kind === "user" || event.kind === "assistant" ? sanitizeTailText(event.text) : "");
+	const fixed = snapshot.events.map((event) => {
+		if (event.kind === "user") return "\n\n**User**\n";
+		if (event.kind === "assistant") return "\n\n**Assistant**\n";
+		if (event.kind === "tool") {
+			const name = truncateUtf8(sanitizeSelfDeclaredMetadata(event.name), 256);
+			return `\n\nTool ${JSON.stringify(name)}: ${event.outcome}`;
+		}
+		return `\n\nUser Bash: ${event.outcome}`;
+	});
+	const complete = header + snapshot.events.map((event, index) => fixed[index]! + eventText[index]!).join("") + sourceNotice;
+	if (byteLength(complete) <= INTERCOM_PROJECTION_MAX_BYTES) {
+		return { text: complete, bytes: byteLength(complete), truncated: snapshot.truncated || snapshot.ignoredFinalFragment };
+	}
+	const notice = INTERCOM_TRUNCATION_NOTICE;
+	const required = byteLength(header + fixed.join("") + sourceNotice + notice);
+	if (required > INTERCOM_PROJECTION_MAX_BYTES) throw new Error("Intercom tail metadata exceeds the model-visible projection bound");
+	let remaining = INTERCOM_PROJECTION_MAX_BYTES - required;
+	const textByIndex = new Map<number, string>();
+	for (let index = snapshot.events.length - 1; index >= 0; index--) {
+		const event = snapshot.events[index]!;
+		if (event.kind !== "user" && event.kind !== "assistant") continue;
+		const text = truncateUtf8(eventText[index]!, remaining);
+		textByIndex.set(index, text);
+		remaining -= byteLength(text);
+	}
+	const text = header + snapshot.events.map((event, index) => fixed[index]! + (event.kind === "user" || event.kind === "assistant" ? textByIndex.get(index) ?? "" : "")).join("") + sourceNotice + notice;
+	return { text, bytes: byteLength(text), truncated: true };
+}
+
 function sessionSegments(session: SessionInfo, current: SessionInfo, prefix = ""): ProjectionSegment[] {
 	const tags = [
 		session.id === current.id ? "self" : undefined,
 		session.cwd === current.cwd && session.id !== current.id ? "same self-declared cwd" : undefined,
 		session.status ? `self-declared status: ${declared(session.status)}` : undefined,
+		session.piSession ? "persisted tail advertised" : undefined,
 	].filter((tag): tag is string => Boolean(tag));
 	return [
 		{ text: `${prefix}• Broker session ID: ${JSON.stringify(session.id)}` },

@@ -6,9 +6,12 @@ import { constants as fsConstants } from "node:fs";
 import { chmod, link, lstat, mkdir, open, unlink } from "node:fs/promises";
 import net from "node:net";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 process.umask(0o077);
+
+const TAIL_CAPABILITY = "pi-session-tail-v1";
+const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY]);
 
 const runtimeDir = process.env.PI_INTERCOM_RUNTIME_DIR || join(homedir(), ".pi", "agent", "intercom");
 const socketPath = process.env.PI_INTERCOM_SOCKET_PATH || join(runtimeDir, "broker.sock");
@@ -18,6 +21,9 @@ const LIMITS = Object.freeze({
 	id: 256,
 	target: 1024,
 	sessionString: 4096,
+	piSessionId: 256,
+	piSessionFile: 4096,
+	piSessionLeaf: 256,
 	messageText: 256 * 1024,
 	attachments: 16,
 	attachmentName: 4096,
@@ -77,6 +83,18 @@ function isMessage(value) {
 		&& (value.content.attachments === undefined || areAttachments(value.content.attachments));
 }
 
+function isPiSessionPresence(value) {
+	return value && typeof value === "object" && !Array.isArray(value)
+		&& Object.keys(value).length === 4
+		&& ["sessionId", "fileLocator", "activeLeafId", "revision"].every((key) => key in value)
+		&& boundedString(value.sessionId, LIMITS.piSessionId)
+		&& boundedString(value.fileLocator, LIMITS.piSessionFile)
+		&& isAbsolute(value.fileLocator)
+		&& (value.activeLeafId === null || boundedString(value.activeLeafId, LIMITS.piSessionLeaf))
+		&& Number.isSafeInteger(value.revision)
+		&& value.revision >= 1;
+}
+
 function isRegistration(value) {
 	return value && typeof value === "object" && !Array.isArray(value)
 		&& boundedString(value.cwd, LIMITS.sessionString, true)
@@ -85,7 +103,8 @@ function isRegistration(value) {
 		&& finiteNumber(value.startedAt)
 		&& finiteNumber(value.lastActivity)
 		&& (value.name === undefined || boundedString(value.name, LIMITS.sessionString, true))
-		&& (value.status === undefined || boundedString(value.status, LIMITS.sessionString, true));
+		&& (value.status === undefined || boundedString(value.status, LIMITS.sessionString, true))
+		&& (value.piSession === undefined || isPiSessionPresence(value.piSession));
 }
 
 function sessionFromRegistration(value, id) {
@@ -98,6 +117,7 @@ function sessionFromRegistration(value, id) {
 		startedAt: value.startedAt,
 		lastActivity: value.lastActivity,
 		...(value.status === undefined ? {} : { status: value.status }),
+		...(value.piSession === undefined ? {} : { piSession: { ...value.piSession } }),
 	};
 }
 
@@ -318,11 +338,12 @@ async function handleMessage(connection, value) {
 			const id = randomUUID();
 			connection.sessionId = id;
 			connection.info = sessionFromRegistration(value.session, id);
+			connection.lastPiSessionRevision = value.session.piSession?.revision ?? 0;
 			clearTimeout(connection.registrationTimer);
 			connection.registrationTimer = undefined;
 			sessions.set(id, connection);
 			clearIdleTimer();
-			await queueFrame(connection, { type: "registered", sessionId: id });
+			await queueFrame(connection, { type: "registered", sessionId: id, capabilities: BROKER_CAPABILITIES });
 			broadcast({ type: "session_joined", session: connection.info }, id);
 			break;
 		}
@@ -348,9 +369,19 @@ async function handleMessage(connection, value) {
 			for (const field of ["name", "status", "model"]) {
 				if (value[field] !== undefined && !boundedString(value[field], LIMITS.sessionString, true)) throw new Error(`Invalid presence ${field}`);
 			}
+			if (value.piSession !== undefined && value.piSession !== null) {
+				if (!isPiSessionPresence(value.piSession) || value.piSession.revision <= connection.lastPiSessionRevision) {
+					throw new Error("Invalid presence piSession");
+				}
+			}
 			if (value.name !== undefined) session.info.name = value.name;
 			if (value.status !== undefined) session.info.status = value.status;
 			if (value.model !== undefined) session.info.model = value.model;
+			if (value.piSession === null) delete session.info.piSession;
+			else if (value.piSession !== undefined) {
+				session.info.piSession = { ...value.piSession };
+				connection.lastPiSessionRevision = value.piSession.revision;
+			}
 			session.info.lastActivity = Date.now();
 			broadcast({ type: "presence_update", session: session.info }, connection.sessionId);
 			break;
@@ -383,6 +414,7 @@ function accept(socket) {
 		queuedRequests: 0,
 		queuedRequestBytes: 0,
 		registrationTimer: undefined,
+		lastPiSessionRevision: 0,
 	};
 	// Every accepted socket is tracked before registration, cap checks, or protocol work.
 	connections.add(connection);

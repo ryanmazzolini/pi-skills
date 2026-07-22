@@ -1,3 +1,5 @@
+import { watch, type FSWatcher } from "node:fs";
+import { basename, dirname } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
@@ -7,6 +9,7 @@ import { spawnBrokerIfNeeded } from "./broker/spawn.ts";
 import type { InboxEntry } from "./inbox.ts";
 import { IntercomRuntime, type IntercomStatus } from "./runtime.ts";
 import { IntercomOperations, type IntercomOperationSnapshot } from "./operations.ts";
+import { PiSessionPresenceTracker } from "./presence.ts";
 import {
 	INTERCOM_PROJECTION_MAX_BYTES,
 	assertProjectionBound,
@@ -18,6 +21,7 @@ import {
 	projectPendingEntries,
 	projectSession,
 	projectSessionList,
+	projectSessionTail,
 	projectionBytes,
 	sanitizeSelfDeclaredMetadata,
 	truncateUtf8,
@@ -35,13 +39,13 @@ const AttachmentParams = Type.Object({
 }, { additionalProperties: false });
 
 export const IntercomParams = Type.Object({
-	action: Type.String({ enum: ["list", "send", "ask", "reply", "pending", "operations", "cancel", "status"] }),
+	action: Type.String({ enum: ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status"] }),
 	to: Type.Optional(Type.String({ minLength: 1, description: "Target session name or ID; may narrow reply selection" })),
 	message: Type.Optional(Type.String({ minLength: 1, description: "Message text for send, ask, or reply" })),
 	attachments: Type.Optional(Type.Array(AttachmentParams, { maxItems: 16 })),
 	replyTo: Type.Optional(Type.String({ description: "Exact inbound message ID for reply selection, or thread ID for send/ask" })),
 	operationId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Operation ID for operations inspection or cancellation" })),
-	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32, description: "Maximum operation snapshots to return" })),
+	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32, description: "Maximum operation snapshots or tail text messages to return" })),
 }, { additionalProperties: false });
 
 export type IntercomToolInput = Static<typeof IntercomParams>;
@@ -65,13 +69,13 @@ function declared(value: string | undefined): string {
 
 export function validateIntercomAction(input: IntercomToolInput): void {
 	const withMessage = input.action === "send" || input.action === "ask" || input.action === "reply";
-	const withTarget = input.action === "send" || input.action === "ask" || input.action === "reply";
+	const withTarget = input.action === "send" || input.action === "ask" || input.action === "reply" || input.action === "tail";
 	if (withMessage && !input.message?.trim()) throw new Error(`${input.action} requires message`);
 	if (!withMessage && input.message !== undefined) throw new Error(`message is not valid for ${input.action}`);
 	if (input.action === "cancel" && !input.operationId?.trim()) throw new Error("cancel requires operationId");
 	if (input.action !== "operations" && input.action !== "cancel" && input.operationId !== undefined) throw new Error(`operationId is not valid for ${input.action}`);
-	if (input.action !== "operations" && input.limit !== undefined) throw new Error(`limit is not valid for ${input.action}`);
-	if ((input.action === "send" || input.action === "ask") && !input.to?.trim()) throw new Error(`${input.action} requires to`);
+	if (input.action !== "operations" && input.action !== "tail" && input.limit !== undefined) throw new Error(`limit is not valid for ${input.action}`);
+	if ((input.action === "send" || input.action === "ask" || input.action === "tail") && !input.to?.trim()) throw new Error(`${input.action} requires to`);
 	if (!withTarget && input.to !== undefined) throw new Error(`to is not valid for ${input.action}`);
 	if (!withMessage && input.attachments !== undefined) throw new Error(`attachments are not valid for ${input.action}`);
 	if (!(input.action === "send" || input.action === "ask" || input.action === "reply") && input.replyTo !== undefined) {
@@ -337,6 +341,8 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	let inboundDelivery: InboundDelivery | undefined;
 	let operations: IntercomOperations | undefined;
 	let context: ExtensionContext | undefined;
+	let piPresence: PiSessionPresenceTracker | undefined;
+	let bashPresenceWatcher: FSWatcher | undefined;
 	let generation = 0;
 	let piSessionId: string | undefined;
 	let model = "unknown";
@@ -351,6 +357,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 
 	const registration = (): Omit<SessionInfo, "id"> => {
 		if (!context || !piSessionId) throw new Error("Intercom session is not initialized");
+		const persisted = piPresence?.current();
 		return {
 			name: presenceName(pi, piSessionId),
 			cwd: context.cwd,
@@ -359,14 +366,68 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 			startedAt,
 			lastActivity: Date.now(),
 			status: lifecycleStatus(),
+			...(persisted ? { piSession: persisted } : {}),
 		};
+	};
+
+	const refreshPiPresence = (): boolean => {
+		if (!runtime || !context || !piSessionId || !piPresence) return false;
+		const refresh = piPresence.refresh(context.sessionManager);
+		if (!refresh.changed) return false;
+		runtime.updateRegistration(registration());
+		runtime.updatePresence({ piSession: refresh.presence ?? null });
+		return true;
 	};
 
 	const syncPresence = () => {
 		if (!runtime || !context || !piSessionId) return;
+		const tailChanged = piPresence?.refresh(context.sessionManager);
 		const current = registration();
 		runtime.updateRegistration(current);
-		runtime.updatePresence({ name: current.name, model: current.model, status: current.status });
+		runtime.updatePresence({
+			name: current.name,
+			model: current.model,
+			status: current.status,
+			...(tailChanged?.changed ? { piSession: tailChanged.presence ?? null } : {}),
+		});
+	};
+
+	const appendAudit = (customType: string, data: unknown) => {
+		pi.appendEntry(customType, data);
+		refreshPiPresence();
+	};
+
+	const stopBashPresenceWatcher = () => {
+		bashPresenceWatcher?.close();
+		bashPresenceWatcher = undefined;
+	};
+
+	const startBashPresenceWatcher = () => {
+		stopBashPresenceWatcher();
+		const source = context?.sessionManager;
+		const sessionFile = source?.getSessionFile();
+		if (!source || !sessionFile) return;
+		const knownBashEntries = new Set(source.getEntries()
+			.filter((entry) => entry.type === "message" && entry.message.role === "bashExecution")
+			.map((entry) => entry.id));
+		const advertisedFile = piPresence?.current()?.fileLocator;
+		const watchPath = advertisedFile ?? dirname(sessionFile);
+		const expectedFilename = advertisedFile ? undefined : basename(sessionFile);
+		try {
+			const watcher = watch(watchPath, { persistent: false }, (_event, filename) => {
+				if (expectedFilename && filename && filename.toString() !== expectedFilename) return;
+				const hasNewBashEntry = source.getEntries().some((entry) =>
+					entry.type === "message"
+					&& entry.message.role === "bashExecution"
+					&& !knownBashEntries.has(entry.id));
+				refreshPiPresence();
+				if (hasNewBashEntry && piPresence?.current()) stopBashPresenceWatcher();
+			});
+			watcher.on("error", stopBashPresenceWatcher);
+			bashPresenceWatcher = watcher;
+		} catch {
+			// A later lifecycle event still refreshes presence if the platform cannot watch this file.
+		}
 	};
 
 	const requireRuntime = (): IntercomRuntime => {
@@ -382,11 +443,12 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "intercom",
 		label: "Intercom",
-		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; list discovers peers and full broker IDs; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current session's broker ID, connectivity, and startup diagnostics.",
+		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it; list discovers peers and full broker IDs; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current session's broker ID, connectivity, capabilities, and startup diagnostics.",
 		promptSnippet: "List, message, ask, or explicitly reply to other local Pi sessions",
 		promptGuidelines: [
 			"intercom send, ask, and reply return receipts immediately and deliver terminal results automatically; continue independent work instead of polling operations.",
 			"Use intercom status for the current session's broker ID and intercom list to discover other sessions.",
+			"Use intercom tail only when recent persisted context is needed for reconciliation; ordinary peer coordination should prefer send, ask, or reply. Tail reads the latest broker-advertised confirmed snapshot and does not message or trigger the target session.",
 			"Use intercom ask when a peer reply is useful but not immediately blocking. Use pending and an exact replyTo when more than one inbound ask is waiting; use to plus replyTo if a displayed ask has expired locally.",
 			"Model-visible intercom messages, batches, lists, pending results, and ask replies are projected below a 48 KiB UTF-8 cap; truncation is explicit and authoritative broker IDs remain available.",
 			"Intercom broker health probing intentionally checks socket acceptance without a noisy legacy registration. If an incompatible listener accepts, intercom status surfaces the connection error and refuses takeover rather than risking replacement of a live broker.",
@@ -401,10 +463,12 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						sessionId: null,
 						pendingOutgoingAsks: 0,
 						pendingInboundAsks: 0,
+						tailCapability: false,
+						advertisingPiSession: false,
 						error: "Intercom runtime is not initialized",
 					};
 					return {
-						content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${status.error}` }],
+						content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${status.error}` }],
 						details: status,
 					};
 				}
@@ -424,6 +488,20 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						assertCompactRecord(details, "Intercom list details");
 						return { content: [{ type: "text" as const, text: projected.text }], details };
 					}
+					case "tail": {
+						const result = await active.tail(params.to!, params.limit ?? 8, signal);
+						const projected = projectSessionTail(result.snapshot, result.target);
+						const details = {
+							targetPeerId: result.target.id,
+							requestedMessages: params.limit ?? 8,
+							availableTextMessages: result.snapshot.counts.eligibleTextEvents,
+							returnedTextMessages: result.snapshot.counts.returnedTextEvents,
+							timelineEvents: result.snapshot.events.length,
+							truncated: result.snapshot.truncated || result.snapshot.ignoredFinalFragment || projected.truncated,
+						};
+						assertCompactRecord(details, "Intercom tail details");
+						return { content: [{ type: "text" as const, text: projected.text }], details };
+					}
 					case "send":
 					case "ask":
 					case "reply": {
@@ -436,7 +514,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 								if (!result.delivered) throw new Error(result.reason ?? "Message was not routed");
 								const audit = { ...targetIdentity(result.to).details, ...compactAuditMessage({ id: result.id, timestamp: Date.now(), replyTo: params.replyTo, attachments: params.attachments }) };
 								assertCompactRecord(audit, "Intercom send audit");
-								pi.appendEntry("intercom_sent", audit);
+								appendAudit("intercom_sent", audit);
 								return { target: result.to.id };
 							}
 							if (kind === "reply") {
@@ -444,19 +522,19 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 								if (!result.delivered) throw new Error(result.reason ?? "Reply was not routed");
 								const audit = { ...targetIdentity(result.to).details, ...compactAuditMessage({ id: result.id, timestamp: Date.now(), replyTo: result.replyTo, attachments: params.attachments }) };
 								assertCompactRecord(audit, "Intercom reply audit");
-								pi.appendEntry("intercom_sent", audit);
+								appendAudit("intercom_sent", audit);
 								return { target: result.to.id };
 							}
 							const result = await active.ask(params.to!, params.message!, params.attachments as Attachment[] | undefined, params.replyTo, operationSignal, (requestId, target) => {
 								update("waiting_reply");
 								const audit = { ...targetIdentity(target).details, ...compactAuditMessage({ id: requestId, timestamp: Date.now(), replyTo: params.replyTo, expectsReply: true, attachments: params.attachments }) };
 								assertCompactRecord(audit, "Intercom ask audit");
-								pi.appendEntry("intercom_sent", audit);
+								appendAudit("intercom_sent", audit);
 							});
 							const projected = projectAskReply(result.from, result.message);
 							const receivedAudit = { fromPeerId: result.from.id, ...compactAuditMessage({ id: result.message.id, timestamp: result.message.timestamp, replyTo: result.message.replyTo, attachments: result.message.content.attachments }), truncated: projected.truncated };
 							assertCompactRecord(receivedAudit, "Intercom received audit");
-							pi.appendEntry("intercom_received", receivedAudit);
+							appendAudit("intercom_received", receivedAudit);
 							return { target: result.from.id, reply: true, completionText: projected.text };
 						});
 						const details = { ...receipt, payloadStored: false };
@@ -486,7 +564,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 					}
 					case "status": {
 						const status = await active.status();
-						const text = `**Intercom Status:**\nConnected: ${status.connected ? "Yes" : "No"}\nSession ID: ${status.sessionId ?? "none"}\nActive sessions: ${status.activeSessions ?? "unknown"}\nPending outgoing asks: ${status.pendingOutgoingAsks}\nPending inbound asks: ${status.pendingInboundAsks}${status.initialConnectionError ? `\nInitial connection error: ${status.initialConnectionError}` : ""}${status.error ? `\nError: ${status.error}` : ""}`;
+						const text = `**Intercom Status:**\nConnected: ${status.connected ? "Yes" : "No"}\nSession ID: ${status.sessionId ?? "none"}\nActive sessions: ${status.activeSessions ?? "unknown"}\nTail capability: ${status.tailCapability ? "Available" : "Unavailable"}\nPersisted session advertised: ${status.advertisingPiSession ? "Yes" : "No"}\nPending outgoing asks: ${status.pendingOutgoingAsks}\nPending inbound asks: ${status.pendingInboundAsks}${status.initialConnectionError ? `\nInitial connection error: ${status.initialConnectionError}` : ""}${status.error ? `\nError: ${status.error}` : ""}`;
 						return { content: [{ type: "text" as const, text }], details: status };
 					}
 					default:
@@ -500,9 +578,11 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						sessionId: null,
 						pendingOutgoingAsks: 0,
 						pendingInboundAsks: 0,
+						tailCapability: false,
+						advertisingPiSession: false,
 						error: cause.message,
 					};
-					return { content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${cause.message}` }], details: status };
+					return { content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${cause.message}` }], details: status };
 				}
 				throw new Error(`Intercom ${params.action} failed: ${errorMessage(cause)}`, { cause });
 			}
@@ -556,6 +636,8 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		const sessionGeneration = generation;
 		context = ctx;
 		piSessionId = ctx.sessionManager.getSessionId();
+		piPresence = new PiSessionPresenceTracker();
+		piPresence.refresh(ctx.sessionManager);
 		model = ctx.model?.id ?? "unknown";
 		startedAt = Date.now();
 		agentRunning = false;
@@ -597,6 +679,8 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		generation++;
 		context = undefined;
 		piSessionId = undefined;
+		piPresence = undefined;
+		stopBashPresenceWatcher();
 		agentRunning = false;
 		activeTools.clear();
 		const previousDelivery = inboundDelivery;
@@ -610,6 +694,17 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_info_changed", () => syncPresence());
+	pi.on("session_compact", () => syncPresence());
+	pi.on("session_tree", () => syncPresence());
+	pi.on("thinking_level_select", () => syncPresence());
+	pi.on("message_end", () => {
+		const scheduledGeneration = generation;
+		setImmediate(() => {
+			if (generation === scheduledGeneration) syncPresence();
+		});
+	});
+	pi.on("turn_end", () => syncPresence());
+	pi.on("user_bash", () => startBashPresenceWatcher());
 	pi.on("model_select", (event) => {
 		model = event.model.id;
 		syncPresence();
@@ -624,7 +719,10 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		activeTools.clear();
 		syncPresence();
 	});
-	pi.on("agent_settled", () => inboundDelivery?.settled());
+	pi.on("agent_settled", () => {
+		inboundDelivery?.settled();
+		syncPresence();
+	});
 	pi.on("tool_execution_start", (event) => {
 		activeTools.set(event.toolCallId, event.toolName);
 		syncPresence();

@@ -1,18 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
+	INTERCOM_TAIL_CAPABILITY,
 	IntercomClient,
 	type Attachment,
 	type Message,
+	type PiSessionPresence,
 	type ReceivedMessage,
 	type SendResult,
 	type SessionInfo,
 } from "./client.ts";
+import { openSessionTail, type SessionTailSnapshot } from "./session-tail.ts";
 import { IntercomInbox, type InboxEntry } from "./inbox.ts";
 
 export interface IntercomRuntimeOptions {
 	client: IntercomClient;
 	inbox?: IntercomInbox;
+	openTail?: typeof openSessionTail;
 }
 
 export interface RuntimeSendResult extends SendResult {
@@ -24,12 +28,19 @@ export interface RuntimeAskResult extends ReceivedMessage {
 	requestId: string;
 }
 
+export interface RuntimeTailResult {
+	target: SessionInfo;
+	snapshot: SessionTailSnapshot;
+}
+
 export interface IntercomStatus {
 	connected: boolean;
 	sessionId: string | null;
 	activeSessions?: number;
 	pendingOutgoingAsks: number;
 	pendingInboundAsks: number;
+	tailCapability: boolean;
+	advertisingPiSession: boolean;
 	error?: string;
 	initialConnectionError?: string;
 }
@@ -43,6 +54,7 @@ export class IntercomRuntime extends EventEmitter {
 	readonly inbox: IntercomInbox;
 	private disposed = false;
 	private initialConnectionError: Error | null = null;
+	private readonly openTail: typeof openSessionTail;
 
 	private readonly onMessage = (from: SessionInfo, message: Message) => {
 		const entry = this.inbox.record(from, message);
@@ -63,6 +75,7 @@ export class IntercomRuntime extends EventEmitter {
 		super();
 		this.client = options.client;
 		this.inbox = options.inbox ?? new IntercomInbox();
+		this.openTail = options.openTail ?? openSessionTail;
 		this.client.on("message", this.onMessage);
 		this.client.on("session_left", this.onSessionLeft);
 		this.client.on("disconnected", this.onDisconnected);
@@ -86,6 +99,42 @@ export class IntercomRuntime extends EventEmitter {
 	async list(): Promise<SessionInfo[]> {
 		await this.ensureConnected();
 		return this.client.listSessions();
+	}
+
+	async tail(to: string, limit: number, signal?: AbortSignal): Promise<RuntimeTailResult> {
+		throwIfAborted(signal);
+		await this.ensureConnected();
+		if (!this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
+			throw new Error("The active intercom broker does not support persisted session tails");
+		}
+		const callerPeerId = this.client.sessionId;
+		if (!callerPeerId) throw new Error("Intercom client is not registered");
+		const before = await this.client.listSessions(signal);
+		const target = this.resolveTargetFromSessions(to, before);
+		this.assertNotSelf(target.id);
+		const presence = this.requireUniquePiSession(target, before);
+		throwIfAborted(signal);
+		const opened = this.openTail({
+			piSessionId: presence.sessionId,
+			fileLocator: presence.fileLocator,
+			activeLeafId: presence.activeLeafId,
+			limit,
+		});
+		try {
+			throwIfAborted(signal);
+			const after = await this.client.listSessions(signal);
+			if (this.client.sessionId !== callerPeerId) throw new Error("Target session advertisement changed during tail inspection");
+			const current = after.find((session) => session.id === target.id);
+			if (!current) throw new Error("Target session advertisement changed during tail inspection");
+			const currentPresence = this.requireUniquePiSession(current, after);
+			if (!this.samePiSession(presence, currentPresence)) {
+				throw new Error("Target session advertisement changed during tail inspection");
+			}
+			opened.verifyStable();
+			return { target, snapshot: opened.snapshot };
+		} finally {
+			opened.close();
+		}
 	}
 
 	async send(
@@ -167,11 +216,14 @@ export class IntercomRuntime extends EventEmitter {
 	async status(): Promise<IntercomStatus> {
 		const counts = this.client.pendingCounts();
 		const initialConnectionError = this.initialConnectionError?.message;
+		const tailCapability = this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY);
 		const base = {
 			connected: this.client.isConnected(),
 			sessionId: this.client.sessionId,
 			pendingOutgoingAsks: counts.asks,
 			pendingInboundAsks: this.inbox.list().length,
+			tailCapability,
+			advertisingPiSession: tailCapability && this.client.currentPiSessionPresence() !== undefined,
 			...(initialConnectionError ? { initialConnectionError } : {}),
 		};
 		if (!base.connected) return { ...base, ...(initialConnectionError ? { error: initialConnectionError } : {}) };
@@ -187,7 +239,7 @@ export class IntercomRuntime extends EventEmitter {
 		this.client.setRegistration(registration);
 	}
 
-	updatePresence(updates: { name?: string; status?: string; model?: string }): void {
+	updatePresence(updates: { name?: string; status?: string; model?: string; piSession?: PiSessionPresence | null }): void {
 		this.client.updatePresence(updates);
 	}
 
@@ -203,9 +255,12 @@ export class IntercomRuntime extends EventEmitter {
 	}
 
 	private async resolveTarget(value: string, signal?: AbortSignal): Promise<SessionInfo> {
+		return this.resolveTargetFromSessions(value, await this.client.listSessions(signal));
+	}
+
+	private resolveTargetFromSessions(value: string, sessions: readonly SessionInfo[]): SessionInfo {
 		const target = value.trim();
 		if (!target) throw new Error("Intercom target cannot be empty");
-		const sessions = await this.client.listSessions(signal);
 		const exact = sessions.find((session) => session.id === target);
 		if (exact) return exact;
 		const matches = sessions.filter((session) => session.name?.toLowerCase() === target.toLowerCase());
@@ -214,7 +269,22 @@ export class IntercomRuntime extends EventEmitter {
 		throw new Error(`Session not found: ${value}`);
 	}
 
+	private requireUniquePiSession(target: SessionInfo, sessions: readonly SessionInfo[]): PiSessionPresence {
+		const presence = target.piSession;
+		if (!presence) throw new Error("Target session does not advertise an available persisted Pi session");
+		const advertisers = sessions.filter((session) => session.piSession?.sessionId === presence.sessionId);
+		if (advertisers.length !== 1) throw new Error("Multiple connected sessions advertise the same persisted Pi session");
+		return presence;
+	}
+
+	private samePiSession(left: PiSessionPresence, right: PiSessionPresence): boolean {
+		return left.sessionId === right.sessionId
+			&& left.fileLocator === right.fileLocator
+			&& left.activeLeafId === right.activeLeafId
+			&& left.revision === right.revision;
+	}
+
 	private assertNotSelf(sessionId: string): void {
-		if (sessionId === this.client.sessionId) throw new Error("Cannot message the current session");
+		if (sessionId === this.client.sessionId) throw new Error("Cannot target the current session");
 	}
 }

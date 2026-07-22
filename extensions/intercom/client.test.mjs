@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FrameDecoder, INTERCOM_LIMITS, IntercomClient, encodeFrame, isMessage } from "./client.ts";
+import { FrameDecoder, INTERCOM_LIMITS, IntercomClient, encodeFrame, isMessage, isSessionInfo } from "./client.ts";
 
 function decoderFixture(maximum) {
 	const messages = [];
@@ -38,6 +38,16 @@ test("message and attachment envelopes are bounded without changing valid legacy
 	assert.equal(isMessage({ ...valid, content: { text: "x".repeat(INTERCOM_LIMITS.maxMessageTextBytes + 1) } }), false);
 	assert.equal(isMessage({ ...valid, content: { text: "ok", attachments: Array.from({ length: INTERCOM_LIMITS.maxAttachments + 1 }, () => ({ type: "file", name: "a", content: "b" })) } }), false);
 	assert.equal(isMessage({ ...valid, content: { text: "ok", attachments: [{ type: "url", name: "a", content: "b" }] } }), false);
+});
+
+test("persisted Pi presence is an exact bounded optional session field", () => {
+	const base = { id: "peer", cwd: "/tmp", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
+	const piSession = { sessionId: "pi-session", fileLocator: "/tmp/session.jsonl", activeLeafId: null, revision: 1 };
+	assert.equal(isSessionInfo({ ...base, piSession }), true);
+	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, fileLocator: "relative.jsonl" } }), false);
+	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, revision: 0 } }), false);
+	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, snapshotBytes: 100 } }), false);
+	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, activeLeafId: "x".repeat(INTERCOM_LIMITS.maxPiSessionLeafBytes + 1) } }), false);
 });
 
 test("session_left fails only asks for the departed authoritative peer and empty reply IDs still correlate", async () => {

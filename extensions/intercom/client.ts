@@ -3,7 +3,17 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import net, { type Socket } from "node:net";
+import path from "node:path";
 import { getBrokerSocketPath } from "./broker/paths.ts";
+
+export const INTERCOM_TAIL_CAPABILITY = "pi-session-tail-v1";
+
+export interface PiSessionPresence {
+	sessionId: string;
+	fileLocator: string;
+	activeLeafId: string | null;
+	revision: number;
+}
 
 export interface SessionInfo {
 	id: string;
@@ -14,6 +24,7 @@ export interface SessionInfo {
 	startedAt: number;
 	lastActivity: number;
 	status?: string;
+	piSession?: PiSessionPresence;
 }
 
 export interface Attachment {
@@ -58,6 +69,11 @@ export const INTERCOM_LIMITS = Object.freeze({
 	maxIdBytes: 256,
 	maxTargetBytes: 1024,
 	maxSessionStringBytes: 4096,
+	maxCapabilities: 16,
+	maxCapabilityBytes: 64,
+	maxPiSessionIdBytes: 256,
+	maxPiSessionFileBytes: 4096,
+	maxPiSessionLeafBytes: 256,
 	maxMessageTextBytes: 256 * 1024,
 	maxAttachments: 16,
 	maxAttachmentNameBytes: 4096,
@@ -113,6 +129,31 @@ export function isMessage(value: unknown): value is Message {
 		&& (content.attachments === undefined || areAttachments(content.attachments));
 }
 
+export function isPiSessionPresence(value: unknown): value is PiSessionPresence {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const presence = value as Record<string, unknown>;
+	if (Object.keys(presence).length !== 4 || !["sessionId", "fileLocator", "activeLeafId", "revision"].every((key) => key in presence)) return false;
+	return boundedString(presence.sessionId, INTERCOM_LIMITS.maxPiSessionIdBytes)
+		&& boundedString(presence.fileLocator, INTERCOM_LIMITS.maxPiSessionFileBytes)
+		&& path.isAbsolute(presence.fileLocator)
+		&& (presence.activeLeafId === null || boundedString(presence.activeLeafId, INTERCOM_LIMITS.maxPiSessionLeafBytes))
+		&& Number.isSafeInteger(presence.revision)
+		&& (presence.revision as number) >= 1;
+}
+
+function areCapabilities(value: unknown): value is string[] {
+	return Array.isArray(value)
+		&& value.length <= INTERCOM_LIMITS.maxCapabilities
+		&& value.every((item) => boundedString(item, INTERCOM_LIMITS.maxCapabilityBytes));
+}
+
+function samePiSession(left: PiSessionPresence | undefined, right: PiSessionPresence | undefined): boolean {
+	return left?.sessionId === right?.sessionId
+		&& left?.fileLocator === right?.fileLocator
+		&& left?.activeLeafId === right?.activeLeafId
+		&& left?.revision === right?.revision;
+}
+
 export function isSessionInfo(value: unknown): value is SessionInfo {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const session = value as Record<string, unknown>;
@@ -123,11 +164,17 @@ export function isSessionInfo(value: unknown): value is SessionInfo {
 		&& finiteNumber(session.startedAt)
 		&& finiteNumber(session.lastActivity)
 		&& (session.name === undefined || boundedString(session.name, INTERCOM_LIMITS.maxSessionStringBytes, true))
-		&& (session.status === undefined || boundedString(session.status, INTERCOM_LIMITS.maxSessionStringBytes, true));
+		&& (session.status === undefined || boundedString(session.status, INTERCOM_LIMITS.maxSessionStringBytes, true))
+		&& (session.piSession === undefined || isPiSessionPresence(session.piSession));
 }
 
 function validateRegistration(session: Omit<SessionInfo, "id">): void {
 	if (!isSessionInfo({ ...session, id: "registration" })) throw new Error("Invalid intercom session registration");
+}
+
+function registrationForWire(session: Omit<SessionInfo, "id">): Omit<SessionInfo, "id"> {
+	const { piSession: _piSession, ...legacyCompatible } = session;
+	return legacyCompatible;
 }
 
 function validateSendOptions(to: string, options: SendOptions): void {
@@ -270,6 +317,7 @@ export interface IntercomClientOptions {
 export class IntercomClient extends EventEmitter {
 	private socket: Socket | null = null;
 	private registeredSessionId: string | null = null;
+	private registeredCapabilities = new Set<string>();
 	private registration: Omit<SessionInfo, "id"> | null = null;
 	private beforeConnect: (() => Promise<void>) | null = null;
 	private connectPromise: Promise<void> | null = null;
@@ -310,6 +358,14 @@ export class IntercomClient extends EventEmitter {
 		return this.registeredSessionId;
 	}
 
+	supportsCapability(capability: string): boolean {
+		return this.registeredCapabilities.has(capability);
+	}
+
+	currentPiSessionPresence(): PiSessionPresence | undefined {
+		return this.registration?.piSession ? { ...this.registration.piSession } : undefined;
+	}
+
 	isConnected(): boolean {
 		const socket = this.socket;
 		return Boolean(socket && this.registeredSessionId && !socket.destroyed && !socket.writableEnded && socket.writable);
@@ -321,7 +377,10 @@ export class IntercomClient extends EventEmitter {
 
 	setRegistration(session: Omit<SessionInfo, "id">): void {
 		validateRegistration(session);
-		this.registration = { ...session };
+		this.registration = {
+			...session,
+			...(session.piSession ? { piSession: { ...session.piSession } } : {}),
+		};
 	}
 
 	async start(session: Omit<SessionInfo, "id">, beforeConnect: () => Promise<void>): Promise<void> {
@@ -346,12 +405,13 @@ export class IntercomClient extends EventEmitter {
 			if (!this.desired || generation !== this.lifecycleGeneration) throw new Error("Intercom connection start was cancelled");
 			const registration = this.registration;
 			if (!registration) throw new Error("Intercom registration is not configured");
-			await this.connect({ ...registration });
+			const sent = registrationForWire(registration);
+			await this.connect(sent);
 			if (!this.desired || generation !== this.lifecycleGeneration) {
 				await this.disconnect();
 				throw new Error("Intercom connection start was cancelled");
 			}
-			await this.synchronizeRegistration(registration);
+			await this.synchronizeRegistration(sent);
 			const wasReconnect = this.reconnectAttempt > 0;
 			this.reconnectAttempt = 0;
 			if (wasReconnect) this.emit("reconnected", this.registeredSessionId);
@@ -367,10 +427,12 @@ export class IntercomClient extends EventEmitter {
 
 	connect(session: Omit<SessionInfo, "id">): Promise<void> {
 		validateRegistration(session);
+		const wireSession = registrationForWire(session);
 		if (this.socket) return Promise.reject(new Error("Already connected"));
 		const socket = net.connect(this.socketPath);
 		this.socket = socket;
 		this.registeredSessionId = null;
+		this.registeredCapabilities.clear();
 		this.disconnectError = null;
 		this.writeState = { socket, tail: Promise.resolve(), queuedBytes: 0 };
 
@@ -407,8 +469,12 @@ export class IntercomClient extends EventEmitter {
 				this.handleDisconnect(socket, error, wasRegistered);
 			});
 			socket.once("connect", () => {
-				void this.enqueueOn(socket, { type: "register", session }).catch((error) => socket.destroy(error));
+				void this.enqueueOn(socket, { type: "register", session: wireSession }).catch((error) => socket.destroy(error));
 			});
+		}).then(async () => {
+			if (session.piSession && this.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
+				await this.enqueue({ type: "presence", piSession: session.piSession });
+			}
 		});
 	}
 
@@ -442,12 +508,15 @@ export class IntercomClient extends EventEmitter {
 	private async synchronizeRegistration(sent: Omit<SessionInfo, "id">): Promise<void> {
 		const desired = this.registration;
 		if (!desired) return;
-		if (desired.name === sent.name && desired.model === sent.model && desired.status === sent.status) return;
+		const piSessionChanged = this.supportsCapability(INTERCOM_TAIL_CAPABILITY)
+			&& !samePiSession(desired.piSession, sent.piSession);
+		if (desired.name === sent.name && desired.model === sent.model && desired.status === sent.status && !piSessionChanged) return;
 		await this.enqueue({
 			type: "presence",
 			...(desired.name === undefined ? {} : { name: desired.name }),
 			...(desired.model === undefined ? {} : { model: desired.model }),
 			...(desired.status === undefined ? {} : { status: desired.status }),
+			...(piSessionChanged ? { piSession: desired.piSession ?? null } : {}),
 		});
 	}
 
@@ -486,10 +555,15 @@ export class IntercomClient extends EventEmitter {
 		}
 		switch (message.type) {
 			case "registered": {
-				if (!boundedString(message.sessionId, INTERCOM_LIMITS.maxIdBytes, true) || this.registeredSessionId !== null) {
+				if (
+					!boundedString(message.sessionId, INTERCOM_LIMITS.maxIdBytes, true)
+					|| (message.capabilities !== undefined && !areCapabilities(message.capabilities))
+					|| this.registeredSessionId !== null
+				) {
 					throw new Error("Invalid registered message");
 				}
 				this.registeredSessionId = message.sessionId;
+				this.registeredCapabilities = new Set(message.capabilities ?? []);
 				this.registrationPending?.resolve();
 				this.emit("registered", message.sessionId);
 				break;
@@ -600,6 +674,7 @@ export class IntercomClient extends EventEmitter {
 		if (this.socket !== socket) return;
 		this.socket = null;
 		this.registeredSessionId = null;
+		this.registeredCapabilities.clear();
 		if (this.writeState?.socket === socket) this.writeState = null;
 		this.registrationPending?.reject(error);
 		this.registrationPending = null;
@@ -746,17 +821,31 @@ export class IntercomClient extends EventEmitter {
 		})();
 	}
 
-	updatePresence(updates: { name?: string; status?: string; model?: string }): void {
-		for (const value of Object.values(updates)) {
+	updatePresence(updates: { name?: string; status?: string; model?: string; piSession?: PiSessionPresence | null }): void {
+		for (const value of [updates.name, updates.status, updates.model]) {
 			if (value !== undefined && !boundedString(value, INTERCOM_LIMITS.maxSessionStringBytes, true)) return;
 		}
-		if (this.registration) this.registration = { ...this.registration, ...updates, lastActivity: Date.now() };
+		if (updates.piSession !== undefined && updates.piSession !== null && !isPiSessionPresence(updates.piSession)) return;
+		if (this.registration) {
+			const next = { ...this.registration, ...updates, lastActivity: Date.now() } as Omit<SessionInfo, "id"> & { piSession?: PiSessionPresence | null };
+			if (updates.piSession === null) delete next.piSession;
+			else if (updates.piSession) next.piSession = { ...updates.piSession };
+			this.registration = next;
+		}
 		if (!this.isConnected()) return;
-		void this.enqueue({ type: "presence", ...updates }).catch((error) => this.emit("error", toError(error)));
+		const outbound = {
+			...(updates.name === undefined ? {} : { name: updates.name }),
+			...(updates.status === undefined ? {} : { status: updates.status }),
+			...(updates.model === undefined ? {} : { model: updates.model }),
+			...(this.supportsCapability(INTERCOM_TAIL_CAPABILITY) && updates.piSession !== undefined ? { piSession: updates.piSession } : {}),
+		};
+		if (Object.keys(outbound).length === 0) return;
+		void this.enqueue({ type: "presence", ...outbound }).catch((error) => this.emit("error", toError(error)));
 	}
 
 	async disconnect(): Promise<void> {
 		this.desired = false;
+		this.registeredCapabilities.clear();
 		this.lifecycleGeneration++;
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);

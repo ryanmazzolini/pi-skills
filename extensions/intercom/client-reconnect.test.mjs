@@ -24,9 +24,9 @@ test("client uses the latest registration after blocked broker preparation", asy
 	let release;
 	const gate = new Promise((resolve) => { release = resolve; });
 	const client = new IntercomClient({ socketPath: paths.socketPath, reconnectDelaysMs: [20] });
-	const starting = client.start(registration("stale", { model: "stale-model", status: "stale" }), () => gate);
+	const starting = client.start(registration("stale", { model: "stale-model", status: "stale", piSession: { sessionId: "pi-session", fileLocator: "/tmp/stale.jsonl", activeLeafId: "old", revision: 1 } }), () => gate);
 	await new Promise((resolve) => setImmediate(resolve));
-	client.setRegistration(registration("latest", { model: "latest-model", status: "latest" }));
+	client.setRegistration(registration("latest", { model: "latest-model", status: "latest", piSession: { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "new", revision: 2 } }));
 	release();
 	await starting;
 	t.after(() => client.disconnect());
@@ -34,6 +34,7 @@ test("client uses the latest registration after blocked broker preparation", asy
 	assert.equal(self.name, "latest");
 	assert.equal(self.model, "latest-model");
 	assert.equal(self.status, "latest");
+	assert.deepEqual(self.piSession, { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "new", revision: 2 });
 });
 
 test("client synchronizes a registration update that races broker acknowledgement", async (t) => {
@@ -51,7 +52,7 @@ test("client synchronizes a registration update that races broker acknowledgemen
 			if (message?.type === "register") {
 				resolveRegister(message.session);
 				new Promise((resolve) => { releaseRegistered = resolve; }).then(() => {
-					socket.write(encodeFrame({ type: "registered", sessionId: "race-session-id" }));
+					socket.write(encodeFrame({ type: "registered", sessionId: "race-session-id", capabilities: ["pi-session-tail-v1"] }));
 				});
 			}
 			if (message?.type === "presence") resolvePresence(message);
@@ -67,15 +68,17 @@ test("client synchronizes a registration update that races broker acknowledgemen
 		await new Promise((resolve) => server.close(resolve));
 	});
 	const client = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
-	const starting = client.start(registration("initial"), async () => undefined);
-	await sawRegister;
-	client.setRegistration(registration("latest", { model: "latest-model", status: "thinking" }));
+	const starting = client.start(registration("initial", { piSession: { sessionId: "pi-session", fileLocator: "/tmp/initial.jsonl", activeLeafId: "first", revision: 1 } }), async () => undefined);
+	const sentRegistration = await sawRegister;
+	assert.equal(sentRegistration.piSession, undefined);
+	client.setRegistration(registration("latest", { model: "latest-model", status: "thinking", piSession: { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "second", revision: 2 } }));
 	releaseRegistered();
 	await starting;
 	const presence = await sawPresence;
 	assert.equal(presence.name, "latest");
 	assert.equal(presence.model, "latest-model");
 	assert.equal(presence.status, "thinking");
+	assert.deepEqual(presence.piSession, { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "second", revision: 2 });
 	await client.disconnect();
 });
 
@@ -106,7 +109,8 @@ test("client fails waiters on broker disconnect and reconnects one implementatio
 	await disconnected;
 	await pendingAssertion;
 	assert.deepEqual(client.pendingCounts(), { sends: 0, lists: 0, asks: 0 });
-	client.setRegistration(registration("reconnected-latest", { model: "reconnect-model", status: "ready" }));
+	assert.equal(client.supportsCapability("pi-session-tail-v1"), false);
+	client.setRegistration(registration("reconnected-latest", { model: "reconnect-model", status: "ready", piSession: { sessionId: "pi-reconnected", fileLocator: "/tmp/reconnected.jsonl", activeLeafId: "leaf", revision: 7 } }));
 	broker = await startOwnedBroker(paths);
 	await reconnected;
 	assert.equal(client.isConnected(), true);
@@ -115,6 +119,8 @@ test("client fails waiters on broker disconnect and reconnects one implementatio
 	assert.equal(reconnectedSelf.name, "reconnected-latest");
 	assert.equal(reconnectedSelf.model, "reconnect-model");
 	assert.equal(reconnectedSelf.status, "ready");
+	assert.deepEqual(reconnectedSelf.piSession, { sessionId: "pi-reconnected", fileLocator: "/tmp/reconnected.jsonl", activeLeafId: "leaf", revision: 7 });
+	assert.equal(client.supportsCapability("pi-session-tail-v1"), true);
 	await peer.disconnect();
 });
 
