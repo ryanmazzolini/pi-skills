@@ -4,12 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import {
   createBashToolDefinition,
-  createWriteToolDefinition,
   initTheme,
 } from "@earendil-works/pi-coding-agent";
-import { getCapabilities, setCapabilities } from "@earendil-works/pi-tui";
 import {
   linkifyRenderedPaths,
   linkifyText,
@@ -183,12 +182,14 @@ test("overrides only untouched built-in path tools", () => {
   assert.deepEqual(registered, ["read", "write", "ls", "bash"]);
 });
 
-test("rewrites the built-in write tool path without changing its label", (t) => {
+test("rewrites the built-in write tool path without changing its label or body", (t) => {
   const { cwd, report } = fixture(t);
-  const previousCapabilities = getCapabilities();
-  setCapabilities({ images: null, trueColor: true, hyperlinks: true });
-  t.after(() => setCapabilities(previousCapabilities));
-  const definition = linkifyToolDefinition(createWriteToolDefinition(cwd));
+  const registered = [];
+  registerBuiltInToolLinks({
+    getAllTools: () => [{ name: "write", sourceInfo: { source: "builtin" } }],
+    registerTool: (definition) => registered.push(definition),
+  }, cwd);
+  const [definition] = registered;
   const theme = {
     fg: (_color, text) => text,
     bold: (text) => text,
@@ -209,14 +210,114 @@ test("rewrites the built-in write tool path without changing its label", (t) => 
   };
 
   const component = definition.renderCall(
-    { path: ".plans/session-audit/findings.md", content: "" },
+    { path: ".plans/session-audit/findings.md", content: "body .plans/session-audit/findings.md" },
     theme,
     context,
   );
-  const output = component.render(120)[0];
+  const [output, , body] = component.render(120);
 
   assert.match(output, /write .*\.plans\/session-audit\/findings\.md/);
   assert.equal(bridgeTarget(osc8Url(output)), `zed://file${pathToFileURL(report).pathname}`);
+  assert.equal(body.trimEnd(), "body .plans/session-audit/findings.md");
+
+  const narrowComponent = definition.renderCall(
+    { path: ".plans/session-audit/findings.md", content: "" },
+    theme,
+    { ...context, lastComponent: undefined },
+  );
+  const narrowPathLines = narrowComponent.render(20).slice(1);
+  assert.ok(narrowPathLines.length > 1);
+  for (const line of narrowPathLines) {
+    assert.equal(bridgeTarget(osc8Url(line)), `zed://file${pathToFileURL(report).pathname}`);
+  }
+});
+
+test("rewrites wrapped read ranges and decorated edit paths", (t) => {
+  const { cwd, report } = fixture(t);
+  const registered = [];
+  registerBuiltInToolLinks({
+    getAllTools: () => ["read", "edit"].map((name) => ({ name, sourceInfo: { source: "builtin" } })),
+    registerTool: (definition) => registered.push(definition),
+  }, cwd);
+  const definitions = new Map(registered.map((definition) => [definition.name, definition]));
+  const theme = {
+    fg: (_color, text) => text,
+    bg: (_color, text) => text,
+    bold: (text) => text,
+  };
+  const context = {
+    args: {},
+    toolCallId: "path-test",
+    invalidate() {},
+    lastComponent: undefined,
+    state: {},
+    cwd,
+    executionStarted: true,
+    argsComplete: true,
+    isPartial: false,
+    expanded: false,
+    showImages: true,
+    isError: false,
+  };
+  const target = `zed://file${pathToFileURL(report).pathname}`;
+
+  const readLines = definitions.get("read").renderCall(
+    { path: ".plans/session-audit/findings.md", offset: 1, limit: 1 },
+    theme,
+    context,
+  ).render(20);
+  assert.ok(readLines.some((line) => line.includes(":1-1")));
+  for (const line of readLines.filter((line) => line.includes("\x1b]8;"))) {
+    assert.equal(bridgeTarget(osc8Url(line)), target);
+  }
+  assert.ok(readLines.filter((line) => line.includes("\x1b]8;")).length > 1);
+
+  const editLines = definitions.get("edit").renderCall(
+    { path: ".plans/session-audit/findings.md", edits: [{ oldText: "Findings", newText: "Updated" }] },
+    theme,
+    context,
+  ).render(20);
+  for (const line of editLines.filter((line) => line.includes("\x1b]8;"))) {
+    assert.equal(bridgeTarget(osc8Url(line)), target);
+  }
+  assert.ok(editLines.filter((line) => line.includes("\x1b]8;")).length > 1);
+});
+
+test("inserts fallback links around visible paths without corrupting ANSI styling", (t) => {
+  const { cwd } = fixture(t);
+  for (const name of ["read", "1", ";"]) fs.writeFileSync(path.join(cwd, name), "");
+  const registered = [];
+  registerBuiltInToolLinks({
+    getAllTools: () => [{ name: "read", sourceInfo: { source: "builtin" } }],
+    registerTool: (definition) => registered.push(definition),
+  }, cwd);
+  const [definition] = registered;
+  const color = (text) => `\x1b[38;2;208;208;208m${text}\x1b[39m`;
+  const theme = {
+    fg: (_color, text) => color(text),
+    bold: (text) => text,
+  };
+  const context = {
+    args: {},
+    toolCallId: "ansi-path-test",
+    invalidate() {},
+    lastComponent: undefined,
+    state: {},
+    cwd,
+    executionStarted: true,
+    argsComplete: true,
+    isPartial: false,
+    expanded: false,
+    showImages: true,
+    isError: false,
+  };
+
+  for (const name of ["read", "1", ";"]) {
+    const [output] = definition.renderCall({ path: name }, theme, context).render(20);
+    assert.equal(stripVTControlCharacters(output).trimEnd(), `read ${name}`);
+    assert.equal(bridgeTarget(osc8Url(output)), `zed://file${pathToFileURL(path.join(cwd, name)).pathname}`);
+    assert.doesNotMatch(output, /\x1b\[[0-9;]*\x1b\]8;/);
+  }
 });
 
 test("preserves renderer component reuse while rewriting its output", (t) => {
