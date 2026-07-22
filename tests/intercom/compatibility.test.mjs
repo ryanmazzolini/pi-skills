@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { IntercomClient } from "../../extensions/intercom/client.ts";
 import { LegacyDriver, connectNew, isolatedIntercom, registration, startLegacyBroker, startOwnedBroker, stopChild, waitEvent, waitFor } from "./helpers.mjs";
 
 async function createPeer(kind, fixture, name) {
@@ -15,6 +16,7 @@ async function createPeer(kind, fixture, name) {
 			waitMessage: (id) => driver.waitEvent((event) => event.event === "message" && event.message.id === id).then((event) => [event.from, event.message]),
 			waitPresence: (id, status) => driver.waitEvent((event) => event.event === "presence_update" && event.session.id === id && event.session.status === status).then((event) => event.session),
 			waitLeft: (id) => driver.waitEvent((event) => event.event === "session_left" && event.sessionId === id),
+			tailCapability: () => false,
 			close: () => driver.close(),
 		};
 	}
@@ -28,6 +30,7 @@ async function createPeer(kind, fixture, name) {
 		waitMessage: (id) => waitEvent(client, "message", (_from, message) => message.id === id),
 		waitPresence: (id, status) => waitEvent(client, "presence_update", (session) => session.id === id && session.status === status).then(([session]) => session),
 		waitLeft: (id) => waitEvent(client, "session_left", (sessionId) => sessionId === id),
+		tailCapability: () => client.supportsCapability("pi-session-tail-v1"),
 		ask: (to, options) => client.ask(to, options),
 		close: () => client.disconnect(),
 	};
@@ -93,6 +96,25 @@ test("new client cleans only the departed recipient's asks from legacy session_l
 	assert.deepEqual(alice.pendingCounts(), { sends: 0, lists: 0, asks: 0 });
 });
 
+test("new clients never expose persisted-session locators through a legacy broker", async (t) => {
+	const fixture = await isolatedIntercom(t, "tail-legacy-");
+	const broker = await startLegacyBroker(fixture.home, fixture.paths.socketPath);
+	t.after(() => stopChild(broker));
+	const observer = await connectNew(fixture.paths, "observer");
+	const target = new IntercomClient({ socketPath: fixture.paths.socketPath, reconnectDelaysMs: [20] });
+	const privateLocator = "/private/persisted/session.jsonl";
+	await target.start(registration("target", { piSession: { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "leaf", revision: 1 } }), async () => undefined);
+	t.after(async () => Promise.allSettled([observer.disconnect(), target.disconnect()]));
+	assert.equal(target.supportsCapability("pi-session-tail-v1"), false);
+	let listed = (await observer.listSessions()).find((session) => session.id === target.sessionId);
+	assert.equal(listed.piSession, undefined);
+	assert.equal(JSON.stringify(listed).includes(privateLocator), false);
+	target.updatePresence({ piSession: { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "new", revision: 2 } });
+	listed = (await observer.listSessions()).find((session) => session.id === target.sessionId);
+	assert.equal(listed.piSession, undefined);
+	assert.equal(JSON.stringify(listed).includes(privateLocator), false);
+});
+
 test("new client keeps parallel asks independent against the legacy broker", async (t) => {
 	const fixture = await isolatedIntercom(t, "parallel-old-");
 	const broker = await startLegacyBroker(fixture.home, fixture.paths.socketPath);
@@ -120,6 +142,7 @@ for (const brokerKind of ["old", "new"]) {
 		t.after(() => stopChild(broker));
 		const oldPeer = await createPeer("old", fixture, "legacy-peer");
 		const newPeer = await createPeer("new", fixture, "owned-peer");
+		assert.equal(newPeer.tailCapability(), brokerKind === "new");
 		t.after(async () => Promise.allSettled([oldPeer.close(), newPeer.close()]));
 
 		for (const peer of [oldPeer, newPeer]) {
@@ -183,6 +206,7 @@ for (const combination of combinations) {
 		t.after(() => stopChild(broker));
 		const alice = await createPeer(combination.client, fixture, "alice");
 		const bob = await createPeer(combination.client, fixture, "bob");
+		assert.equal(alice.tailCapability(), combination.client === "new" && combination.broker === "new");
 		t.after(async () => {
 			await Promise.allSettled([alice.close(), bob.close()]);
 		});

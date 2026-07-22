@@ -12,12 +12,16 @@ class FakeClient extends EventEmitter {
 		super();
 		this.sessionId = "self";
 		this.sessions = sessions;
+		this.listResponses = [];
 		this.sent = [];
+		this.tailCapability = true;
 	}
 	isConnected() { return true; }
+	supportsCapability() { return this.tailCapability; }
+	currentPiSessionPresence() { return undefined; }
 	pendingCounts() { return { sends: 0, lists: 0, asks: 0 }; }
 	async ensureConnected() {}
-	async listSessions() { return this.sessions; }
+	async listSessions() { return this.listResponses.shift() ?? this.sessions; }
 	async send(to, options) {
 		this.sent.push({ to, options });
 		return { id: `sent-${this.sent.length}`, delivered: true };
@@ -35,6 +39,62 @@ class FakeClient extends EventEmitter {
 	updatePresence() {}
 	async disconnect() {}
 }
+
+test("runtime reads a stable advertised tail without messaging the target", async () => {
+	const presence = { sessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", revision: 4 };
+	const target = { ...peer("target", "worker"), piSession: presence };
+	const client = new FakeClient([peer("self", "caller"), target]);
+	let verified = 0;
+	let closed = 0;
+	const snapshot = { events: [{ kind: "user", text: "confirmed" }], availableTextMessages: 1, returnedTextMessages: 1, truncated: false };
+	const runtime = new IntercomRuntime({
+		client,
+		openTail: (request) => {
+			assert.deepEqual(request, { piSessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", limit: 8 });
+			return { snapshot, verifyStable: () => { verified++; }, close: () => { closed++; } };
+		},
+	});
+	const result = await runtime.tail("worker", 8);
+	assert.equal(result.target.id, "target");
+	assert.equal(result.snapshot, snapshot);
+	assert.equal(verified, 1);
+	assert.equal(closed, 1);
+	assert.equal(client.sent.length, 0);
+	await runtime.dispose();
+});
+
+test("runtime rejects unavailable, duplicate, and changed tail advertisements", async () => {
+	const presence = { sessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", revision: 1 };
+	const target = { ...peer("target", "worker"), piSession: presence };
+	const opener = () => ({
+		snapshot: { events: [], availableTextMessages: 0, returnedTextMessages: 0, truncated: false },
+		verifyStable() {},
+		close() {},
+	});
+
+	const legacyClient = new FakeClient([peer("self", "caller"), target]);
+	legacyClient.tailCapability = false;
+	await assert.rejects(new IntercomRuntime({ client: legacyClient, openTail: opener }).tail("worker", 8), /does not support/);
+
+	const missingClient = new FakeClient([peer("self", "caller"), peer("target", "worker")]);
+	await assert.rejects(new IntercomRuntime({ client: missingClient, openTail: opener }).tail("worker", 8), /does not advertise/);
+
+	const selfClient = new FakeClient([{ ...peer("self", "caller"), piSession: presence }]);
+	await assert.rejects(new IntercomRuntime({ client: selfClient, openTail: opener }).tail("self", 8), /Cannot target the current session/);
+
+	const duplicateClient = new FakeClient([peer("self", "caller"), target, { ...peer("duplicate", "other"), piSession: { ...presence, revision: 2 } }]);
+	await assert.rejects(new IntercomRuntime({ client: duplicateClient, openTail: opener }).tail("worker", 8), /Multiple connected sessions/);
+
+	const changedClient = new FakeClient([peer("self", "caller"), target]);
+	changedClient.listResponses = [changedClient.sessions, [peer("self", "caller"), { ...target, piSession: { ...presence, activeLeafId: "new", revision: 2 } }]];
+	let changedClosed = 0;
+	await assert.rejects(new IntercomRuntime({ client: changedClient, openTail: () => ({ ...opener(), close: () => { changedClosed++; } }) }).tail("worker", 8), /advertisement changed/);
+	assert.equal(changedClosed, 1);
+
+	const disconnectedClient = new FakeClient([peer("self", "caller"), target]);
+	disconnectedClient.listResponses = [disconnectedClient.sessions, [peer("self", "caller")]];
+	await assert.rejects(new IntercomRuntime({ client: disconnectedClient, openTail: opener }).tail("worker", 8), /advertisement changed/);
+});
 
 test("runtime refuses ambiguous duplicate peer names instead of routing arbitrarily", async () => {
 	const client = new FakeClient([peer("self", "caller"), peer("one", "worker"), peer("two", "worker")]);

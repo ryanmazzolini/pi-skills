@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, rm, symlink } from "node:fs/promises";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { appendFile, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import test from "node:test";
 import intercomExtension, {
 	INBOUND_DELIVERY_LIMITS,
@@ -31,7 +32,7 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	};
 	intercomExtension(pi);
 	assert.deepEqual(tools.map((tool) => tool.name), ["intercom"]);
-	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "send", "ask", "reply", "pending", "operations", "cancel", "status"]);
+	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status"]);
 	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "to", "message", "attachments", "replyTo", "operationId", "limit"]);
 	assert.deepEqual(commands, []);
 	assert.deepEqual(shortcuts, []);
@@ -46,6 +47,8 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 test("validates action-specific fields while preserving attachment and reply selection inputs", () => {
 	assert.doesNotThrow(() => validateIntercomAction({ action: "list" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "send", to: "worker", message: "update", attachments: [] }));
+	assert.doesNotThrow(() => validateIntercomAction({ action: "tail", to: "worker", limit: 8 }));
+	assert.throws(() => validateIntercomAction({ action: "tail" }), /requires to/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "reply", message: "answer", replyTo: "ask-1" }));
 	assert.throws(() => validateIntercomAction({ action: "ask", message: "question" }), /requires to/);
 	assert.throws(() => validateIntercomAction({ action: "pending", message: "extra" }), /not valid/);
@@ -279,6 +282,167 @@ test("automatic inbound turns remain globally bounded across attacker-controlled
 	delivery.dispose();
 });
 
+test("presence advertises only persisted snapshots and follows idle tree and user Bash changes", async (t) => {
+	const fixture = await isolatedIntercom(t, "presence-life-");
+	const previousHome = process.env.HOME;
+	process.env.HOME = fixture.home;
+	t.after(() => {
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+	});
+	const broker = await startOwnedBroker(fixture.paths);
+	t.after(() => stopChild(broker));
+	const observer = await connectNew(fixture.paths, "observer");
+	t.after(() => observer.disconnect());
+	const handlers = new Map();
+	const pi = {
+		registerTool() {},
+		registerMessageRenderer() {},
+		on: (name, handler) => handlers.set(name, handler),
+		getSessionName: () => "tracked",
+		appendEntry() {},
+		sendMessage() {},
+	};
+	intercomExtension(pi);
+	const sessionPath = `${fixture.base}/tracked.jsonl`;
+	let leaf = null;
+	const entries = [];
+	const ctx = {
+		cwd: "/repo",
+		model: { id: "fixture-model" },
+		sessionManager: {
+			getSessionId: () => "tracked-pi-session",
+			getSessionFile: () => sessionPath,
+			getLeafId: () => leaf,
+			getEntries: () => [...entries],
+		},
+	};
+	await handlers.get("session_start")({}, ctx);
+	t.after(() => handlers.get("session_shutdown")());
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "tracked"));
+	let tracked = (await observer.listSessions()).find((session) => session.name === "tracked");
+	assert.equal(tracked.piSession, undefined);
+
+	leaf = "first";
+	await writeFile(sessionPath, `${JSON.stringify({ type: "session", version: 3, id: "tracked-pi-session", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/repo" })}\n${JSON.stringify({ type: "message", id: "first", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: "first", timestamp: 1 } })}\n`);
+	handlers.get("agent_end")();
+	tracked = await waitFor(async () => {
+		const session = (await observer.listSessions()).find((item) => item.name === "tracked");
+		return session?.piSession?.revision === 1 ? session : undefined;
+	});
+	assert.equal(tracked.piSession.activeLeafId, "first");
+
+	leaf = null;
+	handlers.get("session_tree")();
+	tracked = await waitFor(async () => {
+		const session = (await observer.listSessions()).find((item) => item.name === "tracked");
+		return session?.piSession?.revision === 2 ? session : undefined;
+	});
+	assert.equal(tracked.piSession.activeLeafId, null);
+
+	handlers.get("user_bash")();
+	leaf = "bash-result";
+	const bashEntry = { type: "message", id: "bash-result", parentId: "first", timestamp: "2026-01-01T00:00:02.000Z", message: { role: "bashExecution", command: "private", output: "private", exitCode: 0, cancelled: false, truncated: false, timestamp: 2 } };
+	entries.push(bashEntry);
+	await appendFile(sessionPath, `${JSON.stringify(bashEntry)}\n`);
+	tracked = await waitFor(async () => {
+		const session = (await observer.listSessions()).find((item) => item.name === "tracked");
+		return session?.piSession?.revision === 3 ? session : undefined;
+	});
+	assert.equal(tracked.piSession.activeLeafId, "bash-result");
+});
+
+test("first user Bash stays unadvertised until Pi actually persists the session", async (t) => {
+	const fixture = await isolatedIntercom(t, "first-bash-");
+	const previousHome = process.env.HOME;
+	process.env.HOME = fixture.home;
+	t.after(() => {
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+	});
+	const broker = await startOwnedBroker(fixture.paths);
+	t.after(() => stopChild(broker));
+	const observer = await connectNew(fixture.paths, "observer");
+	t.after(() => observer.disconnect());
+	const sessionDir = `${fixture.base}/sessions`;
+	await mkdir(sessionDir);
+	const manager = SessionManager.create(fixture.base, sessionDir, { id: "first-bash-pi-session" });
+	const handlers = new Map();
+	intercomExtension({
+		registerTool() {},
+		registerMessageRenderer() {},
+		on: (name, handler) => handlers.set(name, handler),
+		getSessionName: () => "first-bash",
+		appendEntry() {},
+		sendMessage() {},
+	});
+	const ctx = { cwd: fixture.base, model: { id: "fixture-model" }, sessionManager: manager };
+	await handlers.get("session_start")({}, ctx);
+	t.after(() => handlers.get("session_shutdown")());
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "first-bash"));
+	handlers.get("user_bash")();
+	manager.appendMessage({ role: "bashExecution", command: "first", output: "done", exitCode: 0, cancelled: false, truncated: false, timestamp: 1 });
+	await assert.rejects(readFile(manager.getSessionFile()), /ENOENT/);
+	assert.equal((await observer.listSessions()).find((session) => session.name === "first-bash").piSession, undefined);
+
+	manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "persisted" }], stopReason: "stop", timestamp: 2 });
+	handlers.get("agent_end")();
+	const advertised = await waitFor(async () => {
+		const session = (await observer.listSessions()).find((item) => item.name === "first-bash");
+		return session?.piSession ? session : undefined;
+	});
+	assert.equal(advertised.piSession.sessionId, "first-bash-pi-session");
+	assert.equal(advertised.piSession.activeLeafId, manager.getLeafId());
+});
+
+test("a Bash started before first persistence refreshes when it finishes after agent_end", async (t) => {
+	const fixture = await isolatedIntercom(t, "stream-bash-");
+	const previousHome = process.env.HOME;
+	process.env.HOME = fixture.home;
+	t.after(() => {
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+	});
+	const broker = await startOwnedBroker(fixture.paths);
+	t.after(() => stopChild(broker));
+	const observer = await connectNew(fixture.paths, "observer");
+	t.after(() => observer.disconnect());
+	const sessionDir = `${fixture.base}/sessions`;
+	await mkdir(sessionDir);
+	const manager = SessionManager.create(fixture.base, sessionDir, { id: "stream-bash-pi-session" });
+	const handlers = new Map();
+	intercomExtension({
+		registerTool() {},
+		registerMessageRenderer() {},
+		on: (name, handler) => handlers.set(name, handler),
+		getSessionName: () => "stream-bash",
+		appendEntry() {},
+		sendMessage() {},
+	});
+	const ctx = { cwd: fixture.base, model: { id: "fixture-model" }, sessionManager: manager };
+	await handlers.get("session_start")({}, ctx);
+	t.after(() => handlers.get("session_shutdown")());
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "stream-bash"));
+	manager.appendMessage({ role: "user", content: "question", timestamp: 1 });
+	handlers.get("user_bash")();
+	manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "assistant finished" }], stopReason: "stop", timestamp: 2 });
+	handlers.get("agent_end")();
+	const assistantPresence = await waitFor(async () => {
+		const session = (await observer.listSessions()).find((item) => item.name === "stream-bash");
+		return session?.piSession ? session : undefined;
+	});
+	assert.equal(assistantPresence.piSession.activeLeafId, manager.getLeafId());
+	const assistantLeaf = manager.getLeafId();
+
+	manager.appendMessage({ role: "bashExecution", command: "slow", output: "done", exitCode: 0, cancelled: false, truncated: false, timestamp: 3 });
+	const bashPresence = await waitFor(async () => {
+		const session = (await observer.listSessions()).find((item) => item.name === "stream-bash");
+		return session?.piSession?.activeLeafId === manager.getLeafId() ? session : undefined;
+	});
+	assert.notEqual(bashPresence.piSession.activeLeafId, assistantLeaf);
+	assert.ok(bashPresence.piSession.revision > assistantPresence.piSession.revision);
+});
+
 test("successful tool actions report resolved peer IDs and persist only compact authoritative audits", async (t) => {
 	const fixture = await isolatedIntercom(t, "index-actions-");
 	const previousHome = process.env.HOME;
@@ -307,20 +471,52 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	const ctx = {
 		cwd: "/repo",
 		model: { id: "fixture-model" },
-		sessionManager: { getSessionId: () => "full-pi-session-id" },
+		sessionManager: { getSessionId: () => "full-pi-session-id", getSessionFile: () => undefined, getLeafId: () => null },
 	};
 	await handlers.get("session_start")({}, ctx);
 	t.after(() => handlers.get("session_shutdown")());
 	// Pi creates a fresh ExtensionContext for each tool execution; exercising that contract
 	// prevents a tool call from poisoning later asynchronous inbound delivery.
 	const execute = (params) => tools[0].execute("call", params, undefined, undefined, { ...ctx });
-	await waitFor(async () => (await execute({ action: "status" })).details.connected, 2_000);
+	const connectedStatus = await waitFor(async () => {
+		const result = await execute({ action: "status" });
+		return result.details.connected ? result : undefined;
+	}, 2_000);
+	assert.equal(connectedStatus.details.tailCapability, true);
+	assert.equal(connectedStatus.details.advertisingPiSession, false);
 	const ownedId = (await peer.listSessions()).find((item) => item.name === "caller").id;
 
 	const listed = await execute({ action: "list" });
 	assert.ok(Buffer.byteLength(listed.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
 	assert.equal(listed.details.sessionIds.includes(peer.sessionId), true);
 	assert.equal("sessions" in listed.details, false);
+
+	const privateSentinel = "PRIVATE_TAIL_SENTINEL";
+	const sessionPath = `${fixture.base}/target-session.jsonl`;
+	const sessionRecords = [
+		{ type: "session", version: 3, id: "target-pi-session", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/repo" },
+		{ type: "message", id: "tail-u", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: "tail question", timestamp: 1 } },
+		{ type: "message", id: "tail-a", parentId: "tail-u", timestamp: "2026-01-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "thinking", thinking: privateSentinel }, { type: "text", text: "tail answer" }, { type: "toolCall", id: "tail-call", name: "read", arguments: { path: privateSentinel } }], stopReason: "toolUse", timestamp: 2 } },
+		{ type: "message", id: "tail-r", parentId: "tail-a", timestamp: "2026-01-01T00:00:03.000Z", message: { role: "toolResult", toolCallId: "tail-call", toolName: "read", content: [{ type: "text", text: privateSentinel }], isError: false, timestamp: 3 } },
+	];
+	await writeFile(sessionPath, `${sessionRecords.map((record) => JSON.stringify(record)).join("\n")}\n`);
+	let targetMessages = 0;
+	peer.on("message", () => { targetMessages++; });
+	peer.updatePresence({ piSession: { sessionId: "target-pi-session", fileLocator: sessionPath, activeLeafId: "tail-r", revision: 1 } });
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 1);
+	const beforeTail = await readFile(sessionPath);
+	const tailed = await execute({ action: "tail", to: "worker" });
+	const afterTail = await readFile(sessionPath);
+	assert.equal(tailed.details.targetPeerId, peer.sessionId);
+	assert.equal(tailed.details.returnedTextMessages, 2);
+	assert.match(tailed.content[0].text, /tail question/);
+	assert.match(tailed.content[0].text, /tail answer/);
+	assert.match(tailed.content[0].text, /Tool "read": succeeded/);
+	assert.equal(tailed.content[0].text.includes(privateSentinel), false);
+	assert.equal(JSON.stringify(tailed.details).includes(sessionPath), false);
+	assert.equal(JSON.stringify(tailed.details).includes(privateSentinel), false);
+	assert.deepEqual(afterTail, beforeTail);
+	assert.equal(targetMessages, 0);
 
 	const incoming = waitEvent(peer, "message", (_from, message) => message.content.text === "compact-outgoing-secret");
 	const sent = await execute({ action: "send", to: "worker", message: "compact-outgoing-secret" });
@@ -392,7 +588,7 @@ test("tool execution throws action-qualified operational failures and status sur
 	const ctx = {
 		cwd: "/repo",
 		model: { id: "fixture-model" },
-		sessionManager: { getSessionId: () => "full-pi-session-id" },
+		sessionManager: { getSessionId: () => "full-pi-session-id", getSessionFile: () => undefined, getLeafId: () => null },
 	};
 	await handlers.get("session_start")({}, ctx);
 	t.after(async () => handlers.get("session_shutdown")());

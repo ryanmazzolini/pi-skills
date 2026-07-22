@@ -10,7 +10,9 @@ import {
 	projectInboundEntry,
 	projectPendingEntries,
 	projectSessionList,
+	projectSessionTail,
 	projectionBytes,
+	sanitizeTailText,
 } from "./projection.ts";
 
 function session(id, overrides = {}) {
@@ -121,6 +123,52 @@ test("list projection bounds 32 maximum-metadata sessions while preserving every
 	const details = { currentSessionId: sessions[0].id, sessionIds: sessions.map((peer) => peer.id), count: sessions.length, truncated: true };
 	assertBounded(details, "32-session details");
 	assert.doesNotMatch(JSON.stringify(details), /界/u);
+});
+
+test("session tail projection is bounded, locator-free, and preserves newest multibyte text", () => {
+	const privateLocator = "/private/session/path.jsonl";
+	const target = session("tail-peer-full-id", {
+		name: "tail worker",
+		piSession: { sessionId: "pi-session", fileLocator: privateLocator, activeLeafId: "leaf", revision: 1 },
+	});
+	const events = Array.from({ length: 32 }, (_, index) => ({
+		kind: index % 2 === 0 ? "user" : "assistant",
+		text: `${index === 31 ? "NEWEST_SENTINEL\u001b]52;c;CLIPBOARD\u0007\u202e\nkept\tformat" : `older-${index}`}-${"界".repeat(2_000)}`,
+	}));
+	events.splice(30, 0, { kind: "tool", name: `unsafe\n${"n".repeat(1_000)}`, outcome: "failed" });
+	events.push({ kind: "bash", outcome: "cancelled" });
+	const snapshot = {
+		events,
+		counts: { scannedEntries: 34, branchEntries: 34, eligibleTextEvents: 40, returnedTextEvents: 32, toolEvents: 1, bashEvents: 1 },
+		truncated: true,
+		ignoredFinalFragment: false,
+	};
+	const projected = projectSessionTail(snapshot, target);
+	assertBounded(projected.text, "session tail");
+	assert.equal(projected.truncated, true);
+	assert.match(projected.text, /tail-peer-full-id/);
+	assert.match(projected.text, /NEWEST_SENTINEL/);
+	assert.match(projected.text, /kept\tformat/);
+	assert.doesNotMatch(projected.text, /[\u001b\u0007\u202e]/u);
+	assert.equal(sanitizeTailText("line\r\nnext\tcell\u001b[31m\u2066"), "line\nnext\tcell [31m ");
+	assert.match(projected.text, /Tool "unsafe n/);
+	assert.match(projected.text, /User Bash: cancelled/);
+	assert.doesNotMatch(projected.text, /private\/session\/path/);
+	assert.ok(projectSessionList([target], target).text.includes("persisted tail advertised"));
+	assert.doesNotMatch(projectSessionList([target], target).text, /private\/session\/path/);
+});
+
+test("maximum reader-valid outcome metadata remains below the projection cap", () => {
+	const events = Array.from({ length: 64 }, () => ({ kind: "tool", name: "\"".repeat(256), outcome: "succeeded" }));
+	const snapshot = {
+		events,
+		counts: { scannedEntries: 64, branchEntries: 64, eligibleTextEvents: 0, returnedTextEvents: 0, toolEvents: 64, bashEvents: 0 },
+		truncated: false,
+		ignoredFinalFragment: false,
+	};
+	const projected = projectSessionTail(snapshot, session("maximum-tail-peer", { name: "\"".repeat(INTERCOM_LIMITS.maxSessionStringBytes) }));
+	assertBounded(projected.text, "maximum tail metadata");
+	assert.equal(projected.truncated, false);
 });
 
 test("large ask replies and 64-entry pending results retain authoritative IDs under the cap", () => {

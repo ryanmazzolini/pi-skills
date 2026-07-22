@@ -25,6 +25,7 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 	const bob = await connectNew(paths, "bob");
 	t.after(() => closeAll(alice, bob));
 
+	assert.equal(alice.supportsCapability("pi-session-tail-v1"), true);
 	const sessions = await alice.listSessions();
 	assert.equal(sessions.length, 2);
 	assert.equal(sessions.find((session) => session.id === alice.sessionId).name, "alice");
@@ -45,6 +46,38 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 	const failed = await alice.send("missing-peer", { text: "lost" });
 	assert.equal(failed.delivered, false);
 	assert.match(failed.reason, /Session not found/);
+});
+
+test("owned broker propagates and atomically updates persisted Pi session presence", async (t) => {
+	const { paths } = await isolatedIntercom(t, "tail-pres-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const observer = await connectNew(paths, "observer");
+	const target = new IntercomClient({ socketPath: paths.socketPath });
+	const first = { sessionId: "pi-session", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf-a", revision: 1 };
+	await target.connect(registration("target", { piSession: first }));
+	t.after(() => closeAll(observer, target));
+	await waitFor(async () => (await observer.listSessions()).find((session) => session.id === target.sessionId).piSession?.revision === 1);
+	assert.deepEqual((await observer.listSessions()).find((session) => session.id === target.sessionId).piSession, first);
+	const changed = waitEvent(observer, "presence_update", (session) => session.id === target.sessionId && session.piSession?.revision === 2);
+	target.updatePresence({ piSession: { ...first, activeLeafId: null, revision: 2 } });
+	assert.equal((await changed)[0].piSession.activeLeafId, null);
+	const cleared = waitEvent(observer, "presence_update", (session) => session.id === target.sessionId && session.piSession === undefined);
+	target.updatePresence({ piSession: null });
+	assert.equal((await cleared)[0].piSession, undefined);
+
+	for (const [name, update] of [
+		["stale", { ...first, revision: 3 }],
+		["extra", { ...first, revision: 4, snapshotBytes: 100 }],
+	]) {
+		const raw = await connectRaw(paths.socketPath);
+		raw.write({ type: "register", session: registration(name, { piSession: { ...first, revision: 3 } }) });
+		await raw.wait((message) => message.type === "registered");
+		const closed = new Promise((resolve) => raw.socket.once("close", resolve));
+		raw.write({ type: "presence", piSession: update });
+		await closed;
+		assert.equal((await observer.listSessions()).some((session) => session.name === name), false);
+	}
 });
 
 test("broker derives sender identity, handles fragmented/coalesced requests, and rejects malformed or oversized frames without crashing", async (t) => {
