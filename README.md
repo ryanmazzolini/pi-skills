@@ -1,9 +1,8 @@
 # pi-skills
 
-A collection of opinionated [Agent Skills](https://agentskills.io/) I use day-to-day, packaged first for [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and also exposed as a Claude Code plugin marketplace. It is shaped around my personal workflow, but feel free to use it, fork it, and adapt anything that is useful.
+This package is my setup for working with coding agents, primarily for [pi](https://pi.dev/). It is also available as a Claude Code plugin marketplace.
 
-## Install
-
+## Quick start
 
 ### pi
 
@@ -11,130 +10,121 @@ A collection of opinionated [Agent Skills](https://agentskills.io/) I use day-to
 pi install https://github.com/ryanmazzolini/pi-skills
 ```
 
-Use `pi config` to enable or disable individual skills after install.
+Use `pi config` to choose which skills are enabled. Run `pi update --extensions` when you want the latest version.
 
 ### Claude Code
+
+Add the marketplace, then install whichever families you want:
 
 ```text
 /plugin marketplace add ryanmazzolini/pi-skills
 /plugin install ship@ryan-pi-skills
 /plugin install commit@ryan-pi-skills
-/plugin install productivity@ryan-pi-skills
-/plugin install typescript-nextjs@ryan-pi-skills
 ```
 
-The Claude marketplace at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) points directly at canonical skill directories; grouped families use `skills/<namespace>/<skill>`. Skill names stay globally unique for pi while Claude commands stay readable, for example `/commit:commit-simple` and `/ship:ship`.
+See [the marketplace manifest](./.claude-plugin/marketplace.json) for every family. Commands are namespaced, so Ship is `/ship:ship`. Update with `/plugin marketplace update` and `/plugin update`.
 
-## Update
+## What to expect
 
-```bash
-pi update
-```
+- [`ship`](./skills/ship/ship/SKILL.md) is my development workflow with durable artefacts. It moves from alignment, through optional prototyping and planning, to implementation and review.
+- Durable workflows leave inspectable Markdown in `.plans/` instead of relying on hidden session state. Set `PI_SKILLS_PLANS_ROOT` if those files belong somewhere else.
+- Most skills are guidance, not a subscription to every tool I happen to like. Optional integrations only matter when you use their matching skills.
 
-For Claude Code, use `/plugin marketplace update` and `/plugin update`.
+## What’s in the box
 
-## Validation
+_Note: I've adapted most of these skills from other people's skills to suit my needs. See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)._
 
-```bash
-npm run validate:skills
-```
+### Shipping work
 
-Checks `SKILL.md` frontmatter, pi skill-loader diagnostics, and Claude marketplace skill references.
+| Skill | What it helps with |
+|---|---|
+| [`ship`](./skills/ship/ship/SKILL.md) | Route substantial work through durable human checkpoints |
+| [`ship-coach`](./skills/ship/ship-coach/SKILL.md) | Ship real work through guided practice and feedback |
+| [`align`](./skills/ship/align/SKILL.md) | Settle the smallest useful release before planning |
+| [`prototype`](./skills/ship/prototype/SKILL.md) | Build a throwaway artifact to answer one experiential design question |
+| [`slice-plan`](./skills/ship/slice-plan/SKILL.md) | Turn approved scope into a compact plan with explicit dependencies |
+| [`ticket-workspace`](./skills/ticket-workspace/ticket-workspace/SKILL.md) | Create or reuse workspaces with one git worktree per PR |
+| [`ticket-workspace-cleanup`](./skills/ticket-workspace/ticket-workspace-cleanup/SKILL.md) | Safely remove completed ticket workspaces after checking git state |
+| [`handoff`](./skills/handoff/SKILL.md) | Write a Markdown handoff for another agent or fresh session |
+| [`commit-simple`](./skills/commit/commit-simple/SKILL.md) | Prepare branches, commits, and pushes |
+| [`commit-pr`](./skills/commit/commit-pr/SKILL.md) | Create or update a draft pull request |
 
-## A quick note before you use or fork
+### Architecture and decisions
 
-This is my personal toolkit first. If parts of it fit your workflow, great — use them, fork them, or adapt them.
+| Skill | What it helps with |
+|---|---|
+| [`research`](./skills/research/research/SKILL.md) | Answer technical questions with bounded, decision-focused evidence |
+| [`architecture-review`](./skills/architecture/architecture-review/SKILL.md) | Review design trade-offs, rollout risk, and operations |
+| [`design-an-interface`](./skills/architecture/design-an-interface/SKILL.md) | Compare meaningfully different designs for a module or API |
+| [`shape-first`](./skills/architecture/shape-first/SKILL.md) | Settle data, rules, and local boundaries before implementation |
+| [`simplest-sufficient-change`](./skills/architecture/simplest-sufficient-change/SKILL.md) | Choose the earliest repo-native solution that fully meets the need |
+| [`simplify-codebase-architecture`](./skills/architecture/simplify-codebase-architecture/SKILL.md) | Remove repeated decisions and needless layers |
+| [`ubiquitous-language`](./skills/architecture/ubiquitous-language/SKILL.md) | Build a domain glossary and flag muddy terminology |
 
-A few things to know up front:
-- Ship is the canonical durable-work router. It fires on its own for multi-session work and advances vault context → `align` (with an optional throwaway `prototype`) → `slice-plan` → confirmed ready work → review → a high-level vault distillate. Invoke `ship-coach` explicitly to follow the same workflow through guided human practice and feedback.
-- Obsidian vault workflows use the official Obsidian CLI when note links, templates, backlinks, or history matter.
-- Claude-exposed skill families are grouped under `skills/<plugin>/<skill>`; standalone skills stay under `skills/<skill>`.
-- Some skills are thin wrappers around optional third-party CLIs. If you do not use those tools, you can skip those skills.
-- Ship workflows use durable markdown artifacts instead of hidden session state. They default to local `.plans/` workflow directories; set `PI_SKILLS_PLANS_ROOT` when a project needs a different durable artifact root. See [`skills/ship/ship/SKILL.md`](./skills/ship/ship/SKILL.md) for the entrypoint.
+### Coding and review
+
+| Skill | What it helps with |
+|---|---|
+| [`diagnosing-bugs`](./skills/debugging/diagnosing-bugs/SKILL.md) | Diagnose hard, flaky, environment-specific, or performance bugs |
+| [`security-review`](./skills/security/security-review/SKILL.md) | Find proven, exploitable security problems in code and delivery paths |
+| [`explain-code`](./skills/explain/explain-code/SKILL.md) | Explain code with diagrams and analogies |
+| [`typescript`](./skills/typescript-nextjs/typescript/SKILL.md) | Apply strict TypeScript patterns and conventions |
+| [`nextjs-app-router`](./skills/typescript-nextjs/nextjs-app-router/SKILL.md) | Work with modern Next.js App Router patterns |
+| [`frontend-react`](./skills/typescript-nextjs/frontend-react/SKILL.md) | Implement and review accessible React and Next.js interfaces |
+| [`hci`](./skills/ux-accessibility/hci/SKILL.md) | Improve any human-facing surface with usability and accessibility guidance |
+| [`frontend-hci-review`](./skills/ux-accessibility/frontend-hci-review/SKILL.md) | Audit frontend flows, responsive behavior, and interaction states |
+| [`ruby-sorbet-rails`](./skills/ruby-sorbet-rails/ruby-sorbet-rails/SKILL.md) | Work in Rails with Sorbet, Tapioca, RuboCop, and native conventions |
+| [`godot-gameplay-guidelines`](./skills/godot/godot-gameplay-guidelines/SKILL.md) | Build and review Godot 4.7 gameplay with a tight feedback loop |
+
+### Notes, reports, and learning
+
+| Skill | What it helps with |
+|---|---|
+| [`obsidian-vault`](./skills/notes/obsidian-vault/SKILL.md) | Use Obsidian-aware features for safe vault changes |
+| [`inbox-wiki`](./skills/notes/inbox-wiki/SKILL.md) | Turn vault inbox captures into raw sources and durable notes |
+| [`vault-cleanup`](./skills/notes/vault-cleanup/SKILL.md) | Audit and repair vault structure without ingesting the inbox |
+| [`daily-report`](./skills/notes/daily-report/SKILL.md) | Build evidence-based reports from Git, GitHub, and Shortcut activity |
+| [`notion-cli`](./skills/notes/notion-cli/SKILL.md) | Read and change Notion through the `ntn` CLI |
+| [`teach`](./skills/productivity/teach/SKILL.md) | Learn through short lessons, practice, and feedback |
+| [`writing-great-skills`](./skills/productivity/writing-great-skills/SKILL.md) | Write compact skills that produce reliable work |
+| [`context-guidelines`](./skills/ai-authoring/context-guidelines/SKILL.md) | Apply context-engineering principles to AI configuration |
+
+### Agents, automation, and integrations
+
+| Skill | What it helps with |
+|---|---|
+| [`agent-coordination`](./skills/agent-coordination/SKILL.md) | Choose configured models and reasoning levels for delegated work |
+| [`scheduled-jobs`](./skills/scheduled-jobs/SKILL.md) | Inspect and operate reviewed recurring local jobs |
+| [`shortcut`](./skills/shortcut/shortcut/SKILL.md) | Work with Shortcut stories through the `short` CLI |
+| [`agent-browser`](./skills/agent-browser/agent-browser/SKILL.md) | Automate browsers and Electron apps |
+| [`herdr`](./skills/herdr/SKILL.md) | Control Herdr or hand a Pi conversation to another workspace |
 
 ## Optional tooling
 
-`pi` and Node.js 24 or newer are package-wide base dependencies. Node must be available as `node` on `PATH`; it runs package scripts, the owned intercom broker process, and installed scheduled-job snapshots. `daily-report` also requires Git. The shared `scheduled-jobs` CLI uses launchd on macOS, systemd user timers on Linux, or `crontab` as a warned fallback. The tools below are optional and only needed for matching skills or report sources.
+[pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and Node.js 24 or newer are the package-wide requirements. The `node` executable must be available on `PATH`; it runs package scripts, the `intercom` broker, and installed scheduled-job snapshots. `daily-report` also needs Git, configured repositories, and a writable vault. Everything else is à la carte:
 
-| Tool | Used by | Notes |
-|------|---------|-------|
-| [GitHub CLI](https://cli.github.com/) | `daily-report` | Optional source; requires GitHub authentication |
-| [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) | `shortcut`, `daily-report` | Optional for daily reports; requires Shortcut auth/config |
-| [Obsidian CLI](https://obsidian.md/help/cli) | `obsidian-vault`, `inbox-wiki`, `vault-cleanup` | Requires Obsidian desktop CLI to be enabled |
-| Notion CLI (`ntn`) | `notion-cli` | Installed with mise; requires Notion auth/token setup |
-| [agent-browser](https://github.com/vercel-labs/agent-browser) | `agent-browser` | Browser automation CLI |
-| [Herdr](https://herdr.dev/) | `herdr` | Required only when controlling a Herdr-managed terminal session |
+- [GitHub CLI](https://cli.github.com/) adds GitHub evidence to `daily-report`.
+- [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) powers `shortcut` and can add Shortcut evidence to `daily-report`.
+- [Obsidian CLI](https://obsidian.md/help/cli) powers vault-aware note workflows and must be enabled in Obsidian desktop.
+- Notion CLI (`ntn`) powers `notion-cli`.
+- [agent-browser](https://github.com/vercel-labs/agent-browser) powers browser automation.
+- [Herdr](https://herdr.dev/) is only needed for Herdr-managed sessions.
 
-## Skill families
+The scheduler uses launchd on macOS, systemd user timers on Linux, or `crontab` as a warned fallback.
 
-This README is the map. The family README files have the details.
+## Also included
 
-| Family | Overview | Docs | References |
-|--------|----------|------|------------|
-| `ship` | Durable-work family: `align` requirements and shape, prototype experiential unknowns when needed, build a dependency-shaped plan, advance through confirmed checkpoints with `ship`, or explicitly add guided human practice with `ship-coach` | [`ship`](./skills/ship/ship/SKILL.md), [`ship-coach`](./skills/ship/ship-coach/SKILL.md), [`prototype`](./skills/ship/prototype/SKILL.md) | [`implementation-wave.md`](./skills/ship/ship/references/implementation-wave.md), [`review-gate.md`](./skills/ship/ship/references/review-gate.md), [`review-artifacts.md`](./skills/ship/ship/references/review-artifacts.md) |
+Pi gets a few extras that are not skills:
 
-## Standalone skills
-
-| Skill | Description | References |
-|-------|-------------|------------|
-| `ticket-workspace` | Create or reuse workspaces — one folder per ticket or ticketless quick fix, one git worktree per PR | — |
-| `ticket-workspace-cleanup` | User-invoked cleanup for completed ticket workspace folders after git-state checks | — |
-| `herdr` | Control Herdr and safely hand off an active Pi conversation to another workspace | [Herdr](https://herdr.dev/) |
-| `commit-simple` | Branch, commit, and push changes | — |
-| `commit-pr` | Create or update draft pull requests | — |
-| `research` | Decision-first technical research with bounded evidence gathering | — |
-| `teach` | Run a tight learning loop with short lessons, practice, feedback, and earned durable artifacts | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/teach) |
-| `writing-great-skills` | User-invoked reference for writing predictable, low-context-load skills | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/writing-great-skills) |
-| `handoff` | Write a date-stamped `.plans/` handoff document for another agent or fresh session | [mattpocock](https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff) |
-| `agent-coordination` | Select configured lightweight, balanced, or deep model and reasoning routes before delegating agent work | — |
-| `shortcut` | Interact with Shortcut stories via the `short` CLI | [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) |
-| `daily-report` | Generate and reconcile OKF-compatible activity reports from local Git plus optional GitHub and Shortcut evidence; use `scheduled-jobs` for recurring execution | [OKF v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) |
-| `scheduled-jobs` | Declare, inspect, and operate reviewed recurring local jobs through the shared scheduler CLI | [`manifest-v1.md`](./skills/scheduled-jobs/references/manifest-v1.md) |
-| `inbox-wiki` | Triage vault inbox captures into immutable raw sources and durable notes with human approval | — |
-| `vault-cleanup` | Audit and optionally repair vault metadata, links, assets, indexes, and legacy structure without inbox intake | — |
-| `obsidian-vault` | Use the Obsidian CLI for vault-aware note workflows | [Obsidian CLI](https://obsidian.md/help/cli) |
-| `notion-cli` | Use the Notion `ntn` CLI for pages, data sources, and API calls | — |
-| `architecture-review` | Architecture review lens for design tradeoffs and operability | — |
-| `security-review` | High-signal AppSec review for OWASP-style risks, auth/authz, injection, XSS, SSRF, secrets, CI/CD and GitOps risk, and sensitive data exposure | — |
-| `simplest-sufficient-change` | Choose the first repo-native implementation that fully satisfies current requirements | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) |
-| `simplify-codebase-architecture` | Find pragmatic refactor opportunities: delete shallow abstraction, merge coupled code, deepen modules | [mattpocock improve-codebase-architecture](https://github.com/mattpocock/skills/tree/main/improve-codebase-architecture) |
-| `design-an-interface` | Generate multiple interface designs for a module or API and compare tradeoffs | [mattpocock](https://github.com/mattpocock/skills/tree/main/design-an-interface) |
-| `shape-first` | Human-in-the-loop coding loop for domain shapes, boundaries, TODOs, implementation, and drift checks | [ThePrimeagen](https://youtu.be/Aie0nYktsNA) |
-| `diagnosing-bugs` | Fast path for localized failures and a tight red-capable loop for hard, flaky, environment-specific, or performance bugs | [mattpocock diagnosing-bugs](https://github.com/mattpocock/skills/tree/main/skills/engineering/diagnosing-bugs) |
-| `ship-coach` | User-invoked Ship overlay for guided production practice, feedback, and fading support | — |
-| `align` | One-question alignment for non-functional requirements, functional behavior, and high-level solution shape; preserves adaptive `alignment.md` context and durable decisions | [mattpocock grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
-| `prototype` | Build and discard a runnable artifact that answers one experiential design question during alignment | [mattpocock prototype](https://github.com/mattpocock/skills/tree/main/skills/engineering/prototype) |
-| `slice-plan` | Turn approved alignment into dependency-shaped `plan.md` artifacts of cold-pickup vertical slices | — |
-| `ubiquitous-language` | Extract and harden domain terminology into a DDD-style glossary | [mattpocock](https://github.com/mattpocock/skills/tree/main/ubiquitous-language) |
-| `frontend-react` | Default React/Next.js/TSX implementation and review guidance with progressive references | [React conditional rendering](https://react.dev/learn/conditional-rendering), [Agent Skills progressive disclosure](https://agentskills.io/specification) |
-| `ruby-sorbet-rails` | Ruby/Rails guidance for Rails-native structures, Rails commands/migrations, strict Sorbet/Tapioca RBIs, RuboCop, db schema, and GraphQL federation artifacts | [Sorbet RBI docs](https://sorbet.org/docs/rbi), [Tapioca](https://github.com/Shopify/tapioca), [Rails migrations](https://guides.rubyonrails.org/active_record_migrations.html) |
-| `frontend-hci-review` | Progressive HCI/product-flow review; starts with friction candidates before design | [`skills/ux-accessibility/frontend-hci-review/SKILL.md`](./skills/ux-accessibility/frontend-hci-review/SKILL.md) |
-| `godot-gameplay-guidelines` | Godot 4.7 gameplay feedback loop for behavior, scene ownership, game feel, and runtime performance | [Godot 4.7](https://docs.godotengine.org/en/4.7/), [minimal-godot-mcp](https://github.com/ryanmazzolini/minimal-godot-mcp), [godot-mcp](https://github.com/satelliteoflove/godot-mcp) |
-| `context-guidelines` | Context engineering principles for AI config | [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) |
-| `explain-code` | Code explanations with diagrams and analogies | — |
-| `typescript` | TypeScript strict mode conventions | — |
-| `nextjs-app-router` | Next.js App Router patterns | — |
-| `hci` | Usability, accessibility, responsive design, and interaction states for human-facing surfaces | [`skills/ux-accessibility/hci/SKILL.md`](./skills/ux-accessibility/hci/SKILL.md), [WCAG 2.1 Quick Reference](https://www.w3.org/WAI/WCAG21/quickref/) |
-| `agent-browser` | Thin bridge to the `agent-browser` CLI for browser automation | [agent-browser](https://github.com/vercel-labs/agent-browser) |
-
-## Extensions
-
-| Extension | Description |
-|-----------|-------------|
-| `delegate` | Runs task-shaped Pi child sessions asynchronously with bounded result delivery, lifecycle controls, persistent inspection, and review-before-apply temporary worktrees |
-| `editor-links` | Opens assistant file paths, built-in file-tool links, and existing paths in Bash output in Zed via a localhost bridge (Ghostty only opens http links) |
-| `scheduled-jobs` | Adds the human-only `/scheduler` interface for global and exact-current-project job inspection, confirmed lifecycle operations, and logs |
-
-## Command-line tools
-
-| Command | Description |
-|---------|-------------|
-| `daily-report` | Generate or reconcile configured daily reports |
-| `scheduled-jobs` | Inspect exact manifests and perform digest/revision-bound scheduler lifecycle operations without prompting |
+- `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
+- `intercom` lets local Pi sessions find and talk to each other.
+- `editor-links` turns file paths into links that open in Zed through a local bridge.
+- `scheduled-jobs` adds the human-only `/scheduler` interface.
+- `daily-report` and `scheduled-jobs` are also available as command-line tools.
 
 ## Contributing
 
-This repo reflects my personal workflow and is shared in case it is useful. Feel free to borrow ideas, fork it, or open an issue or PR if something small would make it clearer or easier to use.
+Found an issue? Issues and small PRs are welcome. See [`AGENTS.md`](./AGENTS.md) for repository conventions, then run `npm test` for the full local check.
 
 ## License
 
