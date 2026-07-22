@@ -47,9 +47,11 @@ const INLINE_CODE_RE = /(?<!`)(`)([^`\n]+)`(?!`)/g;
 const OSC8_FILE_LINK_RE = /(\x1b\]8;[^;]*;)(file:\/\/[^\x07\x1b]*)(\x07|\x1b\\)/g;
 
 type TextTransform = (text: string) => string;
+type LinesTransform = (lines: string[], originalLines: string[]) => string[];
 
 interface ToolLinkTransforms {
 	call?: TextTransform;
+	callLines?: (lines: string[], originalLines: string[], args: unknown, toolName: string) => string[];
 	result?: TextTransform;
 }
 
@@ -87,17 +89,95 @@ export function linkifyRenderedPaths(text: string, cwd: string): string {
 	return linked;
 }
 
+function rawOffsetAfterPlainPrefix(text: string, plainPrefix: string): number | undefined {
+	const plainText = stripVTControlCharacters(text);
+	for (let offset = 0; offset <= text.length; offset++) {
+		const prefix = stripVTControlCharacters(text.slice(0, offset));
+		if (prefix !== plainPrefix) continue;
+		if (prefix + stripVTControlCharacters(text.slice(offset)) === plainText) return offset;
+	}
+	return undefined;
+}
+
+function linkifyPlainToolCallPath(
+	lines: string[],
+	originalLines: string[],
+	cwd: string,
+	args: unknown,
+	toolName: string,
+): string[] {
+	if (lines.some((line, index) => line !== originalLines[index])) return lines;
+	if (!args || typeof args !== "object") return lines;
+	const record = args as Record<string, unknown>;
+	const rawPath = record.file_path ?? record.path;
+	if (typeof rawPath !== "string" || !rawPath) return lines;
+	const url = toEditorUrl(rawPath, cwd);
+	if (!url) return lines;
+	const home = homedir();
+	let remaining = rawPath.startsWith(home) ? `~${rawPath.slice(home.length)}` : rawPath;
+	const replacements: Array<{ line: number; plainStart: number; segment: string }> = [];
+	let labelSeen = false;
+	let pathStarted = false;
+
+	for (let index = 0; index < lines.length && remaining; index++) {
+		const plainLine = stripVTControlCharacters(lines[index] ?? "");
+		let plainStart = plainLine.search(/\S/);
+		if (plainStart === -1) continue;
+		let visible = plainLine.slice(plainStart).trimEnd();
+		if (!labelSeen && (visible === toolName || visible.startsWith(`${toolName} `))) {
+			labelSeen = true;
+			plainStart += toolName.length;
+			while (plainLine[plainStart] === " ") plainStart++;
+			visible = plainLine.slice(plainStart).trimEnd();
+			if (!visible) continue;
+		}
+		let segment: string;
+		if (remaining.startsWith(visible)) {
+			segment = visible;
+		} else if (visible.startsWith(remaining)) {
+			segment = remaining;
+		} else if (!pathStarted) {
+			continue;
+		} else {
+			return lines;
+		}
+		pathStarted = true;
+		replacements.push({ line: index, plainStart, segment });
+		remaining = remaining.slice(segment.length);
+	}
+	if (remaining || replacements.length === 0) return lines;
+
+	const linked = [...lines];
+	for (const replacement of replacements) {
+		const line = linked[replacement.line];
+		if (line === undefined) return lines;
+		const plainLine = stripVTControlCharacters(line);
+		const start = rawOffsetAfterPlainPrefix(line, plainLine.slice(0, replacement.plainStart));
+		const end = rawOffsetAfterPlainPrefix(
+			line,
+			plainLine.slice(0, replacement.plainStart + replacement.segment.length),
+		);
+		if (start === undefined || end === undefined || end <= start) return lines;
+		linked[replacement.line] = `${line.slice(0, start)}\x1b]8;;${url}\x1b\\${line.slice(start, end)}\x1b]8;;\x1b\\${line.slice(end)}`;
+	}
+	return linked;
+}
+
 class EditorLinkComponent implements Component {
 	inner: Component;
 	transform: TextTransform;
+	linesTransform?: LinesTransform;
 
-	constructor(inner: Component, transform: TextTransform) {
+	constructor(inner: Component, transform: TextTransform, linesTransform?: LinesTransform) {
 		this.inner = inner;
 		this.transform = transform;
+		this.linesTransform = linesTransform;
 	}
 
 	render(width: number): string[] {
-		return this.inner.render(width).map(this.transform);
+		const originalLines = this.inner.render(width);
+		const lines = originalLines.map(this.transform);
+		return this.linesTransform?.(lines, originalLines) ?? lines;
 	}
 
 	invalidate(): void {
@@ -124,13 +204,18 @@ export function linkifyToolDefinition<TParams extends TSchema, TDetails, TState>
 						...context,
 						lastComponent: wrapper?.inner ?? previous,
 					});
+					const linesTransform = transforms.callLines
+						? (lines: string[], originalLines: string[]) =>
+							transforms.callLines?.(lines, originalLines, args, definition.name) ?? lines
+						: undefined;
 
 					if (wrapper) {
 						wrapper.inner = inner;
 						wrapper.transform = callTransform;
+						wrapper.linesTransform = linesTransform;
 						return wrapper;
 					}
-					return new EditorLinkComponent(inner, callTransform);
+					return new EditorLinkComponent(inner, callTransform, linesTransform);
 				}
 			: undefined,
 		renderResult:
@@ -146,6 +231,7 @@ export function linkifyToolDefinition<TParams extends TSchema, TDetails, TState>
 						if (wrapper) {
 							wrapper.inner = inner;
 							wrapper.transform = resultTransform;
+							wrapper.linesTransform = undefined;
 							return wrapper;
 						}
 						return new EditorLinkComponent(inner, resultTransform);
@@ -163,16 +249,25 @@ export function registerBuiltInToolLinks(pi: ExtensionAPI, cwd: string, projectT
 	);
 	const settings = SettingsManager.create(cwd, undefined, { projectTrusted });
 
+	const callLines = (lines: string[], originalLines: string[], args: unknown, toolName: string) =>
+		linkifyPlainToolCallPath(lines, originalLines, cwd, args, toolName);
 	if (builtInTools.has("read")) {
 		pi.registerTool(
 			linkifyToolDefinition(
 				createReadToolDefinition(cwd, { autoResizeImages: settings.getImageAutoResize() }),
+				{ callLines },
 			),
 		);
 	}
-	if (builtInTools.has("write")) pi.registerTool(linkifyToolDefinition(createWriteToolDefinition(cwd)));
-	if (builtInTools.has("edit")) pi.registerTool(linkifyToolDefinition(createEditToolDefinition(cwd)));
-	if (builtInTools.has("ls")) pi.registerTool(linkifyToolDefinition(createLsToolDefinition(cwd)));
+	if (builtInTools.has("write")) {
+		pi.registerTool(linkifyToolDefinition(createWriteToolDefinition(cwd), { callLines }));
+	}
+	if (builtInTools.has("edit")) {
+		pi.registerTool(linkifyToolDefinition(createEditToolDefinition(cwd), { callLines }));
+	}
+	if (builtInTools.has("ls")) {
+		pi.registerTool(linkifyToolDefinition(createLsToolDefinition(cwd), { callLines }));
+	}
 	if (builtInTools.has("bash")) {
 		pi.registerTool(
 			linkifyToolDefinition(
