@@ -2,24 +2,24 @@
 
 Graduate when every planned slice is complete or the user explicitly closes the work.
 
-Use the mapped notes vault: a repository under `~/git/` maps to `~/work-notes`, and one under `~/personal/` maps to `~/personal/notes`. Ask when neither rule fits, then follow the vault's local instructions.
-
-Draft one dated note at `projects/<repo-name>/YYYY-MM-DD-slug.md`:
+For a vault-native workflow, close the existing work item rather than copying a reduced summary elsewhere. Apply the work-item target validator from [workflow-profiles.md](workflow-profiles.md) immediately before reading or updating `index.md`, then record the durable result a future session needs:
 
 ```md
----
-type: work-summary
-title: [what shipped]
-description: [one line]
-tags: []
-date: YYYY-MM-DD
----
+## Result
 
-## What shipped
-## Key decisions
-## Where things live
+[Outcome in one or two sentences.]
+
+### Lasting decisions
+
+- [Only decisions that remain useful after delivery.]
+
+### Where it lives
+
+- [Repository, pull request, release, document, or other durable pointer.]
 ```
 
-Write only what a future session needs to understand the result, lasting decisions, and where to look. Keep task history, review evidence, validation details, and abandoned paths in the workflow directory.
+Keep `Current` pointed at the most useful continuation or result document. Keep task history, review evidence, validation detail, and abandoned paths in their existing work-item files. Do not delete, move, archive, or duplicate the work item as part of graduation.
 
-Show the draft and ask before committing any vault change.
+For a relevant legacy workflow, leave its files in place and record completion there using its established form. Do not create a vault copy solely for graduation.
+
+If the user wants a separate public or cross-project summary, treat that as a distinct requested artifact with its own destination and review.

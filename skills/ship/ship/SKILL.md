@@ -21,7 +21,7 @@ When starting a durable workflow at the outset or after work grows, read [refere
 
 ## Choose the next checkpoint
 
-Workflow files and the live repository decide current state. Conversation and vault notes help locate context but do not override that evidence.
+The canonical work-item files and live repository decide current state. Conversation and notes outside the work item may help locate context but do not override that evidence.
 
 If work is interrupted, follows context compaction, or has unclear state, read [references/recovery.md](references/recovery.md) and reconcile it before routing.
 

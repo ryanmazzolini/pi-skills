@@ -9,7 +9,7 @@ Turn approved Now scope into the smallest implementable `plan.md`. Stop before i
 
 ## Confirm the planning input
 
-Use the workflow directory supplied by the caller. Otherwise reuse the relevant directory under `.plans/`, `.plan/`, or `docs/plans/`. When the plan needs to survive the session and no project convention exists, use `.plans/YYYY-MM-DD-slug/`.
+Use a caller-supplied workflow directory only after [`durable-context.md`](../ship/references/durable-context.md) classifies it as a relevant legacy workflow or this workspace profile's canonical work item. Otherwise follow that reference to locate the workflow. Do not independently create a repository `.plans` workflow.
 
 Read:
 
@@ -103,7 +103,7 @@ Use project language for goals and slice names. Use implementation names only in
 
 ## Review and hand off
 
-Rerun the scope gate and graph checks. Write or update `{workflow-dir}/plan.md`, then follow `../ship/references/review-gate.md`. Close review findings or defer them with an explicit reason before asking for approval.
+Rerun the scope gate and graph checks. For a vault-native work item, apply its target validator immediately before writing `{workflow-dir}/plan.md` or updating `index.md`, then set `Current` to the plan. Write a legacy plan in its verified directory. Then follow `../ship/references/review-gate.md`. Close review findings or defer them with an explicit reason before asking for approval.
 
 Ask one direct question: is the plan correct enough to approve? Include the Now and Later boundary, dependencies, ready work, recommendation, and the review evidence required by the review gate—nothing else.
 
