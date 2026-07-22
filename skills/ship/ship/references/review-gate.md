@@ -34,7 +34,7 @@ For alignment, resolve findings through inspection or the ongoing one-question c
 
 Bind review evidence to an exact artifact revision, commit or range, or working-tree diff fingerprint. Any target change makes prior review stale. A purely mechanical correction may use the configured lightweight route.
 
-For durable work, record each completed pass in `review-evidence.md` beside the workflow files. Include the exact target, review lenses and routes, how findings were resolved, validation, and remaining risk. This is a working record, not part of the reviewed target or deliverable diff; do not change reviewed alignment, planning, or code merely to record it. Keep raw transcripts out of the workflow.
+For durable work, record each completed pass in `review-evidence.md` beside the workflow files. For a vault-native work item, apply the target validator from [workflow-profiles.md](workflow-profiles.md) immediately before writing it. Include the exact target, review lenses and routes, how findings were resolved, validation, and remaining risk. This is a working record, not part of the reviewed target or deliverable diff; do not change reviewed alignment, planning, or code merely to record it. Keep raw transcripts out of the workflow.
 
 ## Present the result
 

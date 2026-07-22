@@ -11,9 +11,9 @@ description: Settle the smallest useful release before planning. Use when ship f
 
 ## Keep one current alignment
 
-Use the workflow directory supplied by the caller. Otherwise reuse the relevant directory under `.plans/`, `.plan/`, or `docs/plans/`. For new durable work without a project convention, create `.plans/YYYY-MM-DD-slug/`.
+Use a caller-supplied workflow directory only after [`durable-context.md`](../ship/references/durable-context.md) classifies it as a relevant legacy workflow or this workspace profile's canonical work item. Otherwise follow that reference to locate or create the workflow. Do not independently create a repository `.plans` workflow.
 
-Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. If align starts durable work without the project-vault context from ship, first follow the vault guidance in `../ship/references/durable-context.md`.
+Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. For a vault-native work item, apply its target validator immediately before writing the alignment or updating `index.md`, then set `Current` to the alignment.
 
 Before asking, compare the user's description with how the system works today. Read relevant docs, code, tests, prior conversation, and workflow files. Use the project's domain language and read relevant `CONTEXT-MAP.md`, `CONTEXT.md`, and architecture decisions. Clarify important differences and terms that hide more than one concept.
 
@@ -81,4 +81,4 @@ After approval, hand the alignment back to `ship`, which routes planning to `sli
 
 With the user's approval, a new or sharper domain term may update `CONTEXT.md` using `./CONTEXT-FORMAT.md`. A hard-to-reverse architecture choice with a real trade-off may become an architecture decision record using `./ADR-FORMAT.md`.
 
-Keep routine and easily reversed choices in the alignment file. Keep operational history out of the project vault; `ship` handles the high-level vault note at graduation and asks before committing it.
+Keep routine and easily reversed choices in the alignment file. Keep raw transcripts and logs out of workflow documents; put material implementation and review evidence in the work item's plan and review evidence. Ship closes the existing work-item index at graduation instead of creating a separate vault summary.

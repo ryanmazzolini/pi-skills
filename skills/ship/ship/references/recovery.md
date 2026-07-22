@@ -2,9 +2,19 @@
 
 Treat context compaction as a cold resume. Use its summary only to find evidence.
 
-If the workflow directory is unknown, resolve the plans root in this order: `PI_SKILLS_PLANS_ROOT`, an existing `.plans/` or `.plan/`, an existing `docs/plans/`, then `.plans/`. Find the relevant directory there. Read `alignment.md`, or a legacy `question.md`, and `plan.md` when present.
+## Locate the authority
 
-Then inspect the live repository, cwd, branch or worktree, run state, diffs, and recorded review or validation evidence. Reconstruct:
+Treat a workflow directory supplied by the caller as a locator. Classify it using [durable-context.md](durable-context.md) before any read or write; refuse it unless it is a relevant legacy workflow under an allowed legacy root or the workspace profile's canonical work item. Otherwise:
+
+1. Search `PI_SKILLS_PLANS_ROOT`, repository `.plans/` or `.plan/`, and `docs/plans/` for one relevant legacy workflow. Reuse it in place; ask when several match.
+2. When no relevant legacy workflow exists, follow [durable-context.md](durable-context.md) to resolve the workspace profile.
+3. Read the vault's instructions and project index, then find the one work-item `index.md` whose ticket or approved slug identifies the current work and whose workspace also matches. Never recover by workspace equality alone; ask for the current identity when it is unknown, and fail rather than choosing among multiple matches.
+
+For vault-native work, validate every exact operand with the helper in [workflow-profiles.md](workflow-profiles.md) immediately before access. Read the work-item index first, validate its canonical relative `Current` target within the work item, then read alignment or legacy `question.md`, plan, and directly linked review evidence. Read a file under `working/` only when the validated index or current document points to it.
+
+## Reconcile live state
+
+Inspect the live repository, cwd, branch or worktree, run state, diffs, and recorded review or validation evidence. Reconstruct:
 
 - the last approved goal and Now scope
 - the current confirmed slice

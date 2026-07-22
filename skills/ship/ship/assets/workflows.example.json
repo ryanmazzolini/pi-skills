@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "profiles": {
+    "work": {
+      "vault": "~/work-notes",
+      "gitRoots": ["~/git"]
+    },
+    "personal": {
+      "vault": "~/personal/notes",
+      "gitRoots": ["~/personal"]
+    }
+  }
+}
