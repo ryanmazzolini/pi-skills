@@ -17,7 +17,7 @@ import {
 const scriptPath = fileURLToPath(new URL("./workflow-profile.mjs", import.meta.url));
 
 function fixture(t) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-profile-"));
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "workflow-profile-")));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const home = path.join(base, "home");
   const configPath = path.join(base, "workflows.json");
