@@ -4,7 +4,10 @@ import type { SessionTailSnapshot } from "./session-tail.ts";
 
 /** Pi caps tool output at about 50 KiB. Every model-visible intercom projection stays below it. */
 export const INTERCOM_PROJECTION_MAX_BYTES = 48 * 1024;
+/** Enough for authoritative peer ID, timestamp/truncation facts, and one maximum-size outcome label. */
+export const INTERCOM_TAIL_PROJECTION_MIN_BYTES = 4 * 1024;
 export const INTERCOM_TRUNCATION_NOTICE = "\n\n[Intercom projection truncated: peer text, attachments, or self-declared metadata was omitted to stay below 48 KiB of UTF-8 output.]";
+const INTERCOM_TAIL_TRUNCATION_NOTICE = "\n\n[Intercom tail projection truncated to the requested UTF-8 ceiling.]";
 
 interface ProjectionSegment {
 	text: string;
@@ -167,40 +170,48 @@ export function projectAskReply(from: SessionInfo, message: Message): InboundPro
 	return { ...projected, details: compactInboundDetails(entry, projected.truncated), view: intercomMessageView(from, message) };
 }
 
-export function projectSessionTail(snapshot: SessionTailSnapshot, target: SessionInfo): TextProjection {
-	const header = `**Intercom confirmed session tail**\nBroker session ID: ${JSON.stringify(target.id)}\nSelf-declared name: ${declared(target.name)}`;
-	const sourceNotice = `${snapshot.truncated ? "\n\n[Earlier eligible text was omitted by the requested message limit.]" : ""}${snapshot.ignoredFinalFragment ? "\n\n[One incomplete trailing session entry was omitted.]" : ""}`;
-	if (snapshot.events.length === 0) {
-		const text = `${header}\n\nNo eligible completed text or outcomes are present in the advertised branch.${sourceNotice}`;
-		return { text, bytes: byteLength(text), truncated: snapshot.truncated || snapshot.ignoredFinalFragment };
+export function projectSessionTail(
+	snapshot: SessionTailSnapshot,
+	target: SessionInfo,
+	maximumBytes = INTERCOM_PROJECTION_MAX_BYTES,
+): TextProjection {
+	if (!Number.isInteger(maximumBytes) || maximumBytes < INTERCOM_TAIL_PROJECTION_MIN_BYTES || maximumBytes > INTERCOM_PROJECTION_MAX_BYTES) {
+		throw new Error("Intercom tail projection ceiling is invalid");
 	}
-	const eventText = snapshot.events.map((event) => event.kind === "user" || event.kind === "assistant" ? sanitizeTailText(event.text) : "");
+	const lastConversationalTimestamp = snapshot.lastConversationalTimestamp === null
+		? "none"
+		: new Date(snapshot.lastConversationalTimestamp).toISOString();
+	const header = `**Intercom confirmed session tail**\nBroker session ID: ${JSON.stringify(target.id)}\nLast conversational timestamp: ${lastConversationalTimestamp}`;
+	const fullHeader = `${header}\nSelf-declared name: ${declared(target.name)}`;
+	const sourceFacts = `${snapshot.truncated ? "\nEarlier eligible text was omitted by the requested message limit." : ""}${snapshot.ignoredFinalFragment ? "\nOne incomplete trailing session entry was omitted." : ""}`;
 	const fixed = snapshot.events.map((event) => {
 		if (event.kind === "user") return "\n\n**User**\n";
 		if (event.kind === "assistant") return "\n\n**Assistant**\n";
-		if (event.kind === "tool") {
-			const name = truncateUtf8(sanitizeSelfDeclaredMetadata(event.name), 256);
-			return `\n\nTool ${JSON.stringify(name)}: ${event.outcome}`;
-		}
+		if (event.kind === "tool") return `\n\nTool ${JSON.stringify(truncateUtf8(sanitizeSelfDeclaredMetadata(event.name), 256))}: ${event.outcome}`;
 		return `\n\nUser Bash: ${event.outcome}`;
 	});
-	const complete = header + snapshot.events.map((event, index) => fixed[index]! + eventText[index]!).join("") + sourceNotice;
-	if (byteLength(complete) <= INTERCOM_PROJECTION_MAX_BYTES) {
-		return { text: complete, bytes: byteLength(complete), truncated: snapshot.truncated || snapshot.ignoredFinalFragment };
-	}
-	const notice = INTERCOM_TRUNCATION_NOTICE;
-	const required = byteLength(header + fixed.join("") + sourceNotice + notice);
-	if (required > INTERCOM_PROJECTION_MAX_BYTES) throw new Error("Intercom tail metadata exceeds the model-visible projection bound");
-	let remaining = INTERCOM_PROJECTION_MAX_BYTES - required;
-	const textByIndex = new Map<number, string>();
+	const eventText = snapshot.events.map((event) => event.kind === "user" || event.kind === "assistant" ? sanitizeTailText(event.text) : "");
+	const empty = "\n\nNo eligible completed text or outcomes are present in the advertised branch.";
+	const complete = fullHeader + (snapshot.events.length === 0 ? empty : fixed.map((part, index) => part + eventText[index]!).join("")) + sourceFacts;
+	const sourceTruncated = snapshot.truncated || snapshot.ignoredFinalFragment;
+	if (byteLength(complete) <= maximumBytes) return { text: complete, bytes: byteLength(complete), truncated: sourceTruncated };
+
+	// Keep required facts, then fill from the newest event backwards. Older events
+	// are omitted before any ceiling is exceeded.
+	const prefix = header + sourceFacts;
+	let remaining = maximumBytes - byteLength(prefix) - byteLength(INTERCOM_TAIL_TRUNCATION_NOTICE);
+	const selected: string[] = [];
 	for (let index = snapshot.events.length - 1; index >= 0; index--) {
 		const event = snapshot.events[index]!;
-		if (event.kind !== "user" && event.kind !== "assistant") continue;
-		const text = truncateUtf8(eventText[index]!, remaining);
-		textByIndex.set(index, text);
-		remaining -= byteLength(text);
+		const label = fixed[index]!;
+		if (byteLength(label) > remaining) break;
+		const text = event.kind === "user" || event.kind === "assistant"
+			? truncateUtf8(eventText[index]!, remaining - byteLength(label))
+			: "";
+		selected.unshift(label + text);
+		remaining -= byteLength(label) + byteLength(text);
 	}
-	const text = header + snapshot.events.map((event, index) => fixed[index]! + (event.kind === "user" || event.kind === "assistant" ? textByIndex.get(index) ?? "" : "")).join("") + sourceNotice + notice;
+	const text = prefix + selected.join("") + INTERCOM_TAIL_TRUNCATION_NOTICE;
 	return { text, bytes: byteLength(text), truncated: true };
 }
 

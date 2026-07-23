@@ -130,11 +130,11 @@ test("runtime reads a stable advertised tail without messaging the target", asyn
 	const runtime = new IntercomRuntime({
 		client,
 		openTail: (request) => {
-			assert.deepEqual(request, { piSessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", limit: 8 });
+			assert.deepEqual(request, { piSessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", limit: 8, scanBytes: 1_024 });
 			return { snapshot, verifyStable: () => { verified++; }, close: () => { closed++; } };
 		},
 	});
-	const result = await runtime.tail("worker", 8);
+	const result = await runtime.tail("worker", 8, undefined, 1_024);
 	assert.equal(result.target.id, "target");
 	assert.equal(result.snapshot, snapshot);
 	assert.equal(verified, 1);

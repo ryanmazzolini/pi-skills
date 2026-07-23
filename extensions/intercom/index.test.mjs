@@ -35,7 +35,7 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	intercomExtension(pi);
 	assert.deepEqual(tools.map((tool) => tool.name), ["intercom"]);
 	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"]);
-	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "operationId", "limit"]);
+	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "operationId", "limit", "tailScanBytes", "tailProjectionBytes"]);
 	assert.deepEqual(commands, []);
 	assert.deepEqual(shortcuts, []);
 	assert.equal(tools.some((tool) => tool.name === "contact_supervisor"), false);
@@ -53,8 +53,10 @@ test("validates action-specific fields while preserving attachment and reply sel
 	assert.throws(() => validateIntercomAction({ action: "role", role: "supervisor" }), /Invalid intercom role/);
 	assert.throws(() => validateIntercomAction({ action: "list", role: "first-mate" }), /not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "send", to: "worker", message: "update", attachments: [] }));
-	assert.doesNotThrow(() => validateIntercomAction({ action: "tail", to: "worker", limit: 8 }));
+	assert.doesNotThrow(() => validateIntercomAction({ action: "tail", to: "worker", limit: 8, tailScanBytes: 1_024, tailProjectionBytes: 4_096 }));
 	assert.throws(() => validateIntercomAction({ action: "tail" }), /requires to/);
+	assert.throws(() => validateIntercomAction({ action: "list", tailScanBytes: 1_024 }), /tailScanBytes is not valid/);
+	assert.throws(() => validateIntercomAction({ action: "send", to: "worker", message: "update", tailProjectionBytes: 4_096 }), /tailProjectionBytes is not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "reply", message: "answer", replyTo: "ask-1" }));
 	assert.throws(() => validateIntercomAction({ action: "ask", message: "question" }), /requires to/);
 	assert.throws(() => validateIntercomAction({ action: "pending", message: "extra" }), /not valid/);
@@ -727,10 +729,19 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	peer.updatePresence({ piSession: { sessionId: "target-pi-session", fileLocator: sessionPath, activeLeafId: "tail-r", revision: 1 } });
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 1);
 	const beforeTail = await readFile(sessionPath);
-	const tailed = await execute({ action: "tail", to: "worker" });
+	const tailed = await execute({
+		action: "tail",
+		to: "worker",
+		tailScanBytes: beforeTail.length,
+		tailProjectionBytes: 4_096,
+	});
 	const afterTail = await readFile(sessionPath);
 	assert.equal(tailed.details.targetPeerId, peer.sessionId);
+	assert.equal(tailed.details.requestedScanBytes, beforeTail.length);
+	assert.equal(tailed.details.requestedProjectionBytes, 4_096);
+	assert.equal(tailed.details.lastConversationalTimestamp, Date.parse("2026-01-01T00:00:02.000Z"));
 	assert.equal(tailed.details.returnedTextMessages, 2);
+	assert.ok(Buffer.byteLength(tailed.content[0].text, "utf8") <= 4_096);
 	assert.match(tailed.content[0].text, /tail question/);
 	assert.match(tailed.content[0].text, /tail answer/);
 	assert.match(tailed.content[0].text, /Tool "read": succeeded/);

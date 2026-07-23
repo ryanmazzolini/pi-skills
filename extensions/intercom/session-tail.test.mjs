@@ -306,6 +306,45 @@ test("returns the latest default eight and maximum thirty-two text events", (t) 
 	});
 });
 
+test("retains the newest eligible conversational timestamp beyond the text limit", (t) => {
+	const oldTimestamp = "2026-01-01T00:00:03.000Z";
+	const latestTimestamp = "2026-01-01T00:00:02.000Z";
+	const records = [
+		header(),
+		entry("message", "old", null, { timestamp: oldTimestamp, message: { role: "user", content: "old text", timestamp: 1 } }),
+		entry("message", "latest", "old", { timestamp: latestTimestamp, message: { role: "assistant", content: [{ type: "text", text: "latest text" }], stopReason: "stop", timestamp: 2 } }),
+	];
+	const path = writeRecords(t, records);
+	withHandle(open(path, "latest", 1), (handle) => {
+		assert.deepEqual(handle.snapshot.events, [{ kind: "assistant", text: "latest text" }]);
+		// The older text is omitted by the limit, but its canonical entry timestamp remains authoritative.
+		assert.equal(handle.snapshot.lastConversationalTimestamp, Date.parse(oldTimestamp));
+	});
+});
+
+test("validates canonical timestamps only for eligible conversational entries", (t) => {
+	const invalidEligible = writeRecords(t, [
+		header(),
+		entry("message", "bad", null, { timestamp: "not-a-timestamp", message: { role: "user", content: "old omitted text", timestamp: 1 } }),
+		entry("message", "latest", "bad", { timestamp: TS, message: { role: "user", content: "latest text", timestamp: 2 } }),
+	]);
+	assertStaticSafeError(() => open(invalidEligible, "latest", 1));
+
+	const ignored = writeRecords(t, [
+		header(),
+		entry("message", "aborted", null, { timestamp: "not-a-timestamp", message: { role: "assistant", content: [{ type: "text", text: "not eligible" }], stopReason: "aborted", timestamp: 1 } }),
+	]);
+	withHandle(open(ignored, "aborted"), (handle) => assert.equal(handle.snapshot.lastConversationalTimestamp, null));
+});
+
+test("enforces a caller scan ceiling exactly", (t) => {
+	const records = [header(), user("u", null, "界")];
+	const path = writeRecords(t, records);
+	const bytes = readFileSync(path).length;
+	withHandle(open(path, "u", 8, { scanBytes: bytes }), (handle) => assert.equal(handle.snapshot.events[0].text, "界"));
+	assertStaticSafeError(() => open(path, "u", 8, { scanBytes: bytes - 1 }));
+});
+
 test("accepts exact v2 and v3 headers without migration", (t) => {
 	for (const version of [2, 3]) {
 		const extra = version === 2

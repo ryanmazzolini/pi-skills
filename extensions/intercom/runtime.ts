@@ -130,7 +130,7 @@ export class IntercomRuntime extends EventEmitter {
 		this.client.invalidateRoleSession(reason);
 	}
 
-	async tail(to: string, limit: number, signal?: AbortSignal): Promise<RuntimeTailResult> {
+	async tail(to: string, limit: number, signal?: AbortSignal, scanBytes?: number): Promise<RuntimeTailResult> {
 		throwIfAborted(signal);
 		await this.ensureConnected();
 		if (!this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
@@ -148,6 +148,7 @@ export class IntercomRuntime extends EventEmitter {
 			fileLocator: presence.fileLocator,
 			activeLeafId: presence.activeLeafId,
 			limit,
+			...(scanBytes === undefined ? {} : { scanBytes }),
 		});
 		try {
 			throwIfAborted(signal);

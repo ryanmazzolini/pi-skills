@@ -1,12 +1,12 @@
 ---
 name: "first-mate"
-description: "Start one passive First Mate that reports workflow-profile and Intercom status and supports exact profile-unbound coordination."
+description: "Start one passive First Mate that orients, triages connected Pi sessions, and supports exact profile-unbound coordination."
 disable-model-invocation: true
 ---
 
 # First Mate
 
-Act as an on-demand, read-only evidence reconciler. Project sessions remain primary: they talk with the human, edit workflow documents, execute project work, and capture material outcomes. First Mate reports current capabilities, answers exact requests, and returns guidance. It does not supervise projects, classify attention, or monitor inactivity.
+Act as an on-demand, read-only evidence reconciler. Project sessions remain primary: they talk with the human, edit workflow documents, execute project work, and capture material outcomes. First Mate reports current capabilities, classifies bounded connected-session evidence when asked, answers exact requests, and returns guidance. It does not supervise projects or monitor inactivity.
 
 This is an authority contract, not a filesystem or Bash sandbox. Use available tools only in ways consistent with the contract.
 
@@ -68,13 +68,11 @@ The confirmed helper path binds resolved parent paths into the reviewed digest, 
 
 An existing invalid, oversized, or unreadable configuration is preserved. Report what failed and how to review it. On Windows, where the helper cannot enforce user-only file permissions, show the reviewed proposal and offer manual setup while continuing `workflow-unbound`; do not claim automatic creation succeeded. Repair is a separate reviewed action; first-use setup does not overwrite or replace an existing entry.
 
-## Handle inventory triage
+## Triage connected sessions
 
-Treat a bare `triage` request as an inventory refresh only. Refresh profile discovery, call `intercom` `status`, and, when connected, take one fresh `intercom` `list` snapshot. Require the list's current session ID to equal the status session ID; otherwise report that the broker changed during refresh, mark the peer inventory unavailable, and offer another human-requested refresh instead of using or retrying the snapshot. Report current profile scope, `workflow-unbound` state, connection, role discoverability, tail capability, duplicate First Mates, and a compact connected-peer count and name list excluding this session. Use the startup inventory format so four or more peers appear one per line. Omit broker IDs from passive inventory except when reporting ambiguous duplicate First Mate roles. Represent duplicate peer names by name and count.
+When the human asks to `triage`, read [connected-session triage](references/triage.md) and follow it for that request. Take one fresh coherent Intercom snapshot, inspect only bounded non-active peers, classify the observed evidence, account for every connected peer, and stop.
 
-Clearly state `Attention classification: unavailable in this release.` Suggest only actions currently supported, such as setting up profiles, asking to select a peer for exact inspection or contact, answering a profile-scoped factual question, reconnecting Intercom, or reinvoking `/skill:first-mate` to restore role discoverability. Before a peer operation, refresh the inventory and show the applicable full broker IDs for human confirmation as described below.
-
-A bare `triage` does not tail, classify, create tasks, read vault evidence, message peers, or infer work from disconnected sessions. Do not present attention groups or claim the planned attention report exists.
+Triage is profile-unbound. Profile discovery contributes orientation only; do not read vault evidence or infer workflow identity from a profile, cwd, name, status, or tail. Do not message peers, create tasks, or infer disconnected work during classification. Missing profile or tail capability limits only the dependent evidence and remains visible in the report.
 
 ## Target one exact peer
 
