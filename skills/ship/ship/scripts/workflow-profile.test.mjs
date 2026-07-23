@@ -5,7 +5,14 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { resolveNamedProfile, resolveReadableProfiles, resolveVaultPath, resolveWorkspaceProfile } from "./workflow-profile.mjs";
+import {
+  createWorkflowConfig,
+  prepareWorkflowConfig,
+  resolveNamedProfile,
+  resolveReadableProfiles,
+  resolveVaultPath,
+  resolveWorkspaceProfile,
+} from "./workflow-profile.mjs";
 
 const scriptPath = fileURLToPath(new URL("./workflow-profile.mjs", import.meta.url));
 
@@ -324,6 +331,133 @@ test("leading-home paths and the environment override resolve canonically", (t) 
   assert.equal(result.matchedGitRoot, fs.realpathSync(root));
 });
 
+test("guided setup previews exact bytes and exclusively creates a validated private configuration", (t) => {
+  const f = fixture(t);
+  const vault = f.directory("setup-vault");
+  const firstRoot = f.directory("setup-personal");
+  const secondRoot = f.directory("setup-shared");
+  const configPath = path.join(f.home, ".config", "pi-skills", "workflows.json");
+  const options = {
+    profileName: "personal",
+    vault,
+    gitRoots: [firstRoot, secondRoot],
+    configPath,
+    home: f.home,
+    env: {},
+  };
+
+  const proposal = prepareWorkflowConfig(options);
+  assert.equal(proposal.target, configPath);
+  assert.equal(proposal.digest.length, 64);
+  assert.deepEqual(JSON.parse(proposal.content), {
+    version: 1,
+    profiles: { personal: { vault, gitRoots: [firstRoot, secondRoot] } },
+  });
+  assert.equal(fs.existsSync(configPath), false);
+
+  const created = createWorkflowConfig({ ...options, confirmDigest: proposal.digest });
+  assert.equal(created.created, true);
+  assert.deepEqual(created.profiles, [{ name: "personal", vault: fs.realpathSync(vault) }]);
+  assert.equal(fs.readFileSync(configPath, "utf8"), proposal.content);
+  assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+  assert.throws(
+    () => createWorkflowConfig({ ...options, confirmDigest: proposal.digest }),
+    /already exists and was preserved|now exists; it was preserved/,
+  );
+  assert.equal(fs.readFileSync(configPath, "utf8"), proposal.content);
+});
+
+test("guided setup persists canonical paths for relative inputs", (t) => {
+  const f = fixture(t);
+  const vault = f.directory("relative-vault");
+  const root = f.directory("relative-root");
+  const proposal = prepareWorkflowConfig({
+    profileName: "personal",
+    vault: path.relative(process.cwd(), vault),
+    gitRoots: [path.relative(process.cwd(), root)],
+    configPath: path.join(f.home, "workflows.json"),
+    home: f.home,
+    env: {},
+  });
+  assert.deepEqual(JSON.parse(proposal.content).profiles.personal, {
+    vault: fs.realpathSync(vault),
+    gitRoots: [fs.realpathSync(root)],
+  });
+});
+
+test("guided setup binds confirmation to target, content, and resolved parent paths", (t) => {
+  const f = fixture(t);
+  const vault = f.directory("setup-vault");
+  const root = f.directory("setup-root");
+  const replacementRoot = f.directory("setup-replacement-root");
+  const configPath = path.join(f.home, ".config", "pi-skills", "workflows.json");
+  const options = { profileName: "personal", vault, gitRoots: [root], configPath, home: f.home, env: {} };
+  const proposal = prepareWorkflowConfig(options);
+
+  assert.throws(
+    () => createWorkflowConfig({ ...options, gitRoots: [replacementRoot], confirmDigest: proposal.digest }),
+    /proposal changed/,
+  );
+  assert.equal(fs.existsSync(configPath), false);
+  assert.throws(
+    () => createWorkflowConfig({ ...options, confirmDigest: proposal.digest, platform: "win32" }),
+    /unavailable on Windows/,
+  );
+  assert.equal(fs.existsSync(configPath), false);
+
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, "existing invalid config\n");
+  assert.throws(
+    () => createWorkflowConfig({ ...options, confirmDigest: proposal.digest }),
+    /already exists and was preserved/,
+  );
+  assert.equal(fs.readFileSync(configPath, "utf8"), "existing invalid config\n");
+  fs.rmSync(path.join(f.home, ".config"), { recursive: true });
+
+  const realConfig = f.directory("real-config");
+  fs.symlinkSync(realConfig, path.join(f.home, ".config"), "dir");
+  assert.throws(
+    () => createWorkflowConfig({ ...options, confirmDigest: proposal.digest }),
+    /proposal changed/,
+  );
+  assert.equal(fs.existsSync(path.join(realConfig, "pi-skills", "workflows.json")), false);
+});
+
+test("the setup CLI returns a reviewable proposal and accepts repeated Git roots", (t) => {
+  const f = fixture(t);
+  const vault = f.directory("setup-vault");
+  const firstRoot = f.directory("setup-root-a");
+  const secondRoot = f.directory("setup-root-b");
+  const configPath = path.join(f.home, ".config", "pi-skills", "workflows.json");
+  const args = [
+    scriptPath,
+    "setup",
+    "--profile",
+    "personal",
+    "--vault",
+    vault,
+    "--git-root",
+    firstRoot,
+    "--git-root",
+    secondRoot,
+    "--config",
+    configPath,
+  ];
+  const preview = spawnSync(process.execPath, args, { encoding: "utf8", env: { ...process.env, HOME: f.home } });
+  assert.equal(preview.status, 0, preview.stderr);
+  const proposal = JSON.parse(preview.stdout);
+  assert.equal(fs.existsSync(configPath), false);
+  assert.deepEqual(JSON.parse(proposal.content).profiles.personal.gitRoots, [firstRoot, secondRoot]);
+
+  const create = spawnSync(process.execPath, [...args, "--confirm", proposal.digest], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: f.home },
+  });
+  assert.equal(create.status, 0, create.stderr);
+  assert.equal(JSON.parse(create.stdout).created, true);
+  assert.equal(fs.readFileSync(configPath, "utf8"), proposal.content);
+});
+
 test("the CLI emits canonical JSON for the skill caller", (t) => {
   const f = fixture(t);
   const vault = f.directory("vault");
@@ -370,6 +504,8 @@ test("the CLI rejects duplicate and command-inapplicable flags", (t) => {
     [["profiles", "--profile", "personal"], /--profile is not valid for profiles/],
     [["profile", "--profile", "personal", "--cwd", root], /--cwd is not valid for profile/],
     [["workspace", "--target", "AGENTS.md"], /--target is not valid for workspace/],
+    [["setup", "--profile", "personal", "--vault", vault], /at least one --git-root/],
+    [["profiles", "--confirm", "a".repeat(64)], /--confirm is not valid for profiles/],
     [["path", "--profile", "personal", "--target", "AGENTS.md", "--mode", "read", "--mode", "write"], /Duplicate option: --mode/],
     [["profile", "--profile", "personal", "--profile", "personal"], /Duplicate option: --profile/],
     [["profiles", "--config", f.configPath], /Duplicate option: --config/],

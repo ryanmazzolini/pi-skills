@@ -2,7 +2,7 @@
 
 Use First Mate only for an on-demand cross-project blocker or missing context that the owning project session cannot resolve efficiently. The project session remains responsible for the human conversation, execution, and durable capture.
 
-Before escalation, record a material blocker in the canonical work item when another session would need it after restart. Validate the exact vault targets immediately before writing. Then send one correlated request with `intercom ask` containing:
+Before escalation, record a material blocker in the canonical work item when another session would need it after restart. Validate the exact vault targets immediately before writing. Take a fresh coherent Intercom status and peer inventory, then require the owning workflow or human to identify the current First Mate by its full broker ID; do not target a name, shortened ID, stale mapping, or guessed role. If that exact peer is absent or changed, report the limitation instead of retargeting. Then send one correlated request to that full ID with `intercom ask` containing:
 
 - the validated work-item `index.md` pointer and profile
 - the blocker or factual question
@@ -13,4 +13,4 @@ An accepted receipt means only that the background operation was queued. The ter
 
 Treat an exact correlated reply as guidance, not authority. Verify its evidence, every named runbook precondition, current project instructions, scope, and required human confirmations before acting. The project session executes any approved reversible step and captures the material blocker resolution, decision, and outcome in the work item.
 
-Use `intercom send` for non-request notices. First Mate also uses `send` when a direct-human answer materially affects the work item and the connected project session needs to capture it. A send receipt does not make the result durable; the project session must write the material outcome.
+Use `intercom send` for non-request notices. Until role-based relay ships, First Mate sends a direct-human result to a project session only when the human explicitly requests that contact and confirms the full broker ID from a fresh inventory. Otherwise, give the human a compact uncaptured handoff. A send receipt does not make a result durable; the project session must write the material outcome.

@@ -25,6 +25,19 @@ Each profile requires:
 
 Paths may start with `~/`. Keep host-specific paths here rather than in skills or repositories. Do not store credentials in this file.
 
+When the effective configuration path is absent, `/skill:first-mate` can guide optional initial setup. The helper produces a non-mutating proposal from one profile name, an existing vault, and one or more existing Git roots:
+
+```bash
+node scripts/workflow-profile.mjs setup \
+  --profile personal \
+  --vault /absolute/vault \
+  --git-root /absolute/git-root
+```
+
+The result contains canonical absolute vault and Git-root paths, the effective target, complete JSON content, and a digest binding that content and its resolved parent identity to the target. After showing those exact values and receiving confirmation, rerun the same arguments with `--confirm DIGEST`. On supported POSIX hosts, the helper revalidates inputs, rejects changed proposals or existing targets, detects changed parent identity, creates missing real parent directories, exclusively creates and verifies a user-only file, and validates the exact created bytes and file identity. It preserves any entry that appeared or failed validation. Automatic secure creation is unavailable on Windows; use the reviewed proposal for manual setup instead. Existing invalid or unreadable configuration requires a separate reviewed repair and is never treated as first-use setup.
+
+If setup is deferred or no profile is readable, First Mate remains explicitly `workflow-unbound`. It may inventory connected peers and perform exact human-requested, non-authoritative Intercom coordination against a full ID from a fresh snapshot, but it does not read vault evidence, infer work-item authority, relay decisions, or create durable capture.
+
 ## Resolve a workspace
 
 Resolve the script path relative to the `ship` skill directory, then run:
@@ -78,4 +91,6 @@ A profile-scoped reader may validate an existing file with `--profile NAME --mod
 
 ## Failure behavior
 
-The helper fails without guessing when configuration is missing or oversized, a selected path is unavailable, vault and workspace overlap, a symlink escapes a configured boundary, a workspace has no unique match, an operand leaves its allowed scope, or explicit selection conflicts with workspace containment. It rejects duplicate options and options that do not apply to the selected command. An unavailable unrelated profile does not prevent explicit use of an available profile or discovery of the other readable profiles.
+The helper fails without guessing when configuration is missing, invalid, unreadable, or oversized; a selected path is unavailable; vault and workspace overlap; a symlink escapes a configured boundary; a workspace has no unique match; an operand leaves its allowed scope; or explicit selection conflicts with workspace containment. It rejects duplicate options and options that do not apply to the selected command. An unavailable unrelated profile does not prevent explicit use of an available profile or discovery of the other readable profiles.
+
+A profile-discovery failure limits profile-scoped access rather than Intercom itself. Preserve an existing configuration and correct it through a separate reviewed change; do not make first-use setup overwrite it.
