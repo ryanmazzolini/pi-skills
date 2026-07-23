@@ -11,8 +11,7 @@ import { isAbsolute, join } from "node:path";
 process.umask(0o077);
 
 const TAIL_CAPABILITY = "pi-session-tail-v1";
-const PRIVATE_PRESENCE_CAPABILITY = "recipient-filtered-private-presence-v1";
-const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY, PRIVATE_PRESENCE_CAPABILITY]);
+const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY]);
 
 const runtimeDir = process.env.PI_INTERCOM_RUNTIME_DIR || join(homedir(), ".pi", "agent", "intercom");
 const socketPath = process.env.PI_INTERCOM_SOCKET_PATH || join(runtimeDir, "broker.sock");
@@ -22,8 +21,6 @@ const LIMITS = Object.freeze({
 	id: 256,
 	target: 1024,
 	sessionString: 4096,
-	capabilities: 16,
-	capability: 64,
 	piSessionId: 256,
 	piSessionFile: 4096,
 	piSessionLeaf: 256,
@@ -60,12 +57,6 @@ function boundedString(value, maximum, allowEmpty = false) {
 
 function finiteNumber(value) {
 	return typeof value === "number" && Number.isFinite(value);
-}
-
-function areCapabilities(value) {
-	return Array.isArray(value)
-		&& value.length <= LIMITS.capabilities
-		&& value.every((item) => boundedString(item, LIMITS.capability));
 }
 
 function isAttachment(value) {
@@ -128,17 +119,6 @@ function sessionFromRegistration(value, id) {
 		...(value.status === undefined ? {} : { status: value.status }),
 		...(value.piSession === undefined ? {} : { piSession: { ...value.piSession } }),
 	};
-}
-
-function supportsPiSessionPresence(connection) {
-	return connection.capabilities.has(TAIL_CAPABILITY);
-}
-
-function sessionForRecipient(connection, session) {
-	const { piSession, ...publicSession } = session;
-	return piSession !== undefined && supportsPiSessionPresence(connection)
-		? { ...publicSession, piSession: { ...piSession } }
-		: publicSession;
 }
 
 function encode(message) {
@@ -238,14 +218,6 @@ function broadcast(message, excludeId) {
 	}
 }
 
-function broadcastSession(type, session, excludeId) {
-	for (const [id, connection] of sessions) {
-		if (id === excludeId) continue;
-		void queueFrame(connection, { type, session: sessionForRecipient(connection, session) })
-			.catch(() => connection.socket.destroy());
-	}
-}
-
 function findTargets(value) {
 	const byId = sessions.get(value);
 	if (byId) return [byId];
@@ -340,7 +312,7 @@ async function handleSend(connection, request) {
 	}
 	const repliedEdge = request.message.replyTo === undefined ? undefined : requestEdges.get(request.message.replyTo);
 	try {
-		await queueFrame(target, { type: "message", from: sessionForRecipient(target, sender.info), message: request.message });
+		await queueFrame(target, { type: "message", from: sender.info, message: request.message });
 		if (repliedEdge && repliedEdge.fromPeerId === target.sessionId && repliedEdge.toPeerId === senderId) {
 			requestEdges.delete(repliedEdge.messageId);
 		}
@@ -361,22 +333,18 @@ async function handleMessage(connection, value) {
 	switch (value.type) {
 		case "register": {
 			if (connection.sessionId) throw new Error("Received duplicate register message");
-			if (!isRegistration(value.session)
-				|| (value.capabilities !== undefined && !areCapabilities(value.capabilities))) {
-				throw new Error("Invalid register message");
-			}
+			if (!isRegistration(value.session)) throw new Error("Invalid register message");
 			if (sessions.size >= LIMITS.sessions) throw new Error("Intercom session limit reached");
 			const id = randomUUID();
 			connection.sessionId = id;
 			connection.info = sessionFromRegistration(value.session, id);
-			connection.capabilities = new Set(value.capabilities ?? []);
 			connection.lastPiSessionRevision = value.session.piSession?.revision ?? 0;
 			clearTimeout(connection.registrationTimer);
 			connection.registrationTimer = undefined;
 			sessions.set(id, connection);
 			clearIdleTimer();
 			await queueFrame(connection, { type: "registered", sessionId: id, capabilities: BROKER_CAPABILITIES });
-			broadcastSession("session_joined", connection.info, id);
+			broadcast({ type: "session_joined", session: connection.info }, id);
 			break;
 		}
 		case "unregister":
@@ -389,11 +357,7 @@ async function handleMessage(connection, value) {
 			break;
 		case "list": {
 			if (!boundedString(value.requestId, LIMITS.id, true)) throw new Error("Invalid list message");
-			await queueFrame(connection, {
-				type: "sessions",
-				requestId: value.requestId,
-				sessions: [...sessions.values()].map((item) => sessionForRecipient(connection, item.info)),
-			});
+			await queueFrame(connection, { type: "sessions", requestId: value.requestId, sessions: [...sessions.values()].map((item) => item.info) });
 			break;
 		}
 		case "send":
@@ -419,7 +383,7 @@ async function handleMessage(connection, value) {
 				connection.lastPiSessionRevision = value.piSession.revision;
 			}
 			session.info.lastActivity = Date.now();
-			broadcastSession("presence_update", session.info, connection.sessionId);
+			broadcast({ type: "presence_update", session: session.info }, connection.sessionId);
 			break;
 		}
 		default:
@@ -450,7 +414,6 @@ function accept(socket) {
 		queuedRequests: 0,
 		queuedRequestBytes: 0,
 		registrationTimer: undefined,
-		capabilities: new Set(),
 		lastPiSessionRevision: 0,
 	};
 	// Every accepted socket is tracked before registration, cap checks, or protocol work.

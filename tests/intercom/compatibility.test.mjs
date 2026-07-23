@@ -1,12 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { IntercomClient } from "../../extensions/intercom/client.ts";
-import { LegacyDriver, connectNew, isolatedIntercom, registration, startLegacyBroker, startOwnedBroker, stopChild, waitEvent, waitFor } from "./helpers.mjs";
+import {
+	CurrentDriver,
+	LegacyDriver,
+	connectNew,
+	isolatedIntercom,
+	registration,
+	startCurrentBroker,
+	startLegacyBroker,
+	startOwnedBroker,
+	stopChild,
+	waitEvent,
+	waitFor,
+} from "./helpers.mjs";
 
-async function createPeer(kind, fixture, name) {
-	if (kind === "old") {
-		const driver = new LegacyDriver(fixture.home);
-		const connected = await driver.command("connect", { session: registration(name) });
+const CLIENT_KINDS = ["old", "current", "new"];
+const BROKER_KINDS = ["old", "current", "new"];
+const TAIL_CAPABILITY = "pi-session-tail-v1";
+
+async function createPeer(kind, fixture, name, overrides = {}) {
+	if (kind === "old" || kind === "current") {
+		const driver = kind === "old" ? new LegacyDriver(fixture.home) : new CurrentDriver(fixture.home);
+		const connected = await driver.command("connect", { session: registration(name, overrides) });
 		return {
 			kind,
 			sessionId: connected.sessionId,
@@ -14,13 +30,16 @@ async function createPeer(kind, fixture, name) {
 			send: (to, options) => driver.command("send", { to, options }),
 			presence: (updates) => driver.command("presence", { updates }),
 			waitMessage: (id) => driver.waitEvent((event) => event.event === "message" && event.message.id === id).then((event) => [event.from, event.message]),
+			waitJoined: (target) => driver.waitEvent((event) => event.event === "session_joined" && (event.session.id === target || event.session.name === target)).then((event) => event.session),
 			waitPresence: (id, status) => driver.waitEvent((event) => event.event === "presence_update" && event.session.id === id && event.session.status === status).then((event) => event.session),
 			waitLeft: (id) => driver.waitEvent((event) => event.event === "session_left" && event.sessionId === id),
-			tailCapability: () => false,
+			tailCapability: () => kind === "current" && connected.tailCapability === true,
+			privatePresenceCapability: () => kind === "current" && connected.privatePresenceCapability === true,
 			close: () => driver.close(),
 		};
 	}
-	const client = await connectNew(fixture.paths, name);
+	const client = new IntercomClient({ socketPath: fixture.paths.socketPath, connectTimeoutMs: 1_000, listTimeoutMs: 1_000, sendTimeoutMs: 1_000, askTimeoutMs: 1_000 });
+	await client.connect(registration(name, overrides));
 	return {
 		kind,
 		sessionId: client.sessionId,
@@ -28,20 +47,21 @@ async function createPeer(kind, fixture, name) {
 		send: (to, options) => client.send(to, options),
 		presence: async (updates) => client.updatePresence(updates),
 		waitMessage: (id) => waitEvent(client, "message", (_from, message) => message.id === id),
+		waitJoined: (target) => waitEvent(client, "session_joined", (session) => session.id === target || session.name === target).then(([session]) => session),
 		waitPresence: (id, status) => waitEvent(client, "presence_update", (session) => session.id === id && session.status === status).then(([session]) => session),
 		waitLeft: (id) => waitEvent(client, "session_left", (sessionId) => sessionId === id),
-		tailCapability: () => client.supportsCapability("pi-session-tail-v1"),
+		tailCapability: () => client.supportsCapability(TAIL_CAPABILITY),
+		privatePresenceCapability: () => client.supportsPrivatePresence(),
 		ask: (to, options) => client.ask(to, options),
 		close: () => client.disconnect(),
 	};
 }
 
-const combinations = [
-	{ title: "old-client/old-broker baseline", broker: "old", client: "old" },
-	{ title: "new-client/old-broker", broker: "old", client: "new" },
-	{ title: "old-client/new-broker", broker: "new", client: "old" },
-	{ title: "new-client/new-broker", broker: "new", client: "new" },
-];
+function startBroker(kind, fixture) {
+	if (kind === "old") return startLegacyBroker(fixture.home, fixture.paths.socketPath);
+	if (kind === "current") return startCurrentBroker(fixture.paths);
+	return startOwnedBroker(fixture.paths);
+}
 
 test("pinned legacy clients disconnect cleanly when owned unregister closes the socket", async (t) => {
 	const fixture = await isolatedIntercom(t, "old-unreg-");
@@ -133,114 +153,88 @@ test("new client keeps parallel asks independent against the legacy broker", asy
 	assert.equal(alice.pendingCounts().asks, 0);
 });
 
-for (const brokerKind of ["old", "new"]) {
-	test(`true mixed clients communicate old↔new against the ${brokerKind === "old" ? "legacy" : "owned"} broker`, async (t) => {
-		const fixture = await isolatedIntercom(t, `mixed-${brokerKind}-`);
-		const broker = brokerKind === "old"
-			? await startLegacyBroker(fixture.home, fixture.paths.socketPath)
-			: await startOwnedBroker(fixture.paths);
-		t.after(() => stopChild(broker));
-		const oldPeer = await createPeer("old", fixture, "legacy-peer");
-		const newPeer = await createPeer("new", fixture, "owned-peer");
-		assert.equal(newPeer.tailCapability(), brokerKind === "new");
-		t.after(async () => Promise.allSettled([oldPeer.close(), newPeer.close()]));
-
-		for (const peer of [oldPeer, newPeer]) {
-			const sessions = await peer.list();
-			assert.equal(sessions.some((session) => session.id === oldPeer.sessionId && session.name === "legacy-peer"), true);
-			assert.equal(sessions.some((session) => session.id === newPeer.sessionId && session.name === "owned-peer"), true);
-		}
-
-		const oldPresence = newPeer.waitPresence(oldPeer.sessionId, "old-present");
-		await oldPeer.presence({ status: "old-present", model: "old-model" });
-		assert.equal((await oldPresence).model, "old-model");
-		const newPresence = oldPeer.waitPresence(newPeer.sessionId, "new-present");
-		await newPeer.presence({ status: "new-present", model: "new-model" });
-		assert.equal((await newPresence).model, "new-model");
-
-		for (const [sender, recipient, id, attachmentText] of [
-			[oldPeer, newPeer, "mixed-old-to-new", "old attachment"],
-			[newPeer, oldPeer, "mixed-new-to-old", "new attachment"],
-		]) {
-			const incoming = recipient.waitMessage(id);
-			const attachment = { type: "context", name: `${id}.txt`, content: attachmentText };
-			assert.equal((await sender.send(recipient.sessionId, { messageId: id, text: id, attachments: [attachment] })).delivered, true);
-			const [from, message] = await incoming;
-			assert.equal(from.id, sender.sessionId);
-			assert.deepEqual(message.content.attachments, [attachment]);
-		}
-
-		const oldAskIncoming = newPeer.waitMessage("mixed-old-ask");
-		assert.equal((await oldPeer.send(newPeer.sessionId, { messageId: "mixed-old-ask", text: "legacy question", expectsReply: true })).delivered, true);
-		await oldAskIncoming;
-		const oldReply = oldPeer.waitMessage("mixed-new-reply");
-		assert.equal((await newPeer.send(oldPeer.sessionId, { messageId: "mixed-new-reply", text: "owned answer", replyTo: "mixed-old-ask" })).delivered, true);
-		assert.equal((await oldReply)[1].replyTo, "mixed-old-ask");
-
-		const newAsk = newPeer.ask(oldPeer.sessionId, { messageId: "mixed-new-ask", text: "owned question" });
-		await oldPeer.waitMessage("mixed-new-ask");
-		assert.equal((await oldPeer.send(newPeer.sessionId, { messageId: "mixed-old-reply", text: "legacy answer", replyTo: "mixed-new-ask" })).delivered, true);
-		const correlated = await newAsk;
-		assert.equal(correlated.from.id, oldPeer.sessionId);
-		assert.equal(correlated.message.replyTo, "mixed-new-ask");
-		assert.equal(correlated.message.content.text, "legacy answer");
-
-		for (const peer of [oldPeer, newPeer]) {
-			const failed = await peer.send("not-connected", { messageId: `mixed-failed-${peer.kind}`, text: "lost" });
-			assert.equal(failed.delivered, false);
-			assert.match(failed.reason, /Session not found/);
-		}
-
-		const left = newPeer.waitLeft(oldPeer.sessionId);
-		await oldPeer.close();
-		await left;
-	});
+function assertPrivateProjection(actual, expected, sentinels, label) {
+	assert.deepEqual(actual.piSession, expected, `${label} piSession`);
+	if (expected === undefined) {
+		const serialized = JSON.stringify(actual);
+		for (const sentinel of sentinels) assert.equal(serialized.includes(sentinel), false, `${label} leaked ${sentinel}`);
+	}
 }
 
-for (const combination of combinations) {
-	test(`compatibility matrix: ${combination.title}`, async (t) => {
-		const fixture = await isolatedIntercom(t, `matrix-${combination.broker}-${combination.client}-`);
-		const broker = combination.broker === "old"
-			? await startLegacyBroker(fixture.home, fixture.paths.socketPath)
-			: await startOwnedBroker(fixture.paths);
-		t.after(() => stopChild(broker));
-		const alice = await createPeer(combination.client, fixture, "alice");
-		const bob = await createPeer(combination.client, fixture, "bob");
-		assert.equal(alice.tailCapability(), combination.client === "new" && combination.broker === "new");
-		t.after(async () => {
-			await Promise.allSettled([alice.close(), bob.close()]);
+function publisherAdvertisesPiSession(brokerKind, publisherKind) {
+	if (publisherKind === "old") return true;
+	if (publisherKind === "current") return brokerKind !== "old";
+	return brokerKind === "new";
+}
+
+function recipientReceivesPiSession(brokerKind, recipientKind) {
+	// New clients suppress private projections from brokers that cannot prove recipient filtering.
+	return brokerKind === "new" ? recipientKind === "new" : recipientKind !== "new";
+}
+
+for (const brokerKind of BROKER_KINDS) {
+	for (const publisherKind of CLIENT_KINDS) {
+		test(`privacy and messaging matrix: ${publisherKind} client with ${brokerKind} broker`, async (t) => {
+			const fixture = await isolatedIntercom(t, `privacy-${brokerKind}-${publisherKind}-`);
+			const broker = await startBroker(brokerKind, fixture);
+			t.after(() => stopChild(broker));
+
+			const observers = [];
+			for (const recipientKind of CLIENT_KINDS) {
+				observers.push(await createPeer(recipientKind, fixture, `observer-${recipientKind}`));
+			}
+			t.after(async () => Promise.allSettled(observers.map((peer) => peer.close())));
+			for (const observer of observers) {
+				assert.equal(observer.tailCapability(), observer.kind !== "old" && brokerKind !== "old");
+				assert.equal(observer.privatePresenceCapability(), observer.kind !== "old" && brokerKind === "new");
+			}
+
+			const initialLocator = `/private/PRIVATE_${brokerKind}_${publisherKind}_REGISTER.jsonl`;
+			const updatedLocator = `/private/PRIVATE_${brokerKind}_${publisherKind}_PRESENCE.jsonl`;
+			const initialPresence = { sessionId: `private-${brokerKind}-${publisherKind}`, fileLocator: initialLocator, activeLeafId: "initial-private-leaf", revision: 1 };
+			const updatedPresence = { ...initialPresence, fileLocator: updatedLocator, activeLeafId: "updated-private-leaf", revision: 2 };
+			const sentinels = [initialLocator, updatedLocator, initialPresence.sessionId, initialPresence.activeLeafId, updatedPresence.activeLeafId];
+			const joined = observers.map((observer) => observer.waitJoined("private-publisher"));
+			const publisher = await createPeer(publisherKind, fixture, "private-publisher", { piSession: initialPresence });
+			t.after(() => publisher.close());
+
+			for (let index = 0; index < observers.length; index++) {
+				const observer = observers[index];
+				const registrationProjection = await joined[index];
+				const expected = publisherKind === "old" && recipientReceivesPiSession(brokerKind, observer.kind)
+					? initialPresence
+					: undefined;
+				assertPrivateProjection(registrationProjection, expected, sentinels, `${observer.kind} registration/join projection`);
+			}
+
+			const presenceEvents = observers.map((observer) => observer.waitPresence(publisher.sessionId, "private-updated"));
+			await publisher.presence({ status: "private-updated", model: "matrix-model", piSession: updatedPresence });
+			const advertised = publisherAdvertisesPiSession(brokerKind, publisherKind);
+			for (let index = 0; index < observers.length; index++) {
+				const observer = observers[index];
+				const canReceive = recipientReceivesPiSession(brokerKind, observer.kind);
+				const expected = advertised && canReceive
+					? brokerKind === "old" ? initialPresence : updatedPresence
+					: undefined;
+				const presenceProjection = await presenceEvents[index];
+				assert.equal(presenceProjection.model, "matrix-model");
+				assertPrivateProjection(presenceProjection, expected, sentinels, `${observer.kind} presence projection`);
+
+				const listed = (await observer.list()).find((session) => session.id === publisher.sessionId);
+				assertPrivateProjection(listed, expected, sentinels, `${observer.kind} list projection`);
+
+				const messageId = `private-message-${brokerKind}-${publisherKind}-${observer.kind}`;
+				const incoming = observer.waitMessage(messageId);
+				const attachment = { type: "context", name: `${messageId}.txt`, content: "version-compatible attachment" };
+				assert.equal((await publisher.send(observer.sessionId, { messageId, text: "hello", attachments: [attachment] })).delivered, true);
+				const [from, message] = await incoming;
+				assertPrivateProjection(from, expected, sentinels, `${observer.kind} message sender projection`);
+				assert.deepEqual(message.content.attachments, [attachment]);
+			}
+
+			const failure = await publisher.send("not-connected", { messageId: `private-failed-${brokerKind}-${publisherKind}`, text: "lost" });
+			assert.equal(failure.delivered, false);
+			assert.match(failure.reason, /Session not found/);
 		});
-
-		const sessions = await alice.list();
-		assert.equal(sessions.length, 2);
-		assert.equal(sessions.some((session) => session.id === bob.sessionId && session.name === "bob"), true);
-
-		const presence = bob.waitPresence(alice.sessionId, "reviewing");
-		await alice.presence({ status: "reviewing", model: "matrix-model" });
-		assert.equal((await presence).model, "matrix-model");
-
-		const attachment = { type: "context", name: "finding", content: "legacy-compatible attachment" };
-		const incoming = bob.waitMessage("matrix-send");
-		assert.equal((await alice.send(bob.sessionId, { messageId: "matrix-send", text: "hello", attachments: [attachment] })).delivered, true);
-		const [from, message] = await incoming;
-		assert.equal(from.id, alice.sessionId);
-		assert.deepEqual(message.content.attachments, [attachment]);
-
-		const askIncoming = bob.waitMessage("matrix-ask");
-		assert.equal((await alice.send(bob.sessionId, { messageId: "matrix-ask", text: "question", expectsReply: true })).delivered, true);
-		await askIncoming;
-		const replyIncoming = alice.waitMessage("matrix-reply");
-		assert.equal((await bob.send(alice.sessionId, { messageId: "matrix-reply", text: "answer", replyTo: "matrix-ask" })).delivered, true);
-		const [, reply] = await replyIncoming;
-		assert.equal(reply.replyTo, "matrix-ask");
-		assert.equal(reply.content.text, "answer");
-
-		const failed = await alice.send("not-connected", { messageId: "matrix-failed", text: "lost" });
-		assert.equal(failed.delivered, false);
-		assert.match(failed.reason, /Session not found/);
-
-		const left = alice.waitLeft(bob.sessionId);
-		await bob.close();
-		await left;
-	});
+	}
 }
