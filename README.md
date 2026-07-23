@@ -27,7 +27,7 @@ See [the marketplace manifest](./.claude-plugin/marketplace.json) for every fami
 ## What to expect
 
 - [`ship`](./skills/ship/ship/SKILL.md) is my development workflow with durable artefacts. It moves from alignment, through optional prototyping and planning, to implementation and review.
-- Durable workflows leave inspectable Markdown in `.plans/` instead of relying on hidden session state. Set `PI_SKILLS_PLANS_ROOT` if those files belong somewhere else.
+- New Ship workflows use durable Markdown instead of hidden session state and live under `projects/<project>/work/<work-item>/` in the vault selected by `~/.config/pi-skills/workflows.json`. Relevant existing `.plans`, `.plan`, `docs/plans`, and `PI_SKILLS_PLANS_ROOT` workflows remain in place. See [workflow profiles](./skills/ship/ship/references/workflow-profiles.md) for configuration.
 - Most skills are guidance, not a subscription to every tool I happen to like. Optional integrations only matter when you use their matching skills.
 
 ## What’s in the box
@@ -93,11 +93,20 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 | Skill | What it helps with |
 |---|---|
+| [`first-mate`](./skills/first-mate/SKILL.md) | Reconcile evidence for one configured workflow profile without taking project ownership |
 | [`agent-coordination`](./skills/agent-coordination/SKILL.md) | Choose configured models and reasoning levels for delegated work |
 | [`scheduled-jobs`](./skills/scheduled-jobs/SKILL.md) | Inspect and operate reviewed recurring local jobs |
 | [`shortcut`](./skills/shortcut/shortcut/SKILL.md) | Work with Shortcut stories through the `short` CLI |
 | [`agent-browser`](./skills/agent-browser/agent-browser/SKILL.md) | Automate browsers and Electron apps |
 | [`herdr`](./skills/herdr/SKILL.md) | Control Herdr or hand a Pi conversation to another workspace |
+
+## First Mate and Intercom tails
+
+Configure workflow profiles from the [example](./skills/ship/ship/assets/workflows.example.json), then invoke the Pi-only role explicitly with `/skill:first-mate <profile>`. Reinvoke it after a session restart or context compaction. First Mate is intentionally absent from the Claude marketplace.
+
+Intercom tail support rolls out additively. A new client reuses a healthy older broker rather than replacing it, so messaging continues while `intercom status` reports tail unavailable. After that broker exits, a current client starts the capability-owning broker and connected clients reconnect. Verify tail availability before relying on session reconciliation.
+
+Rollback the package or host guidance without moving or deleting vault work items. Existing legacy workflows remain in place, and older brokers continue messaging while tails fail explicitly as unavailable.
 
 ## Optional tooling
 
@@ -117,7 +126,7 @@ The scheduler uses launchd on macOS, systemd user timers on Linux, or `crontab` 
 Pi gets a few extras that are not skills:
 
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
-- `intercom` lets local Pi sessions find and talk to each other.
+- `intercom` provides local peer messaging and capability-gated bounded tails of active persisted Pi sessions.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
 - `scheduled-jobs` adds the human-only `/scheduler` interface.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.

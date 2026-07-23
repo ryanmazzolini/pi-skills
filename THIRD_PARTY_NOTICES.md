@@ -28,6 +28,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## kunchenguid/firstmate
+
+The name and initial investigation for `skills/first-mate` were inspired by [`kunchenguid/firstmate`](https://github.com/kunchenguid/firstmate). This package's Pi-native First Mate is not a fork or port of that project.
+
 ## mattpocock/skills
 
 Some skills in this package are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills), licensed under the MIT License.

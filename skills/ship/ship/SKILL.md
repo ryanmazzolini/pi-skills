@@ -56,6 +56,8 @@ Once the experience is settled, use `shape-first` when local interfaces, data ru
 
 Record material decisions, scope changes, implementation results, and review or validation evidence as they happen. Once a plan exists, keep slice-specific evidence with its slice.
 
+When a cross-project blocker or missing context needs on-demand First Mate reconciliation, read [references/first-mate-escalation.md](references/first-mate-escalation.md). Do not report routine progress to First Mate.
+
 ## Confirm ready work
 
 Dependencies in `plan.md`, not section order, determine what can start. Recommend what should run next and why, then get human confirmation before starting or dispatching the work.
