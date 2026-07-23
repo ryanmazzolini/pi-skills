@@ -6,7 +6,7 @@ Treat context compaction as a cold resume. Use its summary only to find evidence
 
 Treat a workflow directory supplied by the caller as a locator. Classify it using [durable-context.md](durable-context.md) before any read or write; refuse it unless it is a relevant legacy workflow under an allowed legacy root or the workspace profile's canonical work item. Otherwise:
 
-1. Search `PI_SKILLS_PLANS_ROOT`, repository `.plans/` or `.plan/`, and `docs/plans/` for one relevant legacy workflow. Reuse it in place; ask when several match.
+1. Search `PI_SKILLS_PLANS_ROOT`, repository `.plans/` or `.plan/`, and `docs/plans/` for one relevant legacy workflow. Reuse it in place; ask when several match. For a repository `.plans/` match, also apply the migration offer in [durable-context.md](durable-context.md).
 2. When no relevant legacy workflow exists, follow [durable-context.md](durable-context.md) to resolve the workspace profile.
 3. Read the vault's instructions and project index, then find the one work-item `index.md` whose ticket or approved slug identifies the current work and whose workspace also matches. Never recover by workspace equality alone; ask for the current identity when it is unknown, and fail rather than choosing among multiple matches.
 
