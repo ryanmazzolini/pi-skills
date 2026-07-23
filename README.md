@@ -93,7 +93,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 | Skill | What it helps with |
 |---|---|
-| [`first-mate`](./skills/first-mate/SKILL.md) | Orient and coordinate safely across workflow profiles and connected Pi sessions |
+| [`first-mate`](./skills/first-mate/SKILL.md) | Orient, triage, and coordinate safely across connected Pi sessions |
 | [`agent-coordination`](./skills/agent-coordination/SKILL.md) | Choose configured models and reasoning levels for delegated work |
 | [`scheduled-jobs`](./skills/scheduled-jobs/SKILL.md) | Inspect and operate reviewed recurring local jobs |
 | [`shortcut`](./skills/shortcut/shortcut/SKILL.md) | Work with Shortcut stories through the `short` CLI |
@@ -106,7 +106,7 @@ Invoke the Pi-only combined role with `/skill:first-mate`. It discovers workflow
 
 When the effective workflow configuration file is absent, First Mate offers optional guided setup using a profile name, vault path, and Git roots. It shows the complete file and asks for confirmation, rechecks immediately before exclusive creation, never replaces an appeared or invalid file, validates the result, and continues in the same session. See [workflow profiles](./skills/ship/ship/references/workflow-profiles.md) for the format and recovery behavior.
 
-A bare `triage` refreshes profile scope, Intercom status, and a compact connected-peer name inventory. Attention classification is not available yet, so it does not tail, classify, create tasks, or message peers. To inspect or contact one peer, ask to select it; First Mate refreshes the inventory, shows the applicable full broker IDs for confirmation, and reports a missing or replaced peer instead of guessing by name.
+A `triage` request takes one fresh connected-peer snapshot and reads bounded persisted tails for at most 16 non-active peers. It reports `Needs attention`, `May need attention`, `Unknown`, and a compact `No action` list while keeping every result explicitly workflow-unbound. Classification never messages peers, reads vault evidence, or infers profile or work-item authority. To inspect or contact one peer afterward, ask to select it; First Mate refreshes the inventory, shows the applicable full broker IDs for confirmation, and reports a missing or replaced peer instead of guessing by name.
 
 Intercom capabilities roll out additively. An older broker may support messaging or tails without the First Mate role. Missing role support limits role-based discovery only; missing tail support limits peer-context inspection only. Tree navigation, compaction, reload, resume, session replacement, broker disconnect, or client restart can clear the role. Invoke `/skill:first-mate` again to restore discoverability while continuing any independently available human-requested features.
 

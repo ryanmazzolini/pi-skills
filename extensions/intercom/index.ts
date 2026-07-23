@@ -10,8 +10,10 @@ import type { InboxEntry } from "./inbox.ts";
 import { IntercomRuntime, type IntercomStatus } from "./runtime.ts";
 import { IntercomOperations, type IntercomOperationSnapshot } from "./operations.ts";
 import { PiSessionPresenceTracker } from "./presence.ts";
+import { SESSION_TAIL_LIMITS } from "./session-tail.ts";
 import {
 	INTERCOM_PROJECTION_MAX_BYTES,
+	INTERCOM_TAIL_PROJECTION_MIN_BYTES,
 	assertProjectionBound,
 	compactInboundDetails,
 	compactSessionName,
@@ -47,6 +49,8 @@ export const IntercomParams = Type.Object({
 	replyTo: Type.Optional(Type.String({ description: "Exact inbound message ID for reply selection, or thread ID for send/ask" })),
 	operationId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Operation ID for operations inspection or cancellation" })),
 	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32, description: "Maximum operation snapshots or tail text messages to return" })),
+	tailScanBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: SESSION_TAIL_LIMITS.scanBytes, description: "For tail only: maximum session-file bytes to scan (default 16 MiB)" })),
+	tailProjectionBytes: Type.Optional(Type.Integer({ minimum: INTERCOM_TAIL_PROJECTION_MIN_BYTES, maximum: INTERCOM_PROJECTION_MAX_BYTES, description: "For tail only: maximum UTF-8 bytes in the model projection (default 48 KiB)" })),
 }, { additionalProperties: false });
 
 export type IntercomToolInput = Static<typeof IntercomParams>;
@@ -76,6 +80,8 @@ export function validateIntercomAction(input: IntercomToolInput): void {
 	if (input.action === "cancel" && !input.operationId?.trim()) throw new Error("cancel requires operationId");
 	if (input.action !== "operations" && input.action !== "cancel" && input.operationId !== undefined) throw new Error(`operationId is not valid for ${input.action}`);
 	if (input.action !== "operations" && input.action !== "tail" && input.limit !== undefined) throw new Error(`limit is not valid for ${input.action}`);
+	if (input.action !== "tail" && input.tailScanBytes !== undefined) throw new Error(`tailScanBytes is not valid for ${input.action}`);
+	if (input.action !== "tail" && input.tailProjectionBytes !== undefined) throw new Error(`tailProjectionBytes is not valid for ${input.action}`);
 	if (input.action !== "role" && input.role !== undefined) throw new Error(`role is not valid for ${input.action}`);
 	if (input.action === "role" && input.role !== undefined && input.role !== "first-mate") throw new Error("Invalid intercom role");
 	if ((input.action === "send" || input.action === "ask" || input.action === "tail") && !input.to?.trim()) throw new Error(`${input.action} requires to`);
@@ -530,13 +536,16 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						return { content: [{ type: "text" as const, text: projected.text }], details };
 					}
 					case "tail": {
-						const result = await active.tail(params.to!, params.limit ?? 8, signal);
-						const projected = projectSessionTail(result.snapshot, result.target);
+						const result = await active.tail(params.to!, params.limit ?? 8, signal, params.tailScanBytes);
+						const projected = projectSessionTail(result.snapshot, result.target, params.tailProjectionBytes);
 						const details = {
 							targetPeerId: result.target.id,
 							requestedMessages: params.limit ?? 8,
+							requestedScanBytes: params.tailScanBytes ?? SESSION_TAIL_LIMITS.scanBytes,
+							requestedProjectionBytes: params.tailProjectionBytes ?? INTERCOM_PROJECTION_MAX_BYTES,
 							availableTextMessages: result.snapshot.counts.eligibleTextEvents,
 							returnedTextMessages: result.snapshot.counts.returnedTextEvents,
+							lastConversationalTimestamp: result.snapshot.lastConversationalTimestamp,
 							timelineEvents: result.snapshot.events.length,
 							truncated: result.snapshot.truncated || result.snapshot.ignoredFinalFragment || projected.truncated,
 						};

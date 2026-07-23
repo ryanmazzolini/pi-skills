@@ -43,6 +43,8 @@ export interface SessionTailCounts {
 export interface SessionTailSnapshot {
 	readonly events: readonly SessionTailEvent[];
 	readonly counts: SessionTailCounts;
+	/** Epoch milliseconds from the newest eligible user/assistant entry on this branch. */
+	readonly lastConversationalTimestamp: number | null;
 	/** True only when eligible text was omitted by the requested text limit. */
 	readonly truncated: boolean;
 	/** A bounded, valid UTF-8 final fragment without a newline was ignored. */
@@ -60,6 +62,8 @@ export interface OpenSessionTailInput {
 	fileLocator: string;
 	activeLeafId: string | null;
 	limit: number;
+	/** Maximum bytes to scan from this one session file (default: scanBytes hard limit). */
+	scanBytes?: number;
 }
 
 const ERROR = Object.freeze({
@@ -484,6 +488,13 @@ interface PendingToolResult {
 	outcome: "succeeded" | "failed";
 }
 
+function canonicalTimestamp(value: unknown): number {
+	if (typeof value !== "string") fail(ERROR.malformed);
+	const epoch = Date.parse(value);
+	if (!Number.isSafeInteger(epoch) || new Date(epoch).toISOString() !== value) fail(ERROR.malformed);
+	return epoch;
+}
+
 function projectBranch(
 	buffer: Buffer,
 	leafToRoot: readonly IndexedEntry[],
@@ -492,6 +503,7 @@ function projectBranch(
 ): SessionTailSnapshot {
 	let retainedBytes = initialRetainedBytes;
 	let eligibleTextEvents = 0;
+	let lastConversationalTimestamp: number | null = null;
 	let selectedTextEvents = 0;
 	let sequence = 0;
 	const candidates: PositionedEvent[] = [];
@@ -558,6 +570,8 @@ function projectBranch(
 			if (failedAssistant) continue;
 			const text = textFromAssistant(message);
 			if (text === undefined) continue;
+			const timestamp = canonicalTimestamp(entry.timestamp);
+			if (lastConversationalTimestamp === null || timestamp > lastConversationalTimestamp) lastConversationalTimestamp = timestamp;
 			eligibleTextEvents++;
 			if (selectedTextEvents < limit) {
 				retainedBytes = reserveRetained(retainedBytes, text);
@@ -570,6 +584,8 @@ function projectBranch(
 		if (message.role === "user") {
 			const text = textFromUser(message);
 			if (text === undefined) continue;
+			const timestamp = canonicalTimestamp(entry.timestamp);
+			if (lastConversationalTimestamp === null || timestamp > lastConversationalTimestamp) lastConversationalTimestamp = timestamp;
 			eligibleTextEvents++;
 			if (selectedTextEvents < limit) {
 				retainedBytes = reserveRetained(retainedBytes, text);
@@ -603,13 +619,14 @@ function projectBranch(
 	return Object.freeze({
 		events: Object.freeze(events),
 		counts,
+		lastConversationalTimestamp,
 		truncated: eligibleTextEvents > selectedTextEvents,
 		ignoredFinalFragment: false,
 	});
 }
 
-function readExactSnapshot(fd: number, size: bigint): Buffer {
-	if (size < 0n || size > BigInt(SESSION_TAIL_LIMITS.scanBytes)) fail(ERROR.oversized);
+function readExactSnapshot(fd: number, size: bigint, scanBytes: number): Buffer {
+	if (size < 0n || size > BigInt(scanBytes)) fail(ERROR.oversized);
 	const buffer = Buffer.alloc(Number(size));
 	let offset = 0;
 	while (offset < buffer.length) {
@@ -635,7 +652,10 @@ function validateInput(input: OpenSessionTailInput): void {
 		|| (input.activeLeafId !== null && !boundedNonemptyString(input.activeLeafId))
 		|| !Number.isInteger(input.limit)
 		|| input.limit < 1
-		|| input.limit > SESSION_TAIL_LIMITS.textEvents) fail(ERROR.input);
+		|| input.limit > SESSION_TAIL_LIMITS.textEvents
+		|| (input.scanBytes !== undefined && (!Number.isInteger(input.scanBytes)
+			|| input.scanBytes < 1
+			|| input.scanBytes > SESSION_TAIL_LIMITS.scanBytes))) fail(ERROR.input);
 }
 
 /**
@@ -670,7 +690,7 @@ export function openSessionTail(input: OpenSessionTailInput): SessionTailHandle 
 			|| !sameIdentity(beforeRead, openedPath)
 			|| !sameState(openedPath, stableState)) fail(ERROR.unstable);
 
-		const buffer = readExactSnapshot(fd, stableState.size);
+		const buffer = readExactSnapshot(fd, stableState.size, input.scanBytes ?? SESSION_TAIL_LIMITS.scanBytes);
 		assertPathAndDescriptorStable(fd, input.fileLocator, stableState, uid);
 		const { lines, ignoredFinalFragment } = splitCompleteLines(buffer);
 		const header = parseJsonLine(buffer, lines[0]);
@@ -685,6 +705,7 @@ export function openSessionTail(input: OpenSessionTailInput): SessionTailHandle 
 				...projected.counts,
 				scannedEntries: indexed.entries.size,
 			}),
+			lastConversationalTimestamp: projected.lastConversationalTimestamp,
 			truncated: projected.truncated,
 			ignoredFinalFragment,
 		});

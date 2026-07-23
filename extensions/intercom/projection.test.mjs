@@ -5,6 +5,7 @@ import { INBOUND_DELIVERY_LIMITS, InboundDelivery, deliverInboundMessage } from 
 import { connectNew, isolatedIntercom, startOwnedBroker, stopChild, waitEvent } from "../../tests/intercom/helpers.mjs";
 import {
 	INTERCOM_PROJECTION_MAX_BYTES,
+	INTERCOM_TAIL_PROJECTION_MIN_BYTES,
 	INTERCOM_TRUNCATION_NOTICE,
 	projectAskReply,
 	projectInboundEntry,
@@ -160,6 +161,7 @@ test("session tail projection is bounded, locator-free, and preserves newest mul
 	const snapshot = {
 		events,
 		counts: { scannedEntries: 34, branchEntries: 34, eligibleTextEvents: 40, returnedTextEvents: 32, toolEvents: 1, bashEvents: 1 },
+		lastConversationalTimestamp: null,
 		truncated: true,
 		ignoredFinalFragment: false,
 	};
@@ -178,11 +180,59 @@ test("session tail projection is bounded, locator-free, and preserves newest mul
 	assert.doesNotMatch(projectSessionList([target], target).text, /private\/session\/path/);
 });
 
+test("tail projection honors an exact caller ceiling with multibyte newest evidence", () => {
+	const newest = `NEWEST_MULTIBYTE_SENTINEL-${"界".repeat(10_000)}`;
+	const snapshot = {
+		events: [
+			{ kind: "user", text: "old evidence".repeat(1_000) },
+			{ kind: "assistant", text: newest },
+		],
+		counts: { scannedEntries: 2, branchEntries: 2, eligibleTextEvents: 2, returnedTextEvents: 2, toolEvents: 0, bashEvents: 0 },
+		lastConversationalTimestamp: Date.parse("2026-01-01T00:00:02.000Z"),
+		truncated: false,
+		ignoredFinalFragment: false,
+	};
+	const projected = projectSessionTail(snapshot, session("tail-peer"), INTERCOM_TAIL_PROJECTION_MIN_BYTES);
+	assert.ok(projected.bytes <= INTERCOM_TAIL_PROJECTION_MIN_BYTES);
+	assert.equal(projected.bytes, Buffer.byteLength(projected.text, "utf8"));
+	assert.equal(projected.truncated, true);
+	assert.match(projected.text, /NEWEST_MULTIBYTE_SENTINEL/);
+	assert.match(projected.text, /Last conversational timestamp: 2026-01-01T00:00:02\.000Z/);
+	assert.match(projected.text, /truncated to the requested UTF-8 ceiling/);
+	assert.doesNotMatch(projected.text, /48 KiB/);
+});
+
+test("tail projection keeps a contiguous newest suffix when an older label cannot fit", () => {
+	const events = [
+		{ kind: "tool", name: "OLDER_SHOULD_NOT_SURVIVE", outcome: "succeeded" },
+		{ kind: "tool", name: `BLOCKER_${"b".repeat(248)}`, outcome: "failed" },
+		...Array.from({ length: 14 }, (_, index) => ({
+			kind: "tool",
+			name: `NEW_${index}_${"x".repeat(248)}`,
+			outcome: "succeeded",
+		})),
+	];
+	const snapshot = {
+		events,
+		counts: { scannedEntries: events.length, branchEntries: events.length, eligibleTextEvents: 0, returnedTextEvents: 0, toolEvents: events.length, bashEvents: 0 },
+		lastConversationalTimestamp: null,
+		truncated: false,
+		ignoredFinalFragment: false,
+	};
+	const projected = projectSessionTail(snapshot, session("suffix-tail-peer"), INTERCOM_TAIL_PROJECTION_MIN_BYTES);
+	assert.ok(projected.bytes <= INTERCOM_TAIL_PROJECTION_MIN_BYTES);
+	assert.equal(projected.truncated, true);
+	assert.match(projected.text, /NEW_13_/);
+	assert.doesNotMatch(projected.text, /BLOCKER_/);
+	assert.doesNotMatch(projected.text, /OLDER_SHOULD_NOT_SURVIVE/);
+});
+
 test("maximum reader-valid outcome metadata remains below the projection cap", () => {
 	const events = Array.from({ length: 64 }, () => ({ kind: "tool", name: "\"".repeat(256), outcome: "succeeded" }));
 	const snapshot = {
 		events,
 		counts: { scannedEntries: 64, branchEntries: 64, eligibleTextEvents: 0, returnedTextEvents: 0, toolEvents: 64, bashEvents: 0 },
+		lastConversationalTimestamp: null,
 		truncated: false,
 		ignoredFinalFragment: false,
 	};
