@@ -16,4 +16,4 @@ In Pi, use `delegate` for execution and `delegate_control` only for lifecycle op
 
 Agents escalate product, API, architecture, scope, ownership, and conflict questions to the coordinator. Their handoff names changed files, diff or commit state, validation and results, risks, and decisions still needed.
 
-The coordinator inspects and combines every result into one current target. Combine straightforward changes directly; return choices that affect behavior or scope to the human. Pushes and pull requests still need their own approval. After integration, apply [review-gate.md](review-gate.md) to the exact integrated target, not the separate work units.
+The coordinator inspects, combines, and validates every result as one current target. Combine straightforward changes directly; return choices that affect behavior or scope to the human. Pushes and pull requests still need their own approval. Apply [review-gate.md](review-gate.md) after integration only when this slice will cross a delivery boundary. Use earlier review only for a named risk under the gate; otherwise defer it until the final integrated delivery.

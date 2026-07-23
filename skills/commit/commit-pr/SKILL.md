@@ -9,7 +9,7 @@ description: Create or update a draft pull request from the current branch. Use 
 
 1. Identify the expected base. Inspect the commits, `git diff <base>...HEAD --stat`, the full branch diff, and any existing PR. Resolve unexpected commits or files. Treat an existing title, body, and test results as potentially stale.
 2. Run focused checks while diagnosing problems, then run the repository's expected regression checks for final validation. If an expected check is blocked or impractical, say exactly what did not run and why, then ask how to handle the gap. That decision does not replace review or PR approval.
-3. Confirm the exact branch diff has current independent review under [the review gate](../../ship/ship/references/review-gate.md). Reuse review evidence only while its target is unchanged.
+3. Confirm the final code-bearing branch diff has independent review under [the review gate](../../ship/ship/references/review-gate.md). Record any post-review changes and re-review only when the gate classifies them as material.
 4. Trace the change end to end before drafting: the previous behavior, why it was insufficient, the resulting flow, important ordering or invariants, authority boundaries, relevant migration or rollout behavior, and explicit non-goals.
 5. Draft a clear title and a self-contained body from the diff and commits against the base. Use `Description`, `Details`, and `Testing`. When an issue is available from the branch name or user context, use its ID as the Markdown link text, for example `[sc-123](...)`.
 6. Show the full title and body, base branch, review evidence, and validation status. Ask for confirmation or edits.

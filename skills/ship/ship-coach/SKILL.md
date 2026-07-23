@@ -35,6 +35,6 @@ Keep routine investigation, repetitive mechanics, unrelated integration, and saf
 
 A coached contribution stays inside the confirmed outcome and current slice. Return to Align when learning exposes a requirement, experience, scope, or high-level shape decision.
 
-Keep Align to one question per turn. Explanation may precede its question; reserve a separate knowledge check for a later turn. Repository validation, independent review, and commit, push, and pull-request approvals remain required after human participation and coaching feedback.
+Keep Align to one question per turn. Explanation may precede its question; reserve a separate knowledge check for a later turn. Repository validation and commit, push, and pull-request approvals remain required after human participation and coaching feedback. Apply independent review at the delivery boundary and selective earlier cases defined by Ship's review gate.
 
 A coaching turn is complete when the human has one bounded contribution, receives actionable feedback, or reaches the next Ship checkpoint. Stop there.
