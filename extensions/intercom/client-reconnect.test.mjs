@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import net from "node:net";
 import test from "node:test";
 import { FrameDecoder, IntercomClient, encodeFrame } from "./client.ts";
-import { isolatedIntercom, registration, startCurrentBroker, startOwnedBroker, stopChild, waitEvent } from "../../tests/intercom/helpers.mjs";
+import { isolatedIntercom, registration, startOwnedBroker, stopChild, waitEvent } from "../../tests/intercom/helpers.mjs";
 
 test("shutdown cancels a connection that is still preparing its broker", async () => {
 	let release;
@@ -50,13 +50,9 @@ test("client synchronizes a registration update that races broker acknowledgemen
 		socket.on("error", () => undefined);
 		const decoder = new FrameDecoder((message) => {
 			if (message?.type === "register") {
-				resolveRegister(message);
+				resolveRegister(message.session);
 				new Promise((resolve) => { releaseRegistered = resolve; }).then(() => {
-					socket.write(encodeFrame({
-						type: "registered",
-						sessionId: "race-session-id",
-						capabilities: ["pi-session-tail-v1", "recipient-filtered-private-presence-v1"],
-					}));
+					socket.write(encodeFrame({ type: "registered", sessionId: "race-session-id", capabilities: ["pi-session-tail-v1"] }));
 				});
 			}
 			if (message?.type === "presence") resolvePresence(message);
@@ -73,9 +69,7 @@ test("client synchronizes a registration update that races broker acknowledgemen
 	});
 	const client = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
 	const starting = client.start(registration("initial", { piSession: { sessionId: "pi-session", fileLocator: "/tmp/initial.jsonl", activeLeafId: "first", revision: 1 } }), async () => undefined);
-	const registerMessage = await sawRegister;
-	const sentRegistration = registerMessage.session;
-	assert.deepEqual(registerMessage.capabilities, ["pi-session-tail-v1"]);
+	const sentRegistration = await sawRegister;
 	assert.equal(sentRegistration.piSession, undefined);
 	client.setRegistration(registration("latest", { model: "latest-model", status: "thinking", piSession: { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "second", revision: 2 } }));
 	releaseRegistered();
@@ -86,28 +80,6 @@ test("client synchronizes a registration update that races broker acknowledgemen
 	assert.equal(presence.status, "thinking");
 	assert.deepEqual(presence.piSession, { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "second", revision: 2 });
 	await client.disconnect();
-});
-
-test("client withholds private presence until the privacy-unsafe current broker drains", async (t) => {
-	const { paths } = await isolatedIntercom(t, "privacy-drain-");
-	let broker = await startCurrentBroker(paths);
-	t.after(async () => stopChild(broker));
-	const presence = { sessionId: "rolling-pi-session", fileLocator: "/tmp/rolling.jsonl", activeLeafId: "rolling-leaf", revision: 1 };
-	const client = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500, reconnectDelaysMs: [20, 40] });
-	await client.start(registration("rolling-client", { piSession: presence }), async () => undefined);
-	t.after(() => client.disconnect());
-	assert.equal(client.supportsCapability("pi-session-tail-v1"), true);
-	assert.equal(client.supportsPrivatePresence(), false);
-	assert.equal((await client.listSessions()).find((session) => session.id === client.sessionId).piSession, undefined);
-
-	const disconnected = waitEvent(client, "disconnected");
-	const reconnected = waitEvent(client, "reconnected", () => true, 5_000);
-	await stopChild(broker);
-	await disconnected;
-	broker = await startOwnedBroker(paths);
-	await reconnected;
-	assert.equal(client.supportsPrivatePresence(), true);
-	assert.deepEqual((await client.listSessions()).find((session) => session.id === client.sessionId).piSession, presence);
 });
 
 test("client fails waiters on broker disconnect and reconnects one implementation safely", async (t) => {

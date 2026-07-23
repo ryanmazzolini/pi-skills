@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
+	INTERCOM_TAIL_CAPABILITY,
 	IntercomClient,
 	type Attachment,
 	type Message,
@@ -103,8 +104,8 @@ export class IntercomRuntime extends EventEmitter {
 	async tail(to: string, limit: number, signal?: AbortSignal): Promise<RuntimeTailResult> {
 		throwIfAborted(signal);
 		await this.ensureConnected();
-		if (!this.client.supportsPrivatePresence()) {
-			throw new Error("The active intercom broker does not support privacy-safe persisted session tails");
+		if (!this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
+			throw new Error("The active intercom broker does not support persisted session tails");
 		}
 		const callerPeerId = this.client.sessionId;
 		if (!callerPeerId) throw new Error("Intercom client is not registered");
@@ -215,7 +216,7 @@ export class IntercomRuntime extends EventEmitter {
 	async status(): Promise<IntercomStatus> {
 		const counts = this.client.pendingCounts();
 		const initialConnectionError = this.initialConnectionError?.message;
-		const tailCapability = this.client.supportsPrivatePresence();
+		const tailCapability = this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY);
 		const base = {
 			connected: this.client.isConnected(),
 			sessionId: this.client.sessionId,
