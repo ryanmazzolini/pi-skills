@@ -12,7 +12,7 @@ Write a focused handoff document so another agent or fresh session can continue 
 ## Rules
 
 - When the conversation already has a canonical vault-native Ship work item, apply Ship's work-item target validator immediately before writing under `working/` and before updating `index.md`. Save the handoff there and set `Current` to its canonical relative path. Do not create a repository copy.
-- Otherwise save the handoff to `.plans/` by default, creating the directory if missing. Use the OS temp directory only when the user wants a throwaway handoff or there is no repo.
+- Otherwise ask the user to confirm a durable destination under the selected vault's project area. Follow that vault's `AGENTS.md` and `CONTEXT.md`; use the OS temp directory when the user wants a throwaway handoff or no durable destination is appropriate. Do not create a repository `.plans/` directory.
 - If the user passed arguments, treat them as the next session's purpose and tailor the document to that focus.
 - Reference existing artifacts instead of duplicating them: PRPs, durable plans, boards, thoughts, ADRs, issues, commits, diffs, screenshots, logs, or prototypes.
 - Include a `Suggested skills` section with relevant skills the next agent should invoke. Prefer installed repo skills such as `ship`, `research`, `align`, `simplify-codebase-architecture`, `frontend-react`, or `typescript` only when they actually fit.
@@ -24,7 +24,8 @@ Write a focused handoff document so another agent or fresh session can continue 
 
 ```text
 <ship-work-item>/working/YYYY-MM-DD-handoff-<short-subject>.md
-.plans/YYYY-MM-DD-handoff-<short-subject>.md  # no active Ship work item
+<confirmed-vault-project-path>/YYYY-MM-DD-handoff-<short-subject>.md
+<os-temp>/YYYY-MM-DD-handoff-<short-subject>.md  # throwaway handoff
 ```
 
 Derive `<short-subject>` from the handoff focus: lowercase, kebab-case, usually 2-5 words, e.g. `2026-07-07-handoff-auth-refactor.md`. If the filename exists, add a small suffix like `-2`.

@@ -14,11 +14,13 @@ Without a verified supplied work item, before creating anything look for one **r
 
 Relevance requires evidence such as the current ticket, work-item slug, explicit conversation pointer, or matching alignment goal. An unrelated legacy directory does not make it the home for new work. Reuse one relevant match in place, ask when several match, and do not migrate or copy it merely to adopt the current convention.
 
+When a relevant legacy repository `.plans/` workflow is found, offer migration while continuing to treat it as the authority in place. If the human wants to consider migration, resolve a workspace profile as described below, determine the canonical vault project destination, and show it before asking for confirmation. Migrate only after the human confirms the destination and disposition of the old copy. If routing is unavailable or migration is declined, keep reusing the legacy workflow in place. Validate the destination before moving it, update references, and retire the old location so one workflow remains authoritative.
+
 A legacy workflow may use `question.md` instead of `alignment.md`. Keep that filename.
 
-## Resolve a profile for new work
+## Resolve a profile for new work or migration
 
-For a new workflow, read [workflow-profiles.md](workflow-profiles.md) and run its workspace resolver against the approved ticket-workspace folder. When the session is inside one of that workspace's repository worktrees, use the enclosing `/worktrees/<work-item-slug>/` folder; without a ticket workspace, use the canonical repository root. Repository location does not imply a profile.
+For a new workflow, or after the human asks to consider migrating a relevant repository `.plans/` workflow, read [workflow-profiles.md](workflow-profiles.md) and run its workspace resolver against the approved ticket-workspace folder. When the session is inside one of that workspace's repository worktrees, use the enclosing `/worktrees/<work-item-slug>/` folder; without a ticket workspace, use the canonical repository root. Repository location does not imply a profile.
 
 Proceed automatically only when one profile matches. If none or several match, ask the human to select or correct the configuration, then rerun with the explicit profile; explicit selection must still pass Git-root containment. Carry that selected profile through every later workspace/path validation.
 
@@ -26,7 +28,7 @@ Follow the selected vault's `AGENTS.md`, `CONTEXT.md`, and `README.md` instructi
 
 ## Find or create the work item
 
-New Ship workflows live at:
+New Ship workflows and approved migrations live at:
 
 ```text
 <vault>/projects/<project>/work/<work-item-slug>/
@@ -54,6 +56,6 @@ Use this compact index shape:
 
 `Current` points to the document a fresh session should read after the index. It must be a canonical relative path inside the work item. Validate its target with the work item as `--within` immediately before reading it. Update the pointer when planning supersedes alignment or a handoff becomes the continuation entry point. This pointer is orientation, not a stage flag.
 
-Keep discarded approaches, retained investigations, prototypes, temporary review aids, and handoffs under `working/`. Fresh sessions read only the vault instructions, project index, work-item index, its current document, and directly linked evidence. Do not ingest `working/` by default.
+Keep discarded approaches, retained investigations, prototypes, temporary review aids, and handoffs under `working/`. Capture decision-relevant supporting material as it is found: keep synthesized investigation in `working/research/` and unedited source snapshots or outputs worth retaining in `working/raw/`. Treat raw captures as immutable, link useful conclusions from the current workflow document, and omit routine logs or redundant dumps. Fresh sessions read only the vault instructions, project index, work-item index, its current document, and directly linked evidence. Do not ingest `working/` by default.
 
 Keep workflow files current rather than transcript-like. Do not add a separate state file, duplicate repository copy, or another workflow system.

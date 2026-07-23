@@ -17,7 +17,7 @@ Test through the interface callers use. Assert observable results and durable ou
 
 ## Local architecture note
 
-Use this only after the user approves a local note. Prefer a project-appropriate planning path such as `.plans/YYYY-MM-DD-[slug]-simplification-note/simplification-note.md`. Describe durable ownership and migration, not fragile file layouts.
+Use this only after the user approves a local note. Treat it as synthesized investigation and prefer the active vault-native work item's `working/research/YYYY-MM-DD-[slug]-simplification-note.md`; otherwise follow the selected vault's project structure and ask when the destination is unclear. Describe durable ownership and migration, not fragile file layouts.
 
 ```md
 # Architecture Note: [Title]
