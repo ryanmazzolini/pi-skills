@@ -22,4 +22,4 @@ Keep `Current` pointed at the most useful continuation or result document. Keep 
 
 For a relevant legacy workflow, leave its files in place and record completion there using its established form. Do not create a vault copy solely for graduation.
 
-If the user wants a separate public or cross-project summary, treat that as a distinct requested artifact with its own destination and review.
+If the user wants a separate public or cross-project summary, treat that as a distinct requested artifact with its own destination and human approval. Do not add independent review by default.

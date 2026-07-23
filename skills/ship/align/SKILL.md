@@ -71,7 +71,7 @@ Recommend the smallest useful next move: narrow Now, move the branch to Later, o
 
 Alignment is complete when the goal, actor or caller, outcome, success, Now, Later, primary walkthrough when applicable, important constraints, observable behavior, and needed solution direction are clear enough to plan, and the user has settled every decision that could meaningfully change Now or the plan.
 
-Before presenting the completed alignment, follow `../ship/references/review-gate.md`. Resolve factual findings through inspection. Bring only genuine requirement choices back as one-question turns. If independent review is unavailable, state the blocker and stop before requesting approval.
+Before presenting the completed alignment, rerun its scope and consistency checks. Do not request broad independent review by default. Use the selective early-review guidance in `../ship/references/review-gate.md` only for a named ambiguity or high-risk choice. Resolve factual findings through inspection and bring only genuine requirement choices back as one-question turns.
 
 Present a concise summary of the goal, Now, Later, confirmed experience when applicable, current assumptions, and any unresolved blocker. Ask one direct question: is the alignment correct enough to move to planning? Do not ask the user to review a long alignment document.
 

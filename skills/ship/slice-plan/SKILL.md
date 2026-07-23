@@ -103,8 +103,8 @@ Use project language for goals and slice names. Use implementation names only in
 
 ## Review and hand off
 
-Rerun the scope gate and graph checks. For a vault-native work item, apply its target validator immediately before writing `{workflow-dir}/plan.md` or updating `index.md`, then set `Current` to the plan. Write a legacy plan in its verified directory. Then follow `../ship/references/review-gate.md`. Close review findings or defer them with an explicit reason before asking for approval.
+Rerun the scope gate and graph checks. For a vault-native work item, apply its target validator immediately before writing `{workflow-dir}/plan.md` or updating `index.md`, then set `Current` to the plan. Write a legacy plan in its verified directory. Do not request broad independent review by default. Use the selective early-review guidance in `../ship/references/review-gate.md` only for a named scope, dependency, or high-risk uncertainty, then resolve or explicitly defer any resulting finding.
 
-Ask one direct question: is the plan correct enough to approve? Include the Now and Later boundary, dependencies, ready work, recommendation, and the review evidence required by the review gate—nothing else.
+Ask one direct question: is the plan correct enough to approve? Include the Now and Later boundary, dependencies, ready work, recommendation, and important remaining risk—nothing else.
 
-The plan is ready when the scope and graph checks pass, a fresh session can start every slice, review findings are closed or explicitly deferred, and the user approves the plan. Stop there and return execution to `ship`.
+The plan is ready when the scope and graph checks pass, a fresh session can start every slice, any selective review findings are closed or explicitly deferred, and the user approves the plan. Stop there and return execution to `ship`.

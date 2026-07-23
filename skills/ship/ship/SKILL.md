@@ -14,7 +14,7 @@ When the work can finish safely in one session, say so and continue normally wit
 Reconsider that fast path when:
 
 - investigation is about to become substantial production editing
-- scope gains another independently reviewable outcome
+- scope gains another independently deliverable outcome
 - the work becomes multi-repo, multi-session, worktree, pull request, or deployment shaped
 
 When starting a durable workflow at the outset or after work grows, read [references/durable-context.md](references/durable-context.md). Preserve existing edits, explain the change, and reconcile the workflow files with the live repository. Before more production editing, establish or update alignment and planning far enough to identify one human-confirmed current slice. Do not move the work to another workspace without confirmation.
@@ -25,10 +25,10 @@ The canonical work-item files and live repository decide current state. Conversa
 
 If work is interrupted, follows context compaction, or has unclear state, read [references/recovery.md](references/recovery.md) and reconcile it before routing.
 
-Then follow unresolved work in this order so review and approval happen before more execution:
+Then follow unresolved work in this order so delivery review and human approval happen before the actions they govern:
 
-- A completed artifact lacks an independent review of its current form: apply [references/review-gate.md](references/review-gate.md).
-- Reviewed work awaits human review or approval: present the checkpoint and wait.
+- A final code-bearing delivery lacks required independent review: apply [references/review-gate.md](references/review-gate.md).
+- Completed work awaits human review or approval: present the checkpoint and wait.
 - A human decision remains about requirements, UX/DX, scope, or high-level shape: use `align`.
 - Alignment is settled but no plan exists: use `slice-plan`.
 - A plan has work that can start: recommend the next synchronous slice or safe parallel wave.
@@ -48,7 +48,7 @@ Before substantial production edits, verify:
 - known sibling work
 - the validation that exercises the real behavior and its important failure path
 
-Proceed without ceremony when these are clear. Ask only about a gap that could change the work. For durable work on a default branch or shared dirty branch, propose `ticket-workspace`. A safe, local one-session fix may continue in place.
+Proceed without ceremony when these are clear. Ask only about a gap that could change the work. Keep only trivial bug fixes and chores on the default branch. Before other work, propose a feature branch; use `ticket-workspace` when the work is durable or the current workspace is shared or dirty. Respect an explicit user choice to remain on the default branch.
 
 For an interface-facing slice, return to `align` if the primary UX/DX walkthrough is not explicit. During alignment, a user-approved [`prototype`](../prototype/SKILL.md) may answer one consequential experiential question that inspection and conversation cannot settle. Treat it as evidence gathering and resume alignment afterward; it does not satisfy planning or implementation gates.
 
@@ -66,6 +66,6 @@ Run one slice synchronously unless it contains independent work units whose para
 
 ## Present the checkpoint
 
-Before presenting a completed alignment, plan, implementation, or delivery result for approval, apply [references/review-gate.md](references/review-gate.md). A blocking question or progress update is not a review checkpoint.
+Before presenting a final code-bearing delivery for approval, apply [references/review-gate.md](references/review-gate.md). Apply independent review earlier only for the selective cases defined there; alignment, plans, and intermediate implementation checkpoints do not require it by default.
 
-Keep the human update concise: identify the reviewed target, the result or decision, validation, remaining risk, and the one response needed next. When plain Markdown cannot make a consequential decision clear, read [references/review-artifacts.md](references/review-artifacts.md) and create the smallest useful review aid.
+Keep the human update concise: identify the target, the result or decision, validation, remaining risk, applicable independent-review status, and the one response needed next. When plain Markdown cannot make a consequential decision clear, read [references/review-artifacts.md](references/review-artifacts.md) and create the smallest useful review aid.
