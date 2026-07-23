@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FrameDecoder, INTERCOM_LIMITS, IntercomClient, encodeFrame, isMessage, isSessionInfo } from "./client.ts";
+import { FrameDecoder, INTERCOM_LIMITS, IntercomClient, encodeFrame, isIntercomRole, isMessage, isSessionInfo } from "./client.ts";
 
 function decoderFixture(maximum) {
 	const messages = [];
@@ -48,6 +48,17 @@ test("persisted Pi presence is an exact bounded optional session field", () => {
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, revision: 0 } }), false);
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, snapshotBytes: 100 } }), false);
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, activeLeafId: "x".repeat(INTERCOM_LIMITS.maxPiSessionLeafBytes + 1) } }), false);
+});
+
+test("session roles accept only the exact bounded First Mate value without changing piSession", () => {
+	const base = { id: "peer", cwd: "/tmp", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
+	const piSession = { sessionId: "pi-session", fileLocator: "/tmp/session.jsonl", activeLeafId: null, revision: 1 };
+	assert.equal(isIntercomRole("first-mate"), true);
+	assert.equal(isIntercomRole("supervisor"), false);
+	assert.equal(isSessionInfo({ ...base, role: "first-mate", piSession }), true);
+	assert.equal(isSessionInfo({ ...base, role: "supervisor", piSession }), false);
+	assert.equal(isSessionInfo({ ...base, role: { name: "first-mate" }, piSession }), false);
+	assert.deepEqual(piSession, { sessionId: "pi-session", fileLocator: "/tmp/session.jsonl", activeLeafId: null, revision: 1 });
 });
 
 test("session_left fails only asks for the departed authoritative peer and empty reply IDs still correlate", async () => {

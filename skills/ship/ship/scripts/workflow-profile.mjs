@@ -169,6 +169,21 @@ export function resolveNamedProfile(options) {
   return { version: 1, profile: normalizeProfile(options.profileName, raw, home, { writableVault: false, gitRoots: false }) };
 }
 
+export function resolveReadableProfiles(options) {
+  const { home, profiles } = loadOptions(options);
+  const available = [];
+  const unavailable = [];
+  for (const [name, raw] of [...profiles].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) {
+    try {
+      available.push(normalizeProfile(name, raw, home, { writableVault: false, gitRoots: false }));
+    } catch (error) {
+      if (!(error instanceof WorkflowProfileError)) throw error;
+      unavailable.push(name);
+    }
+  }
+  return { version: 1, profiles: available, unavailable };
+}
+
 export function resolveVaultPath(options) {
   if (options.mode !== "read" && options.mode !== "write") {
     throw new WorkflowProfileError("Vault path mode must be read or write.");
@@ -249,15 +264,24 @@ export function resolveWorkspaceProfile(options) {
 
 function parseArguments(argv) {
   const command = argv[0];
-  if (command !== "workspace" && command !== "profile" && command !== "path") {
-    throw new WorkflowProfileError("Usage: workflow-profile.mjs workspace [--cwd PATH] [--profile NAME] [--config PATH] | profile --profile NAME [--config PATH] | path (--cwd PATH [--profile NAME] | --profile NAME) --target PATH --mode read|write [--within PATH] [--config PATH]");
+  const allowedOptions = {
+    workspace: new Set(["--cwd", "--profile", "--config"]),
+    profile: new Set(["--profile", "--config"]),
+    profiles: new Set(["--config"]),
+    path: new Set(["--cwd", "--profile", "--config", "--target", "--within", "--mode"]),
+  };
+  const allowed = allowedOptions[command];
+  if (!allowed) {
+    throw new WorkflowProfileError("Usage: workflow-profile.mjs workspace [--cwd PATH] [--profile NAME] [--config PATH] | profile --profile NAME [--config PATH] | profiles [--config PATH] | path (--cwd PATH [--profile NAME] | --profile NAME) --target PATH --mode read|write [--within PATH] [--config PATH]");
   }
   const options = {};
+  const seen = new Set();
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (!["--cwd", "--profile", "--config", "--target", "--within", "--mode"].includes(argument)) {
-      throw new WorkflowProfileError(`Unknown option: ${argument}`);
-    }
+    if (!argument.startsWith("--")) throw new WorkflowProfileError(`Unknown option: ${argument}`);
+    if (!allowed.has(argument)) throw new WorkflowProfileError(`${argument} is not valid for ${command}.`);
+    if (seen.has(argument)) throw new WorkflowProfileError(`Duplicate option: ${argument}`);
+    seen.add(argument);
     const value = argv[index + 1];
     if (!value || value.startsWith("--")) throw new WorkflowProfileError(`${argument} requires a value.`);
     index += 1;
@@ -269,7 +293,6 @@ function parseArguments(argv) {
     else options.mode = value;
   }
   if (command === "profile" && !options.profileName) throw new WorkflowProfileError("profile requires --profile NAME.");
-  if (command === "profile" && options.cwd) throw new WorkflowProfileError("--cwd is not valid for profile lookup.");
   if (command === "path" && !options.target) throw new WorkflowProfileError("path requires --target PATH.");
   if (command === "path" && !options.mode) throw new WorkflowProfileError("path requires --mode read|write.");
   if (command === "path" && options.cwd === undefined && options.profileName === undefined) {
@@ -285,7 +308,9 @@ function main() {
       ? resolveWorkspaceProfile({ ...options, cwd: options.cwd ?? process.cwd() })
       : command === "profile"
         ? resolveNamedProfile(options)
-        : resolveVaultPath(options);
+        : command === "profiles"
+          ? resolveReadableProfiles(options)
+          : resolveVaultPath(options);
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : String(error);

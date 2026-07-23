@@ -7,6 +7,8 @@ import path from "node:path";
 import { getBrokerSocketPath } from "./broker/paths.ts";
 
 export const INTERCOM_TAIL_CAPABILITY = "pi-session-tail-v1";
+export const INTERCOM_ROLE_CAPABILITY = "first-mate-role-v1";
+export type IntercomRole = "first-mate";
 
 export interface PiSessionPresence {
 	sessionId: string;
@@ -24,6 +26,7 @@ export interface SessionInfo {
 	startedAt: number;
 	lastActivity: number;
 	status?: string;
+	role?: IntercomRole;
 	piSession?: PiSessionPresence;
 }
 
@@ -82,6 +85,7 @@ export const INTERCOM_LIMITS = Object.freeze({
 	maxPendingSends: 256,
 	maxPendingLists: 64,
 	maxPendingAsks: 64,
+	maxPendingRoles: 64,
 	maxQueuedWriteBytes: 2 * 1024 * 1024,
 });
 
@@ -129,6 +133,10 @@ export function isMessage(value: unknown): value is Message {
 		&& (content.attachments === undefined || areAttachments(content.attachments));
 }
 
+export function isIntercomRole(value: unknown): value is IntercomRole {
+	return value === "first-mate";
+}
+
 export function isPiSessionPresence(value: unknown): value is PiSessionPresence {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const presence = value as Record<string, unknown>;
@@ -165,6 +173,7 @@ export function isSessionInfo(value: unknown): value is SessionInfo {
 		&& finiteNumber(session.lastActivity)
 		&& (session.name === undefined || boundedString(session.name, INTERCOM_LIMITS.maxSessionStringBytes, true))
 		&& (session.status === undefined || boundedString(session.status, INTERCOM_LIMITS.maxSessionStringBytes, true))
+		&& (session.role === undefined || isIntercomRole(session.role))
 		&& (session.piSession === undefined || isPiSessionPresence(session.piSession));
 }
 
@@ -173,7 +182,7 @@ function validateRegistration(session: Omit<SessionInfo, "id">): void {
 }
 
 function registrationForWire(session: Omit<SessionInfo, "id">): Omit<SessionInfo, "id"> {
-	const { piSession: _piSession, ...legacyCompatible } = session;
+	const { piSession: _piSession, role: _role, ...legacyCompatible } = session;
 	return legacyCompatible;
 }
 
@@ -303,6 +312,13 @@ interface AskWaiter extends Pending<ReceivedMessage> {
 	onAbort?: () => void;
 }
 
+interface RolePending extends Pending<IntercomRole | undefined> {
+	expectedRole?: IntercomRole;
+	generation: number;
+	sessionId: string;
+	socket: Socket;
+}
+
 export interface IntercomClientOptions {
 	socketPath?: string;
 	connectTimeoutMs?: number;
@@ -325,7 +341,10 @@ export class IntercomClient extends EventEmitter {
 	private writeState: WriteState | null = null;
 	private pendingSends = new Map<string, Pending<SendResult>>();
 	private pendingLists = new Map<string, Pending<SessionInfo[]>>();
+	private pendingRoles = new Map<string, RolePending>();
 	private askWaiters = new Map<string, AskWaiter>();
+	private advertisedRole: IntercomRole | undefined;
+	private roleGeneration = 0;
 	private desired = false;
 	private lifecycleGeneration = 0;
 	private reconnectTimer: NodeJS.Timeout | null = null;
@@ -366,6 +385,10 @@ export class IntercomClient extends EventEmitter {
 		return this.registration?.piSession ? { ...this.registration.piSession } : undefined;
 	}
 
+	currentRole(): IntercomRole | undefined {
+		return this.advertisedRole;
+	}
+
 	isConnected(): boolean {
 		const socket = this.socket;
 		return Boolean(socket && this.registeredSessionId && !socket.destroyed && !socket.writableEnded && socket.writable);
@@ -377,8 +400,9 @@ export class IntercomClient extends EventEmitter {
 
 	setRegistration(session: Omit<SessionInfo, "id">): void {
 		validateRegistration(session);
+		const { role: _ignoredRole, ...registration } = session;
 		this.registration = {
-			...session,
+			...registration,
 			...(session.piSession ? { piSession: { ...session.piSession } } : {}),
 		};
 	}
@@ -580,6 +604,34 @@ export class IntercomClient extends EventEmitter {
 				}
 				break;
 			}
+			case "role_updated": {
+				if (
+					!boundedString(message.requestId, INTERCOM_LIMITS.maxIdBytes)
+					|| (message.role !== null && !isIntercomRole(message.role))
+				) {
+					throw new Error("Invalid role_updated message");
+				}
+				const pending = this.pendingRoles.get(message.requestId);
+				if (!pending) break;
+				const role = message.role ?? undefined;
+				if (role !== pending.expectedRole) {
+					this.failRoleTransition(message.requestId, pending, new Error("Intercom broker acknowledged an unexpected role"), true);
+					break;
+				}
+				if (
+					pending.generation !== this.roleGeneration
+					|| pending.socket !== this.socket
+					|| pending.sessionId !== this.registeredSessionId
+				) {
+					this.failRoleTransition(message.requestId, pending, new Error("Intercom role change was superseded by a lifecycle transition"), false);
+					break;
+				}
+				this.pendingRoles.delete(message.requestId);
+				cleanupPending(pending);
+				this.advertisedRole = role;
+				pending.resolve(role);
+				break;
+			}
 			case "message": {
 				if (!isSessionInfo(message.from) || !isMessage(message.message)) throw new Error("Invalid message event");
 				const replyTo = message.message.replyTo;
@@ -656,6 +708,16 @@ export class IntercomClient extends EventEmitter {
 		waiter.reject(error);
 	}
 
+	private failRoleTransition(requestId: string, pending: RolePending, error: Error, uncertain: boolean): void {
+		if (this.pendingRoles.get(requestId) !== pending) return;
+		this.pendingRoles.delete(requestId);
+		cleanupPending(pending);
+		if (pending.generation === this.roleGeneration) this.roleGeneration++;
+		this.advertisedRole = undefined;
+		pending.reject(error);
+		if (uncertain && this.socket === pending.socket && !pending.socket.destroyed) pending.socket.destroy(error);
+	}
+
 	private failPending(error: Error): void {
 		for (const [id, pending] of this.pendingSends) {
 			this.pendingSends.delete(id);
@@ -667,6 +729,11 @@ export class IntercomClient extends EventEmitter {
 			cleanupPending(pending);
 			pending.reject(error);
 		}
+		for (const [id, pending] of this.pendingRoles) {
+			this.pendingRoles.delete(id);
+			cleanupPending(pending);
+			pending.reject(error);
+		}
 		for (const id of [...this.askWaiters.keys()]) this.failAsk(id, error);
 	}
 
@@ -675,6 +742,8 @@ export class IntercomClient extends EventEmitter {
 		this.socket = null;
 		this.registeredSessionId = null;
 		this.registeredCapabilities.clear();
+		this.roleGeneration++;
+		this.advertisedRole = undefined;
 		if (this.writeState?.socket === socket) this.writeState = null;
 		this.registrationPending?.reject(error);
 		this.registrationPending = null;
@@ -821,6 +890,38 @@ export class IntercomClient extends EventEmitter {
 		})();
 	}
 
+	setRole(role: IntercomRole | null): Promise<IntercomRole | undefined> {
+		const socket = this.requireActiveSocket();
+		if (!this.supportsCapability(INTERCOM_ROLE_CAPABILITY)) {
+			return Promise.reject(new Error("The active intercom broker does not support First Mate roles; after it exits, wait for reconnect and invoke First Mate again"));
+		}
+		if (role !== null && !isIntercomRole(role)) return Promise.reject(new Error("Invalid intercom role"));
+		if (this.pendingRoles.size >= INTERCOM_LIMITS.maxPendingRoles) return Promise.reject(new Error("Too many pending intercom role changes"));
+		const sessionId = this.registeredSessionId;
+		if (!sessionId) return Promise.reject(new Error("Intercom client is not registered"));
+		const requestId = randomUUID();
+		const generation = ++this.roleGeneration;
+		return new Promise((resolve, reject) => {
+			let pending: RolePending;
+			const finishError = (error: Error) => this.failRoleTransition(requestId, pending, error, true);
+			const timer = setTimeout(() => finishError(new Error("Role update timeout")), this.sendTimeoutMs);
+			pending = { resolve, reject, timer, generation, sessionId, socket, ...(role === null ? {} : { expectedRole: role }) };
+			this.pendingRoles.set(requestId, pending);
+			this.enqueueReserved({ type: "presence", requestId, role }, finishError);
+		});
+	}
+
+	invalidateRoleSession(reason = "Intercom role invalidated by a session lifecycle change"): void {
+		const error = new Error(reason);
+		this.roleGeneration++;
+		this.advertisedRole = undefined;
+		for (const [requestId, pending] of [...this.pendingRoles]) {
+			this.failRoleTransition(requestId, pending, error, false);
+		}
+		const socket = this.socket;
+		if (socket && !socket.destroyed) socket.destroy(error);
+	}
+
 	updatePresence(updates: { name?: string; status?: string; model?: string; piSession?: PiSessionPresence | null }): void {
 		for (const value of [updates.name, updates.status, updates.model]) {
 			if (value !== undefined && !boundedString(value, INTERCOM_LIMITS.maxSessionStringBytes, true)) return;
@@ -846,6 +947,8 @@ export class IntercomClient extends EventEmitter {
 	async disconnect(): Promise<void> {
 		this.desired = false;
 		this.registeredCapabilities.clear();
+		this.roleGeneration++;
+		this.advertisedRole = undefined;
 		this.lifecycleGeneration++;
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);

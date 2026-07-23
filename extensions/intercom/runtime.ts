@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
+	INTERCOM_ROLE_CAPABILITY,
 	INTERCOM_TAIL_CAPABILITY,
 	IntercomClient,
 	type Attachment,
+	type IntercomRole,
 	type Message,
 	type PiSessionPresence,
 	type ReceivedMessage,
@@ -33,6 +35,11 @@ export interface RuntimeTailResult {
 	snapshot: SessionTailSnapshot;
 }
 
+export interface RuntimeRoleResult {
+	sessionId: string;
+	role?: IntercomRole;
+}
+
 export interface IntercomStatus {
 	connected: boolean;
 	sessionId: string | null;
@@ -41,6 +48,9 @@ export interface IntercomStatus {
 	pendingInboundAsks: number;
 	tailCapability: boolean;
 	advertisingPiSession: boolean;
+	roleCapability: boolean;
+	advertisingFirstMate: boolean;
+	role?: IntercomRole;
 	error?: string;
 	initialConnectionError?: string;
 }
@@ -99,6 +109,25 @@ export class IntercomRuntime extends EventEmitter {
 	async list(): Promise<SessionInfo[]> {
 		await this.ensureConnected();
 		return this.client.listSessions();
+	}
+
+	async setRole(role: IntercomRole | null): Promise<RuntimeRoleResult> {
+		await this.ensureConnected();
+		if (!this.client.supportsCapability(INTERCOM_ROLE_CAPABILITY)) {
+			throw new Error("The active intercom broker does not support First Mate roles; after it exits, wait for reconnect and invoke First Mate again");
+		}
+		const sessionId = this.client.sessionId;
+		if (!sessionId) throw new Error("Intercom client is not registered");
+		const acknowledged = await this.client.setRole(role);
+		if (!this.client.isConnected() || this.client.sessionId !== sessionId || this.client.currentRole() !== acknowledged) {
+			this.client.invalidateRoleSession("Intercom role acknowledgement no longer matches the current broker session");
+			throw new Error("Intercom role acknowledgement no longer matches the current broker session");
+		}
+		return { sessionId, ...(acknowledged ? { role: acknowledged } : {}) };
+	}
+
+	invalidateRoleSession(reason?: string): void {
+		this.client.invalidateRoleSession(reason);
 	}
 
 	async tail(to: string, limit: number, signal?: AbortSignal): Promise<RuntimeTailResult> {
@@ -216,22 +245,54 @@ export class IntercomRuntime extends EventEmitter {
 	async status(): Promise<IntercomStatus> {
 		const counts = this.client.pendingCounts();
 		const initialConnectionError = this.initialConnectionError?.message;
-		const tailCapability = this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY);
-		const base = {
-			connected: this.client.isConnected(),
-			sessionId: this.client.sessionId,
+		const offline = (error?: string): IntercomStatus => ({
+			connected: false,
+			sessionId: null,
 			pendingOutgoingAsks: counts.asks,
 			pendingInboundAsks: this.inbox.list().length,
-			tailCapability,
-			advertisingPiSession: tailCapability && this.client.currentPiSessionPresence() !== undefined,
+			tailCapability: false,
+			advertisingPiSession: false,
+			roleCapability: false,
+			advertisingFirstMate: false,
 			...(initialConnectionError ? { initialConnectionError } : {}),
-		};
-		if (!base.connected) return { ...base, ...(initialConnectionError ? { error: initialConnectionError } : {}) };
+			...(error ? { error } : {}),
+		});
+		try {
+			await this.ensureConnected();
+		} catch (error) {
+			return offline(error instanceof Error ? error.message : String(error));
+		}
+		const sessionId = this.client.sessionId;
+		const tailCapability = this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY);
+		const roleCapability = this.client.supportsCapability(INTERCOM_ROLE_CAPABILITY);
 		try {
 			const sessions = await this.client.listSessions();
-			return { ...base, activeSessions: sessions.length };
+			if (!sessionId || !this.client.isConnected() || this.client.sessionId !== sessionId) {
+				return offline("Intercom broker session changed during status inspection");
+			}
+			const current = sessions.find((session) => session.id === sessionId);
+			if (!current) return offline("Current session is missing from intercom session list");
+			const role = roleCapability ? current.role : undefined;
+			return {
+				connected: true,
+				sessionId,
+				activeSessions: sessions.length,
+				pendingOutgoingAsks: counts.asks,
+				pendingInboundAsks: this.inbox.list().length,
+				tailCapability,
+				advertisingPiSession: tailCapability && current.piSession !== undefined,
+				roleCapability,
+				advertisingFirstMate: role === "first-mate",
+				...(role ? { role } : {}),
+				...(initialConnectionError ? { initialConnectionError } : {}),
+			};
 		} catch (error) {
-			return { ...base, error: error instanceof Error ? error.message : String(error) };
+			return {
+				...offline(error instanceof Error ? error.message : String(error)),
+				sessionId: this.client.sessionId,
+				tailCapability,
+				roleCapability,
+			};
 		}
 	}
 

@@ -11,7 +11,8 @@ import { isAbsolute, join } from "node:path";
 process.umask(0o077);
 
 const TAIL_CAPABILITY = "pi-session-tail-v1";
-const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY]);
+const ROLE_CAPABILITY = "first-mate-role-v1";
+const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY, ROLE_CAPABILITY]);
 
 const runtimeDir = process.env.PI_INTERCOM_RUNTIME_DIR || join(homedir(), ".pi", "agent", "intercom");
 const socketPath = process.env.PI_INTERCOM_SOCKET_PATH || join(runtimeDir, "broker.sock");
@@ -57,6 +58,10 @@ function boundedString(value, maximum, allowEmpty = false) {
 
 function finiteNumber(value) {
 	return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRole(value) {
+	return value === "first-mate";
 }
 
 function isAttachment(value) {
@@ -374,6 +379,13 @@ async function handleMessage(connection, value) {
 					throw new Error("Invalid presence piSession");
 				}
 			}
+			if (value.role !== undefined) {
+				if ((value.role !== null && !isRole(value.role)) || !boundedString(value.requestId, LIMITS.id)) {
+					throw new Error("Invalid presence role request");
+				}
+			} else if (value.requestId !== undefined) {
+				throw new Error("Invalid presence role request");
+			}
 			if (value.name !== undefined) session.info.name = value.name;
 			if (value.status !== undefined) session.info.status = value.status;
 			if (value.model !== undefined) session.info.model = value.model;
@@ -382,8 +394,13 @@ async function handleMessage(connection, value) {
 				session.info.piSession = { ...value.piSession };
 				connection.lastPiSessionRevision = value.piSession.revision;
 			}
+			if (value.role === null) delete session.info.role;
+			else if (value.role !== undefined) session.info.role = value.role;
 			session.info.lastActivity = Date.now();
 			broadcast({ type: "presence_update", session: session.info }, connection.sessionId);
+			if (value.requestId !== undefined) {
+				await queueFrame(connection, { type: "role_updated", requestId: value.requestId, role: session.info.role ?? null });
+			}
 			break;
 		}
 		default:

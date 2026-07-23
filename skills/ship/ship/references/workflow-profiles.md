@@ -41,15 +41,21 @@ node scripts/workflow-profile.mjs workspace --cwd /absolute/workspace --profile 
 
 Explicit selection disambiguates only. The workspace must still resolve inside that profile's configured Git roots.
 
-## Resolve a profile-scoped reader
+## Resolve profile-scoped readers
 
-A profile-scoped read-only role such as First Mate does not own a project workspace. Resolve only its selected profile with:
+A profile-scoped read-only role does not own a project workspace. Resolve one selected profile with:
 
 ```bash
 node scripts/workflow-profile.mjs profile --profile personal
 ```
 
-This form requires only the selected readable vault; temporarily unavailable Git roots do not block profile-scoped startup. Workspace routing uses the available roots, requires one to contain the workspace, and additionally requires the selected vault to be writable. Other configured roots may be unavailable on the current host.
+A combined read-only role such as First Mate discovers every readable profile with:
+
+```bash
+node scripts/workflow-profile.mjs profiles
+```
+
+The combined form returns sorted canonical `profiles` and sorted `unavailable` profile names. Both forms require only readable vaults; temporarily unavailable Git roots do not block profile-scoped startup. Workspace routing uses the available roots, requires one to contain the workspace, and additionally requires the selected vault to be writable. Other configured roots may be unavailable on the current host.
 
 ## Validate every vault target
 
@@ -72,4 +78,4 @@ A profile-scoped reader may validate an existing file with `--profile NAME --mod
 
 ## Failure behavior
 
-The helper fails without guessing when configuration is missing or oversized, a selected path is unavailable, vault and workspace overlap, a symlink escapes a configured boundary, a workspace has no unique match, an operand leaves its allowed scope, or explicit selection conflicts with workspace containment. An unavailable unrelated profile does not prevent explicit use of an available profile.
+The helper fails without guessing when configuration is missing or oversized, a selected path is unavailable, vault and workspace overlap, a symlink escapes a configured boundary, a workspace has no unique match, an operand leaves its allowed scope, or explicit selection conflicts with workspace containment. It rejects duplicate options and options that do not apply to the selected command. An unavailable unrelated profile does not prevent explicit use of an available profile or discovery of the other readable profiles.

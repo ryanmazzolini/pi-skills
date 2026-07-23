@@ -26,6 +26,7 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 	t.after(() => closeAll(alice, bob));
 
 	assert.equal(alice.supportsCapability("pi-session-tail-v1"), true);
+	assert.equal(alice.supportsCapability("first-mate-role-v1"), true);
 	const sessions = await alice.listSessions();
 	assert.equal(sessions.length, 2);
 	assert.equal(sessions.find((session) => session.id === alice.sessionId).name, "alice");
@@ -75,6 +76,44 @@ test("owned broker propagates and atomically updates persisted Pi session presen
 		await raw.wait((message) => message.type === "registered");
 		const closed = new Promise((resolve) => raw.socket.once("close", resolve));
 		raw.write({ type: "presence", piSession: update });
+		await closed;
+		assert.equal((await observer.listSessions()).some((session) => session.name === name), false);
+	}
+});
+
+test("owned broker acknowledges exact First Mate role publication and clearing and rejects malformed roles", async (t) => {
+	const { paths } = await isolatedIntercom(t, "role-pres-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const observer = await connectNew(paths, "observer");
+	const target = await connectNew(paths, "target");
+	t.after(() => closeAll(observer, target));
+
+	const published = waitEvent(observer, "presence_update", (session) => session.id === target.sessionId && session.role === "first-mate");
+	assert.equal(await target.setRole("first-mate"), "first-mate");
+	assert.equal((await published)[0].role, "first-mate");
+	assert.equal((await observer.listSessions()).find((session) => session.id === target.sessionId).role, "first-mate");
+	const cleared = waitEvent(observer, "presence_update", (session) => session.id === target.sessionId && session.role === undefined);
+	assert.equal(await target.setRole(null), undefined);
+	assert.equal((await cleared)[0].role, undefined);
+
+	const registrationRole = await connectRaw(paths.socketPath);
+	registrationRole.write({ type: "register", session: registration("registration-role", { role: "first-mate" }) });
+	const registered = await registrationRole.wait((message) => message.type === "registered");
+	assert.equal((await observer.listSessions()).find((session) => session.id === registered.sessionId).role, undefined);
+	registrationRole.socket.destroy();
+
+	for (const [name, request] of [
+		["missing-role-id", { type: "presence", role: "first-mate" }],
+		["empty-role-id", { type: "presence", requestId: "", role: "first-mate" }],
+		["oversized-role-id", { type: "presence", requestId: "x".repeat(INTERCOM_LIMITS.maxIdBytes + 1), role: "first-mate" }],
+		["malformed-role", { type: "presence", requestId: "invalid-role", role: "supervisor" }],
+	]) {
+		const raw = await connectRaw(paths.socketPath);
+		raw.write({ type: "register", session: registration(name) });
+		await raw.wait((message) => message.type === "registered");
+		const closed = new Promise((resolve) => raw.socket.once("close", resolve));
+		raw.write(request);
 		await closed;
 		assert.equal((await observer.listSessions()).some((session) => session.name === name), false);
 	}

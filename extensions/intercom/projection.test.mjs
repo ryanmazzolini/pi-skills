@@ -110,19 +110,39 @@ test("maximum encodable message remains bounded after a real broker and client r
 	assert.equal(projected.details.messageId, messageId);
 });
 
-test("list projection bounds 32 maximum-metadata sessions while preserving every full broker ID", () => {
+test("list projection preserves adjacent role markers and full IDs for 32 maximum-metadata roles", () => {
 	const metadata = "界".repeat(Math.floor(INTERCOM_LIMITS.maxSessionStringBytes / 3));
-	const sessions = Array.from({ length: 32 }, (_, index) => session(
-		`broker-derived-full-session-id-${String(index).padStart(2, "0")}`,
-		{ name: metadata, cwd: metadata, model: metadata, status: metadata },
-	));
+	const sessions = Array.from({ length: 32 }, (_, index) => {
+		const prefix = `broker-${String(index).padStart(2, "0")}-`;
+		const id = `${prefix}${"i".repeat(INTERCOM_LIMITS.maxIdBytes - prefix.length)}`;
+		return session(id, { name: metadata, cwd: metadata, model: metadata, status: metadata, role: "first-mate" });
+	});
 	const projected = projectSessionList(sessions, sessions[0]);
-	assertBounded(projected.text, "32-session list");
+	assertBounded(projected.text, "32-session role list");
 	assert.equal(projected.truncated, true);
-	for (const peer of sessions) assert.ok(projected.text.includes(peer.id), `missing ${peer.id}`);
-	const details = { currentSessionId: sessions[0].id, sessionIds: sessions.map((peer) => peer.id), count: sessions.length, truncated: true };
-	assertBounded(details, "32-session details");
+	for (const peer of sessions) {
+		assert.ok(projected.text.includes(`${JSON.stringify(peer.id)} [role: first-mate]`), `missing adjacent role marker for ${peer.id}`);
+	}
+	const details = {
+		currentSessionId: sessions[0].id,
+		sessionIds: sessions.map((peer) => peer.id),
+		firstMateSessionIds: sessions.map((peer) => peer.id),
+		count: sessions.length,
+		truncated: true,
+	};
+	assertBounded(details, "32-session role details");
 	assert.doesNotMatch(JSON.stringify(details), /界/u);
+});
+
+test("session list projection exposes exact First Mate roles with full broker IDs", () => {
+	const current = session("current-full-id", { role: "first-mate" });
+	const duplicate = session("duplicate-first-mate-full-id", { role: "first-mate" });
+	const ordinary = session("ordinary-full-id");
+	const projected = projectSessionList([current, duplicate, ordinary], current);
+	assertBounded(projected.text, "role-tagged session list");
+	assert.match(projected.text, /current-full-id.*role: first-mate/);
+	assert.match(projected.text, /duplicate-first-mate-full-id.*role: first-mate/);
+	assert.match(projected.text, /ordinary-full-id/);
 });
 
 test("session tail projection is bounded, locator-free, and preserves newest multibyte text", () => {

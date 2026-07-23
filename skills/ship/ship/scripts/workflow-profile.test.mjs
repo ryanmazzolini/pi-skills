@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { resolveNamedProfile, resolveVaultPath, resolveWorkspaceProfile } from "./workflow-profile.mjs";
+import { resolveNamedProfile, resolveReadableProfiles, resolveVaultPath, resolveWorkspaceProfile } from "./workflow-profile.mjs";
 
 const scriptPath = fileURLToPath(new URL("./workflow-profile.mjs", import.meta.url));
 
@@ -48,6 +48,52 @@ test("profile-only lookup resolves the selected readable vault without validatin
     () => resolveNamedProfile({ profileName: "work", configPath: f.configPath, home: f.home, env: {} }),
     /work\.vault is unavailable/,
   );
+});
+
+test("all-profile discovery returns sorted readable canonical vaults and bounded unavailable names", (t) => {
+  const f = fixture(t);
+  const alphaVault = f.directory("alpha-vault");
+  const zetaVault = f.directory("zeta-vault");
+  const alphaAlias = path.join(f.base, "alpha-alias");
+  fs.symlinkSync(alphaVault, alphaAlias, "dir");
+  f.write({
+    zeta: { vault: zetaVault, gitRoots: [path.join(f.base, "missing-zeta-root")] },
+    missing: { vault: path.join(f.base, "missing-vault"), gitRoots: [f.directory("missing-root")] },
+    alpha: { vault: alphaAlias, gitRoots: [path.join(f.base, "missing-alpha-root")] },
+  });
+
+  const discovered = resolveReadableProfiles({ configPath: f.configPath, home: f.home, env: {} });
+  assert.deepEqual(discovered, {
+    version: 1,
+    profiles: [
+      { name: "alpha", vault: fs.realpathSync(alphaVault) },
+      { name: "zeta", vault: fs.realpathSync(zetaVault) },
+    ],
+    unavailable: ["missing"],
+  });
+  assert.doesNotMatch(JSON.stringify(discovered), /missing-vault|missing-root/);
+
+  const cli = spawnSync(process.execPath, [scriptPath, "profiles", "--config", f.configPath], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: f.home },
+  });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.deepEqual(JSON.parse(cli.stdout), resolveReadableProfiles({ configPath: f.configPath, home: f.home, env: {} }));
+});
+
+test("all-profile unavailable output stays bounded at the configured maximum", (t) => {
+  const f = fixture(t);
+  const profiles = {};
+  for (let index = 31; index >= 0; index -= 1) {
+    const name = `profile-${String(index).padStart(2, "0")}-${"x".repeat(53)}`;
+    profiles[name] = { vault: path.join(f.base, `missing-vault-${index}`), gitRoots: [path.join(f.base, `missing-root-${index}`)] };
+  }
+  f.write(profiles);
+  const result = resolveReadableProfiles({ configPath: f.configPath, home: f.home, env: {} });
+  assert.deepEqual(result.profiles, []);
+  assert.equal(result.unavailable.length, 32);
+  assert.deepEqual(result.unavailable, [...result.unavailable].sort());
+  assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") < 4 * 1024);
 });
 
 test("workspace lookup resolves one profile for a nested ticket worktree", (t) => {
@@ -308,6 +354,30 @@ test("the CLI emits canonical JSON for the skill caller", (t) => {
   ], { encoding: "utf8", env: { ...process.env, HOME: f.home } });
   assert.equal(target.status, 0, target.stderr);
   assert.equal(JSON.parse(target.stdout).target, path.join(vault, "AGENTS.md"));
+});
+
+test("the CLI rejects duplicate and command-inapplicable flags", (t) => {
+  const f = fixture(t);
+  const vault = f.directory("vault");
+  const root = f.directory("root");
+  f.write({ personal: { vault, gitRoots: [root] } });
+  const run = (...args) => spawnSync(process.execPath, [scriptPath, ...args, "--config", f.configPath], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: f.home },
+  });
+
+  for (const [args, expected] of [
+    [["profiles", "--profile", "personal"], /--profile is not valid for profiles/],
+    [["profile", "--profile", "personal", "--cwd", root], /--cwd is not valid for profile/],
+    [["workspace", "--target", "AGENTS.md"], /--target is not valid for workspace/],
+    [["path", "--profile", "personal", "--target", "AGENTS.md", "--mode", "read", "--mode", "write"], /Duplicate option: --mode/],
+    [["profile", "--profile", "personal", "--profile", "personal"], /Duplicate option: --profile/],
+    [["profiles", "--config", f.configPath], /Duplicate option: --config/],
+  ]) {
+    const result = run(...args);
+    assert.equal(result.status, 1, `${args.join(" ")} unexpectedly succeeded`);
+    assert.match(result.stderr, expected);
+  }
 });
 
 test("configuration input and errors stay bounded", (t) => {

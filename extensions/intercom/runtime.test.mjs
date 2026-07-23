@@ -13,15 +13,25 @@ class FakeClient extends EventEmitter {
 		this.sessionId = "self";
 		this.sessions = sessions;
 		this.listResponses = [];
+		this.listCalls = 0;
 		this.sent = [];
 		this.tailCapability = true;
+		this.roleCapability = true;
+		this.role = undefined;
+		this.connected = true;
+		this.invalidated = 0;
 	}
-	isConnected() { return true; }
-	supportsCapability() { return this.tailCapability; }
+	isConnected() { return this.connected; }
+	supportsCapability(capability) {
+		if (capability === "pi-session-tail-v1") return this.tailCapability;
+		if (capability === "first-mate-role-v1") return this.roleCapability;
+		return false;
+	}
 	currentPiSessionPresence() { return undefined; }
+	currentRole() { return this.role; }
 	pendingCounts() { return { sends: 0, lists: 0, asks: 0 }; }
 	async ensureConnected() {}
-	async listSessions() { return this.listResponses.shift() ?? this.sessions; }
+	async listSessions() { this.listCalls++; return this.listResponses.shift() ?? this.sessions; }
 	async send(to, options) {
 		this.sent.push({ to, options });
 		return { id: `sent-${this.sent.length}`, delivered: true };
@@ -35,10 +45,80 @@ class FakeClient extends EventEmitter {
 			message: { id: `reply-${this.sent.length}`, timestamp: 3, replyTo: options.messageId, content: { text: "answer" } },
 		};
 	}
+	async setRole(role) { this.role = role ?? undefined; return this.role; }
+	invalidateRoleSession() { this.invalidated++; this.role = undefined; this.connected = false; }
 	setRegistration() {}
 	updatePresence() {}
 	async disconnect() {}
 }
+
+test("runtime synchronously publishes and clears the capability-gated First Mate role without taking a list", async () => {
+	const client = new FakeClient([peer("self", "caller")]);
+	const runtime = new IntercomRuntime({ client });
+	assert.deepEqual(await runtime.setRole("first-mate"), { sessionId: "self", role: "first-mate" });
+	assert.equal(client.role, "first-mate");
+	assert.deepEqual(await runtime.setRole(null), { sessionId: "self" });
+	assert.equal(client.role, undefined);
+	assert.equal(client.listCalls, 0);
+
+	client.tailCapability = true;
+	client.roleCapability = false;
+	const status = await runtime.status();
+	assert.equal(status.tailCapability, true);
+	assert.equal(status.roleCapability, false);
+	assert.equal(status.advertisingFirstMate, false);
+	assert.equal(client.listCalls, 1);
+	await assert.rejects(runtime.setRole("first-mate"), /wait for reconnect and invoke First Mate again/);
+	await runtime.dispose();
+});
+
+test("status awaits initial connection and derives role truth from the current broker list", async () => {
+	const client = new FakeClient([{ ...peer("self", "caller"), role: "first-mate" }]);
+	client.connected = false;
+	let releaseConnection;
+	let connectionStarted;
+	const started = new Promise((resolve) => { connectionStarted = resolve; });
+	client.ensureConnected = async () => {
+		if (client.connected) return;
+		connectionStarted();
+		await new Promise((resolve) => { releaseConnection = resolve; });
+		client.connected = true;
+	};
+	client.role = undefined;
+	const runtime = new IntercomRuntime({ client });
+	let settled = false;
+	const pending = runtime.status().finally(() => { settled = true; });
+	await started;
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(settled, false);
+	releaseConnection();
+	const advertised = await pending;
+	assert.equal(advertised.sessionId, "self");
+	assert.equal(advertised.advertisingFirstMate, true);
+	assert.equal(advertised.role, "first-mate");
+
+	client.sessions = [peer("self", "caller")];
+	client.role = "first-mate";
+	const absent = await runtime.status();
+	assert.equal(absent.advertisingFirstMate, false);
+	assert.equal(absent.role, undefined);
+	await runtime.dispose();
+});
+
+test("role acknowledgement fails when reconnect replaces the acknowledged broker ID", async () => {
+	const client = new FakeClient([peer("self", "caller")]);
+	client.setRole = async (role) => {
+		client.role = role;
+		client.sessionId = "replacement";
+		return role;
+	};
+	const runtime = new IntercomRuntime({ client });
+	await assert.rejects(runtime.setRole("first-mate"), /no longer matches the current broker session/);
+	assert.equal(client.invalidated, 1);
+	assert.equal(client.role, undefined);
+	assert.equal(client.connected, false);
+	await runtime.dispose();
+});
 
 test("runtime reads a stable advertised tail without messaging the target", async () => {
 	const presence = { sessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", revision: 4 };

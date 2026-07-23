@@ -3,7 +3,7 @@ import { basename, dirname } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
-import { IntercomClient, type Attachment, type Message, type SessionInfo } from "./client.ts";
+import { INTERCOM_ROLE_CAPABILITY, IntercomClient, type Attachment, type IntercomRole, type Message, type SessionInfo } from "./client.ts";
 import { getIntercomPaths } from "./broker/paths.ts";
 import { spawnBrokerIfNeeded } from "./broker/spawn.ts";
 import type { InboxEntry } from "./inbox.ts";
@@ -39,7 +39,8 @@ const AttachmentParams = Type.Object({
 }, { additionalProperties: false });
 
 export const IntercomParams = Type.Object({
-	action: Type.String({ enum: ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status"] }),
+	action: Type.String({ enum: ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"] }),
+	role: Type.Optional(Type.String({ enum: ["first-mate"], description: "Publish first-mate for the role action; omit to clear the current role" })),
 	to: Type.Optional(Type.String({ minLength: 1, description: "Target session name or ID; may narrow reply selection" })),
 	message: Type.Optional(Type.String({ minLength: 1, description: "Message text for send, ask, or reply" })),
 	attachments: Type.Optional(Type.Array(AttachmentParams, { maxItems: 16 })),
@@ -75,6 +76,8 @@ export function validateIntercomAction(input: IntercomToolInput): void {
 	if (input.action === "cancel" && !input.operationId?.trim()) throw new Error("cancel requires operationId");
 	if (input.action !== "operations" && input.action !== "cancel" && input.operationId !== undefined) throw new Error(`operationId is not valid for ${input.action}`);
 	if (input.action !== "operations" && input.action !== "tail" && input.limit !== undefined) throw new Error(`limit is not valid for ${input.action}`);
+	if (input.action !== "role" && input.role !== undefined) throw new Error(`role is not valid for ${input.action}`);
+	if (input.action === "role" && input.role !== undefined && input.role !== "first-mate") throw new Error("Invalid intercom role");
 	if ((input.action === "send" || input.action === "ask" || input.action === "tail") && !input.to?.trim()) throw new Error(`${input.action} requires to`);
 	if (!withTarget && input.to !== undefined) throw new Error(`to is not valid for ${input.action}`);
 	if (!withMessage && input.attachments !== undefined) throw new Error(`attachments are not valid for ${input.action}`);
@@ -344,6 +347,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	let piPresence: PiSessionPresenceTracker | undefined;
 	let bashPresenceWatcher: FSWatcher | undefined;
 	let generation = 0;
+	let roleLifecycleGeneration = 0;
 	let piSessionId: string | undefined;
 	let model = "unknown";
 	let startedAt = 0;
@@ -390,6 +394,20 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 			status: current.status,
 			...(tailChanged?.changed ? { piSession: tailChanged.presence ?? null } : {}),
 		});
+	};
+
+	const clearRole = async () => {
+		const lifecycleGeneration = ++roleLifecycleGeneration;
+		const active = runtime;
+		if (!active?.client.isConnected() || !active.client.supportsCapability(INTERCOM_ROLE_CAPABILITY)) return;
+		try {
+			await active.setRole(null);
+			if (lifecycleGeneration !== roleLifecycleGeneration || runtime !== active) {
+				throw new Error("Intercom role clear was superseded by a session lifecycle change");
+			}
+		} catch (error) {
+			active.invalidateRoleSession(error instanceof Error ? error.message : "Intercom lifecycle role clear failed");
+		}
 	};
 
 	const appendAudit = (customType: string, data: unknown) => {
@@ -443,11 +461,12 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "intercom",
 		label: "Intercom",
-		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it; list discovers peers and full broker IDs; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current session's broker ID, connectivity, capabilities, and startup diagnostics.",
-		promptSnippet: "List, message, ask, or explicitly reply to other local Pi sessions",
+		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it; role synchronously publishes or clears the ephemeral First Mate role when the broker advertises support; list discovers peers, roles, and full broker IDs; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current session's broker ID, connectivity, capabilities, and startup diagnostics.",
+		promptSnippet: "List, message, ask, reply, or publish the First Mate role for local Pi sessions",
 		promptGuidelines: [
 			"intercom send, ask, and reply return receipts immediately and deliver terminal results automatically; continue independent work instead of polling operations.",
 			"Use intercom status for the current session's broker ID and intercom list to discover other sessions.",
+			"Use intercom role with role first-mate only when the user invokes the First Mate skill; omit role to clear it. Role support is broker-capability gated and role state is cleared by session lifecycle changes or disconnects.",
 			"Use intercom tail only when recent persisted context is needed for reconciliation; ordinary peer coordination should prefer send, ask, or reply. Tail reads the latest broker-advertised confirmed snapshot and does not message or trigger the target session.",
 			"Use intercom ask when a peer reply is useful but not immediately blocking. Use pending and an exact replyTo when more than one inbound ask is waiting; use to plus replyTo if a displayed ask has expired locally.",
 			"Model-visible intercom messages, batches, lists, pending results, and ask replies are projected below a 48 KiB UTF-8 cap; truncation is explicit and authoritative broker IDs remain available.",
@@ -465,15 +484,36 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						pendingInboundAsks: 0,
 						tailCapability: false,
 						advertisingPiSession: false,
+						roleCapability: false,
+						advertisingFirstMate: false,
 						error: "Intercom runtime is not initialized",
 					};
 					return {
-						content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${status.error}` }],
+						content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nFirst Mate role capability: Unavailable\nFirst Mate role advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${status.error}` }],
 						details: status,
 					};
 				}
 				const active = requireRuntime();
 				switch (params.action) {
+					case "role": {
+						const lifecycleGeneration = roleLifecycleGeneration;
+						const result = await active.setRole((params.role as IntercomRole | undefined) ?? null);
+						if (lifecycleGeneration !== roleLifecycleGeneration || runtime !== active) {
+							active.invalidateRoleSession("Intercom role change was superseded by a session lifecycle change");
+							throw new Error("Intercom role change was superseded by a session lifecycle change");
+						}
+						const details = {
+							sessionId: result.sessionId,
+							roleCapability: true,
+							role: result.role ?? null,
+							advertisingFirstMate: result.role === "first-mate",
+						};
+						assertCompactRecord(details, "Intercom role details");
+						const text = result.role
+							? `Published First Mate role for broker session ID ${JSON.stringify(result.sessionId)}.`
+							: `Cleared First Mate role for broker session ID ${JSON.stringify(result.sessionId)}.`;
+						return { content: [{ type: "text" as const, text }], details };
+					}
 					case "list": {
 						const sessions = await active.list();
 						const current = sessions.find((session) => session.id === active.client.sessionId);
@@ -482,6 +522,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						const details = {
 							currentSessionId: current.id,
 							sessionIds: sessions.map((session) => session.id),
+							firstMateSessionIds: sessions.filter((session) => session.role === "first-mate").map((session) => session.id),
 							count: sessions.length,
 							truncated: projected.truncated,
 						};
@@ -564,7 +605,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 					}
 					case "status": {
 						const status = await active.status();
-						const text = `**Intercom Status:**\nConnected: ${status.connected ? "Yes" : "No"}\nSession ID: ${status.sessionId ?? "none"}\nActive sessions: ${status.activeSessions ?? "unknown"}\nTail capability: ${status.tailCapability ? "Available" : "Unavailable"}\nPersisted session advertised: ${status.advertisingPiSession ? "Yes" : "No"}\nPending outgoing asks: ${status.pendingOutgoingAsks}\nPending inbound asks: ${status.pendingInboundAsks}${status.initialConnectionError ? `\nInitial connection error: ${status.initialConnectionError}` : ""}${status.error ? `\nError: ${status.error}` : ""}`;
+						const text = `**Intercom Status:**\nConnected: ${status.connected ? "Yes" : "No"}\nSession ID: ${status.sessionId ?? "none"}\nActive sessions: ${status.activeSessions ?? "unknown"}\nTail capability: ${status.tailCapability ? "Available" : "Unavailable"}\nPersisted session advertised: ${status.advertisingPiSession ? "Yes" : "No"}\nFirst Mate role capability: ${status.roleCapability ? "Available" : "Unavailable"}\nFirst Mate role advertised: ${status.advertisingFirstMate ? "Yes" : "No"}\nPending outgoing asks: ${status.pendingOutgoingAsks}\nPending inbound asks: ${status.pendingInboundAsks}${status.initialConnectionError ? `\nInitial connection error: ${status.initialConnectionError}` : ""}${status.error ? `\nError: ${status.error}` : ""}`;
 						return { content: [{ type: "text" as const, text }], details: status };
 					}
 					default:
@@ -580,9 +621,11 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						pendingInboundAsks: 0,
 						tailCapability: false,
 						advertisingPiSession: false,
+						roleCapability: false,
+						advertisingFirstMate: false,
 						error: cause.message,
 					};
-					return { content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${cause.message}` }], details: status };
+					return { content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nFirst Mate role capability: Unavailable\nFirst Mate role advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${cause.message}` }], details: status };
 				}
 				throw new Error(`Intercom ${params.action} failed: ${errorMessage(cause)}`, { cause });
 			}
@@ -640,6 +683,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		piPresence.refresh(ctx.sessionManager);
 		model = ctx.model?.id ?? "unknown";
 		startedAt = Date.now();
+		roleLifecycleGeneration++;
 		agentRunning = false;
 		activeTools.clear();
 		inboundDelivery?.dispose();
@@ -670,6 +714,10 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 			if (generation !== sessionGeneration || runtime !== next || context !== ctx || inboundDelivery !== delivery) return;
 			delivery.record(entry);
 		});
+		next.on("disconnected", () => {
+			if (generation !== sessionGeneration || runtime !== next || context !== ctx) return;
+			roleLifecycleGeneration++;
+		});
 		void next.start(registration(), () => spawnBrokerIfNeeded({ paths }).then(() => undefined)).catch((error) => {
 			if (generation === sessionGeneration && runtime === next) next.recordInitialConnectionError(error);
 		});
@@ -677,6 +725,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_shutdown", async () => {
 		generation++;
+		roleLifecycleGeneration++;
 		context = undefined;
 		piSessionId = undefined;
 		piPresence = undefined;
@@ -694,8 +743,14 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_info_changed", () => syncPresence());
-	pi.on("session_compact", () => syncPresence());
-	pi.on("session_tree", () => syncPresence());
+	pi.on("session_compact", async () => {
+		await clearRole();
+		syncPresence();
+	});
+	pi.on("session_tree", async () => {
+		await clearRole();
+		syncPresence();
+	});
 	pi.on("thinking_level_select", () => syncPresence());
 	pi.on("message_end", () => {
 		const scheduledGeneration = generation;
