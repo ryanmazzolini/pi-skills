@@ -93,7 +93,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 | Skill | What it helps with |
 |---|---|
-| [`first-mate`](./skills/first-mate/SKILL.md) | Reconcile evidence for one configured workflow profile without taking project ownership |
+| [`first-mate`](./skills/first-mate/SKILL.md) | Reconcile evidence across every readable workflow profile without taking project ownership |
 | [`agent-coordination`](./skills/agent-coordination/SKILL.md) | Choose configured models and reasoning levels for delegated work |
 | [`scheduled-jobs`](./skills/scheduled-jobs/SKILL.md) | Inspect and operate reviewed recurring local jobs |
 | [`shortcut`](./skills/shortcut/shortcut/SKILL.md) | Work with Shortcut stories through the `short` CLI |
@@ -102,11 +102,11 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 ## First Mate and Intercom tails
 
-Configure workflow profiles from the [example](./skills/ship/ship/assets/workflows.example.json), then invoke the Pi-only role explicitly with `/skill:first-mate <profile>`. Reinvoke it after a session restart or context compaction. First Mate is intentionally absent from the Claude marketplace.
+Configure workflow profiles from the [example](./skills/ship/ship/assets/workflows.example.json), then invoke the Pi-only combined role with `/skill:first-mate`. It loads every readable profile, waits for initial Intercom connection, publishes its ephemeral role, verifies one matching connected-peer snapshot, and remains idle. Reinvoke it after tree navigation, compaction, reload, resume, session replacement, broker disconnect, or client restart. First Mate is intentionally absent from the Claude marketplace.
 
-Intercom tail support rolls out additively. A new client reuses a healthy older broker rather than replacing it, so messaging continues while `intercom status` reports tail unavailable. After that broker exits, a current client starts the capability-owning broker and connected clients reconnect. Verify tail availability before relying on session reconciliation.
+Intercom capabilities roll out additively. A new client reuses a healthy older broker rather than replacing it, so messaging and any existing tail support continue while `intercom status` reports the First Mate role unavailable. After that broker exits, current clients reconnect and a current client can start the capability-owning broker. The role is not restored automatically: invoke `/skill:first-mate` again, then verify tail and role availability before relying on session reconciliation or role-based discovery.
 
-Rollback the package or host guidance without moving or deleting vault work items. Existing legacy workflows remain in place, and older brokers continue messaging while tails fail explicitly as unavailable.
+Rollback the package or host guidance without moving or deleting vault work items. Existing legacy workflows remain in place, and older brokers continue messaging while exposing only the capabilities they already support.
 
 ## Optional tooling
 
@@ -126,7 +126,7 @@ The scheduler uses launchd on macOS, systemd user timers on Linux, or `crontab` 
 Pi gets a few extras that are not skills:
 
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
-- `intercom` provides local peer messaging and capability-gated bounded tails of active persisted Pi sessions.
+- `intercom` provides local peer messaging, capability-gated bounded read-only tails, and an ephemeral First Mate presence role.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
 - `scheduled-jobs` adds the human-only `/scheduler` interface.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.

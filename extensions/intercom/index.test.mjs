@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { appendFile, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import net from "node:net";
 import test from "node:test";
 import intercomExtension, {
 	INBOUND_DELIVERY_LIMITS,
@@ -15,6 +16,7 @@ import intercomExtension, {
 	sanitizeSelfDeclaredMetadata,
 	validateIntercomAction,
 } from "./index.ts";
+import { FrameDecoder, encodeFrame } from "./client.ts";
 import { connectNew, isolatedIntercom, startOwnedBroker, stopChild, waitEvent, waitFor } from "../../tests/intercom/helpers.mjs";
 
 test("registers one compatible flat intercom tool and no deferred UI or bridge surface", () => {
@@ -32,8 +34,8 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	};
 	intercomExtension(pi);
 	assert.deepEqual(tools.map((tool) => tool.name), ["intercom"]);
-	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status"]);
-	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "to", "message", "attachments", "replyTo", "operationId", "limit"]);
+	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"]);
+	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "operationId", "limit"]);
 	assert.deepEqual(commands, []);
 	assert.deepEqual(shortcuts, []);
 	assert.equal(tools.some((tool) => tool.name === "contact_supervisor"), false);
@@ -46,6 +48,10 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 
 test("validates action-specific fields while preserving attachment and reply selection inputs", () => {
 	assert.doesNotThrow(() => validateIntercomAction({ action: "list" }));
+	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "first-mate" }));
+	assert.doesNotThrow(() => validateIntercomAction({ action: "role" }));
+	assert.throws(() => validateIntercomAction({ action: "role", role: "supervisor" }), /Invalid intercom role/);
+	assert.throws(() => validateIntercomAction({ action: "list", role: "first-mate" }), /not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "send", to: "worker", message: "update", attachments: [] }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "tail", to: "worker", limit: 8 }));
 	assert.throws(() => validateIntercomAction({ action: "tail" }), /requires to/);
@@ -443,6 +449,205 @@ test("a Bash started before first persistence refreshes when it finishes after a
 	assert.ok(bashPresence.piSession.revision > assistantPresence.piSession.revision);
 });
 
+test("real SessionManager lifecycle clears First Mate role until explicit reinvocation", async (t) => {
+	const fixture = await isolatedIntercom(t, "role-life-");
+	const previousHome = process.env.HOME;
+	process.env.HOME = fixture.home;
+	t.after(() => {
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+	});
+	let broker = await startOwnedBroker(fixture.paths);
+	t.after(() => stopChild(broker));
+	let observer = await connectNew(fixture.paths, "role-observer");
+	t.after(() => observer.disconnect());
+	const tools = [];
+	const handlers = new Map();
+	intercomExtension({
+		registerTool: (tool) => tools.push(tool),
+		registerMessageRenderer() {},
+		on: (name, handler) => handlers.set(name, handler),
+		getSessionName: () => "lifecycle-first-mate",
+		appendEntry() {},
+		sendMessage() {},
+	});
+	const sessionDir = `${fixture.base}/sessions`;
+	await mkdir(sessionDir);
+	const manager = SessionManager.create(fixture.base, sessionDir, { id: "role-life-a" });
+	const firstEntry = manager.appendMessage({ role: "user", content: "first", timestamp: 1 });
+	manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "ready" }], stopReason: "stop", timestamp: 2 });
+	let ctx = { cwd: fixture.base, model: { id: "fixture-model" }, sessionManager: manager };
+	await handlers.get("session_start")({ reason: "startup" }, ctx);
+	const execute = (params) => tools[0].execute("call", params, undefined, undefined, ctx);
+	const listedRole = async (client = observer) => (await client.listSessions()).find((session) => session.name === "lifecycle-first-mate")?.role;
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	assert.equal(await listedRole(), undefined);
+
+	const invoke = async (client = observer) => {
+		const result = await execute({ action: "role", role: "first-mate" });
+		assert.match(result.content[0].text, /Published First Mate role/);
+		await waitFor(async () => await listedRole(client) === "first-mate");
+	};
+	await invoke();
+	manager.branch(firstEntry);
+	await handlers.get("session_tree")({ oldLeafId: undefined, newLeafId: firstEntry }, ctx);
+	await waitFor(async () => await listedRole() === undefined);
+
+	await invoke();
+	manager.appendCompaction("compact", firstEntry, 10);
+	await handlers.get("session_compact")({ reason: "manual" }, ctx);
+	await waitFor(async () => await listedRole() === undefined);
+
+	await invoke();
+	await handlers.get("session_shutdown")({ reason: "reload" }, ctx);
+	await waitFor(async () => !(await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	await handlers.get("session_start")({ reason: "reload" }, ctx);
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	assert.equal(await listedRole(), undefined);
+	await invoke();
+
+	await handlers.get("session_shutdown")({ reason: "new" }, ctx);
+	const replacement = SessionManager.create(fixture.base, sessionDir, { id: "role-life-b" });
+	replacement.appendMessage({ role: "user", content: "replacement", timestamp: 3 });
+	ctx = { cwd: fixture.base, model: { id: "fixture-model" }, sessionManager: replacement };
+	await handlers.get("session_start")({ reason: "new", previousSessionFile: manager.getSessionFile() }, ctx);
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	assert.equal(await listedRole(), undefined);
+	await invoke();
+
+	await handlers.get("session_shutdown")({ reason: "resume" }, ctx);
+	const resumed = SessionManager.create(fixture.base, sessionDir, { id: "role-life-c" });
+	resumed.appendMessage({ role: "user", content: "resumed", timestamp: 4 });
+	ctx = { cwd: fixture.base, model: { id: "fixture-model" }, sessionManager: resumed };
+	await handlers.get("session_start")({ reason: "resume", previousSessionFile: replacement.getSessionFile() }, ctx);
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	assert.equal(await listedRole(), undefined);
+	await invoke();
+
+	const disconnected = new Promise((resolve) => observer.once("disconnected", resolve));
+	await stopChild(broker);
+	await disconnected;
+	broker = await startOwnedBroker(fixture.paths);
+	observer = await connectNew(fixture.paths, "role-observer-reconnected");
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"), 5_000);
+	assert.equal(await listedRole(), undefined);
+	await invoke(observer);
+
+	await handlers.get("session_shutdown")({ reason: "quit" }, ctx);
+	await waitFor(async () => !(await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+});
+
+test("tree and compaction fence both role publication race orders", async (t) => {
+	const fixture = await isolatedIntercom(t, "role-race-");
+	const previousHome = process.env.HOME;
+	process.env.HOME = fixture.home;
+	t.after(() => {
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+	});
+	const sockets = new Set();
+	const roleRequests = [];
+	let activeSocket;
+	let activeSession;
+	let activeRole;
+	let nextId = 0;
+	const server = net.createServer((socket) => {
+		sockets.add(socket);
+		socket.on("error", () => undefined);
+		socket.on("close", () => {
+			sockets.delete(socket);
+			if (activeSocket === socket) {
+				activeSocket = undefined;
+				activeSession = undefined;
+				activeRole = undefined;
+			}
+		});
+		const decoder = new FrameDecoder((message) => {
+			if (message?.type === "register") {
+				activeSocket = socket;
+				activeSession = { id: `role-race-${++nextId}`, ...message.session };
+				socket.write(encodeFrame({ type: "registered", sessionId: activeSession.id, capabilities: ["first-mate-role-v1"] }));
+				return;
+			}
+			if (message?.type === "presence" && message.role !== undefined) {
+				const request = {
+					role: message.role,
+					complete() {
+						if (socket.destroyed || activeSocket !== socket || !activeSession) return;
+						activeRole = message.role ?? undefined;
+						socket.write(encodeFrame({ type: "role_updated", requestId: message.requestId, role: message.role }));
+					},
+				};
+				roleRequests.push(request);
+				return;
+			}
+			if (message?.type === "list") {
+				const session = activeSession && activeSocket === socket
+					? { ...activeSession, ...(activeRole ? { role: activeRole } : {}) }
+					: undefined;
+				socket.write(encodeFrame({ type: "sessions", requestId: message.requestId, sessions: session ? [session] : [] }));
+				return;
+			}
+			if (message?.type === "unregister") socket.destroy();
+		}, () => socket.destroy());
+		socket.on("data", (chunk) => decoder.push(chunk));
+	});
+	await new Promise((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(fixture.paths.socketPath, resolve);
+	});
+	t.after(async () => {
+		for (const socket of sockets) socket.destroy();
+		await new Promise((resolve) => server.close(resolve));
+	});
+
+	const tools = [];
+	const handlers = new Map();
+	intercomExtension({
+		registerTool: (tool) => tools.push(tool),
+		registerMessageRenderer() {},
+		on: (name, handler) => handlers.set(name, handler),
+		getSessionName: () => "role-race",
+		appendEntry() {},
+		sendMessage() {},
+	});
+	const ctx = {
+		cwd: fixture.base,
+		model: { id: "fixture-model" },
+		sessionManager: { getSessionId: () => "role-race-pi", getSessionFile: () => undefined, getLeafId: () => null },
+	};
+	await handlers.get("session_start")({}, ctx);
+	t.after(() => handlers.get("session_shutdown")());
+	await waitFor(() => activeSession);
+	const executeRole = () => tools[0].execute("call", { action: "role", role: "first-mate" }, undefined, undefined, ctx);
+
+	const publishBeforeTree = executeRole();
+	await waitFor(() => roleRequests.length === 1);
+	const tree = handlers.get("session_tree")({}, ctx);
+	await waitFor(() => roleRequests.length === 2);
+	roleRequests[0].complete();
+	await assert.rejects(publishBeforeTree, /superseded by a lifecycle transition/);
+	roleRequests[1].complete();
+	await tree;
+	assert.equal(activeRole, undefined);
+
+	const republish = executeRole();
+	await waitFor(() => roleRequests.length === 3);
+	roleRequests[2].complete();
+	await republish;
+	assert.equal(activeRole, "first-mate");
+
+	const compact = handlers.get("session_compact")({}, ctx);
+	await waitFor(() => roleRequests.length === 4);
+	const publishAfterCompactStarted = executeRole();
+	await waitFor(() => roleRequests.length === 5);
+	roleRequests[3].complete();
+	await compact;
+	await assert.rejects(publishAfterCompactStarted, /disconnected|superseded/);
+	roleRequests[4].complete();
+	await waitFor(() => activeRole === undefined);
+});
+
 test("successful tool actions report resolved peer IDs and persist only compact authoritative audits", async (t) => {
 	const fixture = await isolatedIntercom(t, "index-actions-");
 	const previousHome = process.env.HOME;
@@ -478,18 +683,35 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	// Pi creates a fresh ExtensionContext for each tool execution; exercising that contract
 	// prevents a tool call from poisoning later asynchronous inbound delivery.
 	const execute = (params) => tools[0].execute("call", params, undefined, undefined, { ...ctx });
-	const connectedStatus = await waitFor(async () => {
-		const result = await execute({ action: "status" });
-		return result.details.connected ? result : undefined;
-	}, 2_000);
+	const connectedStatus = await execute({ action: "status" });
+	assert.equal(connectedStatus.details.connected, true);
 	assert.equal(connectedStatus.details.tailCapability, true);
 	assert.equal(connectedStatus.details.advertisingPiSession, false);
+	assert.equal(connectedStatus.details.roleCapability, true);
+	assert.equal(connectedStatus.details.advertisingFirstMate, false);
 	const ownedId = (await peer.listSessions()).find((item) => item.name === "caller").id;
+
+	assert.equal(await peer.setRole("first-mate"), "first-mate");
+	const advertisedRole = await execute({ action: "role", role: "first-mate" });
+	assert.equal(advertisedRole.details.sessionId, ownedId);
+	assert.equal(advertisedRole.details.role, "first-mate");
+	assert.equal(advertisedRole.details.advertisingFirstMate, true);
+	assert.match(advertisedRole.content[0].text, new RegExp(ownedId));
+	await waitFor(async () => (await peer.listSessions()).find((item) => item.id === ownedId)?.role === "first-mate");
 
 	const listed = await execute({ action: "list" });
 	assert.ok(Buffer.byteLength(listed.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
+	assert.equal(listed.details.currentSessionId, advertisedRole.details.sessionId);
 	assert.equal(listed.details.sessionIds.includes(peer.sessionId), true);
+	assert.deepEqual(listed.details.firstMateSessionIds, [peer.sessionId, ownedId]);
+	assert.equal(listed.details.firstMateSessionIds.includes(advertisedRole.details.sessionId), true);
+	for (const id of listed.details.firstMateSessionIds) assert.match(listed.content[0].text, new RegExp(id));
+	assert.match(listed.content[0].text, /role: first-mate/);
 	assert.equal("sessions" in listed.details, false);
+	const clearedRole = await execute({ action: "role" });
+	assert.equal(clearedRole.details.role, null);
+	assert.equal(clearedRole.details.advertisingFirstMate, false);
+	await waitFor(async () => (await peer.listSessions()).find((item) => item.id === ownedId)?.role === undefined);
 
 	const privateSentinel = "PRIVATE_TAIL_SENTINEL";
 	const sessionPath = `${fixture.base}/target-session.jsonl`;

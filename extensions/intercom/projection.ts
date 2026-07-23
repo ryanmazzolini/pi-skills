@@ -212,7 +212,7 @@ function sessionSegments(session: SessionInfo, current: SessionInfo, prefix = ""
 		session.piSession ? "persisted tail advertised" : undefined,
 	].filter((tag): tag is string => Boolean(tag));
 	return [
-		{ text: `${prefix}• Broker session ID: ${JSON.stringify(session.id)}` },
+		{ text: `${prefix}• Broker session ID: ${JSON.stringify(session.id)} [role: ${session.role ?? "none"}]` },
 		{
 			text: ` — self-declared name: ${declared(session.name)}; self-declared cwd: ${declared(session.cwd)}; self-declared model: ${declared(session.model)}${tags.length ? ` [${tags.join(", ")}]` : ""}`,
 			optional: true,
