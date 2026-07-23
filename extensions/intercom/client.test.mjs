@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FrameDecoder, INTERCOM_LIMITS, IntercomClient, encodeFrame, isMessage, isSessionInfo } from "./client.ts";
+import {
+	FrameDecoder,
+	INTERCOM_LIMITS,
+	INTERCOM_PRIVATE_PRESENCE_CAPABILITY,
+	INTERCOM_TAIL_CAPABILITY,
+	IntercomClient,
+	encodeFrame,
+	isMessage,
+	isSessionInfo,
+} from "./client.ts";
 
 function decoderFixture(maximum) {
 	const messages = [];
@@ -38,6 +47,52 @@ test("message and attachment envelopes are bounded without changing valid legacy
 	assert.equal(isMessage({ ...valid, content: { text: "x".repeat(INTERCOM_LIMITS.maxMessageTextBytes + 1) } }), false);
 	assert.equal(isMessage({ ...valid, content: { text: "ok", attachments: Array.from({ length: INTERCOM_LIMITS.maxAttachments + 1 }, () => ({ type: "file", name: "a", content: "b" })) } }), false);
 	assert.equal(isMessage({ ...valid, content: { text: "ok", attachments: [{ type: "url", name: "a", content: "b" }] } }), false);
+});
+
+test("private Pi publication requires both broker capabilities", () => {
+	const client = new IntercomClient();
+	for (const [capabilities, expected] of [
+		[[], false],
+		[[INTERCOM_TAIL_CAPABILITY], false],
+		[[INTERCOM_PRIVATE_PRESENCE_CAPABILITY], false],
+		[[INTERCOM_TAIL_CAPABILITY, INTERCOM_PRIVATE_PRESENCE_CAPABILITY], true],
+	]) {
+		client.registeredCapabilities = new Set(capabilities);
+		assert.equal(client.supportsPrivatePresence(), expected);
+	}
+});
+
+test("client suppresses untrusted private presence from a privacy-unsafe broker", async () => {
+	const client = new IntercomClient();
+	client.registeredSessionId = "self";
+	client.registeredCapabilities = new Set([INTERCOM_TAIL_CAPABILITY]);
+	const privateLocator = "/private/UNTRUSTED_BROKER_SENTINEL.jsonl";
+	const peer = {
+		id: "peer",
+		cwd: "/tmp",
+		model: "test",
+		pid: 1,
+		startedAt: 1,
+		lastActivity: 1,
+		piSession: { malformed: privateLocator },
+	};
+	const joined = new Promise((resolve) => client.once("session_joined", resolve));
+	client.handleBrokerMessage({ type: "session_joined", session: peer });
+	assert.equal(JSON.stringify(await joined).includes(privateLocator), false);
+
+	const listed = new Promise((resolve, reject) => {
+		client.pendingLists.set("unsafe-list", { resolve, reject, timer: setTimeout(reject, 1_000) });
+	});
+	client.handleBrokerMessage({ type: "sessions", requestId: "unsafe-list", sessions: [peer] });
+	assert.equal(JSON.stringify(await listed).includes(privateLocator), false);
+
+	const received = new Promise((resolve) => client.once("message", (from) => resolve(from)));
+	client.handleBrokerMessage({
+		type: "message",
+		from: peer,
+		message: { id: "message", timestamp: 1, content: { text: "hello" } },
+	});
+	assert.equal(JSON.stringify(await received).includes(privateLocator), false);
 });
 
 test("persisted Pi presence is an exact bounded optional session field", () => {

@@ -7,6 +7,11 @@ import path from "node:path";
 import { getBrokerSocketPath } from "./broker/paths.ts";
 
 export const INTERCOM_TAIL_CAPABILITY = "pi-session-tail-v1";
+export const INTERCOM_PRIVATE_PRESENCE_CAPABILITY = "recipient-filtered-private-presence-v1";
+
+// Registration capabilities describe private fields this recipient can consume.
+// Broker capabilities separately prove which publication guarantees are active.
+const CLIENT_CAPABILITIES = Object.freeze([INTERCOM_TAIL_CAPABILITY]);
 
 export interface PiSessionPresence {
 	sessionId: string;
@@ -82,6 +87,7 @@ export const INTERCOM_LIMITS = Object.freeze({
 	maxPendingSends: 256,
 	maxPendingLists: 64,
 	maxPendingAsks: 64,
+	maxSessions: 32,
 	maxQueuedWriteBytes: 2 * 1024 * 1024,
 });
 
@@ -362,6 +368,11 @@ export class IntercomClient extends EventEmitter {
 		return this.registeredCapabilities.has(capability);
 	}
 
+	supportsPrivatePresence(): boolean {
+		return this.supportsCapability(INTERCOM_TAIL_CAPABILITY)
+			&& this.supportsCapability(INTERCOM_PRIVATE_PRESENCE_CAPABILITY);
+	}
+
 	currentPiSessionPresence(): PiSessionPresence | undefined {
 		return this.registration?.piSession ? { ...this.registration.piSession } : undefined;
 	}
@@ -469,10 +480,14 @@ export class IntercomClient extends EventEmitter {
 				this.handleDisconnect(socket, error, wasRegistered);
 			});
 			socket.once("connect", () => {
-				void this.enqueueOn(socket, { type: "register", session: wireSession }).catch((error) => socket.destroy(error));
+				void this.enqueueOn(socket, {
+					type: "register",
+					capabilities: CLIENT_CAPABILITIES,
+					session: wireSession,
+				}).catch((error) => socket.destroy(error));
 			});
 		}).then(async () => {
-			if (session.piSession && this.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
+			if (session.piSession && this.supportsPrivatePresence()) {
 				await this.enqueue({ type: "presence", piSession: session.piSession });
 			}
 		});
@@ -508,7 +523,7 @@ export class IntercomClient extends EventEmitter {
 	private async synchronizeRegistration(sent: Omit<SessionInfo, "id">): Promise<void> {
 		const desired = this.registration;
 		if (!desired) return;
-		const piSessionChanged = this.supportsCapability(INTERCOM_TAIL_CAPABILITY)
+		const piSessionChanged = this.supportsPrivatePresence()
 			&& !samePiSession(desired.piSession, sent.piSession);
 		if (desired.name === sent.name && desired.model === sent.model && desired.status === sent.status && !piSessionChanged) return;
 		await this.enqueue({
@@ -545,6 +560,21 @@ export class IntercomClient extends EventEmitter {
 		void operation.catch((error) => onError(toError(error)));
 	}
 
+	private sessionFromBroker(value: unknown): SessionInfo | undefined {
+		if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+		if (this.supportsPrivatePresence()) {
+			if (!isSessionInfo(value)) return undefined;
+			return {
+				...value,
+				...(value.piSession ? { piSession: { ...value.piSession } } : {}),
+			};
+		}
+		// A broker without the filtering guarantee cannot supply usable private presence.
+		// Ignore that field before validating public legacy-compatible metadata.
+		const { piSession: _piSession, ...publicSession } = value as Record<string, unknown>;
+		return isSessionInfo(publicSession) ? publicSession : undefined;
+	}
+
 	private handleBrokerMessage(value: unknown): void {
 		if (!value || typeof value !== "object" || Array.isArray(value) || typeof (value as { type?: unknown }).type !== "string") {
 			throw new Error("Invalid broker message");
@@ -569,26 +599,33 @@ export class IntercomClient extends EventEmitter {
 				break;
 			}
 			case "sessions": {
-				if (!boundedString(message.requestId, INTERCOM_LIMITS.maxIdBytes, true) || !Array.isArray(message.sessions) || !message.sessions.every(isSessionInfo)) {
+				if (
+					!boundedString(message.requestId, INTERCOM_LIMITS.maxIdBytes, true)
+					|| !Array.isArray(message.sessions)
+					|| message.sessions.length > INTERCOM_LIMITS.maxSessions
+				) {
 					throw new Error("Invalid sessions message");
 				}
+				const sessions = message.sessions.map((session) => this.sessionFromBroker(session));
+				if (sessions.some((session) => session === undefined)) throw new Error("Invalid sessions message");
 				const pending = this.pendingLists.get(message.requestId);
 				if (pending) {
 					this.pendingLists.delete(message.requestId);
 					cleanupPending(pending);
-					pending.resolve(message.sessions);
+					pending.resolve(sessions as SessionInfo[]);
 				}
 				break;
 			}
 			case "message": {
-				if (!isSessionInfo(message.from) || !isMessage(message.message)) throw new Error("Invalid message event");
+				const from = this.sessionFromBroker(message.from);
+				if (!from || !isMessage(message.message)) throw new Error("Invalid message event");
 				const replyTo = message.message.replyTo;
 				const waiter = replyTo === undefined ? undefined : this.askWaiters.get(replyTo);
-				if (replyTo !== undefined && waiter && message.from.id === waiter.expectedPeerId) {
-					this.finishAsk(replyTo, { from: message.from, message: message.message });
+				if (replyTo !== undefined && waiter && from.id === waiter.expectedPeerId) {
+					this.finishAsk(replyTo, { from, message: message.message });
 					break;
 				}
-				this.emit("message", message.from, message.message);
+				this.emit("message", from, message.message);
 				break;
 			}
 			case "delivered": {
@@ -606,8 +643,9 @@ export class IntercomClient extends EventEmitter {
 			}
 			case "session_joined":
 			case "presence_update": {
-				if (!isSessionInfo(message.session)) throw new Error(`Invalid ${message.type} message`);
-				this.emit(message.type, message.session);
+				const session = this.sessionFromBroker(message.session);
+				if (!session) throw new Error(`Invalid ${message.type} message`);
+				this.emit(message.type, session);
 				break;
 			}
 			case "session_left": {
@@ -837,7 +875,7 @@ export class IntercomClient extends EventEmitter {
 			...(updates.name === undefined ? {} : { name: updates.name }),
 			...(updates.status === undefined ? {} : { status: updates.status }),
 			...(updates.model === undefined ? {} : { model: updates.model }),
-			...(this.supportsCapability(INTERCOM_TAIL_CAPABILITY) && updates.piSession !== undefined ? { piSession: updates.piSession } : {}),
+			...(this.supportsPrivatePresence() && updates.piSession !== undefined ? { piSession: updates.piSession } : {}),
 		};
 		if (Object.keys(outbound).length === 0) return;
 		void this.enqueue({ type: "presence", ...outbound }).catch((error) => this.emit("error", toError(error)));

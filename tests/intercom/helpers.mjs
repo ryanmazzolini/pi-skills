@@ -12,6 +12,8 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const ownedServerPath = join(root, "extensions", "intercom", "broker", "server.mjs");
 export const legacyBrokerPath = join(root, "tests", "fixtures", "pi-intercom-0.6.0", "broker", "broker.ts");
 export const legacyDriverPath = join(root, "tests", "fixtures", "pi-intercom-0.6.0", "client-driver.mjs");
+export const currentBrokerPath = join(root, "tests", "fixtures", "pi-intercom-f875706", "broker", "server.mjs");
+export const currentDriverPath = join(root, "tests", "fixtures", "pi-intercom-f875706", "client-driver.mjs");
 
 export async function isolatedIntercom(t, prefix = "intercom-test-") {
 	// Darwin limits Unix socket paths to roughly 104 bytes; keep isolated fixture paths deliberately short.
@@ -66,15 +68,15 @@ function spawnBroker(script, env) {
 	return child;
 }
 
-export async function startOwnedBroker(paths, env = {}) {
-	const child = spawnBroker(ownedServerPath, {
+async function startBoundedBroker(script, label, paths, env = {}) {
+	const child = spawnBroker(script, {
 		PI_INTERCOM_RUNTIME_DIR: paths.runtimeDir,
 		PI_INTERCOM_SOCKET_PATH: paths.socketPath,
 		PI_INTERCOM_IDLE_TIMEOUT_MS: "60000",
 		...env,
 	});
 	await waitFor(async () => {
-		if (child.exitCode !== null) throw new Error(`Owned broker exited: ${child.output()}`);
+		if (child.exitCode !== null) throw new Error(`${label} broker exited: ${child.output()}`);
 		if (!await isBrokerHealthy(paths.socketPath, 100)) return false;
 		try {
 			return await readBrokerPid(paths) === child.pid;
@@ -83,6 +85,14 @@ export async function startOwnedBroker(paths, env = {}) {
 		}
 	});
 	return child;
+}
+
+export function startOwnedBroker(paths, env = {}) {
+	return startBoundedBroker(ownedServerPath, "Owned", paths, env);
+}
+
+export function startCurrentBroker(paths, env = {}) {
+	return startBoundedBroker(currentBrokerPath, "Current fixture", paths, env);
 }
 
 export async function startLegacyBroker(home, socketPath) {
@@ -136,8 +146,8 @@ export function waitEvent(emitter, event, predicate = () => true, timeoutMs = 2_
 }
 
 export class LegacyDriver {
-	constructor(home) {
-		this.child = spawn(process.execPath, [legacyDriverPath], {
+	constructor(home, driverPath = legacyDriverPath) {
+		this.child = spawn(process.execPath, [driverPath], {
 			env: { ...process.env, HOME: home, NODE_NO_WARNINGS: "1" },
 			stdio: ["pipe", "pipe", "pipe"],
 		});
@@ -216,6 +226,12 @@ export class LegacyDriver {
 		})();
 		this.closing = closing;
 		return closing;
+	}
+}
+
+export class CurrentDriver extends LegacyDriver {
+	constructor(home) {
+		super(home, currentDriverPath);
 	}
 }
 

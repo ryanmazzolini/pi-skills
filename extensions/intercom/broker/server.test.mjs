@@ -26,6 +26,8 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 	t.after(() => closeAll(alice, bob));
 
 	assert.equal(alice.supportsCapability("pi-session-tail-v1"), true);
+	assert.equal(alice.supportsCapability("recipient-filtered-private-presence-v1"), true);
+	assert.equal(alice.supportsPrivatePresence(), true);
 	const sessions = await alice.listSessions();
 	assert.equal(sessions.length, 2);
 	assert.equal(sessions.find((session) => session.id === alice.sessionId).name, "alice");
@@ -78,6 +80,97 @@ test("owned broker propagates and atomically updates persisted Pi session presen
 		await closed;
 		assert.equal((await observer.listSessions()).some((session) => session.name === name), false);
 	}
+});
+
+test("broker filters private Pi presence by each recipient's declared field capability", async (t) => {
+	const { paths } = await isolatedIntercom(t, "recipient-caps-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const recipientFixtures = [
+		{ name: "undeclared", capabilities: undefined, receivesPiSession: false },
+		{ name: "broker-capability-only", capabilities: ["recipient-filtered-private-presence-v1"], receivesPiSession: false },
+		{ name: "tail-recipient", capabilities: ["pi-session-tail-v1"], receivesPiSession: true },
+	];
+	const recipients = [];
+	for (const fixture of recipientFixtures) {
+		const raw = await connectRaw(paths.socketPath);
+		t.after(() => raw.socket.destroy());
+		raw.write({
+			type: "register",
+			...(fixture.capabilities ? { capabilities: fixture.capabilities } : {}),
+			session: registration(fixture.name),
+		});
+		fixture.sessionId = (await raw.wait((message) => message.type === "registered")).sessionId;
+		recipients.push({ ...fixture, raw });
+	}
+
+	const privateLocator = "/private/RECIPIENT_FILTER_SENTINEL.jsonl";
+	const first = { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "first", revision: 1 };
+	const joined = recipients.map(({ raw }) => raw.wait((message) => message.type === "session_joined" && message.session.name === "publisher"));
+	const publisher = await connectRaw(paths.socketPath);
+	t.after(() => publisher.socket.destroy());
+	publisher.write({ type: "register", session: registration("publisher", { piSession: first }) });
+	const publisherId = (await publisher.wait((message) => message.type === "registered")).sessionId;
+
+	for (let index = 0; index < recipients.length; index++) {
+		const { raw, receivesPiSession, sessionId } = recipients[index];
+		const expected = receivesPiSession ? first : undefined;
+		const joinProjection = await joined[index];
+		assert.deepEqual(joinProjection.session.piSession, expected);
+		raw.write({ type: "list", requestId: `list-${index}` });
+		const sessions = (await raw.wait((message) => message.type === "sessions" && message.requestId === `list-${index}`)).sessions;
+		const listed = sessions.find((session) => session.id === publisherId);
+		assert.deepEqual(listed.piSession, expected);
+
+		const messageId = `sender-${index}`;
+		publisher.write({
+			type: "send",
+			to: sessionId,
+			message: { id: messageId, timestamp: Date.now(), content: { text: "hello" } },
+		});
+		const incoming = await raw.wait((message) => message.type === "message" && message.message.id === messageId);
+		assert.deepEqual(incoming.from.piSession, expected);
+		if (!receivesPiSession) assert.equal(JSON.stringify([joinProjection, listed, incoming.from]).includes(privateLocator), false);
+	}
+
+	const changed = { ...first, fileLocator: "/private/RECIPIENT_FILTER_UPDATED.jsonl", activeLeafId: "second", revision: 2 };
+	const presenceUpdates = recipients.map(({ raw }) => raw.wait((message) => message.type === "presence_update" && message.session.id === publisherId));
+	publisher.write({ type: "presence", status: "changed", piSession: changed });
+	for (let index = 0; index < recipients.length; index++) {
+		const update = await presenceUpdates[index];
+		assert.deepEqual(update.session.piSession, recipients[index].receivesPiSession ? changed : undefined);
+		if (!recipients[index].receivesPiSession) assert.equal(JSON.stringify(update).includes("RECIPIENT_FILTER"), false);
+	}
+});
+
+test("broker retains only bounded client capability declarations", async (t) => {
+	const { paths } = await isolatedIntercom(t, "client-caps-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+
+	const maximum = await connectRaw(paths.socketPath);
+	t.after(() => maximum.socket.destroy());
+	maximum.write({
+		type: "register",
+		capabilities: Array.from({ length: INTERCOM_LIMITS.maxCapabilities }, (_, index) => `${index}${"x".repeat(INTERCOM_LIMITS.maxCapabilityBytes - String(index).length)}`),
+		session: registration("maximum-capabilities"),
+	});
+	await maximum.wait((message) => message.type === "registered");
+
+	for (const capabilities of [
+		"pi-session-tail-v1",
+		["x".repeat(INTERCOM_LIMITS.maxCapabilityBytes + 1)],
+		Array.from({ length: INTERCOM_LIMITS.maxCapabilities + 1 }, () => "x"),
+		[1],
+	]) {
+		const invalid = await connectRaw(paths.socketPath);
+		const closed = new Promise((resolve) => invalid.socket.once("close", resolve));
+		invalid.write({ type: "register", capabilities, session: registration("invalid-capabilities") });
+		await closed;
+	}
+	const survivor = await connectNew(paths, "survivor");
+	assert.equal(survivor.isConnected(), true);
+	await survivor.disconnect();
 });
 
 test("broker derives sender identity, handles fragmented/coalesced requests, and rejects malformed or oversized frames without crashing", async (t) => {
