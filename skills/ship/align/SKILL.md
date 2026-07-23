@@ -41,13 +41,22 @@ Before prototyping, name the single question, the minimum fidelity needed, and w
 
 Afterward, keep the verdict and its effect on alignment, discard the prototype by default, and resume the decision it interrupted. A prototype supplies evidence; it does not complete alignment or authorize planning or production implementation.
 
-## Ask the next question
+## Compress and ask the next question
 
-Rank open decisions by **impact × uncertainty**. Judge impact by how much the plausible answers would change Now, the primary experience, an important constraint, observable behavior, or the solution direction. Treat a decision that prevents a coherent Now as high impact, and include reversal cost in that judgment. Judge uncertainty by how evenly plausible answers fit inspected evidence and prior decisions—not intuition alone. Ask the highest-ranked decision that only the user can settle.
+Continuously reduce the unresolved queue before asking:
 
-Do not ask when inspection can answer, the plausible answers produce essentially the same plan, a well-supported default has low impact × uncertainty, or the matter belongs in Later. Record the fact, assumption, or deferral in the alignment file. If later evidence raises an assumption's impact × uncertainty, return it to the open decisions and rank it again.
+- Resolve facts through quick inspection.
+- When a material fact needs longer investigation and the runtime supports background agents, start a bounded read-only fact-finding task. Treat it as an unsettled prerequisite only for decisions that depend on it, and continue with an unblocked human decision instead of waiting. In Pi, load `agent-coordination` before using `delegate`. When background agents are unavailable, investigate synchronously before asking any dependent decision.
+- Leave local interfaces, mechanisms, and other choices that do not distinguish meaningfully different plans to planning or implementation.
+- Convert well-supported, low-impact, easily reversed defaults to assumptions.
+- Move behavior outside Now to Later, and split another independently useful outcome into a separate alignment.
+- When several detailed questions hang on one release-boundary decision, keep the parent decision and defer its child branches until it is settled. If questions keep multiplying, narrow Now instead of interrogating the larger tree.
 
-Ask exactly one direct blocking question in plain language. Say why it matters when that is not obvious. Include:
+When background fact-finding returns, record the result as a fact, assumption, or deferral when it settles the matter. Reopen only an affected decision that still requires genuine human judgment. Do not poll or pause unrelated questioning for a running task.
+
+Rank the remaining human decisions by **impact × uncertainty**. Judge impact by how much the plausible answers would change Now, the primary experience, an important constraint, observable behavior, or the solution direction. Treat a decision that prevents a coherent Now as high impact, and include reversal cost in that judgment. Judge uncertainty by how evenly plausible answers fit inspected evidence and prior decisions—not intuition alone. Ask the highest-ranked unblocked decision that only the user can settle. If none remains, finish only when no pending fact-finding can still change Now or its plan; otherwise state which fact is blocking progress and let the background task continue.
+
+When an unblocked human decision remains, ask exactly one direct blocking question in plain language. Say why it matters when that is not obvious. Include:
 
 > **My recommended answer:** [answer and short reason]
 
@@ -59,7 +68,7 @@ Keep investigation, option ranking, and file maintenance thorough and internal. 
 
 When statements or inspection contradict current understanding, return only the affected decision to the open queue and rank it again. If it ranks highest, explain only the conflict, show relevant evidence when applicable, and ask which understanding is correct.
 
-Before asking a fourth blocking question, compress the remaining uncertainty: resolve facts through inspection, convert well-supported defaults with low impact × uncertainty to assumptions, move behavior outside Now to Later, and use `prototype` for an experiential question that words cannot settle. Continue only when a remaining decision still ranks high by impact × uncertainty. This is a scope check, not a hard question limit.
+Before asking a fourth blocking question, force a release-boundary check: verify that every remaining decision still belongs to the same smallest useful release, collapse child questions under any unsettled parent decision, move newly exposed branches to Later, and use `prototype` for an experiential question that words cannot settle. Continue only when a remaining decision still ranks high by impact × uncertainty. This is a scope check, not a hard question limit.
 
 After roughly ten questions, a major scope change, or whenever the conversation becomes hard to follow, give a short summary of what is settled, assumed, and still open. Then continue with one question. This is not an approval checkpoint.
 
