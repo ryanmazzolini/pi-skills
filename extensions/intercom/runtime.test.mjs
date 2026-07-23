@@ -15,11 +15,9 @@ class FakeClient extends EventEmitter {
 		this.listResponses = [];
 		this.sent = [];
 		this.tailCapability = true;
-		this.privatePresenceCapability = true;
 	}
 	isConnected() { return true; }
 	supportsCapability() { return this.tailCapability; }
-	supportsPrivatePresence() { return this.tailCapability && this.privatePresenceCapability; }
 	currentPiSessionPresence() { return undefined; }
 	pendingCounts() { return { sends: 0, lists: 0, asks: 0 }; }
 	async ensureConnected() {}
@@ -77,13 +75,6 @@ test("runtime rejects unavailable, duplicate, and changed tail advertisements", 
 	const legacyClient = new FakeClient([peer("self", "caller"), target]);
 	legacyClient.tailCapability = false;
 	await assert.rejects(new IntercomRuntime({ client: legacyClient, openTail: opener }).tail("worker", 8), /does not support/);
-
-	const privacyUnsafeClient = new FakeClient([peer("self", "caller"), target]);
-	privacyUnsafeClient.privatePresenceCapability = false;
-	const privacyUnsafeRuntime = new IntercomRuntime({ client: privacyUnsafeClient, openTail: opener });
-	await assert.rejects(privacyUnsafeRuntime.tail("worker", 8), /privacy-safe/);
-	assert.equal((await privacyUnsafeRuntime.status()).tailCapability, false);
-	assert.equal((await privacyUnsafeRuntime.status()).advertisingPiSession, false);
 
 	const missingClient = new FakeClient([peer("self", "caller"), peer("target", "worker")]);
 	await assert.rejects(new IntercomRuntime({ client: missingClient, openTail: opener }).tail("worker", 8), /does not advertise/);
