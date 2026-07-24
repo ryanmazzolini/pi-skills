@@ -15,7 +15,7 @@ Progressively load [`../ship/SKILL.md`](../ship/SKILL.md): read the state-routin
 
 Reconcile the current Ship state far enough to identify the next checkpoint. Use the invocation text as the learning focus when it names something concrete. Otherwise recommend one useful capability tied to the next checkpoint and ask the human to correct it.
 
-When calibration requires a question, make it the turn's only question. Give a more consequential Align decision priority; infer the coaching focus from the response or calibrate on a later turn.
+When calibration requires a question, focus it on one coaching choice. Give the needed context, then ask one short question. Give a more consequential Align decision priority. Infer the coaching focus from the response or calibrate on a later turn.
 
 Keep coaching session-scoped. After context compaction or a fresh session, the human invokes Ship Coach again. Coaching state stays in conversation; existing Ship artifacts remain the workflow record.
 
@@ -35,6 +35,6 @@ Keep routine investigation, repetitive mechanics, unrelated integration, and saf
 
 A coached contribution stays inside the confirmed outcome and current slice. Return to Align when learning exposes a requirement, experience, scope, or high-level shape decision.
 
-Keep Align to one question per turn. Explanation may precede its question; reserve a separate knowledge check for a later turn. Repository validation and commit, push, and pull-request approvals remain required after human participation and coaching feedback. Apply independent review at the delivery boundary and selective earlier cases defined by Ship's review gate.
+Let Align settle one decision per turn. Give the needed explanation before its short question; reserve a separate knowledge check for a later turn. Repository validation and commit, push, and pull-request approvals remain required after human participation and coaching feedback. Apply independent review at the delivery boundary and selective earlier cases defined by Ship's review gate.
 
 A coaching turn is complete when the human has one bounded contribution, receives actionable feedback, or reaches the next Ship checkpoint. Stop there.

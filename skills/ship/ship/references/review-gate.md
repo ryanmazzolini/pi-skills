@@ -34,6 +34,6 @@ For durable work, record each completed pass in `review-evidence.md` beside the 
 
 ## Present the result
 
-At a final code-bearing delivery checkpoint, summarize the reviewed target, review approach, findings and approved deferrals, post-review changes, validation, and remaining risk.
+At a final code-bearing delivery checkpoint, start with the review outcome. Name the reviewed target and review approach. Then state validation and any finding, approved deferral, post-review change, or remaining risk that affects delivery. Use a few connected sentences rather than a fixed report template.
 
 If required independent review is unavailable, state the blocker and stop before the delivery action. Do not block alignment, planning, or local commits solely because independent review is unavailable.

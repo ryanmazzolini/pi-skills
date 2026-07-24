@@ -105,6 +105,6 @@ Use project language for goals and slice names. Use implementation names only in
 
 Rerun the scope gate and graph checks. For a vault-native work item, resolve `{workflow-dir}/plan.md` and `index.md` through the workflow-profile helper before writing them, then set `Current` to the plan. Write a legacy plan in its verified directory. Do not request broad independent review by default. Use the selective early-review guidance in `../ship/references/review-gate.md` only for a named scope, dependency, or high-risk uncertainty, then resolve or explicitly defer any resulting finding.
 
-Ask one direct question: is the plan correct enough to approve? Include the Now and Later boundary, dependencies, ready work, recommendation, and important remaining risk—nothing else.
+Explain the plan before asking for approval. State what Now delivers and what remains in Later. Say which slices can start. Explain any dependency or risk that could change approval. Give your recommendation. End with one short question: **Is this plan ready to use?**
 
 The plan is ready when the scope and graph checks pass, a fresh session can start every slice, any selective review findings are closed or explicitly deferred, and the user approves the plan. Stop there and return execution to `ship`.
