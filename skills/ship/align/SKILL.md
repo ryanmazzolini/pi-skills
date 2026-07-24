@@ -13,7 +13,7 @@ description: Settle the smallest useful release before planning. Use when ship f
 
 Use a caller-supplied workflow directory only after [`durable-context.md`](../ship/references/durable-context.md) classifies it as a relevant legacy workflow or this workspace profile's canonical work item. Otherwise follow that reference to locate or create the workflow. Do not independently create a repository `.plans` workflow.
 
-Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. For a vault-native work item, apply its target validator immediately before writing the alignment or updating `index.md`, then set `Current` to the alignment.
+Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. For a vault-native work item, resolve the alignment and `index.md` targets through the workflow-profile helper before writing them, then set `Current` to the alignment.
 
 Before asking, compare the user's description with how the system works today. Read relevant docs, code, tests, prior conversation, and workflow files. Use the project's domain language and read relevant `CONTEXT-MAP.md`, `CONTEXT.md`, and architecture decisions. Clarify important differences and terms that hide more than one concept.
 

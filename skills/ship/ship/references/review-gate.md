@@ -30,7 +30,7 @@ Re-review only when a fix materially changes accepted behavior, the risk profile
 
 Bind review evidence to the reviewed commit or range, or to a working-tree diff fingerprint. Record later changes, why they were material or nonmaterial, and any resulting validation. Evidence remains current through documented nonmaterial changes; material changes require a new pass.
 
-For durable work, record each completed pass in `review-evidence.md` beside the workflow files. For a vault-native work item, apply the target validator from [workflow-profiles.md](workflow-profiles.md) immediately before writing it. Include the exact target, review lenses and routes, findings and their resolution, post-review changes, validation, and remaining risk. This is a working record, not part of the reviewed target or deliverable diff. Keep raw transcripts out of the workflow.
+For durable work, record each completed pass in `review-evidence.md` beside the workflow files. For a vault-native work item, resolve the review-evidence target through the helper in [workflow-profiles.md](workflow-profiles.md) before writing it. Include the exact target, review lenses and routes, findings and their resolution, post-review changes, validation, and remaining risk. This is a working record, not part of the reviewed target or deliverable diff. Keep raw transcripts out of the workflow.
 
 ## Present the result
 

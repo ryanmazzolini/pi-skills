@@ -22,9 +22,9 @@ A legacy workflow may use `question.md` instead of `alignment.md`. Keep that fil
 
 For a new workflow, or after the human asks to consider migrating a relevant repository `.plans/` workflow, read [workflow-profiles.md](workflow-profiles.md) and run its workspace resolver against the approved ticket-workspace folder. When the session is inside one of that workspace's repository worktrees, use the enclosing `/worktrees/<work-item-slug>/` folder; without a ticket workspace, use the canonical repository root. Repository location does not imply a profile.
 
-Proceed automatically only when one profile matches. If none or several match, ask the human to select or correct the configuration, then rerun with the explicit profile; explicit selection must still pass Git-root containment. Carry that selected profile through every later workspace/path validation.
+Proceed automatically only when one profile matches. When configuration is missing, invalid, or incomplete, follow the direct creation or edit flow in [workflow-profiles.md](workflow-profiles.md): preserve existing profiles, write the complete version 1 JSON with ordinary file tools, run doctor with the current workspace, and rerun workspace resolution. Ask the human when the intended profile or paths are unclear. When several profiles match, ask the human to select one, then rerun with the explicit profile; explicit selection must still pass Git-root containment. Carry that selected profile through later workspace and target resolution.
 
-Follow the selected vault's `AGENTS.md`, `CONTEXT.md`, and `README.md` instructions when present before reading or creating project material. Use the target validator in [workflow-profiles.md](workflow-profiles.md) immediately before reading each file; do not follow a symlinked instruction file.
+Follow the selected vault's `AGENTS.md`, `CONTEXT.md`, and `README.md` instructions when present before reading or creating project material. Resolve each instruction file through the helper in [workflow-profiles.md](workflow-profiles.md); do not follow a symlinked instruction file.
 
 ## Find or create the work item
 
@@ -36,9 +36,9 @@ New Ship workflows and approved migrations live at:
 
 Use one established vault project directory name. Derive the work-item slug from the approved ticket-workspace folder when one exists. For approved ticketless work, use its stable human-recognizable workspace slug; do not invent a date prefix. Project and work-item names must be single safe path segments, with a lowercase hyphenated work-item slug. Ask when either is ambiguous.
 
-Before every vault-native read, creation, or update, run the target validator from [workflow-profiles.md](workflow-profiles.md) against the exact operand. Scope work-item files with `--within projects/<project>/work/<work-item-slug>`; this rejects traversing links, symlinked parents or leaves, and non-regular files. Do not reuse an earlier validation after the filesystem changes.
+Resolve each vault-native read, creation, or update target through the helper described in [workflow-profiles.md](workflow-profiles.md). Scope work-item files with `--within projects/<project>/work/<work-item-slug>` so generated paths cannot traverse outside the work item or follow symlink escapes. Resolve the target again after a relevant filesystem or routing change.
 
-Read the validated `projects/<project>/index.md` first when it exists. Then search only that project's work-item indexes by the current ticket or approved work-item slug, validating each candidate immediately before reading it and requiring its recorded workspace to match. Never reuse an item from workspace equality alone: several sequential ticketless items may share one repository root. Reuse one identity-and-workspace match and fail rather than guessing when several match. When no ticket or approved slug is known, ask which work item is current.
+Read the resolved `projects/<project>/index.md` first when it exists. Then search only that project's work-item indexes by the current ticket or approved work-item slug, resolving each candidate through the helper and requiring its recorded workspace to match. Never reuse an item from workspace equality alone: several sequential ticketless items may share one repository root. Reuse one identity-and-workspace match and fail rather than guessing when several match. When no ticket or approved slug is known, ask which work item is current.
 
 Create files lazily. A new work item starts with `index.md`; add `alignment.md`, `plan.md`, `review-evidence.md`, or `working/` only when the workflow needs them.
 
@@ -54,7 +54,7 @@ Use this compact index shape:
 - Current: [Alignment](alignment.md)
 ```
 
-`Current` points to the document a fresh session should read after the index. It must be a canonical relative path inside the work item. Validate its target with the work item as `--within` immediately before reading it. Update the pointer when planning supersedes alignment or a handoff becomes the continuation entry point. This pointer is orientation, not a stage flag.
+`Current` points to the document a fresh session should read after the index. It must be a canonical relative path inside the work item. Resolve its target with the work item as `--within` before reading it. Update the pointer when planning supersedes alignment or a handoff becomes the continuation entry point. This pointer is orientation, not a stage flag.
 
 Keep discarded approaches, retained investigations, prototypes, temporary review aids, and handoffs under `working/`. Capture decision-relevant supporting material as it is found: keep synthesized investigation in `working/research/` and unedited source snapshots or outputs worth retaining in `working/raw/`. Treat raw captures as immutable, link useful conclusions from the current workflow document, and omit routine logs or redundant dumps. Fresh sessions read only the vault instructions, project index, work-item index, its current document, and directly linked evidence. Do not ingest `working/` by default.
 

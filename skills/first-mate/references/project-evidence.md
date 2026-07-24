@@ -15,7 +15,7 @@ Use the message, current peer evidence, and located repository files first. If t
 
 ## Follow an explicit work-item pointer
 
-A profile and path locate vault material; they do not establish project identity or authority. Resolve the workflow-profile helper from the First Mate skill directory only when a vault pointer is needed. Validate each exact file immediately before reading it:
+A profile and path locate vault material; they do not establish project identity or authority. Resolve the workflow-profile helper from the First Mate skill directory only when a vault pointer is needed. Resolve each vault file through the helper before reading it:
 
 ```bash
 node "<first-mate-skill-dir>/../ship/ship/scripts/workflow-profile.mjs" path \

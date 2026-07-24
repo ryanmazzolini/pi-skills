@@ -10,7 +10,7 @@ Treat a workflow directory supplied by the caller as a locator. Classify it usin
 2. When no relevant legacy workflow exists, follow [durable-context.md](durable-context.md) to resolve the workspace profile.
 3. Read the vault's instructions and project index, then find the one work-item `index.md` whose ticket or approved slug identifies the current work and whose workspace also matches. Never recover by workspace equality alone; ask for the current identity when it is unknown, and fail rather than choosing among multiple matches.
 
-For vault-native work, validate every exact operand with the helper in [workflow-profiles.md](workflow-profiles.md) immediately before access. Read the work-item index first, validate its canonical relative `Current` target within the work item, then read alignment or legacy `question.md`, plan, and directly linked review evidence. Read a file under `working/` only when the validated index or current document points to it.
+For vault-native work, resolve each target through the helper in [workflow-profiles.md](workflow-profiles.md) before access. Read the work-item index first, resolve its canonical relative `Current` target within the work item, then read alignment or legacy `question.md`, plan, and directly linked review evidence. Read a file under `working/` only when the resolved index or current document points to it.
 
 ## Reconcile live state
 
