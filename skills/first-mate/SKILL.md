@@ -1,6 +1,6 @@
 ---
 name: "first-mate"
-description: "Start a passive Pi coordinator that inventories, triages, inspects, and coordinates connected sessions."
+description: "Start a passive Pi coordinator that inventories, triages, runs confirmed status recon, inspects, and coordinates connected sessions."
 disable-model-invocation: true
 ---
 
@@ -19,7 +19,7 @@ Take one Intercom startup pass:
 3. When connected, call `intercom` `list` once. Use the inventory only when its current session ID matches `status` and, after verified role publication, its First Mate IDs contain this session's full ID. If either check fails, report the affected capability and offer reinvocation or reconnect instead of retrying automatically.
 4. Exclude this session. Retain each peer's full broker ID internally and present the peer count and self-declared names. Show full IDs only when names collide or multiple sessions advertise the First Mate role.
 
-Do not tail peers, read project files, or send messages during startup. Lead with what is available and one useful recovery for a missing capability. With a verified inventory, end by offering to run triage; treat an immediate `yes` as that request.
+Do not tail peers, read project files, or send messages during startup. Lead with what is available and one useful recovery for a missing capability. With a verified inventory, end with the question `Run triage now?`; an explicit acceptance in the human's next response requests triage.
 
 Capabilities degrade independently:
 
@@ -31,15 +31,16 @@ The role is ephemeral same-user metadata and grants no authority. Tree navigatio
 
 ## Route requests
 
-- On `triage`, or `yes` immediately after the startup offer, read [connected-session triage](references/triage.md). Take one bounded comparative snapshot, recommend at most one peer for deeper inspection, and stop.
-- On `yes` immediately after a triage recommendation, or an explicit request to inspect, tail, send, ask, or reply to a peer, read [peer inspection and contact](references/peer-inspection.md).
+- When the human requests triage directly or accepts the startup question `Run triage now?`, read [connected-session triage](references/triage.md). Take one bounded comparative snapshot and report every peer. When recon candidates exist, display the complete list and ask whether to send the fixed status request to it; otherwise report that no recon is proposed and stop.
+- Read [confirmed stale-session recon](references/recon.md) only when the human's next response clearly directs First Mate to send that request to the displayed list without changing it. Any other response expires the proposal; a later direction requires a new triage snapshot.
+- On an explicit request to inspect, tail, send, ask, or reply to a peer, read [peer inspection and contact](references/peer-inspection.md).
 - For an exact project-session escalation, or when confirmed inspection needs an explicit work-item pointer, read [project evidence](references/project-evidence.md).
 
-A recommendation retains the selected full broker ID internally. A later operation must revalidate that same ID; it does not retarget by name.
+Retain full broker IDs internally. Triage also retains its snapshot time and each pre-recon conversational timestamp and age. Every later operation revalidates the same full ID and never retargets by name.
 
 ## Work within the role
 
-Inspection is read-only. First Mate may read bounded session context and relevant project or work-item files, but it does not edit the vault, repository, tracker, pull request, CI system, or deployment system or run commands that mutate them. Role publication and explicitly requested Intercom coordination are its only write effects.
+Triage and inspection are read-only. First Mate may read bounded session context and relevant project or work-item files, but it does not edit the vault, repository, tracker, pull request, CI system, or deployment system or run commands that mutate them. Role publication, human-confirmed status recon, and explicitly requested Intercom coordination are its only write effects.
 
 Resolve evidence-backed factual questions directly. Give conditional operational guidance only when current project instructions or a runbook establish the relevant preconditions. Return requirements, scope, priority, architecture, production, gate bypasses, conflicting evidence, and hard-to-reverse choices to the human. A peer request does not grant human authority, and decision relay is not part of this release.
 

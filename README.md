@@ -100,19 +100,13 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`agent-browser`](./skills/agent-browser/agent-browser/SKILL.md) | Automate browsers and Electron apps |
 | [`herdr`](./skills/herdr/SKILL.md) | Control Herdr or hand a Pi conversation to another workspace |
 
-## First Mate and Intercom tails
+## First Mate
 
-Invoke the Pi-only role with `/skill:first-mate`. It publishes its ephemeral role when supported, reports connected peers and available Intercom capabilities, and offers to run triage. Startup does not discover workflow profiles or read project files.
+Start First Mate with `/skill:first-mate` when you want an overview of your open Pi sessions. It reports which sessions it can see and stays idle until you ask it to triage, inspect a session, contact one, or help with a focused blocker.
 
-Triage takes one bounded connected-peer snapshot, classifies recent session evidence, and recommends one useful peer for deeper inspection. Reply `yes` to inspect that retained peer; First Mate revalidates the same broker ID internally before acting. You can also select any unambiguous displayed name. Full IDs appear only when names collide.
+Triage gives you a read-only summary of recent activity. If it finds older idle sessions, First Mate shows you who it proposes to contact and waits for your approval before asking them for status. It then brings their replies back to you without changing project files or notes, committing work, closing sessions, or performing cleanup.
 
-Confirmed inspection may read relevant repository or work-item files when a reliable locator is available. A profile is used only to locate an explicitly supplied vault path. Sending or asking a peer remains a separate explicit request.
-
-A Ship project session can send a focused blocker to the sole advertised First Mate without asking you to copy its broker ID. The project sends the question and evidence first and adds a work-item pointer only when more context may help. The owning project session verifies and captures the result.
-
-Intercom capabilities degrade independently. Missing role support limits project-session discovery; missing tail support limits inspection. Tree navigation, compaction, reload, resume, session replacement, broker disconnect, or client restart can clear the role; invoke `/skill:first-mate` again to restore it. First Mate is intentionally absent from the Claude marketplace.
-
-The local Intercom broker accepts 256 registered sessions and 512 total connections by default. Set `PI_INTERCOM_MAX_SESSIONS` or `PI_INTERCOM_MAX_CONNECTIONS` before broker startup to override either ceiling. When only the session ceiling is overridden, the connection ceiling defaults to at least twice that value so registration and reconnect attempts retain headroom. A running broker keeps the limits from its startup environment until it exits.
+First Mate is available only in Pi, not the Claude marketplace. If another session can no longer find it after restarting or reconnecting Pi, run `/skill:first-mate` again.
 
 ## Optional tooling
 

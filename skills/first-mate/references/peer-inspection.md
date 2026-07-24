@@ -1,12 +1,11 @@
 # Peer inspection and contact
 
-Read this when the human confirms a triage recommendation or explicitly asks to inspect, tail, send, ask, or reply to one connected peer.
+Read this when the human explicitly asks to inspect, tail, send, ask, or reply to one connected peer. A direction to send triage's fixed status request to its displayed candidate list routes to [confirmed stale-session recon](recon.md); do not reinterpret that direction as one-peer inspection.
 
 ## Select and revalidate the peer
 
 Keep full broker IDs internal during ordinary use:
 
-- An immediate `yes` after triage selects the full ID retained with that recommendation.
 - A supplied name selects its full ID when that name is unique in the latest coherent inventory.
 - Without a usable current inventory, take a fresh `status` and `list` and map an unambiguous name to its full ID.
 - When names collide, show the matching full IDs and ask the human to choose one.
@@ -28,7 +27,7 @@ Return the useful finding and next choice. Mention that project files were not c
 
 ## Contact explicitly
 
-A triage recommendation and its `yes` confirmation authorize inspection only. Send a message or create a peer model turn only when the human separately requests the operation and supplies the content or question.
+Ordinary contact requires the human to request the operation and supply the content or question. The narrow exception is the human's next-response direction to send triage's fixed status request to its displayed candidate list. It authorizes only that retained set under [confirmed stale-session recon](recon.md), not different content, new peers, or another operation.
 
 Use:
 
