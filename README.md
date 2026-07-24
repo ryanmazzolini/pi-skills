@@ -102,15 +102,15 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 ## First Mate and Intercom tails
 
-Invoke the Pi-only combined role with `/skill:first-mate`. It discovers workflow profiles and Intercom independently, reports the capabilities and connected peers it can verify, publishes its ephemeral role when supported, and remains idle. Missing or unreadable profiles do not block peer inventory or exact human-requested, non-authoritative Intercom coordination. First Mate labels this mode `workflow-unbound`: it does not read vault evidence, infer work-item authority, or capture results. A later profile-scoped evidence request must supply exact profile and work-item scope.
+Invoke the Pi-only role with `/skill:first-mate`. It publishes its ephemeral role when supported, reports connected peers and available Intercom capabilities, and offers to run triage. Startup does not discover workflow profiles or read project files.
 
-When the effective workflow configuration file is absent, First Mate offers optional guided setup using a profile name, vault path, and Git roots. It shows the complete file and asks for confirmation, rechecks immediately before exclusive creation, never replaces an appeared or invalid file, validates the result, and continues in the same session. See [workflow profiles](./skills/ship/ship/references/workflow-profiles.md) for the format and recovery behavior.
+Triage takes one bounded connected-peer snapshot, classifies recent session evidence, and recommends one useful peer for deeper inspection. Reply `yes` to inspect that retained peer; First Mate revalidates the same broker ID internally before acting. You can also select any unambiguous displayed name. Full IDs appear only when names collide.
 
-A `triage` request takes one fresh connected-peer snapshot and reads bounded persisted tails for at most 16 non-active peers. It reports `Needs attention`, `May need attention`, `Unknown`, and a compact `No action` list while keeping every result explicitly workflow-unbound. Classification never messages peers, reads vault evidence, or infers profile or work-item authority. To inspect or contact one peer afterward, ask to select it; First Mate refreshes the inventory, shows the applicable full broker IDs for confirmation, and reports a missing or replaced peer instead of guessing by name.
+Confirmed inspection may read relevant repository or work-item files when a reliable locator is available. A profile is used only to locate an explicitly supplied vault path. Sending or asking a peer remains a separate explicit request.
 
-Intercom capabilities roll out additively. An older broker may support messaging or tails without the First Mate role. Missing role support limits role-based discovery only; missing tail support limits peer-context inspection only. Tree navigation, compaction, reload, resume, session replacement, broker disconnect, or client restart can clear the role. Invoke `/skill:first-mate` again to restore discoverability while continuing any independently available human-requested features.
+A Ship project session can send a focused blocker to the sole advertised First Mate without asking you to copy its broker ID. The project sends the question and evidence first and adds a work-item pointer only when more context may help. The owning project session verifies and captures the result.
 
-First Mate is intentionally absent from the Claude marketplace. Rollback does not move or delete vault work items, and older brokers continue exposing only the capabilities they support.
+Intercom capabilities degrade independently. Missing role support limits project-session discovery; missing tail support limits inspection. Tree navigation, compaction, reload, resume, session replacement, broker disconnect, or client restart can clear the role; invoke `/skill:first-mate` again to restore it. First Mate is intentionally absent from the Claude marketplace.
 
 ## Optional tooling
 
