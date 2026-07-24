@@ -17,6 +17,48 @@ test("shutdown cancels a connection that is still preparing its broker", async (
 	assert.equal(client.isConnected(), false);
 });
 
+test("client preserves broker errors before registration and while requests are pending", async (t) => {
+	const { paths } = await isolatedIntercom(t, "broker-error-");
+	const sockets = new Set();
+	let connections = 0;
+	const server = net.createServer((socket) => {
+		sockets.add(socket);
+		const connection = ++connections;
+		socket.on("error", () => undefined);
+		socket.on("close", () => sockets.delete(socket));
+		const decoder = new FrameDecoder((message) => {
+			if (message?.type === "register" && connection === 1) {
+				socket.end(encodeFrame({ type: "error", error: "Intercom session limit reached" }));
+				return;
+			}
+			if (message?.type === "register") {
+				socket.write(encodeFrame({ type: "registered", sessionId: "registered-before-error" }));
+				return;
+			}
+			if (message?.type === "list") socket.end(encodeFrame({ type: "error", error: "Invalid list message" }));
+		}, () => socket.destroy());
+		socket.on("data", (chunk) => decoder.push(chunk));
+	});
+	await new Promise((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(paths.socketPath, resolve);
+	});
+	t.after(async () => {
+		for (const socket of sockets) socket.destroy();
+		await new Promise((resolve) => server.close(resolve));
+	});
+
+	const refused = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
+	await assert.rejects(
+		refused.connect(registration("refused")),
+		/Intercom broker rejected registration: Intercom session limit reached/,
+	);
+
+	const accepted = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
+	await accepted.connect(registration("accepted"));
+	await assert.rejects(accepted.listSessions(), /Intercom broker error: Invalid list message/);
+});
+
 test("client uses the latest registration after blocked broker preparation", async (t) => {
 	const { paths } = await isolatedIntercom(t);
 	const broker = await startOwnedBroker(paths);

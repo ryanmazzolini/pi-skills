@@ -10,6 +10,7 @@ import { getIntercomPaths, type IntercomPaths } from "./paths.ts";
 const DEFAULT_WAIT_MS = 5_000;
 const DEFAULT_LOCK_STALE_MS = 30_000;
 const MAX_OWNERSHIP_FILE_BYTES = 4_096;
+const MAX_STARTUP_STDERR_BYTES = 4_096;
 
 export interface SpawnBrokerOptions {
 	paths?: IntercomPaths;
@@ -26,6 +27,21 @@ export interface BrokerSpawnResult {
 
 function sleep(milliseconds: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function captureStderrTail(stream: NodeJS.ReadableStream | null): () => string {
+	if (!stream) return () => "";
+	let tail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+	stream.on("data", (chunk: Buffer | string) => {
+		const next = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "utf8");
+		tail = tail.length === 0 ? next : Buffer.concat([tail, next]);
+		if (tail.length > MAX_STARTUP_STDERR_BYTES) tail = tail.subarray(tail.length - MAX_STARTUP_STDERR_BYTES);
+	});
+	(stream as NodeJS.ReadableStream & { unref?: () => void }).unref?.();
+	return () => tail.toString("utf8")
+		.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ")
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 function processIsAlive(pid: number): boolean {
@@ -295,7 +311,7 @@ export async function spawnBrokerIfNeeded(options: SpawnBrokerOptions = {}): Pro
 		// plain Node executable explicitly so server.mjs is never treated as a Pi prompt.
 		const child = spawn("node", [serverPath], {
 			detached: true,
-			stdio: "ignore",
+			stdio: ["ignore", "ignore", "pipe"],
 			cwd: dirname(serverPath),
 			windowsHide: true,
 			env: {
@@ -306,6 +322,7 @@ export async function spawnBrokerIfNeeded(options: SpawnBrokerOptions = {}): Pro
 			},
 		});
 		child.unref();
+		const stderrTail = captureStderrTail(child.stderr);
 		try {
 			await new Promise<void>((resolve, reject) => {
 				let settled = false;
@@ -313,16 +330,20 @@ export async function spawnBrokerIfNeeded(options: SpawnBrokerOptions = {}): Pro
 					if (settled) return;
 					settled = true;
 					child.off("error", onError);
-					child.off("exit", onExit);
+					child.off("close", onClose);
 					if (error) reject(error);
 					else resolve();
 				};
 				const onError = (error: Error) => finish(new Error(`Failed to spawn intercom broker: ${error.message}`, { cause: error }));
-				const onExit = (code: number | null, signal: NodeJS.Signals | null) => finish(new Error(
-					signal ? `Intercom broker exited before startup with signal ${signal}` : `Intercom broker exited before startup with code ${code ?? "unknown"}`,
-				));
+				const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
+					const diagnostic = stderrTail();
+					const reason = signal
+						? `Intercom broker exited before startup with signal ${signal}`
+						: `Intercom broker exited before startup with code ${code ?? "unknown"}`;
+					finish(new Error(`${reason}${diagnostic ? `: ${diagnostic}` : ""}`));
+				};
 				child.once("error", onError);
-				child.once("exit", onExit);
+				child.once("close", onClose);
 				waitForOwnedBroker(paths, child.pid, waitMs).then(() => finish(), (error) => finish(error instanceof Error ? error : new Error(String(error))));
 			});
 		} catch (error) {
