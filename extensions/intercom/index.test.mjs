@@ -48,6 +48,7 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 
 test("validates action-specific fields while preserving attachment and reply selection inputs", () => {
 	assert.doesNotThrow(() => validateIntercomAction({ action: "list" }));
+	assert.doesNotThrow(() => validateIntercomAction({ action: "list", limit: 1 }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "first-mate" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role" }));
 	assert.throws(() => validateIntercomAction({ action: "role", role: "supervisor" }), /Invalid intercom role/);
@@ -701,8 +702,9 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.match(advertisedRole.content[0].text, new RegExp(ownedId));
 	await waitFor(async () => (await peer.listSessions()).find((item) => item.id === ownedId)?.role === "first-mate");
 
-	const listed = await execute({ action: "list" });
+	const listed = await execute({ action: "list", limit: 1 });
 	assert.ok(Buffer.byteLength(listed.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
+	assert.equal(listed.details.count, 2);
 	assert.equal(listed.details.currentSessionId, advertisedRole.details.sessionId);
 	assert.equal(listed.details.sessionIds.includes(peer.sessionId), true);
 	assert.deepEqual(listed.details.firstMateSessionIds, [peer.sessionId, ownedId]);
