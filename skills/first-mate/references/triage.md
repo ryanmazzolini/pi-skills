@@ -1,10 +1,10 @@
 # Connected-session triage
 
-Read this only after the human asks First Mate to triage connected sessions. This is a bounded comparison of current session evidence; deeper inspection happens only after the human selects or confirms one peer.
+Read this only after the human asks First Mate to triage connected sessions. Triage is one bounded, read-only evidence pass that ends with a report and, when eligible peers exist, an exact recon proposal.
 
 ## Take one bounded snapshot
 
-1. Call `intercom` `status`, then `intercom` `list`. Use the inventory only when both report the same current broker ID; do not retry a changed snapshot automatically.
+1. Call `intercom` `status`, then `intercom` `list`. Use the inventory only when both report the same current broker session ID; do not retry a changed snapshot automatically. Record the time the coherent inventory was obtained as the triage snapshot timestamp.
 2. Call `intercom` once with only `action: "pending"`. Its projection is already bounded, so do not pass `limit` or other fields.
 3. Exclude First Mate and account for every other connected peer exactly once.
 4. Build one classification queue: peers with exact pending asks first, then remaining non-active peers, with full broker ID as the tie-breaker. Keep the first 16 and put every excess peer under `Unknown` with the classification-budget limitation.
@@ -12,9 +12,11 @@ Read this only after the human asks First Mate to triage connected sessions. Thi
 6. Tail each other queued peer by its full ID with `limit: 8`, `tailScanBytes: 2097152`, and `tailProjectionBytes: 4096`.
 7. Put active peers without a pending ask under `No action` without tailing them.
 
-The 16-peer queue limits one triage to 32 MiB scanned and 64 KiB projected. Do not read project files, infer disconnected sessions, or message a peer during this comparative pass. Missing tail capability leaves dependent classifications `Unknown`; the inventory remains useful.
+The 16-peer queue limits one triage to 32 MiB scanned and 64 KiB projected. Do not read project files, infer disconnected sessions, or contact a peer during this pass. Missing tail capability leaves dependent classifications and ages `Unknown`; the inventory remains useful.
 
-## Classify the evidence
+Retain the snapshot timestamp and every tail's exact `lastConversationalTimestamp`. Compute all displayed ages against that one snapshot timestamp.
+
+## Classify and date the evidence
 
 Use the narrowest supported category:
 
@@ -25,14 +27,26 @@ Use the narrowest supported category:
 
 Idle status, age, tool volume, cwd, a failed outcome, or silence does not establish attention by itself. Tool outcomes support nearby conversational text; they do not independently establish a blocker. When two categories remain plausible, choose the less certain one and name the limitation.
 
-## Present one useful next step
+A peer is **stale** when its last eligible conversational message was at least seven days (168 hours) before the triage snapshot timestamp. A missing or unusable timestamp has unknown age and does not establish staleness.
 
-Lead with `Needs attention`, then `May need attention`, then `Unknown`. For each listed peer, give its self-declared name and one sentence of evidence or limitation; include message age only when useful. Show a full broker ID only when the name is missing or duplicated. Keep `No action` to a count and compact name list. Before stopping, confirm that the reported categories account for every connected peer.
+## Present the report and recon proposal
 
-Recommend the first useful deeper-inspection candidate in this order: `Needs attention`, `May need attention`, then an `Unknown` peer when another inspection could resolve its limitation. Do not recommend an active or `No action` peer. Retain that peer's full ID and ask one concrete question using its name, for example:
+Lead with `Needs attention`, then `May need attention`, `Unknown`, and `No action`. List every peer once with its self-declared name, one sentence of useful evidence or limitation, and one of these clear age forms:
 
-> `payments-refactor` has the clearest unresolved signal. Inspect it further?
+- `last message 13 days ago` when an eligible conversational timestamp is available
+- `active now` when the inventory reports the peer active
+- `last message age unknown` when no dependable age is available
 
-An immediate `yes` selects that retained ID for read-only inspection. If no evidence supports a useful follow-up, say that no peer warrants deeper inspection from this snapshot.
+Use sensible smaller units for ages under a day. Show a full broker ID only when the name is missing or duplicated. Include the snapshot timestamp and accounting totals so the report covers every connected peer and makes the 16-peer budget visible.
 
-Suggest Ship only when the evidence explicitly shows a cross-session recovery or coordination need. Do not create a work item merely because a peer has several steps remaining.
+After the report, list every **recon candidate** retained from the 16-peer queue. A candidate must have been idle, have no exact pending ask, and be stale from its retained pre-recon conversational timestamp. Its attention category does not otherwise affect eligibility. Exclude active peers, peers with exact pending asks, peers with unknown ages, and peers outside the queue.
+
+When candidates exist, display the complete list with names and pre-recon ages, then ask one focused question, for example:
+
+> Send the status-only recon request to these 3 sessions?
+
+Stop after the question without contacting a peer. Retain each candidate's full broker ID, raw conversational timestamp, and rendered age with the snapshot timestamp. Route to [confirmed stale-session recon](recon.md) only when the human's next response clearly directs First Mate to send the request to that displayed list without adding or removing peers. Any other response expires the proposal.
+
+When there are no candidates, report that no recon is proposed and stop without asking for approval.
+
+Suggest Ship only when evidence explicitly shows a cross-session recovery or coordination need. Triage does not create work items.
