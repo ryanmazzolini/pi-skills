@@ -27,9 +27,12 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 
 	assert.equal(alice.supportsCapability("pi-session-tail-v1"), true);
 	assert.equal(alice.supportsCapability("first-mate-role-v1"), true);
+	assert.equal(alice.supportsCapability("pi-session-identity-v1"), true);
 	const sessions = await alice.listSessions();
 	assert.equal(sessions.length, 2);
-	assert.equal(sessions.find((session) => session.id === alice.sessionId).name, "alice");
+	const aliceInfo = sessions.find((session) => session.id === alice.sessionId);
+	assert.equal(aliceInfo.name, "alice");
+	assert.equal(aliceInfo.piSessionId, alice.currentPiSessionId());
 
 	const presence = waitEvent(bob, "presence_update", (session) => session.id === alice.sessionId && session.status === "thinking");
 	alice.updatePresence({ status: "thinking", model: "next-model" });
@@ -37,16 +40,317 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 
 	const attachment = { type: "snippet", name: "answer.ts", content: "export const answer = 42", language: "typescript" };
 	const received = waitEvent(bob, "message", (_from, message) => message.id === "attachment-1");
-	assert.deepEqual(await alice.send(bob.sessionId, { messageId: "attachment-1", text: "review", attachments: [attachment] }), {
+	assert.deepEqual(await alice.send(bob.sessionId, { messageId: "attachment-1", text: "review", attachments: [attachment] }, undefined, undefined, bob.currentPiSessionId()), {
 		id: "attachment-1",
 		delivered: true,
 	});
 	const [from, message] = await received;
 	assert.equal(from.id, alice.sessionId);
+	assert.equal(from.piSessionId, alice.currentPiSessionId());
 	assert.deepEqual(message.content.attachments, [attachment]);
 	const failed = await alice.send("missing-peer", { text: "lost" });
 	assert.equal(failed.delivered, false);
 	assert.match(failed.reason, /Session not found/);
+});
+
+test("stable identity expectations cannot shadow legacy names and fail duplicate races atomically", async (t) => {
+	const { paths } = await isolatedIntercom(t, "identity-route-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const sender = await connectNew(paths, "sender");
+	const named = await connectNew(paths, "victim");
+	const shadow = new IntercomClient({ socketPath: paths.socketPath });
+	await shadow.connect(registration("shadow", { piSessionId: "victim" }));
+	t.after(() => closeAll(sender, named, shadow));
+
+	let shadowMessages = 0;
+	shadow.on("message", () => { shadowMessages++; });
+	const namedMessage = waitEvent(named, "message", (_from, message) => message.id === "legacy-name");
+	assert.equal((await sender.send("victim", { messageId: "legacy-name", text: "named peer" })).delivered, true);
+	await namedMessage;
+	assert.equal(shadowMessages, 0);
+
+	const lateName = new IntercomClient({ socketPath: paths.socketPath });
+	await lateName.connect(registration(named.currentPiSessionId()));
+	const nameRace = await sender.send(
+		named.sessionId,
+		{ messageId: "name-race", text: "must not route" },
+		undefined,
+		undefined,
+		named.currentPiSessionId(),
+		named.currentPiSessionId(),
+		named.sessionId,
+	);
+	assert.equal(nameRace.delivered, false);
+	assert.equal(nameRace.reason, "Target selector became ambiguous or changed");
+	await lateName.disconnect();
+
+	const duplicate = new IntercomClient({ socketPath: paths.socketPath });
+	await duplicate.connect(registration("duplicate", {
+		piSession: {
+			sessionId: named.currentPiSessionId(),
+			fileLocator: "/tmp/duplicate.jsonl",
+			activeLeafId: "duplicate-leaf",
+			revision: 1,
+		},
+	}));
+	t.after(() => duplicate.disconnect());
+	const rejected = await sender.send(
+		named.sessionId,
+		{ messageId: "duplicate-race", text: "must not route" },
+		undefined,
+		undefined,
+		named.currentPiSessionId(),
+		named.currentPiSessionId(),
+		named.sessionId,
+	);
+	assert.equal(rejected.delivered, false);
+	assert.match(rejected.reason, /Multiple connected sessions advertise the expected Pi session ID/);
+	const legacyDirect = await sender.send(named.sessionId, { messageId: "legacy-duplicate-target", text: "must not route" });
+	assert.equal(legacyDirect.delivered, false);
+	assert.equal(legacyDirect.reason, "Recipient Pi session identity is not unique");
+});
+
+test("broker atomically rejects late ambiguity in the original public selector", async (t) => {
+	const { paths } = await isolatedIntercom(t, "selector-race-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const sender = await connectNew(paths, "sender");
+	const target = await connectNew(paths, "victim");
+	// This transport ID and stable ID model the result of runtime list resolution.
+	const resolvedTransportId = target.sessionId;
+	const resolvedPiSessionId = target.currentPiSessionId();
+	const lateCollision = await connectNew(paths, "victim");
+	t.after(() => closeAll(sender, target, lateCollision));
+
+	const rejected = await sender.send(
+		resolvedTransportId,
+		{ messageId: "selector-race", text: "must not route" },
+		undefined,
+		undefined,
+		resolvedPiSessionId,
+		"victim",
+		resolvedTransportId,
+	);
+	assert.equal(rejected.delivered, false);
+	assert.equal(rejected.reason, "Target selector became ambiguous or changed");
+});
+
+test("queued deliveries revalidate selector, sender, and modern or legacy recipient identity before writing", async (t) => {
+	const { paths } = await isolatedIntercom(t, "queued-id-");
+	const broker = await startOwnedBroker(paths, {
+		NODE_ENV: "test",
+		PI_INTERCOM_TEST_TRACE_DELIVERY_QUEUE: "1",
+	});
+	t.after(() => stopChild(broker));
+	const target = await connectRaw(paths.socketPath);
+	t.after(() => target.socket.destroy());
+	target.write({ type: "register", session: registration("queued-target", { piSessionId: "pi-queued-target" }) });
+	const registered = await target.wait((message) => message.type === "registered");
+	target.socket.pause();
+
+	const blocker = await connectNew(paths, "blocker", { sendTimeoutMs: 5_000 });
+	const identitySender = await connectNew(paths, "identity-sender", { sendTimeoutMs: 5_000 });
+	const selectorSender = await connectNew(paths, "selector-sender", { sendTimeoutMs: 5_000 });
+	const senderRace = await connectNew(paths, "sender-race", { sendTimeoutMs: 5_000 });
+	const legacyDirect = await connectNew(paths, "legacy-direct", { sendTimeoutMs: 5_000 });
+	t.after(() => closeAll(blocker, identitySender, selectorSender, senderRace, legacyDirect));
+	let blockerQueued;
+	const blockerWasQueued = new Promise((resolve) => { blockerQueued = resolve; });
+	let blockerSettled = false;
+	const blockingSend = blocker.send(registered.sessionId, {
+		messageId: "queue-blocker",
+		text: "x".repeat(250_000),
+		attachments: [
+			{ type: "file", name: "blocker-a.txt", content: "y".repeat(350_000) },
+			{ type: "file", name: "blocker-b.txt", content: "z".repeat(350_000) },
+		],
+	}, undefined, blockerQueued).finally(() => { blockerSettled = true; });
+	await blockerWasQueued;
+	await waitFor(() => broker.output().includes('delivery_queued:"queue-blocker"'));
+	assert.equal(blockerSettled, false, "paused target must hold the write queue open");
+
+	const queued = [];
+	const onQueued = () => new Promise((resolve) => queued.push(resolve));
+	const identityQueued = onQueued();
+	const selectorQueued = onQueued();
+	const senderQueued = onQueued();
+	const legacyQueued = onQueued();
+	let queuedSendsSettled = 0;
+	const track = (promise) => promise.finally(() => { queuedSendsSettled++; });
+	const identitySend = track(identitySender.send(
+		registered.sessionId,
+		{ messageId: "queued-identity", text: "must revalidate identity" },
+		undefined,
+		queued.shift(),
+		"pi-queued-target",
+		"pi-queued-target",
+		registered.sessionId,
+	));
+	const selectorSend = track(selectorSender.send(
+		registered.sessionId,
+		{ messageId: "queued-selector", text: "must revalidate selector" },
+		undefined,
+		queued.shift(),
+		"pi-queued-target",
+		"queued-target",
+		registered.sessionId,
+	));
+	const senderSend = track(senderRace.send(
+		registered.sessionId,
+		{ messageId: "queued-sender", text: "must revalidate sender" },
+		undefined,
+		queued.shift(),
+		"pi-queued-target",
+		"pi-queued-target",
+		registered.sessionId,
+	));
+	const legacySend = track(legacyDirect.send(
+		registered.sessionId,
+		{ messageId: "queued-legacy", text: "must revalidate legacy target" },
+		undefined,
+		queued.shift(),
+	));
+	await Promise.all([identityQueued, selectorQueued, senderQueued, legacyQueued]);
+	await waitFor(() => ["queued-identity", "queued-selector", "queued-sender", "queued-legacy"]
+		.every((messageId) => broker.output().includes(`delivery_queued:${JSON.stringify(messageId)}`)));
+	assert.equal(queuedSendsSettled, 0);
+
+	const targetDuplicate = new IntercomClient({ socketPath: paths.socketPath });
+	await targetDuplicate.connect(registration("late-target-identity", {
+		piSession: {
+			sessionId: "pi-queued-target",
+			fileLocator: "/tmp/queued-duplicate.jsonl",
+			activeLeafId: "queued-duplicate-leaf",
+			revision: 1,
+		},
+	}));
+	const selectorCollision = await connectNew(paths, "queued-target");
+	const senderDuplicate = new IntercomClient({ socketPath: paths.socketPath });
+	await senderDuplicate.connect(registration("late-sender-identity", { piSessionId: senderRace.currentPiSessionId() }));
+	t.after(() => closeAll(targetDuplicate, selectorCollision, senderDuplicate));
+	target.socket.resume();
+
+	assert.equal((await blockingSend).delivered, true);
+	const [identityResult, selectorResult, senderResult, legacyResult] = await Promise.all([
+		identitySend,
+		selectorSend,
+		senderSend,
+		legacySend,
+	]);
+	assert.equal(identityResult.delivered, false);
+	assert.match(identityResult.reason, /Multiple connected sessions advertise the expected Pi session ID/);
+	assert.equal(selectorResult.delivered, false);
+	assert.equal(selectorResult.reason, "Target selector became ambiguous or changed");
+	assert.equal(senderResult.delivered, false);
+	assert.equal(senderResult.reason, "Sender Pi session identity is not unique");
+	assert.equal(legacyResult.delivered, false);
+	assert.equal(legacyResult.reason, "Recipient Pi session identity is not unique");
+});
+
+test("broker rejects messages from duplicate explicit or legacy-presence Pi identities", async (t) => {
+	const { paths } = await isolatedIntercom(t, "sender-id-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const recipient = await connectNew(paths, "recipient");
+	const explicit = new IntercomClient({ socketPath: paths.socketPath });
+	await explicit.connect(registration("explicit", { piSessionId: "pi-duplicate-sender" }));
+	const legacyPresence = new IntercomClient({ socketPath: paths.socketPath });
+	await legacyPresence.connect(registration("legacy-presence", {
+		piSession: {
+			sessionId: "pi-duplicate-sender",
+			fileLocator: "/tmp/duplicate-sender.jsonl",
+			activeLeafId: "duplicate-sender-leaf",
+			revision: 1,
+		},
+	}));
+	t.after(() => closeAll(recipient, explicit, legacyPresence));
+	let received = 0;
+	recipient.on("message", () => { received++; });
+
+	for (const [client, messageId] of [[explicit, "explicit-duplicate"], [legacyPresence, "legacy-duplicate"]]) {
+		const rejected = await client.send(recipient.sessionId, { messageId, text: "must not route" });
+		assert.equal(rejected.delivered, false);
+		assert.equal(rejected.reason, "Sender Pi session identity is not unique");
+	}
+	assert.equal(received, 0);
+});
+
+test("pinned legacy transport cannot retarget to a late peer name", async (t) => {
+	const { paths } = await isolatedIntercom(t, "legacy-pin-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const sender = await connectNew(paths, "sender");
+	const legacyTarget = new IntercomClient({ socketPath: paths.socketPath });
+	await legacyTarget.connect(registration("legacy-target"));
+	const pinnedTransportId = legacyTarget.sessionId;
+	await legacyTarget.disconnect();
+	const collision = await connectNew(paths, pinnedTransportId);
+	t.after(() => closeAll(sender, collision));
+	let received = 0;
+	collision.on("message", () => { received++; });
+
+	const rejected = await sender.send(
+		pinnedTransportId,
+		{ messageId: "legacy-pin-race", text: "must not retarget" },
+		undefined,
+		undefined,
+		undefined,
+		pinnedTransportId,
+		pinnedTransportId,
+	);
+	assert.equal(rejected.delivered, false);
+	assert.match(rejected.reason, /Session not found|changed before delivery/);
+	assert.equal(received, 0);
+});
+
+test("broker delivery ambiguity never echoes a private transport ID", async (t) => {
+	const { paths } = await isolatedIntercom(t, "private-id-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const sender = await connectNew(paths, "sender");
+	const target = await connectNew(paths, "target");
+	const privateTargetId = target.sessionId;
+	const expectedPiSessionId = target.currentPiSessionId();
+	await target.disconnect();
+	const collisions = await Promise.all([
+		connectNew(paths, privateTargetId),
+		connectNew(paths, privateTargetId),
+	]);
+	t.after(() => closeAll(sender, ...collisions));
+
+	const rejected = await sender.send(
+		privateTargetId,
+		{ messageId: "private-id-race", text: "must not leak" },
+		undefined,
+		undefined,
+		expectedPiSessionId,
+	);
+	assert.equal(rejected.delivered, false);
+	assert.equal(rejected.reason, "Multiple connected sessions match the transport target");
+	assert.equal(rejected.reason.includes(privateTargetId), false);
+});
+
+test("one direct client adopts a changed Pi identity after disconnect", async (t) => {
+	const { paths } = await isolatedIntercom(t, "client-id-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const observer = await connectNew(paths, "observer");
+	const client = new IntercomClient({ socketPath: paths.socketPath });
+	t.after(() => closeAll(observer, client));
+	const firstPresence = { sessionId: "pi-first", fileLocator: "/tmp/first.jsonl", activeLeafId: "first-leaf", revision: 1 };
+	await client.connect(registration("changing", { piSessionId: "pi-first", piSession: firstPresence }));
+	assert.equal(client.currentPiSessionId(), "pi-first");
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.piSessionId === "pi-first" && session.piSession?.revision === 1));
+
+	await client.disconnect();
+	const secondPresence = { sessionId: "pi-second", fileLocator: "/tmp/second.jsonl", activeLeafId: "second-leaf", revision: 1 };
+	await client.connect(registration("changing", { piSessionId: "pi-second", piSession: secondPresence }));
+	assert.equal(client.currentPiSessionId(), "pi-second");
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.id === client.sessionId && session.piSessionId === "pi-second" && session.piSession?.revision === 1));
+	const updated = waitEvent(observer, "presence_update", (session) => session.id === client.sessionId && session.piSession?.revision === 2);
+	client.updatePresence({ piSession: { ...secondPresence, revision: 2 } });
+	await updated;
 });
 
 test("broker preserves target write failures in delivery acknowledgements", async (t) => {
@@ -92,12 +396,28 @@ test("owned broker propagates and atomically updates persisted Pi session presen
 	target.updatePresence({ piSession: null });
 	assert.equal((await cleared)[0].piSession, undefined);
 
-	for (const [name, update] of [
-		["stale", { ...first, revision: 3 }],
-		["extra", { ...first, revision: 4, snapshotBytes: 100 }],
+	const mismatchedRegistration = await connectRaw(paths.socketPath);
+	const mismatchedClosed = new Promise((resolve) => mismatchedRegistration.socket.once("close", resolve));
+	mismatchedRegistration.write({
+		type: "register",
+		session: registration("mismatched-registration", { piSessionId: "different-pi-session", piSession: first }),
+	});
+	await mismatchedClosed;
+	assert.equal((await observer.listSessions()).some((session) => session.name === "mismatched-registration"), false);
+
+	const unsafeIdentity = await connectRaw(paths.socketPath);
+	const unsafeIdentityClosed = new Promise((resolve) => unsafeIdentity.socket.once("close", resolve));
+	unsafeIdentity.write({ type: "register", session: registration("unsafe-identity", { piSessionId: "pi-\u202ereordered" }) });
+	await unsafeIdentityClosed;
+	assert.equal((await observer.listSessions()).some((session) => session.name === "unsafe-identity"), false);
+
+	for (const [name, registrationOverrides, update] of [
+		["stale", { piSession: { ...first, revision: 3 } }, { ...first, revision: 3 }],
+		["extra", { piSession: { ...first, revision: 3 } }, { ...first, revision: 4, snapshotBytes: 100 }],
+		["mismatched-id", { piSessionId: "different-pi-session" }, first],
 	]) {
 		const raw = await connectRaw(paths.socketPath);
-		raw.write({ type: "register", session: registration(name, { piSession: { ...first, revision: 3 } }) });
+		raw.write({ type: "register", session: registration(name, registrationOverrides) });
 		await raw.wait((message) => message.type === "registered");
 		const closed = new Promise((resolve) => raw.socket.once("close", resolve));
 		raw.write({ type: "presence", piSession: update });

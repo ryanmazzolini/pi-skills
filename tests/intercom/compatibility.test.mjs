@@ -96,17 +96,20 @@ test("new client cleans only the departed recipient's asks from legacy session_l
 	assert.deepEqual(alice.pendingCounts(), { sends: 0, lists: 0, asks: 0 });
 });
 
-test("new clients never expose persisted-session locators through a legacy broker", async (t) => {
+test("new clients hide unsupported stable IDs and persisted locators behind a legacy broker", async (t) => {
 	const fixture = await isolatedIntercom(t, "tail-legacy-");
 	const broker = await startLegacyBroker(fixture.home, fixture.paths.socketPath);
 	t.after(() => stopChild(broker));
 	const observer = await connectNew(fixture.paths, "observer");
 	const target = new IntercomClient({ socketPath: fixture.paths.socketPath, reconnectDelaysMs: [20] });
 	const privateLocator = "/private/persisted/session.jsonl";
-	await target.start(registration("target", { piSession: { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "leaf", revision: 1 } }), async () => undefined);
+	await target.start(registration("target", { piSessionId: "private-pi-session", piSession: { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "leaf", revision: 1 } }), async () => undefined);
 	t.after(async () => Promise.allSettled([observer.disconnect(), target.disconnect()]));
 	assert.equal(target.supportsCapability("pi-session-tail-v1"), false);
+	assert.equal(target.supportsCapability("pi-session-identity-v1"), false);
+	assert.equal(target.currentPiSessionId(), "private-pi-session");
 	let listed = (await observer.listSessions()).find((session) => session.id === target.sessionId);
+	assert.equal(listed.piSessionId, undefined);
 	assert.equal(listed.piSession, undefined);
 	assert.equal(JSON.stringify(listed).includes(privateLocator), false);
 	target.updatePresence({ piSession: { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "new", revision: 2 } });

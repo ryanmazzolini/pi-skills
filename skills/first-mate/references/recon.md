@@ -4,9 +4,9 @@ Read this only when the human's next response clearly directs First Mate to send
 
 ## Revalidate the retained candidates
 
-Refresh `intercom` `status` and `list` once, and require both to report the same current broker session ID. On a mismatch, send no asks and report that recon did not run.
+Refresh `intercom` `status` and `list` once, and require both to report the same current Pi session ID with `truncated` false and `omittedSessionIds` equal to zero. On an identity mismatch or capacity-truncated inventory, send no asks and report that recon did not run.
 
-Revalidate each retained full candidate ID against that one fresh inventory. Keep only IDs still present and idle. Skip an absent or newly active ID; if the old name appears under another ID, treat the peer as changed and skip it. Do not substitute a new peer, add a newly discovered stale peer, retarget by name, retry the refresh, or expand beyond the triage snapshot.
+Revalidate each retained full candidate ID against that one fresh inventory. Keep only IDs present exactly once and idle. Skip an absent, duplicated, or newly active ID; if the old name appears under another ID, treat the peer as changed and skip it. Do not substitute a new peer, add a newly discovered stale peer, retarget by name, retry the refresh, or expand beyond the triage snapshot.
 
 Preserve each retained raw conversational timestamp and rendered pre-recon age. Asking creates a new conversational message and must not replace that baseline.
 

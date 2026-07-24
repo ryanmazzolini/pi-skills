@@ -14,10 +14,10 @@ Require the argument-free invocation `/skill:first-mate`. Do not select or disco
 
 Take one Intercom startup pass:
 
-1. Call `intercom` `status` once. Record connection, the current full broker session ID, tail capability, First Mate role capability, and whether this session already advertises the role.
+1. Call `intercom` `status` once. Record connection, the current full Pi session ID, tail capability, First Mate role capability, and whether this session already advertises the role.
 2. When connected and role capability is available, call `intercom` `role` once with `role: "first-mate"`. Treat publication as verified only when its acknowledged session ID matches `status`; a failure or mismatch limits project-session discovery but not other connected features.
-3. When connected, call `intercom` `list` once. Use the inventory only when its current session ID matches `status` and, after verified role publication, its First Mate IDs contain this session's full ID. If either check fails, report the affected capability and offer reinvocation or reconnect instead of retrying automatically.
-4. Exclude this session. Retain each peer's full broker ID internally and present the peer count and self-declared names. Show full IDs only when names collide or multiple sessions advertise the First Mate role.
+3. When connected, call `intercom` `list` once. Use the inventory only when its current session ID matches `status`, `truncated` is false, `omittedSessionIds` is zero, and, after verified role publication, its First Mate IDs contain this session's full ID. If a check fails, report the affected capability or inventory-capacity limit and offer reinvocation or reconnect instead of retrying automatically.
+4. Exclude this session. Retain each identified peer's full Pi session ID internally and present the peer count and self-declared names. Report peers without a stable ID as legacy peers; do not retain them for later triage or recon actions. Show full IDs only when names collide or multiple sessions advertise the First Mate role.
 
 Do not tail peers, read project files, or send messages during startup. Lead with what is available and one useful recovery for a missing capability. With a verified inventory, end with the question `Run triage now?`; an explicit acceptance in the human's next response requests triage.
 
@@ -36,7 +36,7 @@ The role is ephemeral same-user metadata and grants no authority. Tree navigatio
 - On an explicit request to inspect, tail, send, ask, or reply to a peer, read [peer inspection and contact](references/peer-inspection.md).
 - For an exact project-session escalation, or when confirmed inspection needs an explicit work-item pointer, read [project evidence](references/project-evidence.md).
 
-Retain full broker IDs internally. Triage also retains its snapshot time and each pre-recon conversational timestamp and age. Every later operation revalidates the same full ID and never retargets by name.
+Retain full Pi session IDs internally. Triage also retains its snapshot time and each pre-recon conversational timestamp and age. Every later operation on an identified peer revalidates the same full ID and never retargets by name. Reload and broker reconnect keep the Pi session ID stable, but a duplicate live advertisement makes that ID unusable until it is unique again.
 
 ## Work within the role
 

@@ -4,13 +4,14 @@ Read this when the human explicitly asks to inspect, tail, send, ask, or reply t
 
 ## Select and revalidate the peer
 
-Keep full broker IDs internal during ordinary use:
+Keep full Pi session IDs internal during ordinary use:
 
 - A supplied name selects its full ID when that name is unique in the latest coherent inventory.
 - Without a usable current inventory, take a fresh `status` and `list` and map an unambiguous name to its full ID.
 - When names collide, show the matching full IDs and ask the human to choose one.
+- A peer without a stable ID is a legacy peer. Select it only for one explicit operation by an unambiguous name in the fresh inventory; do not retain the name for later triage, recon, or follow-up routing.
 
-Immediately before the operation, take a fresh `status` and `list`. Require both to report the same current session ID and require the selected full peer ID to remain present. A fresh snapshot used to resolve a direct named request also satisfies this check. If the broker changed or the selected peer disappeared, do not retry or retarget by name. Preserve the requested operation or message, state that it did not happen, and offer a fresh selection.
+Immediately before the operation, take a fresh `status` and `list`. Require both to report the same current Pi session ID, require `truncated` to be false and `omittedSessionIds` to be zero, and require the selected full peer ID to remain present exactly once. A fresh snapshot used to resolve a direct named request also satisfies this check. If the current Pi session changed or the selected peer disappeared or has duplicate live advertisements, do not retry or retarget by name. Preserve the requested operation or message, state that it did not happen, and offer a fresh selection.
 
 ## Inspect read-only evidence
 

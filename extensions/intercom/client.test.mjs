@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FrameDecoder, INTERCOM_LIMITS, IntercomClient, encodeFrame, isIntercomRole, isMessage, isSessionInfo } from "./client.ts";
+import { FrameDecoder, INTERCOM_LIMITS, IntercomClient, encodeFrame, isIntercomRole, isMessage, isSessionInfo, piSessionIdOf } from "./client.ts";
 
 function decoderFixture(maximum) {
 	const messages = [];
@@ -48,6 +48,27 @@ test("persisted Pi presence is an exact bounded optional session field", () => {
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, revision: 0 } }), false);
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, snapshotBytes: 100 } }), false);
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, activeLeafId: "x".repeat(INTERCOM_LIMITS.maxPiSessionLeafBytes + 1) } }), false);
+});
+
+test("stable Pi session identity is bounded and must match persisted presence", () => {
+	const base = { id: "broker-connection", piSessionId: "pi-session", cwd: "/tmp", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
+	const piSession = { sessionId: "pi-session", fileLocator: "/tmp/session.jsonl", activeLeafId: null, revision: 1 };
+	assert.equal(isSessionInfo(base), true);
+	assert.equal(isSessionInfo({ ...base, piSession }), true);
+	assert.equal(isSessionInfo({ ...base, piSessionId: "different", piSession }), false);
+	assert.equal(isSessionInfo({ ...base, piSessionId: "x".repeat(INTERCOM_LIMITS.maxPiSessionIdBytes + 1) }), false);
+	assert.equal(isSessionInfo({ ...base, piSessionId: "pi-\u202ereordered" }), false);
+	assert.equal(isSessionInfo({ ...base, piSessionId: "pi/session" }), false);
+	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, sessionId: "pi-\u202ereordered" } }), false);
+	assert.equal(piSessionIdOf(base), "pi-session");
+	assert.equal(piSessionIdOf({ piSession }), undefined);
+	assert.equal(piSessionIdOf({}), undefined);
+
+	const client = new IntercomClient();
+	const { id: _id, ...registration } = base;
+	client.setRegistration(registration);
+	assert.equal(client.currentPiSessionId(), "pi-session");
+	assert.throws(() => client.setRegistration({ ...registration, piSessionId: "different", piSession }), /Invalid intercom session registration/);
 });
 
 test("session roles accept only the exact bounded First Mate value without changing piSession", () => {

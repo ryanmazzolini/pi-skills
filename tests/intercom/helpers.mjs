@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import net from "node:net";
 import { join, resolve } from "node:path";
@@ -115,7 +116,7 @@ export async function stopChild(child) {
 
 export async function connectNew(paths, name, options = {}) {
 	const client = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 1_000, listTimeoutMs: 1_000, sendTimeoutMs: 1_000, askTimeoutMs: 1_000, ...options });
-	await client.connect(registration(name));
+	await client.connect(registration(name, { piSessionId: `pi-${randomUUID()}` }));
 	return client;
 }
 

@@ -17,7 +17,9 @@ export interface IntercomOperationSnapshot {
 }
 
 export interface OperationResult {
+	/** Stable Pi session ID when the target advertises one; otherwise a bounded legacy-peer label. */
 	target?: string;
+	targetSessionId?: string;
 	reply?: boolean;
 	/** Ephemeral model-visible completion text; never copied into a snapshot. */
 	completionText?: string;

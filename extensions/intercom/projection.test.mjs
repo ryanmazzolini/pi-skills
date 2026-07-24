@@ -17,7 +17,7 @@ import {
 } from "./projection.ts";
 
 function session(id, overrides = {}) {
-	return { id, name: `name-${id}`, cwd: "/repo", model: "test", pid: 1, startedAt: 1, lastActivity: 1, status: "idle", ...overrides };
+	return { id, piSessionId: `pi-${id}`, name: `name-${id}`, cwd: "/repo", model: "test", pid: 1, startedAt: 1, lastActivity: 1, status: "idle", ...overrides };
 }
 
 function entry(from, message, receivedAt = 1) {
@@ -42,7 +42,7 @@ test("multibyte inbound projection is UTF-8 bounded, actionable, quoted, and com
 	assert.ok(projected.text.includes(`replyTo: ${JSON.stringify(messageId)}`));
 	assert.ok(projected.text.endsWith(INTERCOM_TRUNCATION_NOTICE));
 	assert.deepEqual(projected.details, {
-		fromPeerId: "peer-full-authoritative-id",
+		fromSessionId: "pi-peer-full-authoritative-id",
 		messageId,
 		timestamp: 7,
 		receivedAt: 1,
@@ -58,7 +58,7 @@ test("multibyte inbound projection is UTF-8 bounded, actionable, quoted, and com
 	deliverInboundMessage({ sendMessage: (...args) => calls.push(args) }, inbound);
 	assertBounded(calls[0][0].content, "persisted inbound content");
 	assertBounded(calls[0][0].details, "persisted inbound details");
-	assert.equal(calls[0][0].details.entries[0].fromPeerId, "peer-full-authoritative-id");
+	assert.equal(calls[0][0].details.entries[0].fromSessionId, "pi-peer-full-authoritative-id");
 	assert.equal("message" in calls[0][0].details.entries[0], false);
 });
 
@@ -111,7 +111,7 @@ test("maximum encodable message remains bounded after a real broker and client r
 	assert.equal(projected.details.messageId, messageId);
 });
 
-test("list projection preserves adjacent role markers and full IDs for 32 maximum-metadata roles", () => {
+test("list projection preserves adjacent role markers and stable IDs for 32 maximum-metadata roles", () => {
 	const metadata = "界".repeat(Math.floor(INTERCOM_LIMITS.maxSessionStringBytes / 3));
 	const sessions = Array.from({ length: 32 }, (_, index) => {
 		const prefix = `broker-${String(index).padStart(2, "0")}-`;
@@ -122,12 +122,12 @@ test("list projection preserves adjacent role markers and full IDs for 32 maximu
 	assertBounded(projected.text, "32-session role list");
 	assert.equal(projected.truncated, true);
 	for (const peer of sessions) {
-		assert.ok(projected.text.includes(`${JSON.stringify(peer.id)} [role: first-mate]`), `missing adjacent role marker for ${peer.id}`);
+		assert.ok(projected.text.includes(`${JSON.stringify(peer.piSessionId)} [role: first-mate]`), `missing adjacent role marker for ${peer.piSessionId}`);
 	}
 	const details = {
-		currentSessionId: sessions[0].id,
-		sessionIds: sessions.map((peer) => peer.id),
-		firstMateSessionIds: sessions.map((peer) => peer.id),
+		currentSessionId: sessions[0].piSessionId,
+		sessionIds: sessions.map((peer) => peer.piSessionId),
+		firstMateSessionIds: sessions.map((peer) => peer.piSessionId),
 		count: sessions.length,
 		truncated: true,
 	};
@@ -135,7 +135,23 @@ test("list projection preserves adjacent role markers and full IDs for 32 maximu
 	assert.doesNotMatch(JSON.stringify(details), /界/u);
 });
 
-test("session list projection exposes exact First Mate roles with full broker IDs", () => {
+test("maximum valid session inventory truncates complete identities instead of failing", () => {
+	const sessions = Array.from({ length: 256 }, (_, index) => {
+		const prefix = `pi-${String(index).padStart(3, "0")}-`;
+		return session(`broker-${index}`, {
+			piSessionId: `${prefix}${"i".repeat(INTERCOM_LIMITS.maxPiSessionIdBytes - prefix.length)}`,
+			name: `peer-${index}`,
+		});
+	});
+	const projected = projectSessionList(sessions, sessions[0]);
+	assertBounded(projected.text, "maximum session inventory");
+	assert.equal(projected.truncated, true);
+	assert.match(projected.text, new RegExp(sessions[0].piSessionId));
+	assert.ok(projected.text.endsWith(INTERCOM_TRUNCATION_NOTICE));
+	assert.doesNotMatch(projected.text, /Pi session ID: "[^"]*\n/u, "session IDs must not be cut in half");
+});
+
+test("session list projection exposes exact First Mate roles with stable Pi session IDs", () => {
 	const current = session("current-full-id", { role: "first-mate" });
 	const duplicate = session("duplicate-first-mate-full-id", { role: "first-mate" });
 	const ordinary = session("ordinary-full-id");
@@ -149,6 +165,7 @@ test("session list projection exposes exact First Mate roles with full broker ID
 test("session tail projection is bounded, locator-free, and preserves newest multibyte text", () => {
 	const privateLocator = "/private/session/path.jsonl";
 	const target = session("tail-peer-full-id", {
+		piSessionId: "pi-session",
 		name: "tail worker",
 		piSession: { sessionId: "pi-session", fileLocator: privateLocator, activeLeafId: "leaf", revision: 1 },
 	});
@@ -169,7 +186,8 @@ test("session tail projection is bounded, locator-free, and preserves newest mul
 	const projected = projectSessionTail(snapshot, target);
 	assertBounded(projected.text, "session tail");
 	assert.equal(projected.truncated, true);
-	assert.match(projected.text, /tail-peer-full-id/);
+	assert.match(projected.text, /Pi session ID: "pi-session"/);
+	assert.doesNotMatch(projected.text, /tail-peer-full-id/);
 	assert.match(projected.text, /NEWEST_SENTINEL/);
 	assert.match(projected.text, /kept\tformat/);
 	assert.doesNotMatch(projected.text, /[\u001b\u0007\u202e]/u);
@@ -267,7 +285,7 @@ test("large ask replies and 64-entry pending results retain authoritative IDs un
 	assertBounded(projectedReply.text, "large ask reply");
 	assert.match(projectedReply.text, /replying-peer-full-id/);
 	assert.equal(projectedReply.details.messageId, "large-reply-message-id");
-	assert.equal(projectedReply.details.fromPeerId, "replying-peer-full-id");
+	assert.equal(projectedReply.details.fromSessionId, "pi-replying-peer-full-id");
 
 	const pending = Array.from({ length: 64 }, (_, index) => entry(
 		session(`pending-peer-full-id-${index}`, { name: "界".repeat(1_000) }),
