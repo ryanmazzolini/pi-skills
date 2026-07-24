@@ -1,47 +1,38 @@
 # Connected-session triage
 
-Use this only after the human asks First Mate to `triage`. It classifies current session evidence; it does not establish profile or work-item identity.
+Read this only after the human asks First Mate to triage connected sessions. This is a bounded comparison of current session evidence; deeper inspection happens only after the human selects or confirms one peer.
 
 ## Take one bounded snapshot
 
-1. Refresh workflow-profile discovery for orientation. Profile failure does not block session triage.
-2. Call `intercom status`, then `intercom list`, and require the list's current broker ID to match status. Do not retry a changed snapshot automatically.
-3. Call `intercom` once with only `action: "pending"`; its projection is already bounded, so do not pass `limit` or other fields. An exact pending ask is evidence that its sender needs attention; it is not workflow authority.
-4. Exclude First Mate itself. Account for every other connected peer exactly once.
-5. Build one classification queue: connected peers with exact pending asks first, then remaining non-active peers, with full broker ID as the tie-breaker. Keep only the first 16; put every excess peer under `Unknown` with the classification-budget limitation.
-6. Classify a queued peer with an exact pending ask under `Needs attention` without tailing merely to corroborate the ask.
-7. Tail each other queued peer by exact full ID with `limit: 8`, `tailScanBytes: 2097152`, and `tailProjectionBytes: 4096`.
-8. Put active peers without a queued pending ask directly under `No action` without tailing them.
+1. Call `intercom` `status`, then `intercom` `list`. Use the inventory only when both report the same current broker ID; do not retry a changed snapshot automatically.
+2. Call `intercom` once with only `action: "pending"`. Its projection is already bounded, so do not pass `limit` or other fields.
+3. Exclude First Mate and account for every other connected peer exactly once.
+4. Build one classification queue: peers with exact pending asks first, then remaining non-active peers, with full broker ID as the tie-breaker. Keep the first 16 and put every excess peer under `Unknown` with the classification-budget limitation.
+5. Put a queued peer with an exact pending ask under `Needs attention` without tailing merely to corroborate the ask.
+6. Tail each other queued peer by its full ID with `limit: 8`, `tailScanBytes: 2097152`, and `tailProjectionBytes: 4096`.
+7. Put active peers without a pending ask under `No action` without tailing them.
 
-The single 16-peer queue limits one triage to at most 16 substantive non-active classifications, 32 MiB scanned, and 64 KiB projected.
+The 16-peer queue limits one triage to 32 MiB scanned and 64 KiB projected. Do not read project files, infer disconnected sessions, or message a peer during this comparative pass. Missing tail capability leaves dependent classifications `Unknown`; the inventory remains useful.
 
-Do not read vault files, infer disconnected sessions, or message a peer during classification. A missing tail capability leaves non-active peers `Unknown`; inventory remains useful.
-
-## Classify observed evidence
+## Classify the evidence
 
 Use the narrowest supported category:
 
-- **Needs attention:** an exact pending ask; an unanswered persisted user request; or explicit current text saying work is blocked or awaiting a human decision.
+- **Needs attention:** an exact pending ask, an unanswered persisted user request, or current text saying work is blocked or awaiting a human decision.
 - **May need attention:** current text shows unfinished work, a failed attempted step, or an unresolved next action without a clear human blocker.
 - **Unknown:** the peer was not inspected; its tail is unavailable, oversized, malformed, replaced, or changed; or truncation removed context needed to classify it.
 - **No action:** the peer is active, or current evidence clearly says the requested work completed or intentionally stopped with no unresolved request.
 
-Do not infer attention from idle status, age, tool volume, a failed outcome, cwd, profile availability, or silence alone. Tool and Bash outcomes support nearby text; they do not independently establish a blocker. Every category describes evidence, not project priority or authority.
+Idle status, age, tool volume, cwd, a failed outcome, or silence does not establish attention by itself. Tool outcomes support nearby conversational text; they do not independently establish a blocker. When two categories remain plausible, choose the less certain one and name the limitation.
 
-When evidence supports two categories, choose the less certain one. When evidence is too thin, use `Unknown` and name the limitation.
+## Present one useful next step
 
-## Present the report
+Lead with `Needs attention`, then `May need attention`, then `Unknown`. For each listed peer, give its self-declared name and one sentence of evidence or limitation; include message age only when useful. Show a full broker ID only when the name is missing or duplicated. Keep `No action` to a count and compact name list. Before stopping, confirm that the reported categories account for every connected peer.
 
-Lead with `Needs attention`, then `May need attention`, then `Unknown`. Keep `No action` to a count and compact name list. Omit empty actionable sections.
+Recommend the first useful deeper-inspection candidate in this order: `Needs attention`, `May need attention`, then an `Unknown` peer when another inspection could resolve its limitation. Do not recommend an active or `No action` peer. Retain that peer's full ID and ask one concrete question using its name, for example:
 
-For each actionable or unknown peer, include:
+> `payments-refactor` has the clearest unresolved signal. Inspect it further?
 
-- self-declared name
-- full broker ID only when the name is missing or duplicated
-- one sentence of evidence or limitation
-- age of the last eligible conversational message when available
-- `workflow-unbound`
+An immediate `yes` selects that retained ID for read-only inspection. If no evidence supports a useful follow-up, say that no peer warrants deeper inspection from this snapshot.
 
-Suggest considering Ship only when the bounded evidence explicitly shows a need for cross-session recovery or coordination. Do not interrupt quick, self-contained work merely because it has several steps, and do not create a work item from triage.
-
-End with accounting totals for connected peers, pending asks classified without tails, tailed peers, active peers skipped, and budget- or capability-limited peers. State that no peer was messaged and that attention classification did not grant workflow authority.
+Suggest Ship only when the evidence explicitly shows a cross-session recovery or coordination need. Do not create a work item merely because a peer has several steps remaining.

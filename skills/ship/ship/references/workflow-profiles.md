@@ -25,7 +25,7 @@ Each profile requires:
 
 Paths may start with `~/`. Keep host-specific paths here rather than in skills or repositories. Do not store credentials in this file.
 
-When the effective configuration path is absent, `/skill:first-mate` can guide optional initial setup. The helper produces a non-mutating proposal from one profile name, an existing vault, and one or more existing Git roots:
+For initial configuration, the helper can produce a non-mutating proposal from one profile name, an existing vault, and one or more existing Git roots:
 
 ```bash
 node scripts/workflow-profile.mjs setup \
@@ -36,7 +36,7 @@ node scripts/workflow-profile.mjs setup \
 
 The result contains canonical absolute vault and Git-root paths, the effective target, complete JSON content, and a digest binding that content and its resolved parent identity to the target. After showing those exact values and receiving confirmation, rerun the same arguments with `--confirm DIGEST`. On supported POSIX hosts, the helper revalidates inputs, rejects changed proposals or existing targets, detects changed parent identity, creates missing real parent directories, exclusively creates and verifies a user-only file, and validates the exact created bytes and file identity. It preserves any entry that appeared or failed validation. Automatic secure creation is unavailable on Windows; use the reviewed proposal for manual setup instead. Existing invalid or unreadable configuration requires a separate reviewed repair and is never treated as first-use setup.
 
-If setup is deferred or no profile is readable, First Mate remains explicitly `workflow-unbound`. It may inventory connected peers and perform exact human-requested, non-authoritative Intercom coordination against a full ID from a fresh snapshot, but it does not read vault evidence, infer work-item authority, relay decisions, or create durable capture.
+First Mate does not load profiles during startup or triage. It resolves one explicitly supplied profile only when deeper inspection needs the accompanying vault-relative path. The profile locates evidence; it does not authorize an Intercom request or establish project identity.
 
 ## Resolve a workspace
 
@@ -62,7 +62,7 @@ A profile-scoped read-only role does not own a project workspace. Resolve one se
 node scripts/workflow-profile.mjs profile --profile personal
 ```
 
-A combined read-only role such as First Mate discovers every readable profile with:
+A read-only tool that needs to inventory every readable profile can use:
 
 ```bash
 node scripts/workflow-profile.mjs profiles
@@ -93,4 +93,4 @@ A profile-scoped reader may validate an existing file with `--profile NAME --mod
 
 The helper fails without guessing when configuration is missing, invalid, unreadable, or oversized; a selected path is unavailable; vault and workspace overlap; a symlink escapes a configured boundary; a workspace has no unique match; an operand leaves its allowed scope; or explicit selection conflicts with workspace containment. It rejects duplicate options and options that do not apply to the selected command. An unavailable unrelated profile does not prevent explicit use of an available profile or discovery of the other readable profiles.
 
-A profile-discovery failure limits profile-scoped access rather than Intercom itself. Preserve an existing configuration and correct it through a separate reviewed change; do not make first-use setup overwrite it.
+A profile failure limits only the operation that needs that profile. Preserve an existing configuration and correct it through a separate reviewed change; do not make first-use setup overwrite it.
