@@ -48,7 +48,7 @@ export const IntercomParams = Type.Object({
 	attachments: Type.Optional(Type.Array(AttachmentParams, { maxItems: 16 })),
 	replyTo: Type.Optional(Type.String({ description: "Exact inbound message ID for reply selection, or thread ID for send/ask" })),
 	operationId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Operation ID for operations inspection or cancellation" })),
-	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32, description: "Maximum operation snapshots or tail text messages to return" })),
+	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32, description: "Maximum operation snapshots or tail text messages to return; ignored for list" })),
 	tailScanBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: SESSION_TAIL_LIMITS.scanBytes, description: "For tail only: maximum session-file bytes to scan (default 16 MiB)" })),
 	tailProjectionBytes: Type.Optional(Type.Integer({ minimum: INTERCOM_TAIL_PROJECTION_MIN_BYTES, maximum: INTERCOM_PROJECTION_MAX_BYTES, description: "For tail only: maximum UTF-8 bytes in the model projection (default 48 KiB)" })),
 }, { additionalProperties: false });
@@ -79,7 +79,9 @@ export function validateIntercomAction(input: IntercomToolInput): void {
 	if (!withMessage && input.message !== undefined) throw new Error(`message is not valid for ${input.action}`);
 	if (input.action === "cancel" && !input.operationId?.trim()) throw new Error("cancel requires operationId");
 	if (input.action !== "operations" && input.action !== "cancel" && input.operationId !== undefined) throw new Error(`operationId is not valid for ${input.action}`);
-	if (input.action !== "operations" && input.action !== "tail" && input.limit !== undefined) throw new Error(`limit is not valid for ${input.action}`);
+	// The flat tool schema exposes limit to list callers. Accept but ignore it so an
+	// accidental hint cannot hide peers from the complete session inventory.
+	if (input.action !== "operations" && input.action !== "tail" && input.action !== "list" && input.limit !== undefined) throw new Error(`limit is not valid for ${input.action}`);
 	if (input.action !== "tail" && input.tailScanBytes !== undefined) throw new Error(`tailScanBytes is not valid for ${input.action}`);
 	if (input.action !== "tail" && input.tailProjectionBytes !== undefined) throw new Error(`tailProjectionBytes is not valid for ${input.action}`);
 	if (input.action !== "role" && input.role !== undefined) throw new Error(`role is not valid for ${input.action}`);
