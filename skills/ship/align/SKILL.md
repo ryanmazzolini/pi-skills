@@ -5,7 +5,7 @@ description: Settle the smallest useful release before planning. Use when ship f
 
 # Align
 
-**Be relentless about decisions that can meaningfully change Now or its plan.** Investigate first. Ask one focused question per turn. Stop when no such decision remains.
+**Be relentless about decisions that can meaningfully change Now or its plan.** Investigate first. Settle one focused decision per turn. Stop when no such decision remains.
 
 **Now** is the smallest useful end-to-end release. **Later** holds deferred behavior. Widen Now only when the user asks for a broader release or an exhaustive stress test.
 
@@ -56,15 +56,25 @@ When background fact-finding returns, record the result as a fact, assumption, o
 
 Rank the remaining human decisions by **impact × uncertainty**. Judge impact by how much the plausible answers would change Now, the primary experience, an important constraint, observable behavior, or the solution direction. Treat a decision that prevents a coherent Now as high impact, and include reversal cost in that judgment. Judge uncertainty by how evenly plausible answers fit inspected evidence and prior decisions—not intuition alone. Ask the highest-ranked unblocked decision that only the user can settle. If none remains, finish only when no pending fact-finding can still change Now or its plan; otherwise state which fact is blocking progress and let the background task continue.
 
-When an unblocked human decision remains, ask exactly one direct blocking question in plain language. Say why it matters when that is not obvious. Include:
+When an unblocked human decision remains, settle exactly one blocking decision in plain language. Describe the setup in short sentences, then ask one short question. Say why it matters when that is not obvious. Include:
 
 > **My recommended answer:** [answer and short reason]
 
 When useful, append up to three newly relevant proposals under **Assuming unless you disagree:**. Use short, scoped statements only for well-supported choices with low impact × uncertainty that the user can veto cheaply. If the user answers the blocking question without correcting them, record them as accepted assumptions for the current alignment. Keep a consequential, uncertain trade-off as the blocking question; do not invent assumptions to fill the list.
 
-If the evidence favors no answer, recommend “No preference yet” and say why. A question may use one concrete scenario and a few recognizable outcomes, but it must not bundle independent decisions.
+A multi-step proposal may need several sentences or a short sequence before the question. This still counts as one decision. If parts of the proposal could vary independently, treat them as separate decisions.
 
-Keep investigation, option ranking, and file maintenance thorough and internal. Keep each turn to the blocking question, the new evidence needed to answer it, and any newly relevant low-risk assumptions. Do not restate answers or turn the conversation into a report.
+For example:
+
+> The user reviews the proposed changes first. After approval, the system saves them. Publishing remains a separate step.
+>
+> **Should approval save the changes without publishing them?**
+>
+> **My recommended answer:** Yes. This lets the user review the saved draft before publication.
+
+If the evidence favors no answer, recommend “No preference yet” and say why. A question may use one concrete scenario and a few recognizable outcomes.
+
+Keep investigation, option ranking, and file maintenance thorough and internal. Give the reader only the setup needed to understand the decision, one direct question, and any newly relevant low-risk assumptions. Briefly connect the question to what is already settled when that helps. Do not turn the conversation into a report.
 
 When statements or inspection contradict current understanding, return only the affected decision to the open queue and rank it again. If it ranks highest, explain only the conflict, show relevant evidence when applicable, and ask which understanding is correct.
 
