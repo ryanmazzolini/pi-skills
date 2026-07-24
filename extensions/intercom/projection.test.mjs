@@ -163,6 +163,7 @@ test("session tail projection is bounded, locator-free, and preserves newest mul
 		counts: { scannedEntries: 34, branchEntries: 34, eligibleTextEvents: 40, returnedTextEvents: 32, toolEvents: 1, bashEvents: 1 },
 		lastConversationalTimestamp: null,
 		truncated: true,
+		outcomeEventsTruncated: false,
 		ignoredFinalFragment: false,
 	};
 	const projected = projectSessionTail(snapshot, target);
@@ -180,6 +181,21 @@ test("session tail projection is bounded, locator-free, and preserves newest mul
 	assert.doesNotMatch(projectSessionList([target], target).text, /private\/session\/path/);
 });
 
+test("tail projection reports omitted outcome events as truncated source context", () => {
+	const snapshot = {
+		events: [{ kind: "assistant", text: "latest conclusion" }],
+		counts: { scannedEntries: 100, branchEntries: 100, eligibleTextEvents: 1, returnedTextEvents: 1, toolEvents: 0, bashEvents: 0 },
+		lastConversationalTimestamp: Date.parse("2026-01-01T00:00:02.000Z"),
+		truncated: false,
+		outcomeEventsTruncated: true,
+		ignoredFinalFragment: false,
+	};
+	const projected = projectSessionTail(snapshot, session("outcome-heavy-peer"));
+	assert.equal(projected.truncated, true);
+	assert.match(projected.text, /Older completed tool or Bash outcomes were omitted/);
+	assert.match(projected.text, /latest conclusion/);
+});
+
 test("tail projection honors an exact caller ceiling with multibyte newest evidence", () => {
 	const newest = `NEWEST_MULTIBYTE_SENTINEL-${"界".repeat(10_000)}`;
 	const snapshot = {
@@ -190,6 +206,7 @@ test("tail projection honors an exact caller ceiling with multibyte newest evide
 		counts: { scannedEntries: 2, branchEntries: 2, eligibleTextEvents: 2, returnedTextEvents: 2, toolEvents: 0, bashEvents: 0 },
 		lastConversationalTimestamp: Date.parse("2026-01-01T00:00:02.000Z"),
 		truncated: false,
+		outcomeEventsTruncated: false,
 		ignoredFinalFragment: false,
 	};
 	const projected = projectSessionTail(snapshot, session("tail-peer"), INTERCOM_TAIL_PROJECTION_MIN_BYTES);
@@ -217,6 +234,7 @@ test("tail projection keeps a contiguous newest suffix when an older label canno
 		counts: { scannedEntries: events.length, branchEntries: events.length, eligibleTextEvents: 0, returnedTextEvents: 0, toolEvents: events.length, bashEvents: 0 },
 		lastConversationalTimestamp: null,
 		truncated: false,
+		outcomeEventsTruncated: false,
 		ignoredFinalFragment: false,
 	};
 	const projected = projectSessionTail(snapshot, session("suffix-tail-peer"), INTERCOM_TAIL_PROJECTION_MIN_BYTES);
@@ -234,6 +252,7 @@ test("maximum reader-valid outcome metadata remains below the projection cap", (
 		counts: { scannedEntries: 64, branchEntries: 64, eligibleTextEvents: 0, returnedTextEvents: 0, toolEvents: 64, bashEvents: 0 },
 		lastConversationalTimestamp: null,
 		truncated: false,
+		outcomeEventsTruncated: false,
 		ignoredFinalFragment: false,
 	};
 	const projected = projectSessionTail(snapshot, session("maximum-tail-peer", { name: "\"".repeat(INTERCOM_LIMITS.maxSessionStringBytes) }));

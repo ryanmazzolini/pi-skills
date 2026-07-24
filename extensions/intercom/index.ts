@@ -549,7 +549,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 							returnedTextMessages: result.snapshot.counts.returnedTextEvents,
 							lastConversationalTimestamp: result.snapshot.lastConversationalTimestamp,
 							timelineEvents: result.snapshot.events.length,
-							truncated: result.snapshot.truncated || result.snapshot.ignoredFinalFragment || projected.truncated,
+							truncated: result.snapshot.truncated || result.snapshot.outcomeEventsTruncated || result.snapshot.ignoredFinalFragment || projected.truncated,
 						};
 						assertCompactRecord(details, "Intercom tail details");
 						return { content: [{ type: "text" as const, text: projected.text }], details };

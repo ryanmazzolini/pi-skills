@@ -449,7 +449,7 @@ test("uses fatal UTF-8 and ignores only one bounded unterminated final fragment"
 	assertStaticSafeError(() => open(finalPath, null), [finalPath]);
 });
 
-test("enforces independent locator, line, retained-byte, entry, scan, event, and text limits", (t) => {
+test("enforces independent locator, line, retained-byte, entry, scan, and text limits", (t) => {
 	assertStaticSafeError(() => openSessionTail({
 		piSessionId: SESSION_ID,
 		fileLocator: `/${"x".repeat(SESSION_TAIL_LIMITS.locatorBytes + 1)}`,
@@ -489,16 +489,55 @@ test("enforces independent locator, line, retained-byte, entry, scan, event, and
 	const scanChunk = `${JSON.stringify(header())}\n`;
 	writeFileSync(scanPath, scanChunk + "s".repeat(SESSION_TAIL_LIMITS.scanBytes - Buffer.byteLength(scanChunk) + 1));
 	assertStaticSafeError(() => open(scanPath, null), [scanPath]);
+});
 
-	const eventRecords = [header(), user("event-anchor", null, "anchor")];
-	let eventParent = "event-anchor";
-	for (let index = 0; index < SESSION_TAIL_LIMITS.events; index++) {
-		const id = `bash-${index}`;
-		eventRecords.push(bashExecution(id, eventParent));
-		eventParent = id;
+test("caps oldest mixed outcomes while preserving sixteen requested text events", (t) => {
+	const records = [header(), user("text-0", null, "message-0")];
+	let parent = "text-0";
+	for (let index = 0; index < 25; index++) {
+		const assistantId = `tool-call-${index}`;
+		const resultId = `tool-result-${index}`;
+		records.push(assistant(assistantId, parent, [toolCall(`call-${index}`, `tool-${index}`)], "toolUse"));
+		records.push(toolResult(resultId, assistantId, `call-${index}`, `tool-${index}`, false));
+		parent = resultId;
 	}
-	const eventPath = writeRecords(t, eventRecords);
-	assertStaticSafeError(() => open(eventPath, eventParent), [eventPath]);
+	for (let index = 0; index < 25; index++) {
+		const id = `bash-${index}`;
+		records.push(bashExecution(id, parent));
+		parent = id;
+	}
+	for (let index = 1; index < 16; index++) {
+		const id = `text-${index}`;
+		records.push(index % 2 === 0
+			? assistant(id, parent, [{ type: "text", text: `message-${index}` }])
+			: user(id, parent, `message-${index}`));
+		parent = id;
+	}
+
+	const path = writeRecords(t, records);
+	withHandle(open(path, parent, 16), (handle) => {
+		assert.equal(handle.snapshot.events.length, SESSION_TAIL_LIMITS.events);
+		assert.deepEqual(
+			handle.snapshot.events
+				.filter((event) => event.kind === "user" || event.kind === "assistant")
+				.map((event) => event.text),
+			Array.from({ length: 16 }, (_, index) => `message-${index}`),
+		);
+		assert.deepEqual(
+			handle.snapshot.events.filter((event) => event.kind === "tool").map((event) => event.name),
+			Array.from({ length: 23 }, (_, index) => `tool-${index + 2}`),
+		);
+		assert.deepEqual(handle.snapshot.counts, {
+			scannedEntries: records.length - 1,
+			branchEntries: records.length - 1,
+			eligibleTextEvents: 16,
+			returnedTextEvents: 16,
+			toolEvents: 23,
+			bashEvents: 25,
+		});
+		assert.equal(handle.snapshot.truncated, false);
+		assert.equal(handle.snapshot.outcomeEventsTruncated, true);
+	});
 });
 
 test("rejects symlinks and non-files without exposing the locator", (t) => {

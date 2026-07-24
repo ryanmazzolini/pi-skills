@@ -47,6 +47,8 @@ export interface SessionTailSnapshot {
 	readonly lastConversationalTimestamp: number | null;
 	/** True only when eligible text was omitted by the requested text limit. */
 	readonly truncated: boolean;
+	/** Older completed tool or Bash outcomes were omitted by the event limit. */
+	readonly outcomeEventsTruncated: boolean;
 	/** A bounded, valid UTF-8 final fragment without a newline was ignored. */
 	readonly ignoredFinalFragment: boolean;
 }
@@ -599,10 +601,20 @@ function projectBranch(
 		.filter((candidate) => candidate.event.kind === "user" || candidate.event.kind === "assistant")
 		.map((candidate) => candidate.position);
 	const earliestTextPosition = selectedTextPositions.length === 0 ? undefined : Math.min(...selectedTextPositions);
-	const selected = (earliestTextPosition === undefined
+	let selected = (earliestTextPosition === undefined
 		? candidates
 		: candidates.filter((candidate) => candidate.position >= earliestTextPosition))
 		.sort((left, right) => left.position - right.position || left.sequence - right.sequence);
+	let outcomeEventsTruncated = false;
+	if (selected.length > SESSION_TAIL_LIMITS.events) {
+		let outcomesToOmit = selected.length - SESSION_TAIL_LIMITS.events;
+		selected = selected.filter((candidate) => {
+			if (candidate.event.kind === "user" || candidate.event.kind === "assistant" || outcomesToOmit === 0) return true;
+			outcomesToOmit--;
+			outcomeEventsTruncated = true;
+			return false;
+		});
+	}
 	if (selected.length > SESSION_TAIL_LIMITS.events) fail(ERROR.oversized);
 
 	const events = selected.map((candidate) => Object.freeze(candidate.event));
@@ -621,6 +633,7 @@ function projectBranch(
 		counts,
 		lastConversationalTimestamp,
 		truncated: eligibleTextEvents > selectedTextEvents,
+		outcomeEventsTruncated,
 		ignoredFinalFragment: false,
 	});
 }
@@ -707,6 +720,7 @@ export function openSessionTail(input: OpenSessionTailInput): SessionTailHandle 
 			}),
 			lastConversationalTimestamp: projected.lastConversationalTimestamp,
 			truncated: projected.truncated,
+			outcomeEventsTruncated: projected.outcomeEventsTruncated,
 			ignoredFinalFragment,
 		});
 
