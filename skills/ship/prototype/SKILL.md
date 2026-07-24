@@ -18,7 +18,7 @@ Read the alignment and the relevant product surface. State:
 - why inspection, conversation, or a sketch cannot answer it
 - what the user will observe or do to settle the question
 
-If any of these is unclear, ask one direct question and stop. Treat an explicit invocation or approval already given in the conversation or alignment as approval to prototype. Otherwise recommend the experiment and wait for approval before writing code.
+Resolve these through inspection or a short proposal when possible. If uncertainty still blocks the experiment, explain it. Ask one short question, then stop. Return to `align` when several independent decisions remain. Treat an explicit invocation or approval already given in the conversation or alignment as approval to prototype. Otherwise recommend the experiment and wait for approval before writing code.
 
 Choose the smallest useful form:
 
