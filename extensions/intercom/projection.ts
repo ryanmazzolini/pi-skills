@@ -1,4 +1,4 @@
-import type { Attachment, Message, SessionInfo } from "./client.ts";
+import { piSessionIdOf, type Attachment, type Message, type SessionInfo } from "./client.ts";
 import type { InboxEntry } from "./inbox.ts";
 import type { SessionTailSnapshot } from "./session-tail.ts";
 
@@ -12,6 +12,10 @@ const INTERCOM_TAIL_TRUNCATION_NOTICE = "\n\n[Intercom tail projection truncated
 interface ProjectionSegment {
 	text: string;
 	optional?: boolean;
+	/** Include the complete optional segment or omit it; identifiers must never be cut in half. */
+	atomic?: boolean;
+	/** Once this segment cannot fit, omit later optional segments to preserve a coherent prefix. */
+	stopOptionalOnOmission?: boolean;
 }
 
 export interface TextProjection {
@@ -21,7 +25,7 @@ export interface TextProjection {
 }
 
 export interface CompactInboundDetails {
-	fromPeerId: string;
+	fromSessionId?: string;
 	messageId: string;
 	replyTo?: string;
 	timestamp: number;
@@ -32,7 +36,7 @@ export interface CompactInboundDetails {
 	truncated: boolean;
 }
 
-/** Bounded display-only fields. Authoritative transport metadata stays in CompactInboundDetails. */
+/** Bounded display-only fields. Stable Pi identity and message metadata stay in CompactInboundDetails. */
 export interface IntercomMessageView {
 	fromName?: string;
 	preview: string;
@@ -72,17 +76,24 @@ function projectSegments(segments: readonly ProjectionSegment[]): TextProjection
 	const requiredBytes = segments.reduce((total, segment) => total + (segment.optional ? 0 : byteLength(segment.text)), 0);
 	const noticeBytes = byteLength(INTERCOM_TRUNCATION_NOTICE);
 	if (requiredBytes + noticeBytes > INTERCOM_PROJECTION_MAX_BYTES) {
-		throw new Error("Authoritative intercom IDs exceed the model-visible projection bound");
+		throw new Error("Required intercom metadata exceeds the model-visible projection bound");
 	}
 
 	let optionalBytes = INTERCOM_PROJECTION_MAX_BYTES - requiredBytes - noticeBytes;
+	let optionalStopped = false;
 	let text = "";
 	for (const segment of segments) {
 		if (!segment.optional) {
 			text += segment.text;
 			continue;
 		}
-		const projected = truncateUtf8(segment.text, optionalBytes);
+		if (optionalStopped) continue;
+		const segmentBytes = byteLength(segment.text);
+		if (segment.atomic && segmentBytes > optionalBytes) {
+			if (segment.stopOptionalOnOmission) optionalStopped = true;
+			continue;
+		}
+		const projected = segment.atomic ? segment.text : truncateUtf8(segment.text, optionalBytes);
 		text += projected;
 		optionalBytes -= byteLength(projected);
 	}
@@ -121,11 +132,14 @@ function peerMessageSegments(
 	message: Message,
 	replyable: boolean,
 ): ProjectionSegment[] {
+	const sessionId = piSessionIdOf(from);
 	const replyHint = message.expectsReply && replyable
-		? `\n\nTo reply explicitly, use intercom({ action: "reply", to: ${JSON.stringify(from.id)}, replyTo: ${JSON.stringify(message.id)}, message: "..." }).`
+		? sessionId
+			? `\n\nTo reply explicitly, use intercom({ action: "reply", to: ${JSON.stringify(sessionId)}, replyTo: ${JSON.stringify(message.id)}, message: "..." }).`
+			: `\n\nTo reply explicitly while this ask remains pending, use intercom({ action: "reply", replyTo: ${JSON.stringify(message.id)}, message: "..." }).`
 		: "";
 	return [
-		{ text: `${title}\nBroker-derived session ID: ${JSON.stringify(from.id)}` },
+		{ text: `${title}\nPi session ID: ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"}` },
 		{ text: `\nSelf-declared name: ${declared(from.name)}`, optional: true },
 		{ text: `\nSelf-declared cwd: ${declared(from.cwd)}`, optional: true },
 		{ text: replyHint },
@@ -136,8 +150,9 @@ function peerMessageSegments(
 }
 
 export function compactInboundDetails(entry: InboxEntry, truncated: boolean): CompactInboundDetails {
+	const sessionId = piSessionIdOf(entry.from);
 	return {
-		fromPeerId: entry.from.id,
+		...(sessionId === undefined ? {} : { fromSessionId: sessionId }),
 		messageId: entry.message.id,
 		...(entry.message.replyTo === undefined ? {} : { replyTo: entry.message.replyTo }),
 		timestamp: entry.message.timestamp,
@@ -181,7 +196,8 @@ export function projectSessionTail(
 	const lastConversationalTimestamp = snapshot.lastConversationalTimestamp === null
 		? "none"
 		: new Date(snapshot.lastConversationalTimestamp).toISOString();
-	const header = `**Intercom confirmed session tail**\nBroker session ID: ${JSON.stringify(target.id)}\nLast conversational timestamp: ${lastConversationalTimestamp}`;
+	const sessionId = piSessionIdOf(target) ?? target.piSession?.sessionId;
+	const header = `**Intercom confirmed session tail**\nPi session ID: ${sessionId ? JSON.stringify(sessionId) : "unavailable"}\nLast conversational timestamp: ${lastConversationalTimestamp}`;
 	const fullHeader = `${header}\nSelf-declared name: ${declared(target.name)}`;
 	const sourceFacts = `${snapshot.truncated ? "\nEarlier eligible text was omitted by the requested message limit." : ""}${snapshot.outcomeEventsTruncated ? "\nOlder completed tool or Bash outcomes were omitted by the session-tail event limit." : ""}${snapshot.ignoredFinalFragment ? "\nOne incomplete trailing session entry was omitted." : ""}`;
 	const fixed = snapshot.events.map((event) => {
@@ -215,7 +231,8 @@ export function projectSessionTail(
 	return { text, bytes: byteLength(text), truncated: true };
 }
 
-function sessionSegments(session: SessionInfo, current: SessionInfo, prefix = ""): ProjectionSegment[] {
+function sessionSegments(session: SessionInfo, current: SessionInfo, prefix = "", optionalIdentity = false): ProjectionSegment[] {
+	const sessionId = piSessionIdOf(session);
 	const tags = [
 		session.id === current.id ? "self" : undefined,
 		session.cwd === current.cwd && session.id !== current.id ? "same self-declared cwd" : undefined,
@@ -223,10 +240,14 @@ function sessionSegments(session: SessionInfo, current: SessionInfo, prefix = ""
 		session.piSession ? "persisted tail advertised" : undefined,
 	].filter((tag): tag is string => Boolean(tag));
 	return [
-		{ text: `${prefix}• Broker session ID: ${JSON.stringify(session.id)} [role: ${session.role ?? "none"}]` },
+		{
+			text: `${prefix}• Pi session ID: ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"} [role: ${session.role ?? "none"}]`,
+			...(optionalIdentity ? { optional: true, atomic: true, stopOptionalOnOmission: true } : {}),
+		},
 		{
 			text: ` — self-declared name: ${declared(session.name)}; self-declared cwd: ${declared(session.cwd)}; self-declared model: ${declared(session.model)}${tags.length ? ` [${tags.join(", ")}]` : ""}`,
 			optional: true,
+			atomic: true,
 		},
 	];
 }
@@ -244,7 +265,7 @@ export function projectSessionList(sessions: readonly SessionInfo[], current: Se
 	];
 	if (others.length === 0) segments.push({ text: "No other sessions connected." });
 	for (const [index, session] of others.entries()) {
-		segments.push(...sessionSegments(session, current, index === 0 ? "" : "\n"));
+		segments.push(...sessionSegments(session, current, index === 0 ? "" : "\n", true));
 	}
 	return projectSegments(segments);
 }
@@ -253,8 +274,9 @@ export function projectPendingEntries(entries: readonly InboxEntry[], now: numbe
 	if (entries.length === 0) return projectSegments([{ text: "No unresolved inbound asks." }]);
 	const segments: ProjectionSegment[] = [{ text: "**Pending asks:**\n" }];
 	for (const [index, entry] of entries.entries()) {
+		const sessionId = piSessionIdOf(entry.from);
 		segments.push({
-			text: `${index === 0 ? "" : "\n"}- broker session ID ${JSON.stringify(entry.from.id)} · message ${JSON.stringify(entry.message.id)} · ${Math.max(0, Math.floor((now - entry.receivedAt) / 1000))}s ago`,
+			text: `${index === 0 ? "" : "\n"}- Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"} · message ${JSON.stringify(entry.message.id)} · ${Math.max(0, Math.floor((now - entry.receivedAt) / 1000))}s ago`,
 		});
 		segments.push({ text: ` · self-declared name ${declared(entry.from.name)}`, optional: true });
 		const preview = sanitizeSelfDeclaredMetadata(entry.message.content.text);

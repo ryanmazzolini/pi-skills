@@ -3,8 +3,8 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 import { IntercomRuntime } from "./runtime.ts";
 
-function peer(id, name) {
-	return { id, name, cwd: "/repo", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
+function peer(id, name, piSessionId = `pi-${id}`) {
+	return { id, piSessionId, name, cwd: "/repo", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
 }
 
 class FakeClient extends EventEmitter {
@@ -15,6 +15,9 @@ class FakeClient extends EventEmitter {
 		this.listResponses = [];
 		this.listCalls = 0;
 		this.sent = [];
+		this.expectedIds = [];
+		this.expectedSelectors = [];
+		this.expectedTransportIds = [];
 		this.tailCapability = true;
 		this.roleCapability = true;
 		this.role = undefined;
@@ -25,19 +28,27 @@ class FakeClient extends EventEmitter {
 	supportsCapability(capability) {
 		if (capability === "pi-session-tail-v1") return this.tailCapability;
 		if (capability === "first-mate-role-v1") return this.roleCapability;
+		if (capability === "pi-session-identity-v1") return true;
 		return false;
 	}
+	currentPiSessionId() { return this.sessions.find((session) => session.id === this.sessionId)?.piSessionId ?? "pi-self"; }
 	currentPiSessionPresence() { return undefined; }
 	currentRole() { return this.role; }
 	pendingCounts() { return { sends: 0, lists: 0, asks: 0 }; }
 	async ensureConnected() {}
 	async listSessions() { this.listCalls++; return this.listResponses.shift() ?? this.sessions; }
-	async send(to, options) {
+	async send(to, options, _signal, _onQueued, expectedPiSessionId, expectedTargetSelector, expectedTransportId) {
 		this.sent.push({ to, options });
+		this.expectedIds.push(expectedPiSessionId);
+		this.expectedSelectors.push(expectedTargetSelector);
+		this.expectedTransportIds.push(expectedTransportId);
 		return { id: `sent-${this.sent.length}`, delivered: true };
 	}
-	async ask(to, options, _signal, onRouted) {
+	async ask(to, options, _signal, onRouted, _onQueued, _onDeliveryRejected, expectedPiSessionId, expectedTargetSelector, expectedTransportId) {
 		this.sent.push({ to, options });
+		this.expectedIds.push(expectedPiSessionId);
+		this.expectedSelectors.push(expectedTargetSelector);
+		this.expectedTransportIds.push(expectedTransportId);
 		onRouted?.({ id: options.messageId, delivered: true });
 		const from = this.sessions.find((session) => session.id === to);
 		return {
@@ -55,9 +66,9 @@ class FakeClient extends EventEmitter {
 test("runtime synchronously publishes and clears the capability-gated First Mate role without taking a list", async () => {
 	const client = new FakeClient([peer("self", "caller")]);
 	const runtime = new IntercomRuntime({ client });
-	assert.deepEqual(await runtime.setRole("first-mate"), { sessionId: "self", role: "first-mate" });
+	assert.deepEqual(await runtime.setRole("first-mate"), { sessionId: "pi-self", role: "first-mate" });
 	assert.equal(client.role, "first-mate");
-	assert.deepEqual(await runtime.setRole(null), { sessionId: "self" });
+	assert.deepEqual(await runtime.setRole(null), { sessionId: "pi-self" });
 	assert.equal(client.role, undefined);
 	assert.equal(client.listCalls, 0);
 
@@ -93,7 +104,7 @@ test("status awaits initial connection and derives role truth from the current b
 	assert.equal(settled, false);
 	releaseConnection();
 	const advertised = await pending;
-	assert.equal(advertised.sessionId, "self");
+	assert.equal(advertised.sessionId, "pi-self");
 	assert.equal(advertised.advertisingFirstMate, true);
 	assert.equal(advertised.role, "first-mate");
 
@@ -102,10 +113,15 @@ test("status awaits initial connection and derives role truth from the current b
 	const absent = await runtime.status();
 	assert.equal(absent.advertisingFirstMate, false);
 	assert.equal(absent.role, undefined);
+
+	client.sessions = [peer("self", "caller"), peer("duplicate-self", "duplicate", "pi-self")];
+	const duplicate = await runtime.status();
+	assert.equal(duplicate.connected, false);
+	assert.match(duplicate.error, /Multiple connected sessions advertise Pi session ID/);
 	await runtime.dispose();
 });
 
-test("role acknowledgement fails when reconnect replaces the acknowledged broker ID", async () => {
+test("role acknowledgement fails when reconnect replaces the acknowledged transport connection", async () => {
 	const client = new FakeClient([peer("self", "caller")]);
 	client.setRole = async (role) => {
 		client.role = role;
@@ -113,16 +129,17 @@ test("role acknowledgement fails when reconnect replaces the acknowledged broker
 		return role;
 	};
 	const runtime = new IntercomRuntime({ client });
-	await assert.rejects(runtime.setRole("first-mate"), /no longer matches the current broker session/);
+	await assert.rejects(runtime.setRole("first-mate"), /no longer matches the current transport connection/);
 	assert.equal(client.invalidated, 1);
 	assert.equal(client.role, undefined);
 	assert.equal(client.connected, false);
 	await runtime.dispose();
 });
 
-test("runtime reads a stable advertised tail without messaging the target", async () => {
+test("runtime reads a stable legacy-presence tail without messaging the target", async () => {
 	const presence = { sessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", revision: 4 };
-	const target = { ...peer("target", "worker"), piSession: presence };
+	const { piSessionId: _legacyIdentity, ...legacyPeer } = peer("target", "worker");
+	const target = { ...legacyPeer, piSession: presence };
 	const client = new FakeClient([peer("self", "caller"), target]);
 	let verified = 0;
 	let closed = 0;
@@ -136,6 +153,8 @@ test("runtime reads a stable advertised tail without messaging the target", asyn
 	});
 	const result = await runtime.tail("worker", 8, undefined, 1_024);
 	assert.equal(result.target.id, "target");
+	assert.equal(result.target.piSessionId, undefined);
+	assert.equal(result.targetSessionId, "pi-target");
 	assert.equal(result.snapshot, snapshot);
 	assert.equal(verified, 1);
 	assert.equal(closed, 1);
@@ -162,7 +181,7 @@ test("runtime rejects unavailable, duplicate, and changed tail advertisements", 
 	const selfClient = new FakeClient([{ ...peer("self", "caller"), piSession: presence }]);
 	await assert.rejects(new IntercomRuntime({ client: selfClient, openTail: opener }).tail("self", 8), /Cannot target the current session/);
 
-	const duplicateClient = new FakeClient([peer("self", "caller"), target, { ...peer("duplicate", "other"), piSession: { ...presence, revision: 2 } }]);
+	const duplicateClient = new FakeClient([peer("self", "caller"), target, { ...peer("duplicate", "other", "pi-target"), piSession: { ...presence, revision: 2 } }]);
 	await assert.rejects(new IntercomRuntime({ client: duplicateClient, openTail: opener }).tail("worker", 8), /Multiple connected sessions/);
 
 	const changedClient = new FakeClient([peer("self", "caller"), target]);
@@ -186,6 +205,57 @@ test("runtime refuses ambiguous duplicate peer names instead of routing arbitrar
 	await runtime.dispose();
 });
 
+test("runtime rejects a target that matches a stable ID and a different legacy name", async () => {
+	const named = peer("named-connection", "victim", "pi-named");
+	const shadow = peer("shadow-connection", "shadow", "victim");
+	const client = new FakeClient([peer("self", "caller"), named, shadow]);
+	const runtime = new IntercomRuntime({ client });
+	await assert.rejects(runtime.send("victim", "ambiguous namespace"), /matches both a session name and a different session ID/);
+	await assert.rejects(
+		runtime.reply("expired", { to: "victim", replyTo: "expired-ask" }),
+		/matches both a session name and a different session ID/,
+	);
+	assert.equal(client.sent.length, 0);
+	await runtime.dispose();
+});
+
+test("runtime applies cross-namespace ambiguity checks when a target narrows pending replies", async () => {
+	const { piSessionId: _removed, ...legacy } = peer("legacy-connection", "victim", "unused");
+	const shadow = peer("shadow-connection", "shadow", "victim");
+	const client = new FakeClient([peer("self", "caller"), legacy, shadow]);
+	const runtime = new IntercomRuntime({ client });
+	client.emit("message", legacy, { id: "legacy-ask", timestamp: 1, expectsReply: true, content: { text: "question" } });
+	await assert.rejects(
+		runtime.reply("answer", { to: "victim", replyTo: "legacy-ask" }),
+		/matches both a session name and a different session ID/,
+	);
+	assert.equal(client.sent.length, 0);
+	assert.equal(runtime.pending().length, 1);
+	await runtime.dispose();
+});
+
+test("runtime resolves stable Pi session IDs to the current transport connection and rejects duplicates", async () => {
+	const first = peer("old-connection", "worker", "pi-worker");
+	const client = new FakeClient([peer("self", "caller"), first]);
+	const runtime = new IntercomRuntime({ client });
+	assert.equal((await runtime.send("pi-worker", "before reload")).to.id, "old-connection");
+
+	const replacement = peer("new-connection", "worker", "pi-worker");
+	client.sessions = [peer("self", "caller"), replacement];
+	assert.equal((await runtime.send("pi-worker", "after reload")).to.id, "new-connection");
+	assert.deepEqual(client.sent.map((entry) => entry.to), ["old-connection", "new-connection"]);
+	assert.deepEqual(client.expectedIds, ["pi-worker", "pi-worker"]);
+	assert.deepEqual(client.expectedSelectors, ["pi-worker", "pi-worker"]);
+	assert.deepEqual(client.expectedTransportIds, ["old-connection", "new-connection"]);
+
+	client.sessions.push(peer("duplicate-connection", "other", "pi-worker"));
+	await assert.rejects(runtime.send("pi-worker", "ambiguous stable ID"), /Multiple connected sessions advertise Pi session ID/);
+	await assert.rejects(runtime.send("worker", "ambiguous unique name"), /Multiple connected sessions advertise Pi session ID/);
+	await assert.rejects(runtime.send("new-connection", "ambiguous legacy ID"), /Multiple connected sessions advertise Pi session ID/);
+	assert.equal(client.sent.length, 2);
+	await runtime.dispose();
+});
+
 test("runtime keeps inbound asks pending until an exact routed reply", async () => {
 	const sender = peer("sender", "worker");
 	const client = new FakeClient([peer("self", "caller"), sender]);
@@ -200,6 +270,18 @@ test("runtime keeps inbound asks pending until an exact routed reply", async () 
 	assert.deepEqual(runtime.pending().map((entry) => entry.message.id), ["ask-a"]);
 	client.emit("disconnected", new Error("broker stopped"));
 	assert.deepEqual(runtime.pending(), []);
+	await runtime.dispose();
+});
+
+test("runtime fails closed when a pending reply sender has duplicate live Pi session advertisements", async () => {
+	const sender = peer("sender-connection", "worker", "pi-worker");
+	const duplicate = peer("duplicate-connection", "other", "pi-worker");
+	const client = new FakeClient([peer("self", "caller"), sender, duplicate]);
+	const runtime = new IntercomRuntime({ client });
+	client.emit("message", sender, { id: "ask", timestamp: 1, expectsReply: true, content: { text: "question" } });
+	await assert.rejects(runtime.reply("answer", { replyTo: "ask" }), /Multiple connected sessions advertise Pi session ID/);
+	assert.equal(client.sent.length, 0);
+	assert.equal(runtime.pending().length, 1);
 	await runtime.dispose();
 });
 
@@ -235,7 +317,7 @@ test("expired transcript replies direct-route only with an exact target and repl
 	const client = new FakeClient([peer("self", "caller"), sender]);
 	const runtime = new IntercomRuntime({ client });
 	await assert.rejects(runtime.reply("answer", { replyTo: "expired-ask" }), /No pending/);
-	const result = await runtime.reply("answer", { to: sender.id, replyTo: "expired-ask" });
+	const result = await runtime.reply("answer", { to: sender.piSessionId, replyTo: "expired-ask" });
 	assert.equal(result.to.id, sender.id);
 	assert.equal(result.replyTo, "expired-ask");
 	assert.deepEqual(client.sent[0], { to: sender.id, options: { text: "answer", attachments: undefined, replyTo: "expired-ask" } });

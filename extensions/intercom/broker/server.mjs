@@ -12,7 +12,8 @@ process.umask(0o077);
 
 const TAIL_CAPABILITY = "pi-session-tail-v1";
 const ROLE_CAPABILITY = "first-mate-role-v1";
-const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY, ROLE_CAPABILITY]);
+const IDENTITY_CAPABILITY = "pi-session-identity-v1";
+const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY, ROLE_CAPABILITY, IDENTITY_CAPABILITY]);
 const MAX_GRACEFUL_CONNECTION_REJECTIONS = 16;
 
 const runtimeDir = process.env.PI_INTERCOM_RUNTIME_DIR || join(homedir(), ".pi", "agent", "intercom");
@@ -42,6 +43,7 @@ const LIMITS = Object.freeze({
 	requestEdgesPerSession: 64,
 });
 const edgeTtlMs = positiveInteger(process.env.PI_INTERCOM_REQUEST_EDGE_TTL_MS, 10 * 60 * 1000);
+const traceDeliveryQueue = process.env.NODE_ENV === "test" && process.env.PI_INTERCOM_TEST_TRACE_DELIVERY_QUEUE === "1";
 const idleTimeoutMs = positiveInteger(process.env.PI_INTERCOM_IDLE_TIMEOUT_MS, 5_000);
 const registrationTimeoutMs = positiveInteger(process.env.PI_INTERCOM_REGISTRATION_TIMEOUT_MS, 5_000);
 const edgeSweepMs = Math.max(25, Math.min(1_000, Math.floor(edgeTtlMs / 4)));
@@ -57,6 +59,12 @@ function byteLength(value) {
 
 function boundedString(value, maximum, allowEmpty = false) {
 	return typeof value === "string" && (allowEmpty || value.length > 0) && byteLength(value) <= maximum;
+}
+
+const PI_SESSION_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
+
+function isPiSessionId(value) {
+	return boundedString(value, LIMITS.piSessionId) && PI_SESSION_ID_PATTERN.test(value);
 }
 
 function finiteNumber(value) {
@@ -95,7 +103,7 @@ function isPiSessionPresence(value) {
 	return value && typeof value === "object" && !Array.isArray(value)
 		&& Object.keys(value).length === 4
 		&& ["sessionId", "fileLocator", "activeLeafId", "revision"].every((key) => key in value)
-		&& boundedString(value.sessionId, LIMITS.piSessionId)
+		&& isPiSessionId(value.sessionId)
 		&& boundedString(value.fileLocator, LIMITS.piSessionFile)
 		&& isAbsolute(value.fileLocator)
 		&& (value.activeLeafId === null || boundedString(value.activeLeafId, LIMITS.piSessionLeaf))
@@ -106,18 +114,21 @@ function isPiSessionPresence(value) {
 function isRegistration(value) {
 	return value && typeof value === "object" && !Array.isArray(value)
 		&& boundedString(value.cwd, LIMITS.sessionString, true)
+		&& (value.piSessionId === undefined || isPiSessionId(value.piSessionId))
 		&& boundedString(value.model, LIMITS.sessionString, true)
 		&& Number.isSafeInteger(value.pid)
 		&& finiteNumber(value.startedAt)
 		&& finiteNumber(value.lastActivity)
 		&& (value.name === undefined || boundedString(value.name, LIMITS.sessionString, true))
 		&& (value.status === undefined || boundedString(value.status, LIMITS.sessionString, true))
-		&& (value.piSession === undefined || isPiSessionPresence(value.piSession));
+		&& (value.piSession === undefined || isPiSessionPresence(value.piSession))
+		&& (value.piSessionId === undefined || value.piSession === undefined || value.piSessionId === value.piSession.sessionId);
 }
 
 function sessionFromRegistration(value, id) {
 	return {
 		id,
+		...(value.piSessionId === undefined ? {} : { piSessionId: value.piSessionId }),
 		...(value.name === undefined ? {} : { name: value.name }),
 		cwd: value.cwd,
 		model: value.model,
@@ -181,7 +192,7 @@ let socketIdentity;
 let pidIdentity;
 let shuttingDown = false;
 
-function queueFrame(connection, message) {
+function queueFrame(connection, message, beforeWrite) {
 	const frame = encode(message);
 	if (shuttingDown) return Promise.reject(new Error("Intercom broker is shutting down"));
 	if (connection.closed) return Promise.reject(new Error("Target disconnected"));
@@ -193,6 +204,12 @@ function queueFrame(connection, message) {
 	const operation = connection.writeTail.catch(() => undefined).then(() => new Promise((resolve, reject) => {
 		if (connection.closed || connection.socket.destroyed || !connection.socket.writable) {
 			reject(new Error("Target disconnected"));
+			return;
+		}
+		try {
+			beforeWrite?.();
+		} catch (error) {
+			reject(error instanceof Error ? error : new Error(String(error)));
 			return;
 		}
 		let settled = false;
@@ -234,6 +251,84 @@ function findTargets(value) {
 	if (byId) return [byId];
 	const lowered = value.toLowerCase();
 	return [...sessions.values()].filter((connection) => connection.info.name?.toLowerCase() === lowered);
+}
+
+function selectorTargets(value) {
+	const lowered = value.toLowerCase();
+	return new Set([...sessions.values()].filter((connection) =>
+		connection.sessionId === value
+		|| connection.info.piSessionId === value
+		|| connection.info.name?.toLowerCase() === lowered));
+}
+
+function advertisedPiSessionId(connection) {
+	return connection.info.piSessionId ?? connection.info.piSession?.sessionId;
+}
+
+function piSessionAdvertisers(value) {
+	return [...sessions.values()].filter((connection) => advertisedPiSessionId(connection) === value);
+}
+
+function explicitIdentityNamespaceConflict(owner, value) {
+	if (owner.info.piSessionId === undefined) return false;
+	const lowered = value.toLowerCase();
+	return [...sessions.values()].some((candidate) => candidate !== owner && (
+		candidate.sessionId === value
+		|| candidate.info.name?.toLowerCase() === lowered
+	));
+}
+
+function deliveryValidationFailure(sender, target, request) {
+	if (!sender.sessionId || sessions.get(sender.sessionId) !== sender) return "Sender session changed before delivery";
+	const senderPiSessionId = advertisedPiSessionId(sender);
+	if (senderPiSessionId !== undefined && (
+		piSessionAdvertisers(senderPiSessionId).length !== 1
+		|| explicitIdentityNamespaceConflict(sender, senderPiSessionId)
+	)) {
+		return "Sender Pi session identity is not unique";
+	}
+	if (!target.sessionId || sessions.get(target.sessionId) !== target) return "Target session changed before delivery";
+	if (request.expectedTransportId !== undefined && (
+		target.sessionId !== request.expectedTransportId
+		|| sessions.get(request.expectedTransportId) !== target
+	)) {
+		return "Target transport connection changed before delivery";
+	}
+	const transportMatches = findTargets(request.to);
+	if (transportMatches.length !== 1 || transportMatches[0] !== target) {
+		return transportMatches.length > 1
+			? "Multiple connected sessions match the transport target"
+			: "Transport target changed before delivery";
+	}
+	if (request.expectedTargetSelector !== undefined) {
+		const selectorMatches = selectorTargets(request.expectedTargetSelector);
+		if (selectorMatches.size !== 1 || !selectorMatches.has(target)) {
+			return "Target selector became ambiguous or changed";
+		}
+	}
+	if (request.expectedPiSessionId !== undefined) {
+		const advertisers = piSessionAdvertisers(request.expectedPiSessionId);
+		const expectedName = request.expectedPiSessionId.toLowerCase();
+		const namespaceConflict = [...sessions.values()].some((candidate) => candidate !== target && (
+			candidate.info.id === request.expectedPiSessionId
+			|| candidate.info.name?.toLowerCase() === expectedName
+		));
+		if (target.info.piSessionId !== request.expectedPiSessionId || advertisers.length !== 1 || namespaceConflict) {
+			return advertisers.length > 1
+				? "Multiple connected sessions advertise the expected Pi session ID"
+				: namespaceConflict
+					? "Expected Pi session ID conflicts with another connected session name or legacy ID"
+					: "Target connection no longer matches the expected Pi session ID";
+		}
+	}
+	const targetPiSessionId = advertisedPiSessionId(target);
+	if (targetPiSessionId !== undefined && (
+		piSessionAdvertisers(targetPiSessionId).length !== 1
+		|| explicitIdentityNamespaceConflict(target, targetPiSessionId)
+	)) {
+		return "Recipient Pi session identity is not unique";
+	}
+	return undefined;
 }
 
 function clearIdleTimer() {
@@ -291,7 +386,13 @@ function removeSession(connection) {
 
 async function handleSend(connection, request) {
 	const messageId = isMessage(request.message) ? request.message.id : "unknown";
-	if (!boundedString(request.to, LIMITS.target, true) || !isMessage(request.message)) {
+	if (
+		!boundedString(request.to, LIMITS.target, true)
+		|| !isMessage(request.message)
+		|| (request.expectedPiSessionId !== undefined && !isPiSessionId(request.expectedPiSessionId))
+		|| (request.expectedTargetSelector !== undefined && !boundedString(request.expectedTargetSelector, LIMITS.target, true))
+		|| (request.expectedTransportId !== undefined && !boundedString(request.expectedTransportId, LIMITS.id, true))
+	) {
 		await queueFrame(connection, { type: "delivery_failed", messageId, reason: "Invalid message format" });
 		return;
 	}
@@ -301,12 +402,13 @@ async function handleSend(connection, request) {
 		await queueFrame(connection, { type: "delivery_failed", messageId, reason: "Sender session not found" });
 		return;
 	}
-	const targets = findTargets(request.to);
+	const pinnedTarget = request.expectedTransportId === undefined ? undefined : sessions.get(request.expectedTransportId);
+	const targets = request.expectedTransportId === undefined ? findTargets(request.to) : pinnedTarget ? [pinnedTarget] : [];
 	if (targets.length > 1) {
 		await queueFrame(connection, {
 			type: "delivery_failed",
 			messageId,
-			reason: `Multiple sessions named "${request.to}" are connected. Use the session ID instead.`,
+			reason: "Multiple connected sessions match the transport target",
 		});
 		return;
 	}
@@ -315,6 +417,11 @@ async function handleSend(connection, request) {
 		return;
 	}
 	const target = targets[0];
+	const validationFailure = deliveryValidationFailure(sender, target, request);
+	if (validationFailure) {
+		await queueFrame(connection, { type: "delivery_failed", messageId, reason: validationFailure });
+		return;
+	}
 	if (request.message.expectsReply) {
 		if (requestEdges.has(messageId)) {
 			await queueFrame(connection, { type: "delivery_failed", messageId, reason: "Duplicate pending request ID" });
@@ -337,8 +444,12 @@ async function handleSend(connection, request) {
 		requestEdges.set(messageId, { messageId, fromPeerId: senderId, toPeerId: target.sessionId, expiresAt: Date.now() + edgeTtlMs });
 	}
 	const repliedEdge = request.message.replyTo === undefined ? undefined : requestEdges.get(request.message.replyTo);
+	if (traceDeliveryQueue) process.stdout.write(`delivery_queued:${JSON.stringify(messageId)}\n`);
 	try {
-		await queueFrame(target, { type: "message", from: sender.info, message: request.message });
+		await queueFrame(target, { type: "message", from: sender.info, message: request.message }, () => {
+			const failure = deliveryValidationFailure(sender, target, request);
+			if (failure) throw new Error(failure);
+		});
 	} catch (error) {
 		if (request.message.expectsReply) requestEdges.delete(messageId);
 		const reason = error instanceof Error ? error.message : "Target delivery failed";
@@ -404,7 +515,11 @@ async function handleMessage(connection, value) {
 				if (value[field] !== undefined && !boundedString(value[field], LIMITS.sessionString, true)) throw new Error(`Invalid presence ${field}`);
 			}
 			if (value.piSession !== undefined && value.piSession !== null) {
-				if (!isPiSessionPresence(value.piSession) || value.piSession.revision <= connection.lastPiSessionRevision) {
+				if (
+					!isPiSessionPresence(value.piSession)
+					|| (session.info.piSessionId !== undefined && value.piSession.sessionId !== session.info.piSessionId)
+					|| value.piSession.revision <= connection.lastPiSessionRevision
+				) {
 					throw new Error("Invalid presence piSession");
 				}
 			}

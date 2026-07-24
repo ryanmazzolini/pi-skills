@@ -4,13 +4,13 @@ Use First Mate only for an on-demand cross-project blocker or missing context th
 
 ## Address the current First Mate
 
-Take a fresh `intercom` `status` and `list`, and use the inventory only when both report the same current session ID. Inspect the advertised First Mate IDs:
+Take a fresh `intercom` `status` and `list`, and use the inventory only when both report the same current Pi session ID, `truncated` is false, and `omittedSessionIds` is zero. Inspect the advertised First Mate Pi session IDs:
 
 - With exactly one, address that full ID internally; do not ask the human to copy it.
 - With none, explain that no First Mate is discoverable and ask the human to start or reinvoke `/skill:first-mate` before retrying.
 - With more than one, show their names and full IDs and ask the human to choose; do not guess or broadcast.
 
-If the selected ID disappears before the ask, report the limitation instead of retargeting it by name.
+If the selected ID disappears or has duplicate live advertisements before the ask, report the limitation instead of retargeting it by name.
 
 ## Send the useful context first
 

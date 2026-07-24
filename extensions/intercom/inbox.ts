@@ -1,4 +1,4 @@
-import type { Message, SessionInfo } from "./client.ts";
+import { piSessionIdOf, type Message, type SessionInfo } from "./client.ts";
 import { INTERCOM_PROJECTION_MAX_BYTES } from "./projection.ts";
 
 export interface InboxEntry {
@@ -20,9 +20,10 @@ function retainedBytes(from: SessionInfo, message: Message): number {
 }
 
 function retainedProjectionBytes(entry: InboxEntry): number {
-	const pendingLine = `\n- broker session ID ${JSON.stringify(entry.from.id)} · message ${JSON.stringify(entry.message.id)} · 9999999999999s ago`;
+	const sessionId = piSessionIdOf(entry.from);
+	const pendingLine = `\n- Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"} · message ${JSON.stringify(entry.message.id)} · 9999999999999s ago`;
 	const compactDetails = {
-		fromPeerId: entry.from.id,
+		...(sessionId === undefined ? {} : { fromSessionId: sessionId }),
 		messageId: entry.message.id,
 		...(entry.message.replyTo === undefined ? {} : { replyTo: entry.message.replyTo }),
 		timestamp: entry.message.timestamp,
@@ -39,7 +40,9 @@ function retainedProjectionBytes(entry: InboxEntry): number {
 }
 
 function senderMatches(entry: InboxEntry, target: string): boolean {
-	return entry.from.id === target || entry.from.name?.toLowerCase() === target.toLowerCase();
+	return piSessionIdOf(entry.from) === target
+		|| entry.from.id === target // Compatibility with old transcript tool calls.
+		|| entry.from.name?.toLowerCase() === target.toLowerCase();
 }
 
 export class IntercomInbox {
@@ -98,7 +101,7 @@ export class IntercomInbox {
 			const exact = this.asks.get(options.replyTo);
 			if (!exact) throw new Error(`No pending intercom ask with message ID ${JSON.stringify(options.replyTo)}`);
 			if (options.to !== undefined && !senderMatches(exact, options.to)) {
-				throw new Error(`Pending ask ${JSON.stringify(options.replyTo)} is not from ${options.to}`);
+				throw new Error(`Pending ask ${JSON.stringify(options.replyTo)} is not from the selected target`);
 			}
 			return exact;
 		}
@@ -106,10 +109,10 @@ export class IntercomInbox {
 		const matches = options.to !== undefined ? entries.filter((entry) => senderMatches(entry, options.to!)) : entries;
 		if (matches.length === 1) return matches[0]!;
 		if (matches.length === 0) {
-			throw new Error(options.to ? `No pending intercom ask from ${options.to}` : "No unresolved inbound intercom asks");
+			throw new Error(options.to ? "No pending intercom ask from the selected target" : "No unresolved inbound intercom asks");
 		}
 		throw new Error(options.to
-			? `Multiple pending asks from ${options.to}; select one with replyTo`
+			? "Multiple pending asks from the selected target; select one with replyTo"
 			: "Multiple pending intercom asks; select one with replyTo (or narrow with to)");
 	}
 

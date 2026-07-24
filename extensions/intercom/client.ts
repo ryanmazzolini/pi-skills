@@ -8,6 +8,7 @@ import { getBrokerSocketPath } from "./broker/paths.ts";
 
 export const INTERCOM_TAIL_CAPABILITY = "pi-session-tail-v1";
 export const INTERCOM_ROLE_CAPABILITY = "first-mate-role-v1";
+export const INTERCOM_IDENTITY_CAPABILITY = "pi-session-identity-v1";
 export type IntercomRole = "first-mate";
 
 export interface PiSessionPresence {
@@ -18,7 +19,10 @@ export interface PiSessionPresence {
 }
 
 export interface SessionInfo {
+	/** Broker-assigned connection ID. Transport-internal; do not expose as a Pi session identity. */
 	id: string;
+	/** Stable Pi session ID advertised by modern clients. */
+	piSessionId?: string;
 	name?: string;
 	cwd: string;
 	model: string;
@@ -28,6 +32,10 @@ export interface SessionInfo {
 	status?: string;
 	role?: IntercomRole;
 	piSession?: PiSessionPresence;
+}
+
+export function piSessionIdOf(session: Pick<SessionInfo, "piSessionId">): string | undefined {
+	return session.piSessionId;
 }
 
 export interface Attachment {
@@ -103,6 +111,13 @@ function boundedString(value: unknown, maximum: number, allowEmpty = false): val
 		&& byteLength(value) <= maximum;
 }
 
+const PI_SESSION_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
+
+function isPiSessionId(value: unknown): value is string {
+	return boundedString(value, INTERCOM_LIMITS.maxPiSessionIdBytes)
+		&& PI_SESSION_ID_PATTERN.test(value);
+}
+
 function finiteNumber(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value);
 }
@@ -141,7 +156,7 @@ export function isPiSessionPresence(value: unknown): value is PiSessionPresence 
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const presence = value as Record<string, unknown>;
 	if (Object.keys(presence).length !== 4 || !["sessionId", "fileLocator", "activeLeafId", "revision"].every((key) => key in presence)) return false;
-	return boundedString(presence.sessionId, INTERCOM_LIMITS.maxPiSessionIdBytes)
+	return isPiSessionId(presence.sessionId)
 		&& boundedString(presence.fileLocator, INTERCOM_LIMITS.maxPiSessionFileBytes)
 		&& path.isAbsolute(presence.fileLocator)
 		&& (presence.activeLeafId === null || boundedString(presence.activeLeafId, INTERCOM_LIMITS.maxPiSessionLeafBytes))
@@ -166,6 +181,7 @@ export function isSessionInfo(value: unknown): value is SessionInfo {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const session = value as Record<string, unknown>;
 	return boundedString(session.id, INTERCOM_LIMITS.maxIdBytes, true)
+		&& (session.piSessionId === undefined || isPiSessionId(session.piSessionId))
 		&& boundedString(session.cwd, INTERCOM_LIMITS.maxSessionStringBytes, true)
 		&& boundedString(session.model, INTERCOM_LIMITS.maxSessionStringBytes, true)
 		&& Number.isSafeInteger(session.pid)
@@ -174,7 +190,8 @@ export function isSessionInfo(value: unknown): value is SessionInfo {
 		&& (session.name === undefined || boundedString(session.name, INTERCOM_LIMITS.maxSessionStringBytes, true))
 		&& (session.status === undefined || boundedString(session.status, INTERCOM_LIMITS.maxSessionStringBytes, true))
 		&& (session.role === undefined || isIntercomRole(session.role))
-		&& (session.piSession === undefined || isPiSessionPresence(session.piSession));
+		&& (session.piSession === undefined || isPiSessionPresence(session.piSession))
+		&& (session.piSessionId === undefined || session.piSession === undefined || session.piSessionId === session.piSession.sessionId);
 }
 
 function validateRegistration(session: Omit<SessionInfo, "id">): void {
@@ -186,8 +203,17 @@ function registrationForWire(session: Omit<SessionInfo, "id">): Omit<SessionInfo
 	return legacyCompatible;
 }
 
-function validateSendOptions(to: string, options: SendOptions): void {
+function validateSendOptions(to: string, options: SendOptions, expectedPiSessionId?: string, expectedTargetSelector?: string, expectedTransportId?: string): void {
 	if (!boundedString(to, INTERCOM_LIMITS.maxTargetBytes, true)) throw new Error("Invalid intercom target");
+	if (expectedPiSessionId !== undefined && !isPiSessionId(expectedPiSessionId)) {
+		throw new Error("Invalid expected Pi session ID");
+	}
+	if (expectedTargetSelector !== undefined && !boundedString(expectedTargetSelector, INTERCOM_LIMITS.maxTargetBytes, true)) {
+		throw new Error("Invalid expected target selector");
+	}
+	if (expectedTransportId !== undefined && !boundedString(expectedTransportId, INTERCOM_LIMITS.maxIdBytes, true)) {
+		throw new Error("Invalid expected transport ID");
+	}
 	const message: Message = {
 		id: options.messageId ?? "validation",
 		timestamp: Date.now(),
@@ -381,6 +407,16 @@ export class IntercomClient extends EventEmitter {
 		return this.registeredCapabilities.has(capability);
 	}
 
+	currentPiSessionId(): string | undefined {
+		return this.registration?.piSessionId ?? this.registration?.piSession?.sessionId;
+	}
+
+	private sessionForConsumer(session: SessionInfo): SessionInfo {
+		if (this.supportsCapability(INTERCOM_IDENTITY_CAPABILITY)) return session;
+		const { piSessionId: _unsupportedIdentity, ...legacyCompatible } = session;
+		return legacyCompatible;
+	}
+
 	currentPiSessionPresence(): PiSessionPresence | undefined {
 		return this.registration?.piSession ? { ...this.registration.piSession } : undefined;
 	}
@@ -451,8 +487,11 @@ export class IntercomClient extends EventEmitter {
 
 	connect(session: Omit<SessionInfo, "id">): Promise<void> {
 		validateRegistration(session);
-		const wireSession = registrationForWire(session);
 		if (this.socket) return Promise.reject(new Error("Already connected"));
+		// Managed reconnects pass the last wire snapshot while `start()` retains newer desired
+		// presence. Direct connections instead adopt each explicitly supplied registration.
+		if (!this.desired || !this.registration) this.setRegistration(session);
+		const wireSession = registrationForWire(session);
 		const socket = net.connect(this.socketPath);
 		this.socket = socket;
 		this.registeredSessionId = null;
@@ -608,7 +647,7 @@ export class IntercomClient extends EventEmitter {
 				if (pending) {
 					this.pendingLists.delete(message.requestId);
 					cleanupPending(pending);
-					pending.resolve(message.sessions);
+					pending.resolve(message.sessions.map((session) => this.sessionForConsumer(session)));
 				}
 				break;
 			}
@@ -642,13 +681,14 @@ export class IntercomClient extends EventEmitter {
 			}
 			case "message": {
 				if (!isSessionInfo(message.from) || !isMessage(message.message)) throw new Error("Invalid message event");
+				const from = this.sessionForConsumer(message.from);
 				const replyTo = message.message.replyTo;
 				const waiter = replyTo === undefined ? undefined : this.askWaiters.get(replyTo);
-				if (replyTo !== undefined && waiter && message.from.id === waiter.expectedPeerId) {
-					this.finishAsk(replyTo, { from: message.from, message: message.message });
+				if (replyTo !== undefined && waiter && from.id === waiter.expectedPeerId) {
+					this.finishAsk(replyTo, { from, message: message.message });
 					break;
 				}
-				this.emit("message", message.from, message.message);
+				this.emit("message", from, message.message);
 				break;
 			}
 			case "delivered": {
@@ -667,7 +707,7 @@ export class IntercomClient extends EventEmitter {
 			case "session_joined":
 			case "presence_update": {
 				if (!isSessionInfo(message.session)) throw new Error(`Invalid ${message.type} message`);
-				this.emit(message.type, message.session);
+				this.emit(message.type, this.sessionForConsumer(message.session));
 				break;
 			}
 			case "session_left": {
@@ -802,8 +842,8 @@ export class IntercomClient extends EventEmitter {
 		});
 	}
 
-	send(to: string, options: SendOptions, signal?: AbortSignal, onQueued?: () => void): Promise<SendResult> {
-		return this.sendInternal(to, options, signal, undefined, onQueued);
+	send(to: string, options: SendOptions, signal?: AbortSignal, onQueued?: () => void, expectedPiSessionId?: string, expectedTargetSelector?: string, expectedTransportId?: string): Promise<SendResult> {
+		return this.sendInternal(to, options, signal, undefined, onQueued, expectedPiSessionId, expectedTargetSelector, expectedTransportId);
 	}
 
 	private sendInternal(
@@ -812,9 +852,12 @@ export class IntercomClient extends EventEmitter {
 		signal?: AbortSignal,
 		onSynchronousEnqueueError?: (error: Error) => void,
 		onQueued?: () => void,
+		expectedPiSessionId?: string,
+		expectedTargetSelector?: string,
+		expectedTransportId?: string,
 	): Promise<SendResult> {
 		this.requireActiveSocket();
-		validateSendOptions(to, options);
+		validateSendOptions(to, options, expectedPiSessionId, expectedTargetSelector, expectedTransportId);
 		if (signal?.aborted) return Promise.reject(new Error("Intercom send cancelled"));
 		const messageId = options.messageId ?? randomUUID();
 		if (this.pendingSends.has(messageId)) return Promise.reject(new Error(`Duplicate intercom message ID: ${messageId}`));
@@ -844,7 +887,14 @@ export class IntercomClient extends EventEmitter {
 				signal.addEventListener("abort", pending.onAbort, { once: true });
 			}
 			this.pendingSends.set(messageId, pending);
-			this.enqueueReserved({ type: "send", to, message }, finishError, onSynchronousEnqueueError, onQueued);
+			this.enqueueReserved({
+				type: "send",
+				to,
+				message,
+				...(expectedPiSessionId ? { expectedPiSessionId } : {}),
+				...(expectedTargetSelector ? { expectedTargetSelector } : {}),
+				...(expectedTransportId ? { expectedTransportId } : {}),
+			}, finishError, onSynchronousEnqueueError, onQueued);
 		});
 	}
 
@@ -855,9 +905,12 @@ export class IntercomClient extends EventEmitter {
 		onRouted?: (result: SendResult) => void,
 		onQueued?: () => void,
 		onDeliveryRejected?: (result: SendResult) => void,
+		expectedPiSessionId?: string,
+		expectedTargetSelector?: string,
+		expectedTransportId?: string,
 	): Promise<ReceivedMessage> {
 		this.requireActiveSocket();
-		validateSendOptions(to, { ...options, expectsReply: true });
+		validateSendOptions(to, { ...options, expectsReply: true }, expectedPiSessionId, expectedTargetSelector, expectedTransportId);
 		if (signal?.aborted) return Promise.reject(new Error("Intercom ask cancelled"));
 		const messageId = options.messageId ?? randomUUID();
 		if (this.askWaiters.has(messageId)) return Promise.reject(new Error(`Duplicate intercom ask ID: ${messageId}`));
@@ -888,6 +941,9 @@ export class IntercomClient extends EventEmitter {
 					signal,
 					(error) => this.failAsk(messageId, error),
 					onQueued,
+					expectedPiSessionId,
+					expectedTargetSelector,
+					expectedTransportId,
 				);
 				if (!routed.delivered) {
 					try { onDeliveryRejected?.(routed); } catch {}
@@ -948,6 +1004,8 @@ export class IntercomClient extends EventEmitter {
 			if (value !== undefined && !boundedString(value, INTERCOM_LIMITS.maxSessionStringBytes, true)) return;
 		}
 		if (updates.piSession !== undefined && updates.piSession !== null && !isPiSessionPresence(updates.piSession)) return;
+		const stableSessionId = this.currentPiSessionId();
+		if (updates.piSession && stableSessionId && updates.piSession.sessionId !== stableSessionId) return;
 		if (this.registration) {
 			const next = { ...this.registration, ...updates, lastActivity: Date.now() } as Omit<SessionInfo, "id"> & { piSession?: PiSessionPresence | null };
 			if (updates.piSession === null) delete next.piSession;

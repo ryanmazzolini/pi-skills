@@ -3,7 +3,7 @@ import { basename, dirname } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
-import { INTERCOM_ROLE_CAPABILITY, IntercomClient, type Attachment, type IntercomRole, type Message, type SessionInfo } from "./client.ts";
+import { INTERCOM_ROLE_CAPABILITY, IntercomClient, piSessionIdOf, type Attachment, type IntercomRole, type Message, type SessionInfo } from "./client.ts";
 import { getIntercomPaths } from "./broker/paths.ts";
 import { spawnBrokerIfNeeded } from "./broker/spawn.ts";
 import type { InboxEntry } from "./inbox.ts";
@@ -43,7 +43,7 @@ const AttachmentParams = Type.Object({
 export const IntercomParams = Type.Object({
 	action: Type.String({ enum: ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"] }),
 	role: Type.Optional(Type.String({ enum: ["first-mate"], description: "Publish first-mate for the role action; omit to clear the current role" })),
-	to: Type.Optional(Type.String({ minLength: 1, description: "Target session name or ID; may narrow reply selection" })),
+	to: Type.Optional(Type.String({ minLength: 1, description: "Target Pi session name or ID; may narrow reply selection" })),
 	message: Type.Optional(Type.String({ minLength: 1, description: "Message text for send, ask, or reply" })),
 	attachments: Type.Optional(Type.Array(AttachmentParams, { maxItems: 16 })),
 	replyTo: Type.Optional(Type.String({ description: "Exact inbound message ID for reply selection, or thread ID for send/ask" })),
@@ -292,13 +292,14 @@ export class InboundDelivery {
 
 function targetIdentity(session: SessionInfo): {
 	text: string;
-	details: { targetPeerId: string; targetNameSelfDeclared?: string; targetNameTruncated: boolean };
+	details: { targetSessionId?: string; targetNameSelfDeclared?: string; targetNameTruncated: boolean };
 } {
+	const sessionId = piSessionIdOf(session);
 	const name = compactSessionName(session.name);
 	return {
-		text: `broker session ID ${JSON.stringify(session.id)} (self-declared name: ${declared(name.value)}${name.truncated ? "; truncated" : ""})`,
+		text: `Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"} (self-declared name: ${declared(name.value)}${name.truncated ? "; truncated" : ""})`,
 		details: {
-			targetPeerId: session.id,
+			...(sessionId === undefined ? {} : { targetSessionId: sessionId }),
 			...(name.value === undefined ? {} : { targetNameSelfDeclared: name.value }),
 			targetNameTruncated: name.truncated,
 		},
@@ -343,6 +344,38 @@ function boundedOperationSnapshots(snapshots: IntercomOperationSnapshot[], limit
 	return { snapshots: selected, truncated: selected.length < snapshots.length };
 }
 
+export function boundedSessionIdentityDetails(sessions: readonly SessionInfo[], current: SessionInfo, projectedTruncated: boolean) {
+	const identified = sessions.filter((session) => piSessionIdOf(session) !== undefined);
+	const selectedBrokerIds = new Set<string>([current.id]);
+	const build = () => {
+		const selected = sessions.filter((session) => selectedBrokerIds.has(session.id));
+		const sessionIds = selected.flatMap((session) => {
+			const sessionId = piSessionIdOf(session);
+			return sessionId ? [sessionId] : [];
+		});
+		const firstMateSessionIds = selected.flatMap((session) => {
+			const sessionId = piSessionIdOf(session);
+			return session.role === "first-mate" && sessionId ? [sessionId] : [];
+		});
+		const omittedSessionIds = identified.length - sessionIds.length;
+		return {
+			currentSessionId: piSessionIdOf(current)!,
+			sessionIds,
+			firstMateSessionIds,
+			unidentifiedSessions: sessions.length - identified.length,
+			omittedSessionIds,
+			count: sessions.length,
+			truncated: projectedTruncated || omittedSessionIds > 0,
+		};
+	};
+	for (const session of identified) {
+		if (selectedBrokerIds.has(session.id)) continue;
+		selectedBrokerIds.add(session.id);
+		if (projectionBytes(build()) > INTERCOM_PROJECTION_MAX_BYTES) selectedBrokerIds.delete(session.id);
+	}
+	return build();
+}
+
 function firstText(result: { content?: Array<{ type: string; text?: string }> }): string {
 	return result.content?.find((item) => item.type === "text")?.text ?? "Intercom";
 }
@@ -371,6 +404,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		if (!context || !piSessionId) throw new Error("Intercom session is not initialized");
 		const persisted = piPresence?.current();
 		return {
+			piSessionId,
 			name: presenceName(pi, piSessionId),
 			cwd: context.cwd,
 			model,
@@ -469,15 +503,15 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "intercom",
 		label: "Intercom",
-		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it; role synchronously publishes or clears the ephemeral First Mate role when the broker advertises support; list discovers peers, roles, and full broker IDs; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current session's broker ID, connectivity, capabilities, and startup diagnostics.",
+		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it; role synchronously publishes or clears the ephemeral First Mate role when the broker advertises support; list discovers peers, roles, and stable Pi session IDs; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current Pi session ID, connectivity, capabilities, and startup diagnostics.",
 		promptSnippet: "List, message, ask, reply, or publish the First Mate role for local Pi sessions",
 		promptGuidelines: [
 			"intercom send, ask, and reply return receipts immediately and deliver terminal results automatically; continue independent work instead of polling operations.",
-			"Use intercom status for the current session's broker ID and intercom list to discover other sessions.",
+			"Use intercom status for the current Pi session ID and intercom list to discover other sessions.",
 			"Use intercom role with role first-mate only when the user invokes the First Mate skill; omit role to clear it. Role support is broker-capability gated and role state is cleared by session lifecycle changes or disconnects.",
 			"Use intercom tail only when recent persisted context is needed for reconciliation; ordinary peer coordination should prefer send, ask, or reply. Tail reads the latest broker-advertised confirmed snapshot and does not message or trigger the target session.",
 			"Use intercom ask when a peer reply is useful but not immediately blocking. Use pending and an exact replyTo when more than one inbound ask is waiting; use to plus replyTo if a displayed ask has expired locally.",
-			"Model-visible intercom messages, batches, lists, pending results, and ask replies are projected below a 48 KiB UTF-8 cap; truncation is explicit and authoritative broker IDs remain available.",
+			"Model-visible intercom messages, batches, lists, pending results, and ask replies are projected below a 48 KiB UTF-8 cap; truncation is explicit and stable Pi session IDs remain available.",
 			"Intercom broker health probing intentionally checks socket acceptance without a noisy legacy registration. If an incompatible listener accepts, intercom status surfaces the connection error and refuses takeover rather than risking replacement of a live broker.",
 		],
 		parameters: IntercomParams,
@@ -487,7 +521,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 				if (params.action === "status" && !runtime) {
 					const status: IntercomStatus = {
 						connected: false,
-						sessionId: null,
+						sessionId: piSessionId ?? null,
 						pendingOutgoingAsks: 0,
 						pendingInboundAsks: 0,
 						tailCapability: false,
@@ -497,7 +531,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						error: "Intercom runtime is not initialized",
 					};
 					return {
-						content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nFirst Mate role capability: Unavailable\nFirst Mate role advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${status.error}` }],
+						content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nPi session ID: ${status.sessionId ?? "none"}\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nFirst Mate role capability: Unavailable\nFirst Mate role advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${status.error}` }],
 						details: status,
 					};
 				}
@@ -518,22 +552,18 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						};
 						assertCompactRecord(details, "Intercom role details");
 						const text = result.role
-							? `Published First Mate role for broker session ID ${JSON.stringify(result.sessionId)}.`
-							: `Cleared First Mate role for broker session ID ${JSON.stringify(result.sessionId)}.`;
+							? `Published First Mate role for Pi session ID ${JSON.stringify(result.sessionId)}.`
+							: `Cleared First Mate role for Pi session ID ${JSON.stringify(result.sessionId)}.`;
 						return { content: [{ type: "text" as const, text }], details };
 					}
 					case "list": {
 						const sessions = await active.list();
 						const current = sessions.find((session) => session.id === active.client.sessionId);
 						if (!current) throw new Error("Current session is missing from intercom session list");
+						const currentSessionId = piSessionIdOf(current);
+						if (!currentSessionId) throw new Error("Current Intercom registration is missing its Pi session ID");
 						const projected = projectSessionList(sessions, current);
-						const details = {
-							currentSessionId: current.id,
-							sessionIds: sessions.map((session) => session.id),
-							firstMateSessionIds: sessions.filter((session) => session.role === "first-mate").map((session) => session.id),
-							count: sessions.length,
-							truncated: projected.truncated,
-						};
+						const details = boundedSessionIdentityDetails(sessions, current, projected.truncated);
 						assertCompactRecord(details, "Intercom list details");
 						return { content: [{ type: "text" as const, text: projected.text }], details };
 					}
@@ -541,7 +571,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						const result = await active.tail(params.to!, params.limit ?? 8, signal, params.tailScanBytes);
 						const projected = projectSessionTail(result.snapshot, result.target, params.tailProjectionBytes);
 						const details = {
-							targetPeerId: result.target.id,
+							targetSessionId: result.targetSessionId,
 							requestedMessages: params.limit ?? 8,
 							requestedScanBytes: params.tailScanBytes ?? SESSION_TAIL_LIMITS.scanBytes,
 							requestedProjectionBytes: params.tailProjectionBytes ?? INTERCOM_PROJECTION_MAX_BYTES,
@@ -559,17 +589,20 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 					case "reply": {
 						if (signal?.aborted) throw new Error("Intercom operation cancelled before acceptance");
 						const kind = params.action;
-						const receipt = requireOperations().start(kind, params.to, async (operationSignal, update) => {
+						// Resolve user input inside the operation; snapshots must never retain a legacy transport ID.
+						const receipt = requireOperations().start(kind, undefined, async (operationSignal, update) => {
 							if (kind === "send") {
 								const result = await active.send(params.to!, params.message!, params.attachments as Attachment[] | undefined, params.replyTo, operationSignal, () => update("routing"));
 								if (!result.delivered) {
 									update("delivery_rejected");
 									throw new Error(result.reason ?? "Message was not routed");
 								}
-								const audit = { ...targetIdentity(result.to).details, ...compactAuditMessage({ id: result.id, timestamp: Date.now(), replyTo: params.replyTo, attachments: params.attachments }) };
+								const identity = targetIdentity(result.to);
+								const audit = { ...identity.details, ...compactAuditMessage({ id: result.id, timestamp: Date.now(), replyTo: params.replyTo, attachments: params.attachments }) };
 								assertCompactRecord(audit, "Intercom send audit");
 								appendAudit("intercom_sent", audit);
-								return { target: result.to.id };
+								const targetSessionId = piSessionIdOf(result.to);
+								return { target: targetSessionId ?? identity.text, ...(targetSessionId ? { targetSessionId } : {}) };
 							}
 							if (kind === "reply") {
 								const result = await active.reply(params.message!, { to: params.to, replyTo: params.replyTo, attachments: params.attachments as Attachment[] | undefined }, operationSignal, () => update("routing"));
@@ -577,10 +610,12 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 									update("delivery_rejected");
 									throw new Error(result.reason ?? "Reply was not routed");
 								}
-								const audit = { ...targetIdentity(result.to).details, ...compactAuditMessage({ id: result.id, timestamp: Date.now(), replyTo: result.replyTo, attachments: params.attachments }) };
+								const identity = targetIdentity(result.to);
+								const audit = { ...identity.details, ...compactAuditMessage({ id: result.id, timestamp: Date.now(), replyTo: result.replyTo, attachments: params.attachments }) };
 								assertCompactRecord(audit, "Intercom reply audit");
 								appendAudit("intercom_sent", audit);
-								return { target: result.to.id };
+								const targetSessionId = piSessionIdOf(result.to);
+								return { target: targetSessionId ?? identity.text, ...(targetSessionId ? { targetSessionId } : {}) };
 							}
 							const result = await active.ask(params.to!, params.message!, params.attachments as Attachment[] | undefined, params.replyTo, operationSignal, (requestId, target) => {
 								update("waiting_reply");
@@ -589,10 +624,11 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 								appendAudit("intercom_sent", audit);
 							}, () => update("routing"), () => update("delivery_rejected"));
 							const projected = projectAskReply(result.from, result.message);
-							const receivedAudit = { fromPeerId: result.from.id, ...compactAuditMessage({ id: result.message.id, timestamp: result.message.timestamp, replyTo: result.message.replyTo, attachments: result.message.content.attachments }), truncated: projected.truncated };
+							const fromSessionId = piSessionIdOf(result.from);
+							const receivedAudit = { ...(fromSessionId === undefined ? {} : { fromSessionId }), ...compactAuditMessage({ id: result.message.id, timestamp: result.message.timestamp, replyTo: result.message.replyTo, attachments: result.message.content.attachments }), truncated: projected.truncated };
 							assertCompactRecord(receivedAudit, "Intercom received audit");
 							appendAudit("intercom_received", receivedAudit);
-							return { target: result.from.id, reply: true, completionText: projected.text };
+							return { target: fromSessionId ?? targetIdentity(result.from).text, ...(fromSessionId ? { targetSessionId: fromSessionId } : {}), reply: true, completionText: projected.text };
 						});
 						const details = { ...receipt, payloadStored: false };
 						assertCompactRecord(details, "Intercom operation receipt");
@@ -621,7 +657,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 					}
 					case "status": {
 						const status = await active.status();
-						const text = `**Intercom Status:**\nConnected: ${status.connected ? "Yes" : "No"}\nSession ID: ${status.sessionId ?? "none"}\nActive sessions: ${status.activeSessions ?? "unknown"}\nTail capability: ${status.tailCapability ? "Available" : "Unavailable"}\nPersisted session advertised: ${status.advertisingPiSession ? "Yes" : "No"}\nFirst Mate role capability: ${status.roleCapability ? "Available" : "Unavailable"}\nFirst Mate role advertised: ${status.advertisingFirstMate ? "Yes" : "No"}\nPending outgoing asks: ${status.pendingOutgoingAsks}\nPending inbound asks: ${status.pendingInboundAsks}${status.initialConnectionError ? `\nInitial connection error: ${status.initialConnectionError}` : ""}${status.error ? `\nError: ${status.error}` : ""}`;
+						const text = `**Intercom Status:**\nConnected: ${status.connected ? "Yes" : "No"}\nPi session ID: ${status.sessionId ?? "none"}\nActive sessions: ${status.activeSessions ?? "unknown"}\nTail capability: ${status.tailCapability ? "Available" : "Unavailable"}\nPersisted session advertised: ${status.advertisingPiSession ? "Yes" : "No"}\nFirst Mate role capability: ${status.roleCapability ? "Available" : "Unavailable"}\nFirst Mate role advertised: ${status.advertisingFirstMate ? "Yes" : "No"}\nPending outgoing asks: ${status.pendingOutgoingAsks}\nPending inbound asks: ${status.pendingInboundAsks}${status.initialConnectionError ? `\nInitial connection error: ${status.initialConnectionError}` : ""}${status.error ? `\nError: ${status.error}` : ""}`;
 						return { content: [{ type: "text" as const, text }], details: status };
 					}
 					default:
@@ -632,7 +668,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 				if (params.action === "status") {
 					const status: IntercomStatus = {
 						connected: false,
-						sessionId: null,
+						sessionId: piSessionId ?? null,
 						pendingOutgoingAsks: 0,
 						pendingInboundAsks: 0,
 						tailCapability: false,
@@ -641,7 +677,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						advertisingFirstMate: false,
 						error: cause.message,
 					};
-					return { content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nSession ID: none\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nFirst Mate role capability: Unavailable\nFirst Mate role advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${cause.message}` }], details: status };
+					return { content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nPi session ID: ${status.sessionId ?? "none"}\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nFirst Mate role capability: Unavailable\nFirst Mate role advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${cause.message}` }], details: status };
 				}
 				throw new Error(`Intercom ${params.action} failed: ${errorMessage(cause)}`, { cause });
 			}
@@ -664,19 +700,19 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
 		if (views.length === 0 || expanded) { box.addChild(new Text(content, 0, 0)); return box; }
 		if (views.length > 1) {
-			box.addChild(new Text(`${theme.fg("customMessageLabel", theme.bold(`📨 intercom · ${views.length} messages`))}\n${views.map((view, index) => `${theme.fg("muted", view.fromName ?? entries[index]?.fromPeerId ?? "peer")} · ${view.preview}${view.previewTruncated ? "…" : ""}`).join("\n")}`, 0, 0));
+			box.addChild(new Text(`${theme.fg("customMessageLabel", theme.bold(`📨 intercom · ${views.length} messages`))}\n${views.map((view, index) => `${theme.fg("muted", view.fromName ?? entries[index]?.fromSessionId ?? "peer")} · ${view.preview}${view.previewTruncated ? "…" : ""}`).join("\n")}`, 0, 0));
 			return box;
 		}
 		const view = views[0]!;
 		const entry = entries[0];
-		let text = `${theme.fg("customMessageLabel", theme.bold("📨 intercom"))} ${theme.fg("muted", "←")} ${theme.fg("muted", view.fromName ?? entry?.fromPeerId ?? "peer")}\n\n${view.preview}${view.previewTruncated ? "…" : ""}`;
+		let text = `${theme.fg("customMessageLabel", theme.bold("📨 intercom"))} ${theme.fg("muted", "←")} ${theme.fg("muted", view.fromName ?? entry?.fromSessionId ?? "peer")}\n\n${view.preview}${view.previewTruncated ? "…" : ""}`;
 		if (entry?.expectsReply && entry.replyable) text += `\n\n${theme.fg("warning", "reply requested")}`;
 		if (view.previewTruncated || (entry?.attachmentCount ?? 0) > 0 || entry?.truncated) text += `\n${theme.fg("dim", "Ctrl+O to expand")}`;
 		box.addChild(new Text(text, 0, 0));
 		return box;
 	});
 
-	pi.registerMessageRenderer<IntercomOperationSnapshot & { targetPeerId?: string }>("intercom_operation", (message, { expanded }, theme) => {
+	pi.registerMessageRenderer<IntercomOperationSnapshot & { targetSessionId?: string }>("intercom_operation", (message, { expanded }, theme) => {
 		const snapshot = message.details;
 		const content = typeof message.content === "string" ? message.content : "Intercom operation";
 		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
@@ -684,7 +720,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		const state = snapshot.state === "completed"
 			? theme.fg("success", "completed")
 			: theme.fg(snapshot.state === "failed" || snapshot.state === "timed_out" ? "error" : "warning", snapshot.state);
-		const target = snapshot.targetPeerId ?? snapshot.target ?? "peer";
+		const target = snapshot.targetSessionId ?? snapshot.target ?? "peer";
 		const reason = snapshot.reason ? `\n${theme.fg("error", snapshot.reason)}` : "";
 		box.addChild(new Text(`${theme.fg("customMessageLabel", theme.bold("intercom"))} · ${snapshot.kind} ${state}\n${theme.fg("muted", target)}${reason}`, 0, 0));
 		return box;
@@ -713,13 +749,15 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		operations?.dispose();
 		operations = new IntercomOperations((snapshot, result) => {
 			if (generation !== sessionGeneration || runtime !== next) return;
-			const target = result?.target ?? snapshot.target ?? "unknown peer";
+			const target = result?.targetSessionId
+				? `Pi session ID ${JSON.stringify(result.targetSessionId)}`
+				: result?.target ?? snapshot.target ?? "unknown peer";
 			const outcome = snapshot.state === "completed"
 				? result?.reply
-					? `ask reply received from broker session ID ${JSON.stringify(target)}.`
-					: `${snapshot.kind} routed to broker session ID ${JSON.stringify(target)}. This confirms socket routing, not peer processing.`
+					? `ask reply received from ${target}.`
+					: `${snapshot.kind} routed to ${target}. This confirms socket routing, not peer processing.`
 				: `${snapshot.kind} ${snapshot.state}: ${snapshot.reason ?? "operation ended"}`;
-			const details = { ...snapshot, ...(result?.target ? { targetPeerId: result.target } : {}), payloadStored: false };
+			const details = { ...snapshot, ...(result?.targetSessionId ? { targetSessionId: result.targetSessionId } : {}), payloadStored: false };
 			assertCompactRecord(details, "Intercom operation completion");
 			const reply = result?.completionText ? truncateUtf8(result.completionText, 40 * 1024) : "";
 			const content = `**Intercom operation ${snapshot.operationId}**\n\n${outcome}${snapshot.deliveryUncertain ? "\n\nDelivery is uncertain; the peer may or may not have received it." : ""}${snapshot.remoteMayProcess ? "\n\nThe peer may still process an already-routed message." : ""}${reply ? `\n\n${reply}` : ""}`;
