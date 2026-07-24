@@ -183,7 +183,7 @@ export function projectSessionTail(
 		: new Date(snapshot.lastConversationalTimestamp).toISOString();
 	const header = `**Intercom confirmed session tail**\nBroker session ID: ${JSON.stringify(target.id)}\nLast conversational timestamp: ${lastConversationalTimestamp}`;
 	const fullHeader = `${header}\nSelf-declared name: ${declared(target.name)}`;
-	const sourceFacts = `${snapshot.truncated ? "\nEarlier eligible text was omitted by the requested message limit." : ""}${snapshot.ignoredFinalFragment ? "\nOne incomplete trailing session entry was omitted." : ""}`;
+	const sourceFacts = `${snapshot.truncated ? "\nEarlier eligible text was omitted by the requested message limit." : ""}${snapshot.outcomeEventsTruncated ? "\nOlder completed tool or Bash outcomes were omitted by the session-tail event limit." : ""}${snapshot.ignoredFinalFragment ? "\nOne incomplete trailing session entry was omitted." : ""}`;
 	const fixed = snapshot.events.map((event) => {
 		if (event.kind === "user") return "\n\n**User**\n";
 		if (event.kind === "assistant") return "\n\n**Assistant**\n";
@@ -193,7 +193,7 @@ export function projectSessionTail(
 	const eventText = snapshot.events.map((event) => event.kind === "user" || event.kind === "assistant" ? sanitizeTailText(event.text) : "");
 	const empty = "\n\nNo eligible completed text or outcomes are present in the advertised branch.";
 	const complete = fullHeader + (snapshot.events.length === 0 ? empty : fixed.map((part, index) => part + eventText[index]!).join("")) + sourceFacts;
-	const sourceTruncated = snapshot.truncated || snapshot.ignoredFinalFragment;
+	const sourceTruncated = snapshot.truncated || snapshot.outcomeEventsTruncated || snapshot.ignoredFinalFragment;
 	if (byteLength(complete) <= maximumBytes) return { text: complete, bytes: byteLength(complete), truncated: sourceTruncated };
 
 	// Keep required facts, then fill from the newest event backwards. Older events
