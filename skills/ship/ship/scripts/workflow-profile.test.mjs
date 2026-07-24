@@ -6,10 +6,8 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-  createWorkflowConfig,
-  prepareWorkflowConfig,
+  doctorWorkflowProfiles,
   resolveNamedProfile,
-  resolveReadableProfiles,
   resolveVaultPath,
   resolveWorkspaceProfile,
 } from "./workflow-profile.mjs";
@@ -57,38 +55,36 @@ test("profile-only lookup resolves the selected readable vault without validatin
   );
 });
 
-test("all-profile discovery returns sorted readable canonical vaults and bounded unavailable names", (t) => {
+test("doctor reports sorted healthy profiles and optional unavailable roots", (t) => {
   const f = fixture(t);
-  const alphaVault = f.directory("alpha-vault");
-  const zetaVault = f.directory("zeta-vault");
-  const alphaAlias = path.join(f.base, "alpha-alias");
-  fs.symlinkSync(alphaVault, alphaAlias, "dir");
+  const personalVault = f.directory("personal-vault");
+  const personalRoot = f.directory("personal-root");
+  const workVault = f.directory("work-vault");
+  const workRoot = f.directory("work-root");
+  const missingRoot = path.join(f.base, "missing-personal-root");
   f.write({
-    zeta: { vault: zetaVault, gitRoots: [path.join(f.base, "missing-zeta-root")] },
-    missing: { vault: path.join(f.base, "missing-vault"), gitRoots: [f.directory("missing-root")] },
-    alpha: { vault: alphaAlias, gitRoots: [path.join(f.base, "missing-alpha-root")] },
+    work: { vault: workVault, gitRoots: [workRoot] },
+    personal: { vault: personalVault, gitRoots: [personalRoot, missingRoot] },
   });
 
-  const discovered = resolveReadableProfiles({ configPath: f.configPath, home: f.home, env: {} });
-  assert.deepEqual(discovered, {
-    version: 1,
-    profiles: [
-      { name: "alpha", vault: fs.realpathSync(alphaVault) },
-      { name: "zeta", vault: fs.realpathSync(zetaVault) },
-    ],
-    unavailable: ["missing"],
-  });
-  assert.doesNotMatch(JSON.stringify(discovered), /missing-vault|missing-root/);
-
-  const cli = spawnSync(process.execPath, [scriptPath, "profiles", "--config", f.configPath], {
-    encoding: "utf8",
-    env: { ...process.env, HOME: f.home },
-  });
-  assert.equal(cli.status, 0, cli.stderr);
-  assert.deepEqual(JSON.parse(cli.stdout), resolveReadableProfiles({ configPath: f.configPath, home: f.home, env: {} }));
+  const result = doctorWorkflowProfiles({ configPath: f.configPath, home: f.home, env: {} });
+  assert.equal(result.status, "ok");
+  assert.equal(result.configPath, f.configPath);
+  assert.deepEqual(result.profiles.map((profile) => profile.name), ["personal", "work"]);
+  assert.equal(result.profiles[0].vault.resolved, fs.realpathSync(personalVault));
+  assert.deepEqual(result.profiles[0].gitRoots, [
+    { configured: personalRoot, resolved: fs.realpathSync(personalRoot), available: true },
+    { configured: missingRoot, resolved: null, available: false },
+  ]);
+  assert.deepEqual(result.profiles[0].diagnostics, [{
+    level: "warning",
+    message: `personal has an additional unavailable Git root: ${JSON.stringify(missingRoot)}.`,
+  }]);
+  assert.deepEqual(result.profiles[1].diagnostics, []);
+  assert.deepEqual(result.diagnostics, []);
 });
 
-test("all-profile unavailable output stays bounded at the configured maximum", (t) => {
+test("doctor output stays bounded while accounting for every configured profile", (t) => {
   const f = fixture(t);
   const profiles = {};
   for (let index = 31; index >= 0; index -= 1) {
@@ -96,11 +92,12 @@ test("all-profile unavailable output stays bounded at the configured maximum", (
     profiles[name] = { vault: path.join(f.base, `missing-vault-${index}`), gitRoots: [path.join(f.base, `missing-root-${index}`)] };
   }
   f.write(profiles);
-  const result = resolveReadableProfiles({ configPath: f.configPath, home: f.home, env: {} });
-  assert.deepEqual(result.profiles, []);
-  assert.equal(result.unavailable.length, 32);
-  assert.deepEqual(result.unavailable, [...result.unavailable].sort());
-  assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") < 4 * 1024);
+
+  const result = doctorWorkflowProfiles({ configPath: f.configPath, home: f.home, env: {} });
+  assert.equal(result.status, "error");
+  assert.equal(result.profiles.length, 32);
+  assert.deepEqual(result.profiles.map((profile) => profile.name), [...result.profiles.map((profile) => profile.name)].sort());
+  assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") < 64 * 1024);
 });
 
 test("workspace lookup resolves one profile for a nested ticket worktree", (t) => {
@@ -331,131 +328,164 @@ test("leading-home paths and the environment override resolve canonically", (t) 
   assert.equal(result.matchedGitRoot, fs.realpathSync(root));
 });
 
-test("guided setup previews exact bytes and exclusively creates a validated private configuration", (t) => {
+test("doctor checks the optional current workspace route", (t) => {
   const f = fixture(t);
-  const vault = f.directory("setup-vault");
-  const firstRoot = f.directory("setup-personal");
-  const secondRoot = f.directory("setup-shared");
-  const configPath = path.join(f.home, ".config", "pi-skills", "workflows.json");
-  const options = {
-    profileName: "personal",
-    vault,
-    gitRoots: [firstRoot, secondRoot],
-    configPath,
-    home: f.home,
-    env: {},
-  };
-
-  const proposal = prepareWorkflowConfig(options);
-  assert.equal(proposal.target, configPath);
-  assert.equal(proposal.digest.length, 64);
-  assert.deepEqual(JSON.parse(proposal.content), {
-    version: 1,
-    profiles: { personal: { vault, gitRoots: [firstRoot, secondRoot] } },
+  const personalVault = f.directory("personal-vault");
+  const personalRoot = f.directory("personal-root");
+  const workspace = path.join(personalRoot, "repo");
+  fs.mkdirSync(workspace);
+  const workVault = f.directory("work-vault");
+  const workRoot = f.directory("work-root");
+  f.write({
+    work: { vault: workVault, gitRoots: [workRoot] },
+    personal: { vault: personalVault, gitRoots: [personalRoot] },
   });
-  assert.equal(fs.existsSync(configPath), false);
 
-  const created = createWorkflowConfig({ ...options, confirmDigest: proposal.digest });
-  assert.equal(created.created, true);
-  assert.deepEqual(created.profiles, [{ name: "personal", vault: fs.realpathSync(vault) }]);
-  assert.equal(fs.readFileSync(configPath, "utf8"), proposal.content);
-  assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
-  assert.throws(
-    () => createWorkflowConfig({ ...options, confirmDigest: proposal.digest }),
-    /already exists and was preserved|now exists; it was preserved/,
-  );
-  assert.equal(fs.readFileSync(configPath, "utf8"), proposal.content);
-});
-
-test("guided setup persists canonical paths for relative inputs", (t) => {
-  const f = fixture(t);
-  const vault = f.directory("relative-vault");
-  const root = f.directory("relative-root");
-  const proposal = prepareWorkflowConfig({
-    profileName: "personal",
-    vault: path.relative(process.cwd(), vault),
-    gitRoots: [path.relative(process.cwd(), root)],
-    configPath: path.join(f.home, "workflows.json"),
-    home: f.home,
-    env: {},
-  });
-  assert.deepEqual(JSON.parse(proposal.content).profiles.personal, {
-    vault: fs.realpathSync(vault),
-    gitRoots: [fs.realpathSync(root)],
+  const result = doctorWorkflowProfiles({ cwd: workspace, configPath: f.configPath, home: f.home, env: {} });
+  assert.equal(result.status, "ok");
+  assert.deepEqual(result.workspace, {
+    status: "ok",
+    path: fs.realpathSync(workspace),
+    profile: "personal",
+    matchedGitRoot: fs.realpathSync(personalRoot),
   });
 });
 
-test("guided setup binds confirmation to target, content, and resolved parent paths", (t) => {
+test("doctor fails unavailable vaults and profiles without a usable root", (t) => {
   const f = fixture(t);
-  const vault = f.directory("setup-vault");
-  const root = f.directory("setup-root");
-  const replacementRoot = f.directory("setup-replacement-root");
-  const configPath = path.join(f.home, ".config", "pi-skills", "workflows.json");
-  const options = { profileName: "personal", vault, gitRoots: [root], configPath, home: f.home, env: {} };
-  const proposal = prepareWorkflowConfig(options);
+  const missingVault = path.join(f.base, "missing-vault");
+  const missingRoot = path.join(f.base, "missing-root");
+  f.write({ personal: { vault: missingVault, gitRoots: [missingRoot] } });
 
-  assert.throws(
-    () => createWorkflowConfig({ ...options, gitRoots: [replacementRoot], confirmDigest: proposal.digest }),
-    /proposal changed/,
-  );
-  assert.equal(fs.existsSync(configPath), false);
-  assert.throws(
-    () => createWorkflowConfig({ ...options, confirmDigest: proposal.digest, platform: "win32" }),
-    /unavailable on Windows/,
-  );
-  assert.equal(fs.existsSync(configPath), false);
-
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, "existing invalid config\n");
-  assert.throws(
-    () => createWorkflowConfig({ ...options, confirmDigest: proposal.digest }),
-    /already exists and was preserved/,
-  );
-  assert.equal(fs.readFileSync(configPath, "utf8"), "existing invalid config\n");
-  fs.rmSync(path.join(f.home, ".config"), { recursive: true });
-
-  const realConfig = f.directory("real-config");
-  fs.symlinkSync(realConfig, path.join(f.home, ".config"), "dir");
-  assert.throws(
-    () => createWorkflowConfig({ ...options, confirmDigest: proposal.digest }),
-    /proposal changed/,
-  );
-  assert.equal(fs.existsSync(path.join(realConfig, "pi-skills", "workflows.json")), false);
+  const result = doctorWorkflowProfiles({ configPath: f.configPath, home: f.home, env: {} });
+  assert.equal(result.status, "error");
+  assert.equal(result.profiles[0].status, "error");
+  assert.deepEqual(result.profiles[0].diagnostics, [
+    { level: "error", message: "personal.vault is unavailable or not writable." },
+    { level: "error", message: "personal has no usable Git root." },
+  ]);
 });
 
-test("the setup CLI returns a reviewable proposal and accepts repeated Git roots", (t) => {
+test("doctor requires a writable vault", (t) => {
   const f = fixture(t);
-  const vault = f.directory("setup-vault");
-  const firstRoot = f.directory("setup-root-a");
-  const secondRoot = f.directory("setup-root-b");
-  const configPath = path.join(f.home, ".config", "pi-skills", "workflows.json");
-  const args = [
+  const vault = f.directory("read-only-vault");
+  const root = f.directory("root");
+  f.write({ personal: { vault, gitRoots: [root] } });
+  fs.chmodSync(vault, 0o500);
+  try {
+    fs.accessSync(vault, fs.constants.W_OK);
+    fs.chmodSync(vault, 0o700);
+    t.skip("host permissions do not expose a non-writable fixture");
+    return;
+  } catch {
+    // Expected on hosts where mode bits enforce writability for the current user.
+  }
+
+  try {
+    const result = doctorWorkflowProfiles({ configPath: f.configPath, home: f.home, env: {} });
+    assert.equal(result.status, "error");
+    assert.equal(result.profiles[0].vault.writable, false);
+  } finally {
+    fs.chmodSync(vault, 0o700);
+  }
+});
+
+test("doctor warns about overlapping roots and fails an ambiguous current route", (t) => {
+  const f = fixture(t);
+  const parentRoot = f.directory("shared-root");
+  const nestedRoot = path.join(parentRoot, "personal");
+  const workspace = path.join(nestedRoot, "repo");
+  fs.mkdirSync(workspace, { recursive: true });
+  f.write({
+    work: { vault: f.directory("work-vault"), gitRoots: [parentRoot] },
+    personal: { vault: f.directory("personal-vault"), gitRoots: [nestedRoot] },
+  });
+
+  const health = doctorWorkflowProfiles({ configPath: f.configPath, home: f.home, env: {} });
+  assert.equal(health.status, "ok");
+  assert.equal(health.diagnostics.length, 1);
+  assert.match(health.diagnostics[0].message, /profiles "personal" and "work" overlap/);
+
+  const routed = doctorWorkflowProfiles({ cwd: workspace, configPath: f.configPath, home: f.home, env: {} });
+  assert.equal(routed.status, "error");
+  assert.equal(routed.workspace.status, "error");
+  assert.match(routed.workspace.message, /matches multiple workflow profiles: personal, work/);
+});
+
+test("doctor CLI returns JSON and a meaningful exit status", (t) => {
+  const f = fixture(t);
+  const vault = f.directory("vault");
+  const root = f.directory("root");
+  const workspace = path.join(root, "repo");
+  fs.mkdirSync(workspace);
+  f.write({ personal: { vault, gitRoots: [root] } });
+
+  const healthy = spawnSync(process.execPath, [
     scriptPath,
-    "setup",
-    "--profile",
-    "personal",
-    "--vault",
-    vault,
-    "--git-root",
-    firstRoot,
-    "--git-root",
-    secondRoot,
+    "doctor",
+    "--cwd",
+    workspace,
     "--config",
-    configPath,
-  ];
-  const preview = spawnSync(process.execPath, args, { encoding: "utf8", env: { ...process.env, HOME: f.home } });
-  assert.equal(preview.status, 0, preview.stderr);
-  const proposal = JSON.parse(preview.stdout);
-  assert.equal(fs.existsSync(configPath), false);
-  assert.deepEqual(JSON.parse(proposal.content).profiles.personal.gitRoots, [firstRoot, secondRoot]);
+    f.configPath,
+  ], { encoding: "utf8", env: { ...process.env, HOME: f.home } });
+  assert.equal(healthy.status, 0, healthy.stderr);
+  assert.equal(JSON.parse(healthy.stdout).workspace.profile, "personal");
 
-  const create = spawnSync(process.execPath, [...args, "--confirm", proposal.digest], {
+  const oversizedCwd = spawnSync(process.execPath, [
+    scriptPath,
+    "doctor",
+    "--cwd",
+    "x".repeat(20_000),
+    "--config",
+    f.configPath,
+  ], { encoding: "utf8", env: { ...process.env, HOME: f.home } });
+  assert.equal(oversizedCwd.status, 1);
+  assert.ok(Buffer.byteLength(oversizedCwd.stdout, "utf8") < 4 * 1024);
+  assert.equal("path" in JSON.parse(oversizedCwd.stdout).workspace, false);
+  assert.match(JSON.parse(oversizedCwd.stdout).workspace.message, /at most 4096 UTF-8 bytes/);
+
+  const edited = JSON.parse(fs.readFileSync(f.configPath, "utf8"));
+  const workVault = f.directory("work-vault");
+  const workRoot = f.directory("work-root");
+  edited.profiles.personal.gitRoots.push(path.join(f.base, "optional-missing-root"));
+  edited.profiles.work = { vault: workVault, gitRoots: [workRoot] };
+  fs.writeFileSync(f.configPath, `${JSON.stringify(edited, null, 2)}\n`);
+  const warningOnly = spawnSync(process.execPath, [scriptPath, "doctor", "--config", f.configPath], {
     encoding: "utf8",
     env: { ...process.env, HOME: f.home },
   });
-  assert.equal(create.status, 0, create.stderr);
-  assert.equal(JSON.parse(create.stdout).created, true);
-  assert.equal(fs.readFileSync(configPath, "utf8"), proposal.content);
+  assert.equal(warningOnly.status, 0, warningOnly.stderr);
+  const warningResult = JSON.parse(warningOnly.stdout);
+  assert.deepEqual(warningResult.profiles.map((profile) => profile.name), ["personal", "work"]);
+  assert.equal(warningResult.profiles[0].diagnostics[0].level, "warning");
+
+  fs.rmSync(vault, { recursive: true });
+  const unhealthy = spawnSync(process.execPath, [scriptPath, "doctor", "--config", f.configPath], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: f.home },
+  });
+  assert.equal(unhealthy.status, 1);
+  assert.equal(unhealthy.stderr, "");
+  assert.equal(JSON.parse(unhealthy.stdout).status, "error");
+
+  const missing = spawnSync(process.execPath, [
+    scriptPath,
+    "doctor",
+    "--config",
+    path.join(f.base, "missing.json"),
+  ], { encoding: "utf8", env: { ...process.env, HOME: f.home } });
+  assert.equal(missing.status, 1);
+  assert.equal(JSON.parse(missing.stdout).configPath, path.join(f.base, "missing.json"));
+  assert.match(JSON.parse(missing.stdout).diagnostics[0].message, /not found/);
+
+  fs.writeFileSync(f.configPath, "not json\n");
+  const malformed = spawnSync(process.execPath, [scriptPath, "doctor", "--config", f.configPath], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: f.home },
+  });
+  assert.equal(malformed.status, 1);
+  assert.deepEqual(JSON.parse(malformed.stdout).profiles, []);
+  assert.match(JSON.parse(malformed.stdout).diagnostics[0].message, /not valid JSON/);
 });
 
 test("the CLI emits canonical JSON for the skill caller", (t) => {
@@ -501,14 +531,14 @@ test("the CLI rejects duplicate and command-inapplicable flags", (t) => {
   });
 
   for (const [args, expected] of [
-    [["profiles", "--profile", "personal"], /--profile is not valid for profiles/],
+    [["profiles"], /Usage:/],
+    [["setup"], /Usage:/],
+    [["doctor", "--profile", "personal"], /--profile is not valid for doctor/],
     [["profile", "--profile", "personal", "--cwd", root], /--cwd is not valid for profile/],
     [["workspace", "--target", "AGENTS.md"], /--target is not valid for workspace/],
-    [["setup", "--profile", "personal", "--vault", vault], /at least one --git-root/],
-    [["profiles", "--confirm", "a".repeat(64)], /--confirm is not valid for profiles/],
     [["path", "--profile", "personal", "--target", "AGENTS.md", "--mode", "read", "--mode", "write"], /Duplicate option: --mode/],
     [["profile", "--profile", "personal", "--profile", "personal"], /Duplicate option: --profile/],
-    [["profiles", "--config", f.configPath], /Duplicate option: --config/],
+    [["doctor", "--config", f.configPath], /Duplicate option: --config/],
   ]) {
     const result = run(...args);
     assert.equal(result.status, 1, `${args.join(" ")} unexpectedly succeeded`);

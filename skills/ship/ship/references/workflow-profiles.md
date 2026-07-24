@@ -1,15 +1,19 @@
 # Workflow Profiles
 
-Ship uses an explicit local profile to route each new durable workflow to one notes vault. Repository location alone does not imply work or personal scope.
+Ship uses host-local workflow profiles to route a project workspace to the notes vault that owns its durable work. Profiles are routing data, not authorization or isolation.
 
-## Configuration
+## Create or edit the configuration
 
-The default file is `~/.config/pi-skills/workflows.json`. `PI_SKILLS_WORKFLOW_CONFIG` selects another file. Start from [`../assets/workflows.example.json`](../assets/workflows.example.json).
+The default file is `~/.config/pi-skills/workflows.json`. `PI_SKILLS_WORKFLOW_CONFIG` selects another file. An LLM may create or edit the complete version 1 JSON with ordinary file tools. Read an existing file first and preserve profiles the user did not ask to change.
 
 ```json
 {
   "version": 1,
   "profiles": {
+    "work": {
+      "vault": "~/work-notes",
+      "gitRoots": ["~/git"]
+    },
     "personal": {
       "vault": "~/personal/notes",
       "gitRoots": ["~/personal"]
@@ -18,66 +22,51 @@ The default file is `~/.config/pi-skills/workflows.json`. `PI_SKILLS_WORKFLOW_CO
 }
 ```
 
-Each profile requires:
+Each profile requires an existing writable `vault` and one or more `gitRoots`. Paths may start with `~/`. Keep host-specific paths here rather than in skills or repositories, and do not store credentials in this file.
 
-- `vault`: the existing notes vault that owns new Ship work items
-- `gitRoots`: one or more roots allowed to contain that profile's repositories and ticket workspaces; workspace routing needs one matching root available on the current host
-
-Paths may start with `~/`. Keep host-specific paths here rather than in skills or repositories. Do not store credentials in this file.
-
-For initial configuration, the helper can produce a non-mutating proposal from one profile name, an existing vault, and one or more existing Git roots:
+After creating or editing the file, resolve the script from the installed Ship skill directory and run doctor:
 
 ```bash
-node scripts/workflow-profile.mjs setup \
-  --profile personal \
-  --vault /absolute/vault \
-  --git-root /absolute/git-root
+node "<ship-skill-dir>/scripts/workflow-profile.mjs" doctor
+node "<ship-skill-dir>/scripts/workflow-profile.mjs" doctor --cwd /absolute/workspace
 ```
 
-The result contains canonical absolute vault and Git-root paths, the effective target, complete JSON content, and a digest binding that content and its resolved parent identity to the target. After showing those exact values and receiving confirmation, rerun the same arguments with `--confirm DIGEST`. On supported POSIX hosts, the helper revalidates inputs, rejects changed proposals or existing targets, detects changed parent identity, creates missing real parent directories, exclusively creates and verifies a user-only file, and validates the exact created bytes and file identity. It preserves any entry that appeared or failed validation. Automatic secure creation is unavailable on Windows; use the reviewed proposal for manual setup instead. Existing invalid or unreadable configuration requires a separate reviewed repair and is never treated as first-use setup.
-
-First Mate does not load profiles during startup or triage. It resolves one explicitly supplied profile only when deeper inspection needs the accompanying vault-relative path. The profile locates evidence; it does not authorize an Intercom request or establish project identity.
+Use `--config PATH` with either command when the environment does not select the intended file. Doctor is read-only and emits JSON. Malformed configuration, an unavailable or unwritable vault, a profile with no usable Git root, or a failed current-workspace route returns a nonzero exit. Additional unavailable roots and overlapping roots are warnings; an available root may still keep the profile usable. Correct deterministic errors and rerun doctor. Ask the user when the intended profile, vault, or ambiguous route is unclear.
 
 ## Resolve a workspace
 
-Resolve the script path relative to the `ship` skill directory, then run:
+Resolve the script path relative to the Ship skill directory, then run:
 
 ```bash
-node scripts/workflow-profile.mjs workspace --cwd /absolute/workspace
+node "<ship-skill-dir>/scripts/workflow-profile.mjs" workspace --cwd /absolute/workspace
 ```
 
 A unique match returns canonical JSON containing the profile, vault, workspace, and matched Git root. When zero or several profiles match, ask the human to select or correct the configuration. After explicit selection, rerun:
 
 ```bash
-node scripts/workflow-profile.mjs workspace --cwd /absolute/workspace --profile personal
+node "<ship-skill-dir>/scripts/workflow-profile.mjs" workspace \
+  --cwd /absolute/workspace \
+  --profile personal
 ```
 
-Explicit selection disambiguates only. The workspace must still resolve inside that profile's configured Git roots.
+Explicit selection disambiguates only. The workspace must still resolve inside that profile's configured Git roots. Overlapping roots are allowed because some repositories may need explicit selection.
 
-## Resolve profile-scoped readers
+## Resolve a profile-scoped read
 
-A profile-scoped read-only role does not own a project workspace. Resolve one selected profile with:
+A read-only caller that already has an explicit profile can resolve its vault without a project workspace:
 
 ```bash
-node scripts/workflow-profile.mjs profile --profile personal
+node "<ship-skill-dir>/scripts/workflow-profile.mjs" profile --profile personal
 ```
 
-A read-only tool that needs to inventory every readable profile can use:
+This supports optional evidence lookup such as a First Mate request with an explicit vault-relative work-item pointer. It does not grant authority or permit vault writes.
+
+## Resolve a vault target
+
+Use `path` to turn a model- or document-supplied vault-relative path into a deterministic target under the selected profile:
 
 ```bash
-node scripts/workflow-profile.mjs profiles
-```
-
-The combined form returns sorted canonical `profiles` and sorted `unavailable` profile names. Both forms require only readable vaults; temporarily unavailable Git roots do not block profile-scoped startup. Workspace routing uses the available roots, requires one to contain the workspace, and additionally requires the selected vault to be writable. Other configured roots may be unavailable on the current host.
-
-## Validate every vault target
-
-Treat every supplied workflow path, index link, and child filename as a locator rather than authority. Immediately before each vault-native read or write, use `path` to resolve the actual target again.
-
-For workspace-owned access:
-
-```bash
-node scripts/workflow-profile.mjs path \
+node "<ship-skill-dir>/scripts/workflow-profile.mjs" path \
   --cwd /absolute/workspace \
   --profile personal \
   --within projects/pi-skills/work/sample-work \
@@ -85,12 +74,14 @@ node scripts/workflow-profile.mjs path \
   --mode read
 ```
 
-`--within` is a canonical vault-relative scope. `--target` is relative to that scope and cannot be absolute, traverse with `..`, or escape through a symlink. Omit `--within` for a vault-root file such as `AGENTS.md`. Repeat `--profile` on every later workspace/path command when the human selected it to resolve an ambiguous workspace; omit it only when automatic workspace resolution remains unique. Use `--mode write` immediately before creating or updating a file; writes require `--cwd` so profile-only readers cannot mutate a vault.
+`--within` scopes the target to one canonical vault-relative directory. The helper rejects absolute paths, traversal, symlink escapes, and non-file read targets. A missing write target is allowed after its existing parents pass resolution. Omit `--within` for a vault-root file such as `AGENTS.md`.
 
-A profile-scoped reader may validate an existing file with `--profile NAME --mode read`. The helper returns the canonical target only after every existing component is a real directory and the leaf is a regular file. A missing write leaf is allowed after its existing parents pass validation.
+Workspace-owned reads and writes use `--cwd`; writes require it. A profile-scoped caller may use `--profile NAME --mode read` without a workspace. Repeat an explicitly selected profile when resolving later workspace-owned targets so overlapping roots do not become ambiguous again.
+
+Run target resolution close to the filesystem operation so the returned path reflects current routing. It catches deterministic path mistakes; it is not an atomic filesystem or authorization boundary.
 
 ## Failure behavior
 
-The helper fails without guessing when configuration is missing, invalid, unreadable, or oversized; a selected path is unavailable; vault and workspace overlap; a symlink escapes a configured boundary; a workspace has no unique match; an operand leaves its allowed scope; or explicit selection conflicts with workspace containment. It rejects duplicate options and options that do not apply to the selected command. An unavailable unrelated profile does not prevent explicit use of an available profile or discovery of the other readable profiles.
+Malformed JSON or profile structure invalidates the whole document. Filesystem availability is diagnosed per profile: an unavailable optional root does not hide another usable root, but an unavailable vault or zero usable roots makes that profile inoperable on the current host.
 
-A profile failure limits only the operation that needs that profile. Preserve an existing configuration and correct it through a separate reviewed change; do not make first-use setup overwrite it.
+The helper fails rather than guessing when a profile is unknown, a workspace has no unique route, vault and workspace overlap, or a target leaves its allowed scope. Preserve an existing configuration during repair, change only the intended profiles, and rerun doctor afterward.

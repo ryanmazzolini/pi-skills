@@ -2,7 +2,7 @@
 
 Graduate when every planned slice is complete or the user explicitly closes the work.
 
-For a vault-native workflow, close the existing work item rather than copying a reduced summary elsewhere. Apply the work-item target validator from [workflow-profiles.md](workflow-profiles.md) immediately before reading or updating `index.md`, then record the durable result a future session needs:
+For a vault-native workflow, close the existing work item rather than copying a reduced summary elsewhere. Resolve `index.md` through the helper in [workflow-profiles.md](workflow-profiles.md) before reading or updating it, then record the durable result a future session needs:
 
 ```md
 ## Result

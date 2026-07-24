@@ -1,6 +1,6 @@
 # Review Artifacts
 
-A review artifact is a temporary aid for one human decision. Put it under the vault-native work item's `working/` directory, applying the target validator from [workflow-profiles.md](workflow-profiles.md) immediately before each write, or beside a verified legacy workflow that remains in place. `plan.md` remains the source of truth; the aid must not become another plan or status system.
+A review artifact is a temporary aid for one human decision. Put it under the vault-native work item's `working/` directory, resolving its target through the helper in [workflow-profiles.md](workflow-profiles.md) before writing, or beside a verified legacy workflow that remains in place. `plan.md` remains the source of truth; the aid must not become another plan or status system.
 
 ## Match the artifact to the question
 

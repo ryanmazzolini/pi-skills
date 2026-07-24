@@ -11,7 +11,7 @@ Write a focused handoff document so another agent or fresh session can continue 
 
 ## Rules
 
-- When the conversation already has a canonical vault-native Ship work item, apply Ship's work-item target validator immediately before writing under `working/` and before updating `index.md`. Save the handoff there and set `Current` to its canonical relative path. Do not create a repository copy.
+- When the conversation already has a canonical vault-native Ship work item, resolve the handoff and `index.md` targets through Ship's workflow-profile helper before writing them. Save the handoff there and set `Current` to its canonical relative path. Do not create a repository copy.
 - Otherwise ask the user to confirm a durable destination under the selected vault's project area. Follow that vault's `AGENTS.md` and `CONTEXT.md`; use the OS temp directory when the user wants a throwaway handoff or no durable destination is appropriate. Do not create a repository `.plans/` directory.
 - If the user passed arguments, treat them as the next session's purpose and tailor the document to that focus.
 - Reference existing artifacts instead of duplicating them: PRPs, durable plans, boards, thoughts, ADRs, issues, commits, diffs, screenshots, logs, or prototypes.

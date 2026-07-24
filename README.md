@@ -27,7 +27,7 @@ See [the marketplace manifest](./.claude-plugin/marketplace.json) for every fami
 ## What to expect
 
 - [`ship`](./skills/ship/ship/SKILL.md) is my development workflow with durable artefacts. It moves from alignment, through optional prototyping and planning, to implementation and review.
-- New Ship workflows use durable Markdown instead of hidden session state and live under `projects/<project>/work/<work-item>/` in the vault selected by `~/.config/pi-skills/workflows.json`. Relevant existing `.plans`, `.plan`, `docs/plans`, and `PI_SKILLS_PLANS_ROOT` workflows are reused in place. For a relevant repository `.plans/` workflow, Ship may offer migration into the vault-native project area with user approval. See [workflow profiles](./skills/ship/ship/references/workflow-profiles.md) for configuration.
+- New Ship workflows use durable Markdown instead of hidden session state and live under `projects/<project>/work/<work-item>/` in the vault selected by `~/.config/pi-skills/workflows.json`. LLMs can create or edit the complete routing file directly and check it with the workflow-profile doctor. Relevant existing `.plans`, `.plan`, `docs/plans`, and `PI_SKILLS_PLANS_ROOT` workflows are reused in place. See [workflow profiles](./skills/ship/ship/references/workflow-profiles.md) for configuration and diagnosis.
 - Most skills are guidance, not a subscription to every tool I happen to like. Optional integrations only matter when you use their matching skills.
 
 ## What’s in the box

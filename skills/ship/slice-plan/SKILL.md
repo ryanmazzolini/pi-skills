@@ -103,7 +103,7 @@ Use project language for goals and slice names. Use implementation names only in
 
 ## Review and hand off
 
-Rerun the scope gate and graph checks. For a vault-native work item, apply its target validator immediately before writing `{workflow-dir}/plan.md` or updating `index.md`, then set `Current` to the plan. Write a legacy plan in its verified directory. Do not request broad independent review by default. Use the selective early-review guidance in `../ship/references/review-gate.md` only for a named scope, dependency, or high-risk uncertainty, then resolve or explicitly defer any resulting finding.
+Rerun the scope gate and graph checks. For a vault-native work item, resolve `{workflow-dir}/plan.md` and `index.md` through the workflow-profile helper before writing them, then set `Current` to the plan. Write a legacy plan in its verified directory. Do not request broad independent review by default. Use the selective early-review guidance in `../ship/references/review-gate.md` only for a named scope, dependency, or high-risk uncertainty, then resolve or explicitly defer any resulting finding.
 
 Ask one direct question: is the plan correct enough to approve? Include the Now and Later boundary, dependencies, ready work, recommendation, and important remaining risk—nothing else.
 
