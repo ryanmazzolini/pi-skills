@@ -49,6 +49,31 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 	assert.match(failed.reason, /Session not found/);
 });
 
+test("broker preserves target write failures in delivery acknowledgements", async (t) => {
+	const { paths } = await isolatedIntercom(t, "write-reason-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const target = await connectRaw(paths.socketPath);
+	t.after(() => target.socket.destroy());
+	target.write({ type: "register", session: registration("paused-target") });
+	const registered = await target.wait((message) => message.type === "registered");
+	target.socket.pause();
+
+	const senders = await Promise.all(Array.from({ length: 6 }, (_, index) => connectNew(paths, `sender-${index}`, { sendTimeoutMs: 5_000 })));
+	t.after(() => closeAll(...senders));
+	const results = [];
+	const sends = senders.map((sender, index) => sender.send(registered.sessionId, {
+		messageId: `large-${index}`,
+		text: "x".repeat(250_000),
+		attachments: [{ type: "file", name: "large.txt", content: "y".repeat(500_000) }],
+	}).then((result) => { results.push(result); return result; }));
+	const refused = await waitFor(() => results.find((result) => result.delivered === false), 3_000);
+	assert.match(refused.reason, /Target is not accepting messages|Target disconnected during write/);
+	assert.doesNotMatch(refused.reason, /Session disconnected during delivery/);
+	target.socket.resume();
+	await Promise.allSettled(sends);
+});
+
 test("owned broker propagates and atomically updates persisted Pi session presence", async (t) => {
 	const { paths } = await isolatedIntercom(t, "tail-pres-");
 	const broker = await startOwnedBroker(paths);
@@ -178,6 +203,68 @@ test("broker derives sender identity, handles fragmented/coalesced requests, and
 	assert.equal((await stat(paths.socketPath)).mode & 0o777, 0o600);
 });
 
+test("broker admits more than the legacy 32-session ceiling and reports configured session capacity", async (t) => {
+	{
+		const { paths } = await isolatedIntercom(t, "default-cap-");
+		const broker = await startOwnedBroker(paths);
+		t.after(() => stopChild(broker));
+		const clients = [];
+		const transients = [];
+		t.after(() => closeAll(...clients));
+		t.after(() => transients.forEach((connection) => connection.socket.destroy()));
+		for (let index = 0; index < 256; index++) clients.push(await connectNew(paths, `peer-${index}`));
+		assert.equal((await clients[0].listSessions()).length, 256);
+
+		const sessionOverflow = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
+		await assert.rejects(
+			sessionOverflow.connect(registration("session-overflow")),
+			/Intercom broker rejected registration: Intercom session limit reached \(maximum 256;/,
+		);
+
+		transients.push(...await Promise.all(Array.from({ length: 256 }, () => connectRaw(paths.socketPath))));
+		const connectionOverflow = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
+		await assert.rejects(
+			connectionOverflow.connect(registration("connection-overflow")),
+			/Intercom broker rejected registration: Intercom connection limit reached \(maximum 512;/,
+		);
+	}
+
+	{
+		const { paths } = await isolatedIntercom(t, "session-cap-");
+		const broker = await startOwnedBroker(paths, { PI_INTERCOM_MAX_SESSIONS: "1" });
+		t.after(() => stopChild(broker));
+		const admitted = await connectNew(paths, "admitted");
+		t.after(() => admitted.disconnect());
+		const refused = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
+		await assert.rejects(
+			refused.connect(registration("refused")),
+			/Intercom broker rejected registration: Intercom session limit reached \(maximum 1; set PI_INTERCOM_MAX_SESSIONS before broker startup to increase it\)/,
+		);
+	}
+});
+
+test("broker rejects aggregate metadata before session lists exceed the frame limit", async (t) => {
+	const { paths } = await isolatedIntercom(t, "metadata-cap-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const clients = [];
+	t.after(() => closeAll(...clients));
+	const escaped = "\u0000".repeat(INTERCOM_LIMITS.maxSessionStringBytes);
+	let rejection;
+	for (let index = 0; index < 20 && !rejection; index++) {
+		const client = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 1_000 });
+		try {
+			await client.connect(registration(`metadata-${index}`, { cwd: escaped, model: escaped, status: escaped }));
+			clients.push(client);
+		} catch (error) {
+			rejection = error;
+		}
+	}
+	assert.match(rejection?.message ?? "", /Intercom session metadata capacity reached/);
+	assert.ok(clients.length > 1);
+	assert.equal((await clients[0].listSessions()).length, clients.length);
+});
+
 test("unregister closes its socket and immediately releases the accepted connection slot", async (t) => {
 	const { paths } = await isolatedIntercom(t, "unreg-slot-");
 	const broker = await startOwnedBroker(paths, { PI_INTERCOM_MAX_CONNECTIONS: "1" });
@@ -215,7 +302,10 @@ test("broker bounds unregistered sockets, total connections, registration time, 
 		const second = await connectNew(paths, "second");
 		t.after(() => closeAll(first, second));
 		const refused = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
-		await assert.rejects(refused.connect(registration("third")), /closed|disconnected|reset/i);
+		await assert.rejects(
+			refused.connect(registration("third")),
+			/Intercom broker rejected registration: Intercom connection limit reached \(maximum 2; set PI_INTERCOM_MAX_CONNECTIONS before broker startup to increase it\)/,
+		);
 		assert.equal((await first.listSessions()).length, 2);
 	}
 

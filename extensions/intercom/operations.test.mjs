@@ -49,7 +49,7 @@ test("deadline aborts underlying work and records timed_out", async () => {
 
 test("known-routed ask failures are not reported as uncertain and reasons stay UTF-8 bounded", async () => {
 	const terminal = [];
-	const operations = new IntercomOperations((snapshot) => terminal.push(snapshot), { maxActive: 1, maxRetained: 2, sendReplyDeadlineMs: 1_000, askDeadlineMs: 1_000, maxTargetBytes: 10, maxReasonBytes: 10 });
+	const operations = new IntercomOperations((snapshot) => terminal.push(snapshot), { maxActive: 1, maxRetained: 2, sendReplyDeadlineMs: 1_000, askDeadlineMs: 1_000, maxTargetBytes: 10, maxReasonBytes: 24 });
 	const receipt = operations.start("ask", `peer-${"界".repeat(100)}`, async (_signal, update) => {
 		update("routing");
 		update("waiting_reply");
@@ -59,7 +59,24 @@ test("known-routed ask failures are not reported as uncertain and reasons stay U
 	assert.equal(terminal[0].state, "failed");
 	assert.equal(terminal[0].deliveryUncertain, false);
 	assert.ok(Buffer.byteLength(receipt.target, "utf8") <= 10);
-	assert.ok(Buffer.byteLength(terminal[0].reason, "utf8") <= 10);
+	assert.ok(Buffer.byteLength(terminal[0].reason, "utf8") <= 24);
+	assert.match(terminal[0].reason, /\[truncated\]$/);
+});
+
+test("failures before routing and explicit broker rejections are definitive", async () => {
+	const terminal = [];
+	const operations = new IntercomOperations((snapshot) => terminal.push(snapshot), { maxActive: 2, maxRetained: 2, sendReplyDeadlineMs: 1_000, askDeadlineMs: 1_000, maxTargetBytes: 256, maxReasonBytes: 512 });
+	operations.start("send", "offline-peer", async () => {
+		throw new Error("registration rejected before routing");
+	});
+	operations.start("send", "departed-peer", async (_signal, update) => {
+		update("routing");
+		update("delivery_rejected");
+		throw new Error("Session not found");
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(terminal.map((snapshot) => snapshot.state), ["failed", "failed"]);
+	assert.deepEqual(terminal.map((snapshot) => snapshot.deliveryUncertain), [false, false]);
 });
 
 test("cancellation and shutdown terminate accepted operations without retries", async () => {
@@ -69,9 +86,16 @@ test("cancellation and shutdown terminate accepted operations without retries", 
 	const first = operations.start("ask", "peer", async (signal) => new Promise((_, reject) => signal.addEventListener("abort", () => { observedAbort = true; reject(new Error("aborted")); }, { once: true })));
 	const cancelled = operations.cancel(first.operationId);
 	assert.equal(cancelled.state, "cancelled");
+	assert.equal(cancelled.remoteMayProcess, false);
 	assert.equal(observedAbort, true);
+	const routing = operations.start("send", "peer", async (signal, update) => new Promise((_, reject) => {
+		update("routing");
+		signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+	}));
+	const routingCancelled = operations.cancel(routing.operationId);
+	assert.equal(routingCancelled.remoteMayProcess, true);
 	const second = operations.start("reply", "peer", async (signal) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true })));
 	operations.dispose();
 	assert.equal(operations.list(second.operationId)[0].state, "interrupted");
-	assert.deepEqual(terminal.map((item) => item.state).sort(), ["cancelled", "interrupted"]);
+	assert.deepEqual(terminal.map((item) => item.state).sort(), ["cancelled", "cancelled", "interrupted"]);
 });

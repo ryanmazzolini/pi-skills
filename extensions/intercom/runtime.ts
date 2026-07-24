@@ -173,13 +173,14 @@ export class IntercomRuntime extends EventEmitter {
 		attachments?: Attachment[],
 		replyTo?: string,
 		signal?: AbortSignal,
+		onRouting?: () => void,
 	): Promise<RuntimeSendResult> {
 		throwIfAborted(signal);
 		await this.ensureConnected();
 		const target = await this.resolveTarget(to, signal);
 		throwIfAborted(signal);
 		this.assertNotSelf(target.id);
-		const routed = await this.client.send(target.id, { text, attachments, replyTo }, signal);
+		const routed = await this.client.send(target.id, { text, attachments, replyTo }, signal, onRouting);
 		if (routed.delivered && replyTo !== undefined) this.inbox.markReplied(replyTo, target.id);
 		return { ...routed, to: target };
 	}
@@ -191,6 +192,8 @@ export class IntercomRuntime extends EventEmitter {
 		replyTo?: string,
 		signal?: AbortSignal,
 		onRouted?: (requestId: string, target: SessionInfo) => void,
+		onRouting?: () => void,
+		onDeliveryRejected?: () => void,
 	): Promise<RuntimeAskResult> {
 		throwIfAborted(signal);
 		await this.ensureConnected();
@@ -206,6 +209,8 @@ export class IntercomRuntime extends EventEmitter {
 				if (replyTo !== undefined) this.inbox.markReplied(replyTo, target.id);
 				onRouted?.(requestId, target);
 			},
+			onRouting,
+			onDeliveryRejected,
 		);
 		return { ...response, requestedPeer: target, requestId };
 	}
@@ -214,6 +219,7 @@ export class IntercomRuntime extends EventEmitter {
 		text: string,
 		options: { to?: string; replyTo?: string; attachments?: Attachment[] } = {},
 		signal?: AbortSignal,
+		onRouting?: () => void,
 	): Promise<RuntimeSendResult & { replyTo: string }> {
 		throwIfAborted(signal);
 		await this.ensureConnected();
@@ -225,7 +231,7 @@ export class IntercomRuntime extends EventEmitter {
 			const peer = sessions.find((session) => session.id === options.to);
 			if (!peer) throw new Error(`No pending intercom ask with message ID ${JSON.stringify(options.replyTo)}`);
 			this.assertNotSelf(peer.id);
-			const routed = await this.client.send(peer.id, { text, attachments: options.attachments, replyTo: options.replyTo }, signal);
+			const routed = await this.client.send(peer.id, { text, attachments: options.attachments, replyTo: options.replyTo }, signal, onRouting);
 			return { ...routed, to: peer, replyTo: options.replyTo };
 		}
 		const target: InboxEntry = this.inbox.select(options);
@@ -234,7 +240,7 @@ export class IntercomRuntime extends EventEmitter {
 			text,
 			attachments: options.attachments,
 			replyTo: target.message.id,
-		}, signal);
+		}, signal, onRouting);
 		if (routed.delivered) this.inbox.markReplied(target.message.id, target.from.id);
 		return { ...routed, to: target.from, replyTo: target.message.id };
 	}

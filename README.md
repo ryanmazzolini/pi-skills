@@ -112,6 +112,8 @@ A Ship project session can send a focused blocker to the sole advertised First M
 
 Intercom capabilities degrade independently. Missing role support limits project-session discovery; missing tail support limits inspection. Tree navigation, compaction, reload, resume, session replacement, broker disconnect, or client restart can clear the role; invoke `/skill:first-mate` again to restore it. First Mate is intentionally absent from the Claude marketplace.
 
+The local Intercom broker accepts 256 registered sessions and 512 total connections by default. Set `PI_INTERCOM_MAX_SESSIONS` or `PI_INTERCOM_MAX_CONNECTIONS` before broker startup to override either ceiling. When only the session ceiling is overridden, the connection ceiling defaults to at least twice that value so registration and reconnect attempts retain headroom. A running broker keeps the limits from its startup environment until it exits.
+
 ## Optional tooling
 
 [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and Node.js 24 or newer are the package-wide requirements. The `node` executable must be available on `PATH`; it runs package scripts, the `intercom` broker, and installed scheduled-job snapshots. `daily-report` also needs Git, configured repositories, and a writable vault. Everything else is à la carte:

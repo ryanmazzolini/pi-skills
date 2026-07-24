@@ -793,6 +793,75 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.ok(delivered.every((call) => Buffer.byteLength(call[0].content) <= INTERCOM_PROJECTION_MAX_BYTES));
 });
 
+test("broker delivery rejection is reported as definitive through the tool operation", async (t) => {
+	const fixture = await isolatedIntercom(t, "reject-tool-");
+	const previousHome = process.env.HOME;
+	process.env.HOME = fixture.home;
+	t.after(() => {
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+	});
+	const sockets = new Set();
+	const target = { id: "departed-peer", name: "worker", cwd: "/repo", model: "fixture-model", pid: 2, startedAt: 1, lastActivity: 1 };
+	const server = net.createServer((socket) => {
+		sockets.add(socket);
+		socket.on("error", () => undefined);
+		socket.on("close", () => sockets.delete(socket));
+		let caller;
+		const decoder = new FrameDecoder((message) => {
+			if (message?.type === "register") {
+				caller = { ...message.session, id: "caller-peer" };
+				socket.write(encodeFrame({ type: "registered", sessionId: caller.id }));
+				return;
+			}
+			if (message?.type === "list") {
+				socket.write(encodeFrame({ type: "sessions", requestId: message.requestId, sessions: [caller, target] }));
+				return;
+			}
+			if (message?.type === "send") {
+				socket.write(encodeFrame({ type: "delivery_failed", messageId: message.message.id, reason: "Session not found" }));
+			}
+		}, () => socket.destroy());
+		socket.on("data", (chunk) => decoder.push(chunk));
+	});
+	await new Promise((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(fixture.paths.socketPath, resolve);
+	});
+	t.after(async () => {
+		for (const socket of sockets) socket.destroy();
+		await new Promise((resolve) => server.close(resolve));
+	});
+
+	const tools = [];
+	const handlers = new Map();
+	const delivered = [];
+	intercomExtension({
+		registerTool: (tool) => tools.push(tool),
+		registerMessageRenderer() {},
+		on: (name, handler) => handlers.set(name, handler),
+		getSessionName: () => "caller",
+		appendEntry() {},
+		sendMessage: (...args) => delivered.push(args),
+	});
+	const ctx = {
+		cwd: "/repo",
+		model: { id: "fixture-model" },
+		sessionManager: { getSessionId: () => "pi-session", getSessionFile: () => undefined, getLeafId: () => null },
+	};
+	await handlers.get("session_start")({}, ctx);
+	t.after(() => handlers.get("session_shutdown")());
+	const receipt = await tools[0].execute("call", { action: "send", to: "worker", message: "hello" }, undefined, undefined, ctx);
+	assert.equal(receipt.details.state, "queued");
+	const failure = await waitFor(
+		() => delivered.find((call) => call[0].customType === "intercom_operation" && /send failed/.test(call[0].content)),
+		2_000,
+	);
+	assert.equal(failure[0].details.deliveryUncertain, false);
+	assert.match(failure[0].details.reason, /Session not found/);
+	assert.doesNotMatch(failure[0].content, /Delivery is uncertain/);
+});
+
 test("tool execution throws action-qualified operational failures and status surfaces startup diagnostics", async (t) => {
 	const fixture = await isolatedIntercom(t, "index-harness-");
 	const target = `${fixture.base}/runtime-target`;
@@ -843,7 +912,12 @@ test("tool execution throws action-qualified operational failures and status sur
 		const receipt = await execute(params);
 		assert.equal(receipt.details.state, "queued");
 	}
-	await waitFor(() => delivered.find((call) => call[0].customType === "intercom_operation" && /failed/.test(call[0].content)), 2_000);
+	const failedBeforeRouting = await waitFor(
+		() => delivered.find((call) => call[0].customType === "intercom_operation" && /failed/.test(call[0].content)),
+		2_000,
+	);
+	assert.equal(failedBeforeRouting[0].details.deliveryUncertain, false);
+	assert.doesNotMatch(failedBeforeRouting[0].content, /Delivery is uncertain/);
 	await handlers.get("session_shutdown")();
 	await assert.rejects(execute({ action: "pending" }), /Intercom pending failed:/);
 	const disconnected = await execute({ action: "status" });

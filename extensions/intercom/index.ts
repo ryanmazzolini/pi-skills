@@ -558,18 +558,23 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						if (signal?.aborted) throw new Error("Intercom operation cancelled before acceptance");
 						const kind = params.action;
 						const receipt = requireOperations().start(kind, params.to, async (operationSignal, update) => {
-							update("routing");
 							if (kind === "send") {
-								const result = await active.send(params.to!, params.message!, params.attachments as Attachment[] | undefined, params.replyTo, operationSignal);
-								if (!result.delivered) throw new Error(result.reason ?? "Message was not routed");
+								const result = await active.send(params.to!, params.message!, params.attachments as Attachment[] | undefined, params.replyTo, operationSignal, () => update("routing"));
+								if (!result.delivered) {
+									update("delivery_rejected");
+									throw new Error(result.reason ?? "Message was not routed");
+								}
 								const audit = { ...targetIdentity(result.to).details, ...compactAuditMessage({ id: result.id, timestamp: Date.now(), replyTo: params.replyTo, attachments: params.attachments }) };
 								assertCompactRecord(audit, "Intercom send audit");
 								appendAudit("intercom_sent", audit);
 								return { target: result.to.id };
 							}
 							if (kind === "reply") {
-								const result = await active.reply(params.message!, { to: params.to, replyTo: params.replyTo, attachments: params.attachments as Attachment[] | undefined }, operationSignal);
-								if (!result.delivered) throw new Error(result.reason ?? "Reply was not routed");
+								const result = await active.reply(params.message!, { to: params.to, replyTo: params.replyTo, attachments: params.attachments as Attachment[] | undefined }, operationSignal, () => update("routing"));
+								if (!result.delivered) {
+									update("delivery_rejected");
+									throw new Error(result.reason ?? "Reply was not routed");
+								}
 								const audit = { ...targetIdentity(result.to).details, ...compactAuditMessage({ id: result.id, timestamp: Date.now(), replyTo: result.replyTo, attachments: params.attachments }) };
 								assertCompactRecord(audit, "Intercom reply audit");
 								appendAudit("intercom_sent", audit);
@@ -580,7 +585,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 								const audit = { ...targetIdentity(target).details, ...compactAuditMessage({ id: requestId, timestamp: Date.now(), replyTo: params.replyTo, expectsReply: true, attachments: params.attachments }) };
 								assertCompactRecord(audit, "Intercom ask audit");
 								appendAudit("intercom_sent", audit);
-							});
+							}, () => update("routing"), () => update("delivery_rejected"));
 							const projected = projectAskReply(result.from, result.message);
 							const receivedAudit = { fromPeerId: result.from.id, ...compactAuditMessage({ id: result.message.id, timestamp: result.message.timestamp, replyTo: result.message.replyTo, attachments: result.message.content.attachments }), truncated: projected.truncated };
 							assertCompactRecord(receivedAudit, "Intercom received audit");

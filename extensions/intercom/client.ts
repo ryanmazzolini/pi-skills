@@ -493,7 +493,13 @@ export class IntercomClient extends EventEmitter {
 				this.handleDisconnect(socket, error, wasRegistered);
 			});
 			socket.once("connect", () => {
-				void this.enqueueOn(socket, { type: "register", session: wireSession }).catch((error) => socket.destroy(error));
+				void this.enqueueOn(socket, { type: "register", session: wireSession }).catch((error) => {
+					if (this.socket !== socket) return;
+					// A full broker can send a useful rejection while its read side is already closing.
+					// Preserve that inbound frame instead of destroying the socket on a concurrent EPIPE.
+					this.disconnectError = toError(error);
+					if (!socket.readable || socket.readableEnded) socket.destroy(error);
+				});
 			});
 		}).then(async () => {
 			if (session.piSession && this.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
@@ -502,12 +508,12 @@ export class IntercomClient extends EventEmitter {
 		});
 	}
 
-	private enqueue(message: unknown): Promise<void> {
+	private enqueue(message: unknown, onQueued?: () => void): Promise<void> {
 		const socket = this.requireActiveSocket();
-		return this.enqueueOn(socket, message);
+		return this.enqueueOn(socket, message, onQueued);
 	}
 
-	private enqueueOn(socket: Socket, message: unknown): Promise<void> {
+	private enqueueOn(socket: Socket, message: unknown, onQueued?: () => void): Promise<void> {
 		const frame = encodeFrame(message);
 		const state = this.writeState;
 		if (!state || state.socket !== socket) return Promise.reject(new Error("Intercom client disconnected before write"));
@@ -517,6 +523,7 @@ export class IntercomClient extends EventEmitter {
 			return Promise.reject(error);
 		}
 		state.queuedBytes += frame.length;
+		try { onQueued?.(); } catch {}
 		const operation = state.tail.catch(() => undefined).then(async () => {
 			if (this.socket !== socket || socket.destroyed || socket.writableEnded || !socket.writable) {
 				throw new Error("Intercom client disconnected before write");
@@ -556,10 +563,11 @@ export class IntercomClient extends EventEmitter {
 		message: unknown,
 		onError: (error: Error) => void,
 		onSynchronousError?: (error: Error) => void,
+		onQueued?: () => void,
 	): void {
 		let operation: Promise<void>;
 		try {
-			operation = this.enqueue(message);
+			operation = this.enqueue(message, onQueued);
 		} catch (error) {
 			const normalized = toError(error);
 			onError(normalized);
@@ -574,7 +582,7 @@ export class IntercomClient extends EventEmitter {
 			throw new Error("Invalid broker message");
 		}
 		const message = value as Record<string, unknown> & { type: string };
-		if (this.registeredSessionId === null && message.type !== "registered") {
+		if (this.registeredSessionId === null && message.type !== "registered" && message.type !== "error") {
 			throw new Error(`Received ${message.type} before registered`);
 		}
 		switch (message.type) {
@@ -674,7 +682,13 @@ export class IntercomClient extends EventEmitter {
 			}
 			case "error": {
 				if (typeof message.error !== "string") throw new Error("Invalid error message");
-				this.emit("error", new Error(message.error));
+				const error = new Error(this.registeredSessionId === null
+					? `Intercom broker rejected registration: ${message.error}`
+					: `Intercom broker error: ${message.error}`);
+				this.disconnectError = error;
+				this.registrationPending?.reject(error);
+				this.emit("error", error);
+				this.socket?.destroy();
 				break;
 			}
 			default:
@@ -788,8 +802,8 @@ export class IntercomClient extends EventEmitter {
 		});
 	}
 
-	send(to: string, options: SendOptions, signal?: AbortSignal): Promise<SendResult> {
-		return this.sendInternal(to, options, signal);
+	send(to: string, options: SendOptions, signal?: AbortSignal, onQueued?: () => void): Promise<SendResult> {
+		return this.sendInternal(to, options, signal, undefined, onQueued);
 	}
 
 	private sendInternal(
@@ -797,6 +811,7 @@ export class IntercomClient extends EventEmitter {
 		options: SendOptions,
 		signal?: AbortSignal,
 		onSynchronousEnqueueError?: (error: Error) => void,
+		onQueued?: () => void,
 	): Promise<SendResult> {
 		this.requireActiveSocket();
 		validateSendOptions(to, options);
@@ -829,7 +844,7 @@ export class IntercomClient extends EventEmitter {
 				signal.addEventListener("abort", pending.onAbort, { once: true });
 			}
 			this.pendingSends.set(messageId, pending);
-			this.enqueueReserved({ type: "send", to, message }, finishError, onSynchronousEnqueueError);
+			this.enqueueReserved({ type: "send", to, message }, finishError, onSynchronousEnqueueError, onQueued);
 		});
 	}
 
@@ -838,6 +853,8 @@ export class IntercomClient extends EventEmitter {
 		options: Omit<SendOptions, "expectsReply">,
 		signal?: AbortSignal,
 		onRouted?: (result: SendResult) => void,
+		onQueued?: () => void,
+		onDeliveryRejected?: (result: SendResult) => void,
 	): Promise<ReceivedMessage> {
 		this.requireActiveSocket();
 		validateSendOptions(to, { ...options, expectsReply: true });
@@ -870,8 +887,12 @@ export class IntercomClient extends EventEmitter {
 					{ ...options, messageId, expectsReply: true },
 					signal,
 					(error) => this.failAsk(messageId, error),
+					onQueued,
 				);
-				if (!routed.delivered) throw new Error(routed.reason ?? "Intercom message was not routed");
+				if (!routed.delivered) {
+					try { onDeliveryRejected?.(routed); } catch {}
+					throw new Error(routed.reason ?? "Intercom message was not routed");
+				}
 				try {
 					onRouted?.(routed);
 				} catch {

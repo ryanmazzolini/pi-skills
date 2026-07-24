@@ -13,10 +13,13 @@ process.umask(0o077);
 const TAIL_CAPABILITY = "pi-session-tail-v1";
 const ROLE_CAPABILITY = "first-mate-role-v1";
 const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY, ROLE_CAPABILITY]);
+const MAX_GRACEFUL_CONNECTION_REJECTIONS = 16;
 
 const runtimeDir = process.env.PI_INTERCOM_RUNTIME_DIR || join(homedir(), ".pi", "agent", "intercom");
 const socketPath = process.env.PI_INTERCOM_SOCKET_PATH || join(runtimeDir, "broker.sock");
 const pidPath = join(runtimeDir, "broker.pid");
+const maxSessions = positiveInteger(process.env.PI_INTERCOM_MAX_SESSIONS, 256);
+const maxConnections = positiveInteger(process.env.PI_INTERCOM_MAX_CONNECTIONS, Math.max(512, maxSessions * 2));
 const LIMITS = Object.freeze({
 	frame: 1024 * 1024,
 	id: 256,
@@ -30,8 +33,8 @@ const LIMITS = Object.freeze({
 	attachmentName: 4096,
 	attachmentContent: 512 * 1024,
 	attachmentTotal: 768 * 1024,
-	sessions: 32,
-	connections: positiveInteger(process.env.PI_INTERCOM_MAX_CONNECTIONS, 64),
+	sessions: maxSessions,
+	connections: maxConnections,
 	queuedWrites: 2 * 1024 * 1024,
 	queuedRequests: positiveInteger(process.env.PI_INTERCOM_MAX_QUEUED_REQUESTS, 64),
 	queuedRequestBytes: positiveInteger(process.env.PI_INTERCOM_MAX_QUEUED_REQUEST_BYTES, 2 * 1024 * 1024),
@@ -170,6 +173,9 @@ class Reader {
 const sessions = new Map();
 const connections = new Set();
 const requestEdges = new Map();
+const maximumEscapedRequestId = "\u0000".repeat(LIMITS.id);
+const emptySessionListBytes = byteLength(JSON.stringify({ type: "sessions", requestId: maximumEscapedRequestId, sessions: [] }));
+let sessionInfoBytes = 0;
 let idleTimer;
 let socketIdentity;
 let pidIdentity;
@@ -244,10 +250,25 @@ function scheduleIdleShutdown() {
 	idleTimer.unref();
 }
 
+function checkedSessionInfoBytes(candidate, previousBytes = 0) {
+	const candidateBytes = byteLength(JSON.stringify(candidate));
+	const nextCount = sessions.size + (previousBytes === 0 ? 1 : 0);
+	// The empty array contributes two bytes; a populated array contributes each serialized item and N-1 commas.
+	const listBytes = emptySessionListBytes - 2
+		+ sessionInfoBytes - previousBytes + candidateBytes
+		+ Math.max(0, nextCount - 1);
+	if (listBytes > LIMITS.frame) {
+		throw new Error("Intercom session metadata capacity reached; reduce advertised metadata or connected sessions");
+	}
+	return candidateBytes;
+}
+
 function removeSession(connection) {
 	const sessionId = connection.sessionId;
 	if (!sessionId || sessions.get(sessionId) !== connection) return;
 	sessions.delete(sessionId);
+	sessionInfoBytes = Math.max(0, sessionInfoBytes - connection.infoBytes);
+	connection.infoBytes = 0;
 	connection.sessionId = null;
 	broadcast({ type: "session_left", sessionId }, sessionId);
 	for (const [messageId, edge] of requestEdges) {
@@ -318,14 +339,16 @@ async function handleSend(connection, request) {
 	const repliedEdge = request.message.replyTo === undefined ? undefined : requestEdges.get(request.message.replyTo);
 	try {
 		await queueFrame(target, { type: "message", from: sender.info, message: request.message });
-		if (repliedEdge && repliedEdge.fromPeerId === target.sessionId && repliedEdge.toPeerId === senderId) {
-			requestEdges.delete(repliedEdge.messageId);
-		}
-		await queueFrame(connection, { type: "delivered", messageId });
-	} catch {
+	} catch (error) {
 		if (request.message.expectsReply) requestEdges.delete(messageId);
-		await queueFrame(connection, { type: "delivery_failed", messageId, reason: "Session disconnected during delivery" });
+		const reason = error instanceof Error ? error.message : "Target delivery failed";
+		await queueFrame(connection, { type: "delivery_failed", messageId, reason });
+		return;
 	}
+	if (repliedEdge && repliedEdge.fromPeerId === target.sessionId && repliedEdge.toPeerId === senderId) {
+		requestEdges.delete(repliedEdge.messageId);
+	}
+	await queueFrame(connection, { type: "delivered", messageId });
 }
 
 async function handleMessage(connection, value) {
@@ -339,14 +362,20 @@ async function handleMessage(connection, value) {
 		case "register": {
 			if (connection.sessionId) throw new Error("Received duplicate register message");
 			if (!isRegistration(value.session)) throw new Error("Invalid register message");
-			if (sessions.size >= LIMITS.sessions) throw new Error("Intercom session limit reached");
+			if (sessions.size >= LIMITS.sessions) {
+				throw new Error(`Intercom session limit reached (maximum ${LIMITS.sessions}; set PI_INTERCOM_MAX_SESSIONS before broker startup to increase it)`);
+			}
 			const id = randomUUID();
+			const info = sessionFromRegistration(value.session, id);
+			const infoBytes = checkedSessionInfoBytes(info);
 			connection.sessionId = id;
-			connection.info = sessionFromRegistration(value.session, id);
+			connection.info = info;
+			connection.infoBytes = infoBytes;
 			connection.lastPiSessionRevision = value.session.piSession?.revision ?? 0;
 			clearTimeout(connection.registrationTimer);
 			connection.registrationTimer = undefined;
 			sessions.set(id, connection);
+			sessionInfoBytes += infoBytes;
 			clearIdleTimer();
 			await queueFrame(connection, { type: "registered", sessionId: id, capabilities: BROKER_CAPABILITIES });
 			broadcast({ type: "session_joined", session: connection.info }, id);
@@ -386,17 +415,22 @@ async function handleMessage(connection, value) {
 			} else if (value.requestId !== undefined) {
 				throw new Error("Invalid presence role request");
 			}
-			if (value.name !== undefined) session.info.name = value.name;
-			if (value.status !== undefined) session.info.status = value.status;
-			if (value.model !== undefined) session.info.model = value.model;
-			if (value.piSession === null) delete session.info.piSession;
-			else if (value.piSession !== undefined) {
-				session.info.piSession = { ...value.piSession };
+			const nextInfo = { ...session.info };
+			if (value.name !== undefined) nextInfo.name = value.name;
+			if (value.status !== undefined) nextInfo.status = value.status;
+			if (value.model !== undefined) nextInfo.model = value.model;
+			if (value.piSession === null) delete nextInfo.piSession;
+			else if (value.piSession !== undefined) nextInfo.piSession = { ...value.piSession };
+			if (value.role === null) delete nextInfo.role;
+			else if (value.role !== undefined) nextInfo.role = value.role;
+			nextInfo.lastActivity = Date.now();
+			const nextInfoBytes = checkedSessionInfoBytes(nextInfo, session.infoBytes);
+			sessionInfoBytes += nextInfoBytes - session.infoBytes;
+			session.info = nextInfo;
+			session.infoBytes = nextInfoBytes;
+			if (value.piSession !== undefined && value.piSession !== null) {
 				connection.lastPiSessionRevision = value.piSession.revision;
 			}
-			if (value.role === null) delete session.info.role;
-			else if (value.role !== undefined) session.info.role = value.role;
-			session.info.lastActivity = Date.now();
 			broadcast({ type: "presence_update", session: session.info }, connection.sessionId);
 			if (value.requestId !== undefined) {
 				await queueFrame(connection, { type: "role_updated", requestId: value.requestId, role: session.info.role ?? null });
@@ -418,11 +452,26 @@ function failConnection(connection, error) {
 	}
 }
 
+function rejectAcceptedConnection(connection, error) {
+	if (connection.closed || connection.failed) return;
+	connection.failed = true;
+	connection.socket.resume();
+	const timeout = setTimeout(() => connection.socket.destroy(), 250);
+	timeout.unref();
+	connection.socket.once("close", () => clearTimeout(timeout));
+	try {
+		connection.socket.end(encode({ type: "error", error: error.message }));
+	} catch {
+		connection.socket.destroy();
+	}
+}
+
 function accept(socket) {
 	const connection = {
 		socket,
 		sessionId: null,
 		info: null,
+		infoBytes: 0,
 		closed: false,
 		failed: false,
 		writeTail: Promise.resolve(),
@@ -442,8 +491,19 @@ function accept(socket) {
 		connections.delete(connection);
 		removeSession(connection);
 	});
-	if (shuttingDown || connections.size > LIMITS.connections) {
-		socket.destroy(new Error(shuttingDown ? "Intercom broker is shutting down" : "Intercom connection limit reached"));
+	if (shuttingDown) {
+		socket.destroy(new Error("Intercom broker is shutting down"));
+		return;
+	}
+	if (connections.size > LIMITS.connections) {
+		const error = new Error(
+			`Intercom connection limit reached (maximum ${LIMITS.connections}; set PI_INTERCOM_MAX_CONNECTIONS before broker startup to increase it)`,
+		);
+		if (connections.size - LIMITS.connections <= MAX_GRACEFUL_CONNECTION_REJECTIONS) {
+			rejectAcceptedConnection(connection, error);
+		} else {
+			socket.destroy(error);
+		}
 		return;
 	}
 	socket.setNoDelay(true);
@@ -513,6 +573,7 @@ async function shutdown() {
 	const closed = new Promise((resolve) => server.close(() => resolve()));
 	for (const connection of connections) connection.socket.destroy();
 	sessions.clear();
+	sessionInfoBytes = 0;
 	await closed;
 	await unlinkOwned(socketPath, socketIdentity);
 	await unlinkOwned(pidPath, pidIdentity);

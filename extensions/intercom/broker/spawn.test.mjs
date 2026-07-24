@@ -41,6 +41,19 @@ test("concurrent startup calls atomically publish complete ownership and spawn o
 	await assert.rejects(access(paths.spawnLockPath));
 });
 
+test("broker startup reports a bounded child stderr diagnostic", async (t) => {
+	const { base, paths } = await isolatedIntercom(t, "stderr-start-");
+	const serverPath = join(base, "failing-server.mjs");
+	await writeFile(serverPath, `process.stderr.write("discarded-prefix-${"x".repeat(5_000)}-distinctive broker startup failure\\n");\nprocess.exit(1);\n`);
+	await assert.rejects(spawnBrokerIfNeeded({ paths, serverPath, waitMs: 1_000 }), (error) => {
+		assert.match(error.message, /Intercom broker exited before startup with code 1:/);
+		assert.match(error.message, /distinctive broker startup failure$/);
+		assert.doesNotMatch(error.message, /discarded-prefix/);
+		assert.ok(Buffer.byteLength(error.message, "utf8") <= 4_200);
+		return true;
+	});
+});
+
 test("broker startup resolves the plain node executable from PATH", async (t) => {
 	const { base, paths } = await isolatedIntercom(t, "node-path-");
 	const bin = join(base, "bin");
