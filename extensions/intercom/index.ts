@@ -297,7 +297,7 @@ function targetIdentity(session: SessionInfo): {
 	const sessionId = piSessionIdOf(session);
 	const name = compactSessionName(session.name);
 	return {
-		text: `Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"} (self-declared name: ${declared(name.value)}${name.truncated ? "; truncated" : ""})`,
+		text: `Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable"} (self-declared name: ${declared(name.value)}${name.truncated ? "; truncated" : ""})`,
 		details: {
 			...(sessionId === undefined ? {} : { targetSessionId: sessionId }),
 			...(name.value === undefined ? {} : { targetNameSelfDeclared: name.value }),
@@ -589,7 +589,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 					case "reply": {
 						if (signal?.aborted) throw new Error("Intercom operation cancelled before acceptance");
 						const kind = params.action;
-						// Resolve user input inside the operation; snapshots must never retain a legacy transport ID.
+						// Resolve user input inside the operation; snapshots must never retain a transport ID.
 						const receipt = requireOperations().start(kind, undefined, async (operationSignal, update) => {
 							if (kind === "send") {
 								const result = await active.send(params.to!, params.message!, params.attachments as Attachment[] | undefined, params.replyTo, operationSignal, () => update("routing"));

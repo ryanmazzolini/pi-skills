@@ -139,7 +139,7 @@ function peerMessageSegments(
 			: `\n\nTo reply explicitly while this ask remains pending, use intercom({ action: "reply", replyTo: ${JSON.stringify(message.id)}, message: "..." }).`
 		: "";
 	return [
-		{ text: `${title}\nPi session ID: ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"}` },
+		{ text: `${title}\nPi session ID: ${sessionId ? JSON.stringify(sessionId) : "unavailable"}` },
 		{ text: `\nSelf-declared name: ${declared(from.name)}`, optional: true },
 		{ text: `\nSelf-declared cwd: ${declared(from.cwd)}`, optional: true },
 		{ text: replyHint },
@@ -196,7 +196,7 @@ export function projectSessionTail(
 	const lastConversationalTimestamp = snapshot.lastConversationalTimestamp === null
 		? "none"
 		: new Date(snapshot.lastConversationalTimestamp).toISOString();
-	const sessionId = piSessionIdOf(target) ?? target.piSession?.sessionId;
+	const sessionId = piSessionIdOf(target);
 	const header = `**Intercom confirmed session tail**\nPi session ID: ${sessionId ? JSON.stringify(sessionId) : "unavailable"}\nLast conversational timestamp: ${lastConversationalTimestamp}`;
 	const fullHeader = `${header}\nSelf-declared name: ${declared(target.name)}`;
 	const sourceFacts = `${snapshot.truncated ? "\nEarlier eligible text was omitted by the requested message limit." : ""}${snapshot.outcomeEventsTruncated ? "\nOlder completed tool or Bash outcomes were omitted by the session-tail event limit." : ""}${snapshot.ignoredFinalFragment ? "\nOne incomplete trailing session entry was omitted." : ""}`;
@@ -241,7 +241,7 @@ function sessionSegments(session: SessionInfo, current: SessionInfo, prefix = ""
 	].filter((tag): tag is string => Boolean(tag));
 	return [
 		{
-			text: `${prefix}• Pi session ID: ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"} [role: ${session.role ?? "none"}]`,
+			text: `${prefix}• Pi session ID: ${sessionId ? JSON.stringify(sessionId) : "unavailable"} [role: ${session.role ?? "none"}]`,
 			...(optionalIdentity ? { optional: true, atomic: true, stopOptionalOnOmission: true } : {}),
 		},
 		{
@@ -276,7 +276,7 @@ export function projectPendingEntries(entries: readonly InboxEntry[], now: numbe
 	for (const [index, entry] of entries.entries()) {
 		const sessionId = piSessionIdOf(entry.from);
 		segments.push({
-			text: `${index === 0 ? "" : "\n"}- Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"} · message ${JSON.stringify(entry.message.id)} · ${Math.max(0, Math.floor((now - entry.receivedAt) / 1000))}s ago`,
+			text: `${index === 0 ? "" : "\n"}- Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable"} · message ${JSON.stringify(entry.message.id)} · ${Math.max(0, Math.floor((now - entry.receivedAt) / 1000))}s ago`,
 		});
 		segments.push({ text: ` · self-declared name ${declared(entry.from.name)}`, optional: true });
 		const preview = sanitizeSelfDeclaredMetadata(entry.message.content.text);
