@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
+	SchedulerActionComponent,
 	SchedulerDashboardComponent,
 	SchedulerJobDetailComponent,
 	SchedulerTextComponent,
@@ -106,9 +107,20 @@ const ACTION_LABELS: Record<SchedulerAction, string> = {
 	install: "Install disabled",
 	update: "Update installed snapshot",
 	run: "Run installed snapshot now",
-	enable: "Enable schedule",
-	disable: "Disable schedule",
+	enable: "Resume schedule",
+	disable: "Pause schedule",
 	remove: "Remove installed schedule",
+};
+
+const ACTION_DESCRIPTIONS: Record<SchedulerAction, string> = {
+	inspect: "Review candidate and installed definitions",
+	logs: "Open the bounded compatibility log",
+	install: "Create a reviewed snapshot and leave it paused",
+	update: "Replace the snapshot while preserving enablement",
+	run: "Start the installed snapshot and track its receipt",
+	enable: "Reconcile the host adapter and schedule future runs",
+	disable: "Stop future scheduled runs without removing state",
+	remove: "Remove the snapshot and all known adapter artifacts",
 };
 
 export function sanitizeDisplay(value: unknown): string {
@@ -252,6 +264,7 @@ export function applicableActions(job: JobView): SchedulerAction[] {
 	if (!current?.installed) return ["inspect", "install"];
 	const actions: SchedulerAction[] = ["inspect", "logs"];
 	if (!healthyInstallation(job)) {
+		if (current.health === "unhealthy" && current.metadata?.enabled === false && current.definitionDrift) actions.push("update");
 		if (current.health === "conflict" || current.health === "unavailable") actions.push("remove");
 		return actions;
 	}
@@ -459,16 +472,29 @@ function successMessage(job: JobView, action: SchedulerAction): string {
 	return `${ACTION_LABELS[action]} completed for ${sanitizeDisplay(job.id)}.`;
 }
 
+async function showActionMenu(ctx: UiContext, job: JobView, actions: SchedulerAction[]): Promise<SchedulerAction | undefined> {
+	const selected = await ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => new SchedulerActionComponent(
+		sanitizeDisplay(job.key),
+		actions.map((action) => ({
+			id: action,
+			label: ACTION_LABELS[action],
+			description: ACTION_DESCRIPTIONS[action],
+			danger: action === "remove",
+		})),
+		tui,
+		theme,
+		done,
+	));
+	return actions.find((action) => action === selected);
+}
+
 async function chooseAction(
 	ctx: UiContext,
 	job: JobView,
 	dependencies: SchedulerDependencies,
 ): Promise<void> {
 	const actions = applicableActions(job);
-	const actionOptions = actions.map((action) => ACTION_LABELS[action]);
-	const selectedAction = await ctx.ui.select(`${sanitizeDisplay(job.id)}\n${jobStatus(job)}`, actionOptions);
-	if (!selectedAction) return;
-	const action = actions[actionOptions.indexOf(selectedAction)];
+	const action = await showActionMenu(ctx, job, actions);
 	if (!action) return;
 	if (action === "inspect") {
 		await showText(ctx, `Definition · ${sanitizeDisplay(job.id)}`, inspectionText(job));

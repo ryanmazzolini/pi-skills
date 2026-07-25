@@ -165,6 +165,9 @@ function effectiveWorkingDirectory(job: SchedulerJobOverview): string {
 export function schedulerJobState(job: SchedulerJobOverview): { label: string; icon: string; color: "success" | "warning" | "error" | "muted" | "accent" } {
 	const latest = job.recentRuns[0];
 	if (latest?.status === "running") return { label: "Running", icon: "↻", color: "accent" };
+	if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
+		return { label: "Needs attention", icon: "!", color: "error" };
+	}
 	if (
 		job.candidateError
 		|| job.installationError
@@ -452,6 +455,78 @@ export class SchedulerDashboardComponent implements Component {
 	}
 }
 
+export interface SchedulerActionOption {
+	id: string;
+	label: string;
+	description: string;
+	danger?: boolean;
+}
+
+export class SchedulerActionComponent implements Component {
+	private selected = 0;
+	private readonly jobKey: string;
+	private readonly options: SchedulerActionOption[];
+	private readonly tui: TuiView;
+	private readonly theme: Theme;
+	private readonly done: (action: string | undefined) => void;
+
+	constructor(
+		jobKey: string,
+		options: SchedulerActionOption[],
+		tui: TuiView,
+		theme: Theme,
+		done: (action: string | undefined) => void,
+	) {
+		this.jobKey = jobKey;
+		this.options = options;
+		this.tui = tui;
+		this.theme = theme;
+		this.done = done;
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || data === "q") {
+			this.done(undefined);
+			return;
+		}
+		if ((matchesKey(data, "up") || data === "k") && this.selected > 0) this.selected--;
+		else if ((matchesKey(data, "down") || data === "j") && this.selected < this.options.length - 1) this.selected++;
+		else if (matchesKey(data, "return") || matchesKey(data, "right")) {
+			this.done(this.options[this.selected]?.id);
+			return;
+		}
+		this.tui.requestRender();
+	}
+
+	render(width: number): string[] {
+		const safeWidth = Math.max(1, width);
+		const innerWidth = Math.max(1, safeWidth - 2);
+		const bodyHeight = Math.max(3, Math.min(14, (this.tui.terminal?.rows ?? 24) - 6));
+		const display = this.options.map((option, index) => {
+			const selected = index === this.selected;
+			const marker = selected ? this.theme.fg("accent", "›") : " ";
+			const label = selected
+				? this.theme.fg("accent", option.label)
+				: option.danger
+					? this.theme.fg("error", option.label)
+					: option.label;
+			return truncateToWidth(`${marker} ${label} ${this.theme.fg("dim", `· ${option.description}`)}`, innerWidth, "");
+		});
+		const start = Math.min(Math.max(0, this.selected - Math.floor(bodyHeight / 2)), Math.max(0, display.length - bodyHeight));
+		const visible = display.slice(start, start + bodyHeight);
+		return framed([
+			truncateToWidth(`${this.theme.bold(`Scheduler / ${this.jobKey}`)} ${this.theme.fg("dim", "· Actions")}`, innerWidth, ""),
+			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
+			this.theme.bold("AVAILABLE ACTIONS"),
+			...visible,
+			...Array.from({ length: Math.max(0, bodyHeight - visible.length) }, () => ""),
+			this.theme.fg("dim", "↑/↓ j/k select · Enter review · q/Esc back"),
+		], safeWidth, this.theme);
+	}
+
+	invalidate(): void {}
+}
+
 export class SchedulerJobDetailComponent implements Component {
 	private tab: DetailTab = "overview";
 	private selectedRun = 0;
@@ -544,7 +619,6 @@ export class SchedulerJobDetailComponent implements Component {
 
 	private overviewLines(width: number): string[] {
 		const latest = this.job.recentRuns[0];
-		const failures = [this.job.candidateError, this.job.installationError, this.job.historyError, this.job.nextRunError].filter((value) => value !== null);
 		return [
 			...wrapTextWithAnsi(this.job.description, width),
 			"",
@@ -554,8 +628,39 @@ export class SchedulerJobDetailComponent implements Component {
 			`Scope: ${this.job.scope.kind}`,
 			`Source: ${this.job.sourcePath}`,
 			`Working directory: ${effectiveWorkingDirectory(this.job)}`,
-			...(failures.length === 0 ? [] : ["", ...failures.flatMap((error) => wrapTextWithAnsi(this.theme.fg("error", `${error!.code}: ${error!.message}`), width))]),
+			...this.recoveryLines(),
 		].flatMap((line) => wrapTextWithAnsi(line, width));
+	}
+
+	private recoveryLines(): string[] {
+		const lines: string[] = [];
+		const failures = [this.job.candidateError, this.job.installationError, this.job.historyError, this.job.nextRunError].filter((value) => value !== null);
+		if (failures.length > 0) {
+			lines.push("", ...failures.map((error) => this.theme.fg("error", `${error!.code}: ${error!.message}`)));
+			if (this.job.candidateError) lines.push("Recovery: fix the declared command or environment, then return to Tasks and press r.");
+			else if (this.job.installationError) lines.push("Recovery: press r to retry status inspection; use Definition to inspect the reviewed identities first.");
+			else if (this.job.historyError) lines.push("Recovery: repair the private run-history state, then press r; lifecycle actions remain independently reviewed.");
+		}
+		if (this.job.candidate?.adapter.warning) lines.push("", this.theme.fg("warning", this.job.candidate.adapter.warning));
+		if (this.job.installation.installed && this.job.installation.health !== "ok") {
+			lines.push("", this.theme.fg("error", `Installed state: ${this.job.installation.health}${this.job.installation.healthReason ? ` · ${this.job.installation.healthReason}` : ""}`));
+			if (this.job.installation.health === "unavailable" || this.job.installation.health === "conflict") {
+				lines.push(`Recovery: press ${this.theme.fg("accent", "a")} and review Remove installed schedule, then reinstall the declaration.`);
+			} else if (this.job.installation.health === "unhealthy" && this.job.installation.definitionDrift && !this.job.installation.enabled) {
+				lines.push(`Recovery: press ${this.theme.fg("accent", "a")} and review Update installed snapshot.`);
+			} else {
+				lines.push("Recovery: inspect Definition and repair the private installed state before retrying; unsafe lifecycle actions remain unavailable.");
+			}
+		} else if (this.job.installation.adapterDrift) {
+			lines.push("", this.theme.fg("warning", "The host adapter differs from the reviewed installed state."));
+			lines.push(`Recovery: press ${this.theme.fg("accent", "a")} and review Pause or Resume to reconcile it, or Remove to clean known adapters.`);
+		}
+		const latest = this.job.recentRuns[0];
+		if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
+			lines.push("", this.theme.fg("error", `Last run ${runState(latest).label.toLowerCase()}${latest.reason ? ` · ${latest.reason}` : ""}`));
+			lines.push("Recovery: open Runs, select the failed run, and press Enter to inspect its retained output before running again.");
+		}
+		return lines;
 	}
 
 	private detailRunLines(width: number): string[] {

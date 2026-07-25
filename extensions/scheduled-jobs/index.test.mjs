@@ -262,6 +262,10 @@ test("maps only applicable actions from health, drift, and enablement", () => {
     ["inspect", "logs", "run", "disable", "remove"],
   );
   assert.deepEqual(
+    applicableActions(declaredJob({ inspection: inspection({ installed: true, health: "unhealthy", drift: true }) })),
+    ["inspect", "logs", "update"],
+  );
+  assert.deepEqual(
     applicableActions(declaredJob({ inspection: inspection({ installed: true, health: "unavailable" }) })),
     ["inspect", "logs", "remove"],
   );
@@ -277,9 +281,10 @@ test("maps only applicable actions from health, drift, and enablement", () => {
 
 test("shows the exact reviewed contract and cancellation performs no mutation", async () => {
   const scripted = scriptedDependencies();
-  const harness = uiHarness(["Install disabled"], [false], [
+  const harness = uiHarness([], [false], [
     { kind: "job", id: "global:test:job" },
     { kind: "actions" },
+    "install",
     { kind: "close" },
   ]);
   const handler = createSchedulerCommandHandler(scripted.dependencies);
@@ -302,9 +307,10 @@ test("refuses mutation when the exact contract cannot fit in the bounded confirm
     ...Array.from({ length: 7 }, (_, index) => `${index}-${"x".repeat(4_000)}`),
   ];
   const scripted = scriptedDependencies({ inspect: oversized });
-  const harness = uiHarness(["Install disabled"], [], [
+  const harness = uiHarness([], [], [
     { kind: "job", id: "global:test:job" },
     { kind: "actions" },
+    "install",
     { kind: "close" },
   ]);
   const handler = createSchedulerCommandHandler(scripted.dependencies);
@@ -318,9 +324,10 @@ test("refuses mutation when the exact contract cannot fit in the bounded confirm
 
 test("update confirmation shows installed and candidate identities and their changed fields", async () => {
   const scripted = scriptedDependencies({ inspect: inspection({ installed: true, drift: true, revision: 4 }) });
-  const harness = uiHarness(["Update installed snapshot"], [false], [
+  const harness = uiHarness([], [false], [
     { kind: "job", id: "global:test:job" },
     { kind: "actions" },
+    "update",
     { kind: "close" },
   ]);
   const handler = createSchedulerCommandHandler(scripted.dependencies);
@@ -367,9 +374,10 @@ test("a stale mutation refreshes and redisplays the changed state", async () => 
     }
     return originalExec(command, args);
   };
-  const harness = uiHarness(["Install disabled"], [true], [
+  const harness = uiHarness([], [true], [
     { kind: "job", id: "global:test:job" },
     { kind: "actions" },
+    "install",
     { kind: "close" },
   ]);
   const handler = createSchedulerCommandHandler(scripted.dependencies);
@@ -494,17 +502,12 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
       }
     },
   };
-  const harness = uiHarness([
-    "Install disabled",
-    "Run installed snapshot now",
-    "Enable schedule",
-    "Disable schedule",
-    "Remove installed schedule",
-  ], [true, true, true, true, true], [
-    ...Array.from({ length: 5 }, () => [
+  const harness = uiHarness([], [true, true, true, true, true], [
+    ...["install", "run", "enable", "disable", "remove"].flatMap((action) => [
       { kind: "job", id: "global:test:job" },
       { kind: "actions" },
-    ]).flat(),
+      action,
+    ]),
     { kind: "close" },
   ]);
   const handler = createSchedulerCommandHandler(dependencies);
