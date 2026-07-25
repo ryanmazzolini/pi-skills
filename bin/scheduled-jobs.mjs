@@ -23,6 +23,7 @@ import {
   MAX_RUN_HISTORY,
   executeInstalled,
   readInstalled,
+  startInstalled,
   readLog,
   readRunHistory,
   readRunOutput,
@@ -41,6 +42,7 @@ function usage() {
   scheduled-jobs install JOB_ID --manifest PATH --expected-candidate-digest DIGEST [--json]
   scheduled-jobs update JOB_ID --manifest PATH --expected-candidate-digest DIGEST --expected-installed-digest DIGEST --expected-revision N [--json]
   scheduled-jobs run JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
+  scheduled-jobs start JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
   scheduled-jobs enable JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
   scheduled-jobs disable JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
   scheduled-jobs remove JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
@@ -74,6 +76,7 @@ function parseArguments(argv) {
     "--history-limit",
     "--limit",
     "--state-root",
+    "--run-id",
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -89,6 +92,7 @@ function parseArguments(argv) {
       else if (argument === "--expected-installed-digest") options.expectedInstalledDigest = value;
       else if (argument === "--expected-revision") options.expectedRevision = integerOption(argument, value, 1, Number.MAX_SAFE_INTEGER);
       else if (argument === "--state-root") options.stateRoot = value;
+      else if (argument === "--run-id") options.runId = value;
       else if (argument === "--history-limit") options.historyLimit = integerOption(argument, value, 1, MAX_RUN_HISTORY);
       else if (argument === "--limit") options.limit = integerOption(argument, value, 1, MAX_RUN_HISTORY);
       else options.lines = integerOption(argument, value, 1, 10_000);
@@ -249,13 +253,29 @@ async function executeCommand(command, positionals, options, runtime) {
     return commandInspect(command, positionals, options, env, platform, adapterOptions);
   }
   const id = requireJobId(positionals, command);
+  if (options.runId !== undefined && command !== "_run-manual-installed") {
+    throw new SchedulerUsageError("--run-id is reserved for the installed scheduler runtime.");
+  }
   const operationRuntime = { ...runtime, env };
   if (command === "install") return { command, result: installJob(lifecycleInput(id, options, operationRuntime)) };
   if (command === "update") return { command, result: updateJob(lifecycleInput(id, options, operationRuntime)) };
   if (command === "enable") return { command, result: enableJob(lifecycleInput(id, options, operationRuntime)) };
   if (command === "disable") return { command, result: disableJob(lifecycleInput(id, options, operationRuntime)) };
   if (command === "remove") return { command, result: removeJob(lifecycleInput(id, options, operationRuntime)) };
-  if (command === "run" || command === "_run-installed") {
+  if (command === "start") {
+    return {
+      command,
+      result: await startInstalled(id, {
+        env,
+        expectedDigest: options.expectedInstalledDigest,
+        expectedRevision: options.expectedRevision,
+      }),
+    };
+  }
+  if (command === "_run-manual-installed" && !options.runId) {
+    throw new SchedulerUsageError("_run-manual-installed requires --run-id.");
+  }
+  if (command === "run" || command === "_run-installed" || command === "_run-manual-installed") {
     return {
       command,
       result: await executeInstalled(id, {
@@ -263,6 +283,7 @@ async function executeCommand(command, positionals, options, runtime) {
         expectedDigest: options.expectedInstalledDigest,
         expectedRevision: options.expectedRevision,
         trigger: command === "_run-installed" ? "scheduled" : "manual",
+        runId: options.runId,
       }),
     };
   }
