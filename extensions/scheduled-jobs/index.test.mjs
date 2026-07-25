@@ -80,7 +80,7 @@ function candidate(digest = "candidate-digest", description = "Fixture") {
   };
 }
 
-function inspection({ installed = false, enabled = false, drift = false, health = "ok", digest = "candidate-digest", revision = 1 } = {}) {
+function inspection({ installed = false, enabled = false, drift = false, health = "ok", healthCategory = null, digest = "candidate-digest", revision = 1 } = {}) {
   const resolved = candidate(digest);
   return {
     candidate: resolved,
@@ -88,6 +88,7 @@ function inspection({ installed = false, enabled = false, drift = false, health 
       ? {
           installed: true,
           health,
+          healthCategory,
           definitionDrift: drift,
           metadata: { enabled, digest: "installed-digest", revision },
           snapshot: { contract: candidate("installed-digest", drift ? "Old fixture" : "Fixture").contract },
@@ -120,6 +121,7 @@ function overviewJob(inspect = inspection()) {
           installed: true,
           health: current.health,
           healthReason: current.healthReason ?? null,
+          healthCategory: current.healthCategory ?? null,
           enabled: current.metadata.enabled,
           digest: current.metadata.digest,
           revision: current.metadata.revision,
@@ -262,8 +264,12 @@ test("maps only applicable actions from health, drift, and enablement", () => {
     ["inspect", "logs", "run", "disable", "remove"],
   );
   assert.deepEqual(
-    applicableActions(declaredJob({ inspection: inspection({ installed: true, health: "unhealthy", drift: true }) })),
+    applicableActions(declaredJob({ inspection: inspection({ installed: true, health: "unhealthy", healthCategory: "commands", drift: true }) })),
     ["inspect", "logs", "update"],
+  );
+  assert.deepEqual(
+    applicableActions(declaredJob({ inspection: inspection({ installed: true, health: "unhealthy", drift: true }) })),
+    ["inspect", "logs"],
   );
   assert.deepEqual(
     applicableActions(declaredJob({ inspection: inspection({ installed: true, health: "unavailable" }) })),
@@ -385,8 +391,35 @@ test("a stale mutation refreshes and redisplays the changed state", async () => 
   await handler("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
   assert.equal(inspectCount, 1);
-  assert.equal(scripted.calls.filter((call) => call.args.includes("overview")).length, 2);
+  assert.equal(scripted.calls.filter((call) => call.args.includes("overview")).length, 3);
   assert.equal(harness.notices.some((notice) => notice.level === "warning" && /refreshed/.test(notice.message)), true);
+});
+
+test("reloads the current task before opening details", async () => {
+  let overviewCount = 0;
+  const scripted = scriptedDependencies();
+  scripted.dependencies.exec = async (command, args) => {
+    scripted.calls.push({ command, args });
+    if (command === "git") return commandResult("", 1);
+    if (args[0] === "overview") {
+      overviewCount++;
+      return cliSuccess({
+        command: "overview",
+        result: { generatedAt: "2026-07-25T09:00:00.000Z", jobs: overviewCount === 1 ? [overviewJob()] : [] },
+      });
+    }
+    throw new Error("stale task should not be inspected");
+  };
+  const harness = uiHarness([], [], [
+    { kind: "job", id: "global:test:job" },
+    { kind: "close" },
+  ]);
+
+  await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
+
+  assert.equal(overviewCount, 3);
+  assert.equal(harness.notices.some((notice) => notice.level === "warning" && /changed or disappeared/.test(notice.message)), true);
+  assert.equal(scripted.calls.some((call) => call.args[0] === "inspect"), false);
 });
 
 test("surfaces manifest failures as source errors without inventing a job", async () => {

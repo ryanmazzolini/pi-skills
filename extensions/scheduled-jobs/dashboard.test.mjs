@@ -168,6 +168,27 @@ test("refreshes task progress in place and stops polling when disposed", async (
   assert.equal(reloads, 1);
 });
 
+test("disposing the dashboard aborts an in-flight observation command", async () => {
+  const view = harness();
+  const initial = {
+    jobs: [job({ recentRuns: [run({ status: "running", finishedAt: null })] })],
+    sourceErrors: [],
+    generatedAt: "2026-07-25T09:00:00.000Z",
+  };
+  let aborted = false;
+  const component = new SchedulerDashboardComponent(initial, view.tui, theme, () => {}, new Date(initial.generatedAt), (signal) => new Promise((_, reject) => {
+    signal.addEventListener("abort", () => {
+      aborted = true;
+      reject(new Error("aborted"));
+    }, { once: true });
+  }));
+
+  const refresh = component.refreshData();
+  component.dispose();
+  await refresh;
+  assert.equal(aborted, true);
+});
+
 test("refreshes running output until the receipt reaches a terminal state", async () => {
   const view = harness();
   const component = new SchedulerTextComponent(

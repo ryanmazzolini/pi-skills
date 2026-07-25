@@ -70,7 +70,7 @@ interface UiContext {
 interface SchedulerDependencies {
 	env: NodeJS.ProcessEnv;
 	exists: (filePath: string) => boolean;
-	exec: (command: string, args: string[], options?: { timeout?: number }) => Promise<ExecResult>;
+	exec: (command: string, args: string[], options?: { timeout?: number; signal?: AbortSignal }) => Promise<ExecResult>;
 }
 
 interface CliFailureShape {
@@ -146,8 +146,9 @@ export function globalManifestPath(env: NodeJS.ProcessEnv = process.env): string
 async function projectManifestPath(
 	cwd: string,
 	dependencies: SchedulerDependencies,
+	signal?: AbortSignal,
 ): Promise<string | undefined> {
-	const result = await dependencies.exec("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { timeout: 5_000 });
+	const result = await dependencies.exec("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { timeout: 5_000, signal });
 	if (result.code !== 0) return undefined;
 	const reported = result.stdout.trim();
 	if (!reported) return undefined;
@@ -158,11 +159,12 @@ async function projectManifestPath(
 export async function discoverManifestPaths(
 	cwd: string,
 	dependencies: SchedulerDependencies,
+	options: { signal?: AbortSignal } = {},
 ): Promise<Array<{ scope: ScopeKind; manifestPath: string }>> {
 	const manifests: Array<{ scope: ScopeKind; manifestPath: string }> = [];
 	const global = globalManifestPath(dependencies.env);
 	if (dependencies.exists(global)) manifests.push({ scope: "global", manifestPath: global });
-	const project = await projectManifestPath(cwd, dependencies);
+	const project = await projectManifestPath(cwd, dependencies, options.signal);
 	if (project) manifests.push({ scope: "project", manifestPath: project });
 	return manifests;
 }
@@ -180,8 +182,9 @@ function parseCliError(stderr: string): CliFailureShape {
 async function runCliJson(
 	dependencies: SchedulerDependencies,
 	args: string[],
+	options: { signal?: AbortSignal; timeout?: number } = {},
 ): Promise<Record<string, any>> {
-	const result = await dependencies.exec(CLI_PATH, [...args, "--json"], { timeout: 86_410_000 });
+	const result = await dependencies.exec(CLI_PATH, [...args, "--json"], { timeout: options.timeout ?? 120_000, signal: options.signal });
 	if (result.code !== 0) {
 		const failure = parseCliError(result.stderr);
 		throw new SchedulerCommandError(boundedDisplay(failure.message), failure.code, failure.details);
@@ -196,8 +199,9 @@ async function runCliJson(
 export async function loadDashboardData(
 	cwd: string,
 	dependencies: SchedulerDependencies,
+	options: { signal?: AbortSignal } = {},
 ): Promise<SchedulerDashboardData> {
-	const manifests = await discoverManifestPaths(cwd, dependencies);
+	const manifests = await discoverManifestPaths(cwd, dependencies, options);
 	const jobs: SchedulerJobOverview[] = [];
 	const sourceErrors: SchedulerDashboardData["sourceErrors"] = [];
 	let generatedAt = new Date().toISOString();
@@ -209,7 +213,7 @@ export async function loadDashboardData(
 				source.manifestPath,
 				"--history-limit",
 				"20",
-			]);
+			], { signal: options.signal });
 			const result = overview.result ?? {};
 			if (typeof result.generatedAt === "string") generatedAt = result.generatedAt;
 			for (const value of result.jobs ?? []) {
@@ -220,6 +224,7 @@ export async function loadDashboardData(
 				} as SchedulerJobOverview);
 			}
 		} catch (error) {
+			if (options.signal?.aborted) throw error;
 			const failure = error instanceof SchedulerCommandError ? error : new SchedulerCommandError(String(error));
 			sourceErrors.push({
 				scope: source.scope,
@@ -264,7 +269,7 @@ export function applicableActions(job: JobView): SchedulerAction[] {
 	if (!current?.installed) return ["inspect", "install"];
 	const actions: SchedulerAction[] = ["inspect", "logs"];
 	if (!healthyInstallation(job)) {
-		if (current.health === "unhealthy" && current.metadata?.enabled === false && current.definitionDrift) actions.push("update");
+		if (current.health === "unhealthy" && current.healthCategory === "commands" && current.metadata?.enabled === false && current.definitionDrift) actions.push("update");
 		if (current.health === "conflict" || current.health === "unavailable") actions.push("remove");
 		return actions;
 	}
@@ -417,7 +422,7 @@ async function showText(ctx: UiContext, title: string, text: string): Promise<vo
 async function showDashboard(
 	ctx: UiContext,
 	data: SchedulerDashboardData,
-	reload: () => Promise<SchedulerDashboardData>,
+	reload: (signal: AbortSignal) => Promise<SchedulerDashboardData>,
 ): Promise<SchedulerDashboardResult> {
 	return ctx.ui.custom<SchedulerDashboardResult>((tui, theme, _keybindings, done) => (
 		new SchedulerDashboardComponent(data, tui, theme, done, new Date(data.generatedAt), reload)
@@ -434,8 +439,8 @@ async function showDetails(
 	));
 }
 
-async function loadRunOutput(dependencies: SchedulerDependencies, id: string, runId: string) {
-	const response = await runCliJson(dependencies, ["run-log", id, runId, "--lines", "500"]);
+async function loadRunOutput(dependencies: SchedulerDependencies, id: string, runId: string, signal?: AbortSignal) {
+	const response = await runCliJson(dependencies, ["run-log", id, runId, "--lines", "500"], { signal });
 	const result = response.result ?? {};
 	const run = result.run ?? {};
 	const status = sanitizeDisplay(run.status ?? "run");
@@ -460,7 +465,7 @@ async function showRunOutput(
 			tui,
 			theme,
 			done,
-			initial.complete ? undefined : () => loadRunOutput(dependencies, id, runId),
+			initial.complete ? undefined : (signal) => loadRunOutput(dependencies, id, runId, signal),
 		));
 	} catch (error) {
 		ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
@@ -545,15 +550,19 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 				ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
 				return;
 			}
-			const selected = await showDashboard(ctx, data, () => loadDashboardData(ctx.cwd, dependencies));
+			const selected = await showDashboard(ctx, data, (signal) => loadDashboardData(ctx.cwd, dependencies, { signal }));
 			if (selected.kind === "close") return;
 			if (selected.kind === "refresh") continue;
 			if (selected.kind === "run") {
 				await showRunOutput(ctx, dependencies, selected.id, selected.runId);
 				continue;
 			}
-			const overview = data.jobs.find((job) => job.id === selected.id);
-			if (!overview) continue;
+			const current = await loadDashboardData(ctx.cwd, dependencies);
+			const overview = current.jobs.find((job) => job.id === selected.id);
+			if (!overview) {
+				ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
+				continue;
+			}
 			const job = await loadJob(overview, dependencies);
 			const detail = await showDetails(ctx, overview, job);
 			if (detail.kind === "run") await showRunOutput(ctx, dependencies, detail.id, detail.runId);

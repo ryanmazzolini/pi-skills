@@ -42,6 +42,7 @@ export interface SchedulerJobOverview {
 		installed: boolean;
 		health: string;
 		healthReason?: string | null;
+		healthCategory?: string | null;
 		enabled?: boolean;
 		digest?: string | null;
 		revision?: number | null;
@@ -229,6 +230,10 @@ function taskSection(job: SchedulerJobOverview): TaskSection {
 	return "active";
 }
 
+function hasRunningRuns(data: SchedulerDashboardData): boolean {
+	return data.jobs.some((job) => job.recentRuns.some((run) => run.status === "running"));
+}
+
 export class SchedulerDashboardComponent implements Component {
 	private tab: DashboardTab = "tasks";
 	private selectedTask = 0;
@@ -238,8 +243,9 @@ export class SchedulerDashboardComponent implements Component {
 	private readonly theme: Theme;
 	private readonly done: (result: SchedulerDashboardResult) => void;
 	private now: Date;
-	private readonly reload?: () => Promise<SchedulerDashboardData>;
-	private readonly refreshTimer?: ReturnType<typeof setInterval>;
+	private readonly reload?: (signal: AbortSignal) => Promise<SchedulerDashboardData>;
+	private refreshTimer?: ReturnType<typeof setInterval>;
+	private refreshAbort?: AbortController;
 	private refreshing = false;
 	private refreshFailure: string | undefined;
 	private disposed = false;
@@ -250,7 +256,7 @@ export class SchedulerDashboardComponent implements Component {
 		theme: Theme,
 		done: (result: SchedulerDashboardResult) => void,
 		now = new Date(),
-		reload?: () => Promise<SchedulerDashboardData>,
+		reload?: (signal: AbortSignal) => Promise<SchedulerDashboardData>,
 	) {
 		this.data = data;
 		this.tui = tui;
@@ -258,10 +264,7 @@ export class SchedulerDashboardComponent implements Component {
 		this.done = done;
 		this.now = now;
 		this.reload = reload;
-		if (reload) {
-			this.refreshTimer = setInterval(() => void this.refreshData(), 1_000);
-			this.refreshTimer.unref?.();
-		}
+		this.syncPolling();
 	}
 
 	handleInput(data: string): void {
@@ -357,16 +360,21 @@ export class SchedulerDashboardComponent implements Component {
 		if (this.disposed) return;
 		this.disposed = true;
 		if (this.refreshTimer) clearInterval(this.refreshTimer);
+		this.refreshTimer = undefined;
+		this.refreshAbort?.abort();
+		this.refreshAbort = undefined;
 	}
 
 	async refreshData(): Promise<void> {
 		if (!this.reload || this.refreshing || this.disposed) return;
 		this.refreshing = true;
+		const abort = new AbortController();
+		this.refreshAbort = abort;
 		this.tui.requestRender();
 		const selectedTaskId = this.data.jobs[this.selectedTask]?.id;
 		const selectedRunId = allRuns(this.data)[this.selectedRun]?.run.runId;
 		try {
-			const next = await this.reload();
+			const next = await this.reload(abort.signal);
 			if (this.disposed) return;
 			this.data = next;
 			this.now = new Date(next.generatedAt);
@@ -380,11 +388,24 @@ export class SchedulerDashboardComponent implements Component {
 				const runIndex = runs.findIndex(({ run }) => run.runId === selectedRunId);
 				this.selectedRun = runIndex >= 0 ? runIndex : Math.min(this.selectedRun, Math.max(0, runs.length - 1));
 			}
+			this.syncPolling();
 		} catch (error) {
-			if (!this.disposed) this.refreshFailure = error instanceof Error ? error.message : String(error);
+			if (!this.disposed && !abort.signal.aborted) this.refreshFailure = error instanceof Error ? error.message : String(error);
 		} finally {
+			if (this.refreshAbort === abort) this.refreshAbort = undefined;
 			this.refreshing = false;
 			if (!this.disposed) this.tui.requestRender();
+		}
+	}
+
+	private syncPolling(): void {
+		const shouldPoll = Boolean(this.reload) && hasRunningRuns(this.data) && !this.disposed;
+		if (shouldPoll && !this.refreshTimer) {
+			this.refreshTimer = setInterval(() => void this.refreshData(), 1_000);
+			this.refreshTimer.unref?.();
+		} else if (!shouldPoll && this.refreshTimer) {
+			clearInterval(this.refreshTimer);
+			this.refreshTimer = undefined;
 		}
 	}
 
@@ -646,7 +667,7 @@ export class SchedulerJobDetailComponent implements Component {
 			lines.push("", this.theme.fg("error", `Installed state: ${this.job.installation.health}${this.job.installation.healthReason ? ` · ${this.job.installation.healthReason}` : ""}`));
 			if (this.job.installation.health === "unavailable" || this.job.installation.health === "conflict") {
 				lines.push(`Recovery: press ${this.theme.fg("accent", "a")} and review Remove installed schedule, then reinstall the declaration.`);
-			} else if (this.job.installation.health === "unhealthy" && this.job.installation.definitionDrift && !this.job.installation.enabled) {
+			} else if (this.job.installation.health === "unhealthy" && this.job.installation.healthCategory === "commands" && this.job.installation.definitionDrift && !this.job.installation.enabled) {
 				lines.push(`Recovery: press ${this.theme.fg("accent", "a")} and review Update installed snapshot.`);
 			} else {
 				lines.push("Recovery: inspect Definition and repair the private installed state before retrying; unsafe lifecycle actions remain unavailable.");
@@ -691,8 +712,9 @@ export class SchedulerTextComponent implements Component {
 	private readonly tui: TuiView;
 	private readonly theme: Theme;
 	private readonly done: () => void;
-	private readonly reload?: () => Promise<SchedulerTextSnapshot>;
+	private readonly reload?: (signal: AbortSignal) => Promise<SchedulerTextSnapshot>;
 	private readonly refreshTimer?: ReturnType<typeof setInterval>;
+	private refreshAbort?: AbortController;
 	private refreshing = false;
 	private refreshFailure: string | undefined;
 	private complete = false;
@@ -704,7 +726,7 @@ export class SchedulerTextComponent implements Component {
 		tui: TuiView,
 		theme: Theme,
 		done: () => void,
-		reload?: () => Promise<SchedulerTextSnapshot>,
+		reload?: (signal: AbortSignal) => Promise<SchedulerTextSnapshot>,
 	) {
 		this.title = title;
 		this.text = text;
@@ -757,14 +779,18 @@ export class SchedulerTextComponent implements Component {
 		if (this.disposed) return;
 		this.disposed = true;
 		if (this.refreshTimer) clearInterval(this.refreshTimer);
+		this.refreshAbort?.abort();
+		this.refreshAbort = undefined;
 	}
 
 	async refreshText(): Promise<void> {
 		if (!this.reload || this.refreshing || this.disposed) return;
 		this.refreshing = true;
+		const abort = new AbortController();
+		this.refreshAbort = abort;
 		this.tui.requestRender();
 		try {
-			const next = await this.reload();
+			const next = await this.reload(abort.signal);
 			if (this.disposed) return;
 			this.title = next.title;
 			this.text = next.text;
@@ -772,8 +798,9 @@ export class SchedulerTextComponent implements Component {
 			this.complete = next.complete;
 			if (next.complete && this.refreshTimer) clearInterval(this.refreshTimer);
 		} catch (error) {
-			if (!this.disposed) this.refreshFailure = error instanceof Error ? error.message : String(error);
+			if (!this.disposed && !abort.signal.aborted) this.refreshFailure = error instanceof Error ? error.message : String(error);
 		} finally {
+			if (this.refreshAbort === abort) this.refreshAbort = undefined;
 			this.refreshing = false;
 			if (!this.disposed) this.tui.requestRender();
 		}
