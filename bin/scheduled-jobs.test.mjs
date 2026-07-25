@@ -229,6 +229,16 @@ test("start returns a run receipt while the installed snapshot continues in the 
     "--json",
   ], value.runtime);
   const status = json(installed).result;
+  await assert.rejects(
+    run([
+      "start", id,
+      "--expected-installed-digest", "b".repeat(64),
+      "--expected-revision", String(status.metadata.revision),
+      "--json",
+    ], value.runtime),
+    (error) => error.code === "STALE_STATE",
+  );
+  assert.deepEqual(readRunHistory(id, { env: value.env }), []);
   const started = await run([
     "start", id,
     "--expected-installed-digest", status.metadata.digest,
