@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Box, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 export interface SchedulerFailureView {
 	code: string;
@@ -89,16 +89,22 @@ function padAnsi(value: string, width: number): string {
 	return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
 }
 
+function opaque(lines: string[], width: number, theme: Theme): string[] {
+	const box = new Box(0, 0, (text) => theme.bg("toolPendingBg", text));
+	box.addChild(new Text(lines.map((line) => padAnsi(line, width)).join("\n"), 0, 0));
+	return box.render(width);
+}
+
 function framed(lines: string[], width: number, theme: Theme): string[] {
 	const safeWidth = Math.max(1, width);
-	if (safeWidth < 3) return lines.map((line) => truncateToWidth(line, safeWidth, ""));
+	if (safeWidth < 3) return opaque(lines.map((line) => truncateToWidth(line, safeWidth, "")), safeWidth, theme);
 	const innerWidth = safeWidth - 2;
 	const border = (value: string) => theme.fg("borderMuted", value);
-	return [
+	return opaque([
 		border(`╭${"─".repeat(innerWidth)}╮`),
 		...lines.map((line) => `${border("│")}${padAnsi(line, innerWidth)}${border("│")}`),
 		border(`╰${"─".repeat(innerWidth)}╯`),
-	];
+	], safeWidth, theme);
 }
 
 function dayDifference(left: Date, right: Date): number {
@@ -197,9 +203,27 @@ function allRuns(data: SchedulerDashboardData): Array<{ job: SchedulerJobOvervie
 	});
 }
 
-function selectedWindow<T>(values: T[], selected: number, height: number): T[] {
-	const start = Math.min(Math.max(0, selected - Math.floor(height / 2)), Math.max(0, values.length - height));
-	return values.slice(start, start + height);
+type TaskSection = "attention" | "active" | "paused" | "draft";
+
+interface SchedulerDisplayLine {
+	text: string;
+	taskIndex?: number;
+	runIndex?: number;
+}
+
+const TASK_SECTIONS: Array<{ section: TaskSection; label: string }> = [
+	{ section: "attention", label: "NEEDS ATTENTION" },
+	{ section: "active", label: "ACTIVE" },
+	{ section: "paused", label: "PAUSED" },
+	{ section: "draft", label: "DRAFTS" },
+];
+
+function taskSection(job: SchedulerJobOverview): TaskSection {
+	const state = schedulerJobState(job).label;
+	if (state === "Needs attention") return "attention";
+	if (state === "Draft") return "draft";
+	if (state.startsWith("Paused")) return "paused";
+	return "active";
 }
 
 export class SchedulerDashboardComponent implements Component {
@@ -268,92 +292,105 @@ export class SchedulerDashboardComponent implements Component {
 	render(width: number): string[] {
 		const safeWidth = Math.max(1, width);
 		const innerWidth = Math.max(1, safeWidth - 2);
-		const rows = this.tui.terminal?.rows ?? 24;
-		const bodyHeight = Math.max(3, Math.min(10, rows - 10 - Math.min(4, this.data.sourceErrors.length * 2)));
 		const states = this.data.jobs.map(schedulerJobState);
 		const active = states.filter((state) => state.label.startsWith("Active") || state.label === "Running").length;
 		const paused = states.filter((state) => state.label.startsWith("Paused")).length;
 		const issues = states.filter((state) => state.label === "Needs attention").length + this.data.sourceErrors.length;
-		const tabLabel = this.tab === "tasks" ? "[Tasks]  Runs" : "Tasks  [Runs]";
-		const summary = `${active} active · ${paused} paused · ${issues} issue${issues === 1 ? "" : "s"}`;
-		const nearest = this.data.jobs.filter((job) => job.nextRun).sort((left, right) => Date.parse(left.nextRun!) - Date.parse(right.nextRun!))[0];
+		const selectedTab = this.theme.fg("accent", this.tab === "tasks" ? "[Tasks]" : "[Runs]");
+		const otherTab = this.theme.fg("dim", this.tab === "tasks" ? "Runs" : "Tasks");
+		const tabs = this.tab === "tasks" ? `${selectedTab}  ${otherTab}` : `${otherTab}  ${selectedTab}`;
+		const counts = [
+			`${this.data.jobs.length} task${this.data.jobs.length === 1 ? "" : "s"}`,
+			...(active ? [`${active} active`] : []),
+			...(paused ? [`${paused} paused`] : []),
+			...(issues ? [`${issues} need${issues === 1 ? "s" : ""} attention`] : []),
+		].join(" · ");
 		const lines = [
-			truncateToWidth(`${this.theme.bold("Scheduler")} ${this.theme.fg("dim", `· ${tabLabel}`)}`, innerWidth, ""),
-			truncateToWidth(`${this.theme.fg("dim", summary)}${nearest ? ` · Next: ${nearest.key} · ${formatSchedulerTime(nearest.nextRun, this.now)}` : ""}`, innerWidth, ""),
+			truncateToWidth(`${this.theme.bold("Scheduler")} ${this.theme.fg("dim", "· ")}${tabs} ${this.theme.fg("dim", `· ${counts}`)}`, innerWidth, ""),
+			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 		];
-		for (const sourceError of this.data.sourceErrors.slice(0, 2)) {
-			lines.push(truncateToWidth(this.theme.fg("error", `! ${sourceError.scope === "global" ? "Global" : "Project"} tasks could not be loaded · ${sourceError.error.message}`), innerWidth, ""));
-			lines.push(truncateToWidth(this.theme.fg("dim", `  ${sourceError.manifestPath}`), innerWidth, ""));
+		if (this.data.sourceErrors.length > 0) {
+			lines.push(this.theme.fg("dim", "SOURCE ERRORS"));
+			for (const sourceError of this.data.sourceErrors.slice(0, 2)) {
+				lines.push(truncateToWidth(`${this.theme.fg("error", "!")} ${sourceError.scope === "global" ? "Global" : "Project"} tasks · ${this.theme.fg("error", sourceError.error.message)}`, innerWidth, ""));
+				lines.push(truncateToWidth(this.theme.fg("dim", `  ${sourceError.manifestPath}`), innerWidth, ""));
+			}
+			if (this.data.jobs.length > 0) lines.push("");
 		}
-		lines.push(this.theme.fg("borderMuted", "─".repeat(innerWidth)));
+		const bodyHeight = this.bodyHeight(lines.length);
 		if (this.tab === "tasks") lines.push(...this.taskLines(innerWidth, bodyHeight));
 		else lines.push(...this.runLines(innerWidth, bodyHeight));
-		lines.push(this.theme.fg("borderMuted", "─".repeat(innerWidth)));
-		const selected = this.data.jobs[this.selectedTask];
-		if (this.tab === "tasks" && selected) {
-			lines.push(truncateToWidth(`${selected.description} ${this.theme.fg("dim", `· ${selected.scope.kind}`)}`, innerWidth, ""));
-			lines.push(truncateToWidth(this.theme.fg("dim", `${humanizeSchedule(effectiveSchedule(selected))} · ${effectiveWorkingDirectory(selected)}`), innerWidth, ""));
-		} else lines.push(this.theme.fg("dim", this.tab === "runs" ? "Enter opens the selected run output." : "No tasks are declared in the available scheduler sources."));
-		lines.push(truncateToWidth(this.theme.fg("dim", "↑/↓ j/k select · Tab tasks/runs · Enter details · r refresh · Esc close"), innerWidth, ""));
+		lines.push(truncateToWidth(this.theme.fg("dim", `↑/↓ j/k select · Enter ${this.tab === "tasks" ? "details" : "output"} · Tab ${this.tab === "tasks" ? "runs" : "tasks"} · r refresh · Esc close`), innerWidth, ""));
 		return framed(lines, safeWidth, this.theme);
 	}
 
 	invalidate(): void {}
 
 	private taskLines(width: number, height: number): string[] {
-		if (this.data.jobs.length === 0) return [this.theme.fg("dim", "No scheduler tasks declared."), ...Array.from({ length: Math.max(0, height - 1) }, () => "")];
+		if (this.data.jobs.length === 0) {
+			const message = this.data.sourceErrors.length > 0
+				? "No tasks loaded. Fix the source above, then press r to retry."
+				: "No scheduler tasks declared. Use /skill:scheduled-jobs to create one.";
+			return [this.theme.fg("dim", message)];
+		}
 		this.selectedTask = Math.min(this.selectedTask, this.data.jobs.length - 1);
-		const wide = width >= 82;
-		const headingHeight = wide ? 1 : 0;
-		const availableHeight = Math.max(1, height - headingHeight);
-		const rowHeight = wide ? 1 : 2;
-		const visibleCount = Math.max(1, Math.floor(availableHeight / rowHeight));
-		const visible = selectedWindow(this.data.jobs, this.selectedTask, visibleCount);
-		const start = this.data.jobs.indexOf(visible[0]!);
-		const lines = visible.flatMap((job, relativeIndex) => {
-			const selected = start + relativeIndex === this.selectedTask;
-			const state = schedulerJobState(job);
-			const marker = selected ? this.theme.fg("accent", "›") : " ";
-			const icon = this.theme.fg(state.color, state.icon);
-			if (width < 82) {
-				return [
-					truncateToWidth(`${marker} ${icon} ${selected ? this.theme.bold(job.key) : job.key} ${this.theme.fg(state.color, state.label)}`, width, ""),
-					truncateToWidth(`    ${this.theme.fg("dim", `${formatSchedulerTime(job.nextRun, this.now)} · last ${this.lastRun(job)} · ${job.scope.kind}`)}`, width, ""),
-				];
+		const display = this.taskDisplayLines(width);
+		const selectedLine = Math.max(0, display.findIndex((line) => line.taskIndex === this.selectedTask));
+		const start = Math.min(Math.max(0, selectedLine - Math.floor(height / 2)), Math.max(0, display.length - height));
+		return display.slice(start, start + height).map(({ text }) => text);
+	}
+
+	private taskDisplayLines(width: number): SchedulerDisplayLine[] {
+		const lines: SchedulerDisplayLine[] = [];
+		for (const { section, label } of TASK_SECTIONS) {
+			const jobs = this.data.jobs.map((job, taskIndex) => ({ job, taskIndex })).filter(({ job }) => taskSection(job) === section);
+			if (jobs.length === 0) continue;
+			if (lines.length > 0) lines.push({ text: "" });
+			lines.push({ text: this.theme.fg("dim", label) });
+			for (const { job, taskIndex } of jobs) {
+				lines.push({ text: this.taskLine(job, taskIndex === this.selectedTask, width), taskIndex });
 			}
-			const taskWidth = Math.max(18, Math.floor(width * 0.29));
-			const stateWidth = Math.max(16, Math.floor(width * 0.24));
-			const nextWidth = Math.max(15, Math.floor(width * 0.2));
-			const task = padAnsi(`${marker} ${icon} ${selected ? this.theme.bold(job.key) : job.key}`, taskWidth);
-			const status = padAnsi(this.theme.fg(state.color, state.label), stateWidth);
-			const next = padAnsi(formatSchedulerTime(job.nextRun, this.now), nextWidth);
-			return [truncateToWidth(`${task} ${status} ${next} ${this.lastRun(job)}`, width, "")];
-		});
-		const heading = wide ? [this.theme.fg("dim", "  TASK                         STATE                   NEXT             LAST")] : [];
-		const visibleLines = lines.slice(0, availableHeight);
-		return [...heading, ...visibleLines, ...Array.from({ length: Math.max(0, height - heading.length - visibleLines.length) }, () => "")];
+		}
+		return lines;
+	}
+
+	private taskLine(job: SchedulerJobOverview, selected: boolean, width: number): string {
+		const state = schedulerJobState(job);
+		const marker = selected ? this.theme.fg("accent", "›") : " ";
+		const label = selected ? this.theme.fg("accent", job.key) : job.key;
+		const next = job.nextRun ? `next ${formatSchedulerTime(job.nextRun, this.now)}` : state.label.startsWith("Paused") ? "schedule paused" : state.label === "Draft" ? "not installed" : "next run unavailable";
+		const latest = job.recentRuns[0];
+		const last = latest ? `last ${runState(latest).label.toLowerCase()} ${formatSchedulerTime(latest.startedAt, this.now)}` : "no recorded runs";
+		return truncateToWidth(`${marker} ${this.theme.fg(state.color, state.icon)} ${label} ${this.theme.fg("dim", `· ${job.scope.kind} · ${state.label} · ${humanizeSchedule(effectiveSchedule(job))} · ${next} · ${last}`)}`, width, "");
 	}
 
 	private runLines(width: number, height: number): string[] {
 		const runs = allRuns(this.data);
-		if (runs.length === 0) return [this.theme.fg("dim", "No recorded scheduler runs yet."), ...Array.from({ length: Math.max(0, height - 1) }, () => "")];
+		if (runs.length === 0) return [this.theme.fg("dim", "No recorded scheduler runs yet. New runs will appear here.")];
 		this.selectedRun = Math.min(this.selectedRun, runs.length - 1);
-		const visible = selectedWindow(runs, this.selectedRun, height);
-		const start = runs.indexOf(visible[0]!);
-		const lines = visible.map(({ job, run }, relativeIndex) => {
-			const selected = start + relativeIndex === this.selectedRun;
-			const state = runState(run);
-			const marker = selected ? this.theme.fg("accent", "›") : " ";
-			return truncateToWidth(`${marker} ${this.theme.fg(state.color, state.icon)} ${padAnsi(job.key, Math.max(14, Math.floor(width * 0.28)))} ${padAnsi(state.label, 12)} ${padAnsi(formatSchedulerTime(run.startedAt, this.now), 18)} ${duration(run.durationMilliseconds)} · ${run.trigger}`, width, "");
-		});
-		return [...lines, ...Array.from({ length: Math.max(0, height - lines.length) }, () => "")];
+		const display: SchedulerDisplayLine[] = [
+			{ text: this.theme.fg("dim", "RECENT RUNS") },
+			...runs.map(({ job, run }, runIndex) => ({
+				text: this.runLine(job, run, runIndex === this.selectedRun, width),
+				runIndex,
+			})),
+		];
+		const selectedLine = Math.max(0, display.findIndex((line) => line.runIndex === this.selectedRun));
+		const start = Math.min(Math.max(0, selectedLine - Math.floor(height / 2)), Math.max(0, display.length - height));
+		return display.slice(start, start + height).map(({ text }) => text);
 	}
 
-	private lastRun(job: SchedulerJobOverview): string {
-		const run = job.recentRuns[0];
-		if (!run) return "none";
+	private runLine(job: SchedulerJobOverview, run: SchedulerRunView, selected: boolean, width: number): string {
 		const state = runState(run);
-		return `${state.icon} ${formatSchedulerTime(run.startedAt, this.now)}`;
+		const marker = selected ? this.theme.fg("accent", "›") : " ";
+		const label = selected ? this.theme.fg("accent", job.key) : job.key;
+		return truncateToWidth(`${marker} ${this.theme.fg(state.color, state.icon)} ${label} ${this.theme.fg("dim", `· ${state.label} · ${formatSchedulerTime(run.startedAt, this.now)} · ${duration(run.durationMilliseconds)} · ${run.trigger}`)}`, width, "");
+	}
+
+	private bodyHeight(linesBeforeBody: number): number {
+		const terminalRows = this.tui.terminal?.rows ?? 24;
+		const maxLines = Math.max(6, Math.floor(terminalRows * 0.85));
+		return Math.max(1, maxLines - linesBeforeBody - 1);
 	}
 }
 
@@ -422,7 +459,9 @@ export class SchedulerJobDetailComponent implements Component {
 		const safeWidth = Math.max(1, width);
 		const innerWidth = Math.max(1, safeWidth - 2);
 		const state = schedulerJobState(this.job);
-		const tabs = this.tab === "overview" ? "[Overview]  Runs  Definition" : this.tab === "runs" ? "Overview  [Runs]  Definition" : "Overview  Runs  [Definition]";
+		const tabs = ["overview", "runs", "definition"].map((tab) => tab === this.tab
+			? this.theme.fg("accent", `[${tab[0]!.toUpperCase()}${tab.slice(1)}]`)
+			: this.theme.fg("dim", `${tab[0]!.toUpperCase()}${tab.slice(1)}`)).join("  ");
 		const header = `${this.theme.bold(`Scheduler / ${this.job.key}`)} ${this.theme.fg(state.color, `· ${state.icon} ${state.label}`)}`;
 		const bodyHeight = Math.max(4, Math.min(14, (this.tui.terminal?.rows ?? 24) - 7));
 		const body = this.tab === "overview"
@@ -437,7 +476,6 @@ export class SchedulerJobDetailComponent implements Component {
 			this.theme.fg("dim", tabs),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 			...visible,
-			...Array.from({ length: Math.max(0, bodyHeight - visible.length) }, () => ""),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 			truncateToWidth(this.theme.fg("dim", "Tab switch · ↑/↓ scroll · Enter run output · a actions · Esc tasks"), innerWidth, ""),
 		], safeWidth, this.theme);
