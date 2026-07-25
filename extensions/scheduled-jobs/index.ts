@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -18,8 +18,36 @@ export const PROJECT_MANIFEST_NAME = "scheduler.json";
 export const GLOBAL_MANIFEST_DIRECTORY = "pi-scheduler";
 export const GLOBAL_MANIFEST_NAME = "jobs.json";
 
-const CLI_PATH = fileURLToPath(new URL("../../bin/scheduled-jobs.mjs", import.meta.url));
+const MODULE_CLI_PATH = fileURLToPath(new URL("../../bin/scheduled-jobs.mjs", import.meta.url));
 const DISPLAY_LIMIT = 24_000;
+
+export function resolveSchedulerCliPath(options: {
+	argv?: string[];
+	cwd?: string;
+	exists?: (filePath: string) => boolean;
+	moduleCliPath?: string;
+} = {}): string {
+	const argv = options.argv ?? process.argv;
+	const cwd = options.cwd ?? process.cwd();
+	const exists = options.exists ?? existsSync;
+	for (let index = 0; index < argv.length; index++) {
+		const argument = argv[index] ?? "";
+		const explicit = argument === "--extension" || argument === "-e"
+			? argv[index + 1]
+			: argument.startsWith("--extension=")
+				? argument.slice("--extension=".length)
+				: undefined;
+		if (!explicit) continue;
+		const extensionPath = resolve(cwd, explicit);
+		if (basename(extensionPath) !== "index.ts" && basename(extensionPath) !== "index.js") continue;
+		if (basename(dirname(extensionPath)) !== "scheduled-jobs") continue;
+		const candidate = resolve(dirname(extensionPath), "..", "..", "bin", "scheduled-jobs.mjs");
+		if (exists(candidate)) return candidate;
+	}
+	return options.moduleCliPath ?? MODULE_CLI_PATH;
+}
+
+const CLI_PATH = resolveSchedulerCliPath();
 
 type ScopeKind = "global" | "project";
 type SchedulerAction = "inspect" | "logs" | "install" | "update" | "run" | "enable" | "disable" | "remove";

@@ -10,6 +10,7 @@ import scheduledJobsExtension, {
   discoverManifestPaths,
   loadDashboardData,
   globalManifestPath,
+  resolveSchedulerCliPath,
   jobOption,
   sanitizeDisplay,
 } from "./index.ts";
@@ -170,6 +171,23 @@ function scriptedDependencies({ inspect = inspection(), operation } = {}) {
     },
   };
 }
+
+test("an explicitly loaded scheduler extension uses its matching worktree CLI", (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-extension-path-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const extensionPath = path.join(base, "extensions", "scheduled-jobs", "index.ts");
+  const cliPath = path.join(base, "bin", "scheduled-jobs.mjs");
+  fs.mkdirSync(path.dirname(extensionPath), { recursive: true });
+  fs.mkdirSync(path.dirname(cliPath), { recursive: true });
+  fs.writeFileSync(extensionPath, "");
+  fs.writeFileSync(cliPath, "");
+
+  assert.equal(resolveSchedulerCliPath({
+    argv: ["node", "pi", "--no-extensions", "--extension", "./extensions/scheduled-jobs/index.ts"],
+    cwd: base,
+    moduleCliPath: "/installed/pi-skills/bin/scheduled-jobs.mjs",
+  }), cliPath);
+});
 
 test("registers only the human scheduler command and no LLM-callable tool", () => {
   const commands = [];
