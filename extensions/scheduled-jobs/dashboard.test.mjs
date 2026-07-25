@@ -106,8 +106,8 @@ test("renders a width-safe tasks dashboard with next run, history, and source er
   const component = new SchedulerDashboardComponent(data, view.tui, theme, () => {}, now);
   const wide = component.render(100);
   assert.match(wide.join("\n"), /Scheduler/);
-  assert.match(wide.join("\n"), /Next: daily-report:work · Today 17:30/);
-  assert.match(wide.join("\n"), /Project tasks could not be loaded · jobs\.bad contains unknown field/);
+  assert.match(wide.join("\n"), /daily-report:work · global · Active · Weekdays at 17:30 local time · next Today 17:30/);
+  assert.match(wide.join("\n"), /! Project tasks · jobs\.bad contains unknown field/);
   assert.match(wide.join("\n"), /Active/);
   assert.equal(wide.every((line) => visibleWidth(line) <= 100), true);
 
