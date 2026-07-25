@@ -3,18 +3,26 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+	SchedulerDashboardComponent,
+	SchedulerJobDetailComponent,
+	SchedulerTextComponent,
+	type SchedulerDashboardData,
+	type SchedulerDashboardResult,
+	type SchedulerDetailResult,
+	type SchedulerJobOverview,
+} from "./dashboard.ts";
 
 export const CONFIG_DIRECTORY_NAME = ".pi";
 export const PROJECT_MANIFEST_NAME = "scheduler.json";
 export const GLOBAL_MANIFEST_DIRECTORY = "pi-scheduler";
 export const GLOBAL_MANIFEST_NAME = "jobs.json";
 
-const CLI_PATH = fileURLToPath(new URL("../bin/scheduled-jobs.mjs", import.meta.url));
+const CLI_PATH = fileURLToPath(new URL("../../bin/scheduled-jobs.mjs", import.meta.url));
 const DISPLAY_LIMIT = 24_000;
 
 type ScopeKind = "global" | "project";
 type SchedulerAction = "inspect" | "logs" | "install" | "update" | "run" | "enable" | "disable" | "remove";
-type NoticeLevel = "info" | "warning" | "error";
 
 interface ExecResult {
 	stdout: string;
@@ -26,11 +34,8 @@ interface ExecResult {
 interface UiContext {
 	cwd: string;
 	hasUI: boolean;
-	ui: {
-		select(title: string, options: string[]): Promise<string | undefined>;
-		confirm(title: string, message: string): Promise<boolean>;
-		notify(message: string, level: NoticeLevel): void;
-	};
+	mode: ExtensionCommandContext["mode"];
+	ui: ExtensionCommandContext["ui"];
 }
 
 interface SchedulerDependencies {
@@ -62,7 +67,7 @@ interface JobView {
 	key: string;
 	scope: ScopeKind;
 	manifestPath: string;
-	declaration: Record<string, unknown>;
+	declaration: { schedule?: unknown };
 	inspection?: Record<string, any>;
 	inspectionError?: SchedulerCommandError;
 }
@@ -82,8 +87,14 @@ export function sanitizeDisplay(value: unknown): string {
 	return String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, "�");
 }
 
+export function sanitizeMultiline(value: unknown): string {
+	return String(value ?? "")
+		.replace(/\r\n?/g, "\n")
+		.replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, "�");
+}
+
 function boundedDisplay(value: unknown, limit = DISPLAY_LIMIT): string {
-	const safe = sanitizeDisplay(value);
+	const safe = sanitizeMultiline(value);
 	return safe.length <= limit ? safe : `${safe.slice(0, limit)}\n… output truncated …`;
 }
 
@@ -142,49 +153,60 @@ async function runCliJson(
 	}
 }
 
-async function loadJobs(cwd: string, dependencies: SchedulerDependencies): Promise<JobView[]> {
+export async function loadDashboardData(
+	cwd: string,
+	dependencies: SchedulerDependencies,
+): Promise<SchedulerDashboardData> {
 	const manifests = await discoverManifestPaths(cwd, dependencies);
-	const jobs: JobView[] = [];
+	const jobs: SchedulerJobOverview[] = [];
+	const sourceErrors: SchedulerDashboardData["sourceErrors"] = [];
+	let generatedAt = new Date().toISOString();
 	for (const source of manifests) {
-		let listed: Record<string, any>;
 		try {
-			listed = await runCliJson(dependencies, ["list", "--manifest", source.manifestPath]);
+			const overview = await runCliJson(dependencies, [
+				"overview",
+				"--manifest",
+				source.manifestPath,
+				"--history-limit",
+				"20",
+			]);
+			const result = overview.result ?? {};
+			if (typeof result.generatedAt === "string") generatedAt = result.generatedAt;
+			for (const value of result.jobs ?? []) {
+				jobs.push({
+					...value,
+					scope: value.scope ?? { kind: source.scope },
+					manifestPath: source.manifestPath,
+				} as SchedulerJobOverview);
+			}
 		} catch (error) {
 			const failure = error instanceof SchedulerCommandError ? error : new SchedulerCommandError(String(error));
-			jobs.push({
-				id: `${source.scope}:invalid-manifest`,
-				key: "invalid manifest",
+			sourceErrors.push({
 				scope: source.scope,
 				manifestPath: source.manifestPath,
-				declaration: {},
-				inspectionError: failure,
+				error: { code: failure.code, message: sanitizeDisplay(failure.message) },
 			});
-			continue;
-		}
-		for (const declaration of listed.jobs ?? []) {
-			const job: JobView = {
-				id: String(declaration.id),
-				key: String(declaration.key),
-				scope: source.scope,
-				manifestPath: source.manifestPath,
-				declaration,
-			};
-			try {
-				job.inspection = await runCliJson(dependencies, [
-					"inspect",
-					job.id,
-					"--manifest",
-					job.manifestPath,
-				]);
-			} catch (error) {
-				job.inspectionError = error instanceof SchedulerCommandError
-					? error
-					: new SchedulerCommandError(String(error));
-			}
-			jobs.push(job);
 		}
 	}
-	return jobs;
+	return { jobs, sourceErrors, generatedAt };
+}
+
+async function loadJob(job: SchedulerJobOverview, dependencies: SchedulerDependencies): Promise<JobView> {
+	const view: JobView = {
+		id: job.id,
+		key: job.key,
+		scope: job.scope.kind,
+		manifestPath: job.manifestPath,
+		declaration: job,
+	};
+	try {
+		view.inspection = await runCliJson(dependencies, ["inspect", view.id, "--manifest", view.manifestPath]);
+	} catch (error) {
+		view.inspectionError = error instanceof SchedulerCommandError
+			? error
+			: new SchedulerCommandError(String(error));
+	}
+	return view;
 }
 
 function installation(job: JobView): Record<string, any> | undefined {
@@ -316,7 +338,7 @@ function confirmationText(job: JobView, action: SchedulerAction): string {
 		lines.push("", "Catch-up warning: the native adapter may run one missed schedule immediately.");
 	}
 	if (action === "remove") lines.push("", "This removes the installed snapshot and all known host adapter artifacts.");
-	const text = sanitizeDisplay(lines.join("\n"));
+	const text = sanitizeMultiline(lines.join("\n"));
 	if (text.length > DISPLAY_LIMIT) {
 		throw new SchedulerCommandError(
 			"The resolved contract is too large to display completely in a safe confirmation. Inspect it with scheduled-jobs --json and use the headless checkpoint flow instead.",
@@ -346,81 +368,123 @@ function operationArguments(job: JobView, action: SchedulerAction): string[] {
 }
 
 async function showText(ctx: UiContext, title: string, text: string): Promise<void> {
-	await ctx.ui.select(`${title}\n\n${boundedDisplay(text)}`, ["Back"]);
+	await ctx.ui.custom<void>((tui, theme, _keybindings, done) => (
+		new SchedulerTextComponent(title, boundedDisplay(text), tui, theme, done)
+	));
+}
+
+async function showDashboard(ctx: UiContext, data: SchedulerDashboardData): Promise<SchedulerDashboardResult> {
+	return ctx.ui.custom<SchedulerDashboardResult>((tui, theme, _keybindings, done) => (
+		new SchedulerDashboardComponent(data, tui, theme, done, new Date(data.generatedAt))
+	));
+}
+
+async function showDetails(
+	ctx: UiContext,
+	overview: SchedulerJobOverview,
+	job: JobView,
+): Promise<SchedulerDetailResult> {
+	return ctx.ui.custom<SchedulerDetailResult>((tui, theme, _keybindings, done) => (
+		new SchedulerJobDetailComponent(overview, inspectionText(job), tui, theme, done, new Date())
+	));
+}
+
+async function showRunOutput(
+	ctx: UiContext,
+	dependencies: SchedulerDependencies,
+	id: string,
+	runId: string,
+): Promise<void> {
+	try {
+		const response = await runCliJson(dependencies, ["run-log", id, runId, "--lines", "500"]);
+		const result = response.result ?? {};
+		const run = result.run ?? {};
+		const heading = `${sanitizeDisplay(id)} · ${sanitizeDisplay(run.status ?? "run")} · ${sanitizeDisplay(run.startedAt ?? runId)}`;
+		const body = `${sanitizeDisplay(result.logPath)}\n\n${boundedDisplay(result.content || "No output recorded for this run.")}${result.truncated ? "\n\nEarlier output was truncated by the CLI." : ""}`;
+		await showText(ctx, heading, body);
+	} catch (error) {
+		ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
+	}
 }
 
 function successMessage(job: JobView, action: SchedulerAction): string {
-	if (action === "run") return `Completed ${sanitizeDisplay(job.id)}. Open recent logs for output.`;
+	if (action === "run") return `Completed ${sanitizeDisplay(job.id)}. Open Runs for its output.`;
 	return `${ACTION_LABELS[action]} completed for ${sanitizeDisplay(job.id)}.`;
+}
+
+async function chooseAction(
+	ctx: UiContext,
+	job: JobView,
+	dependencies: SchedulerDependencies,
+): Promise<void> {
+	const actions = applicableActions(job);
+	const actionOptions = actions.map((action) => ACTION_LABELS[action]);
+	const selectedAction = await ctx.ui.select(`${sanitizeDisplay(job.id)}\n${jobStatus(job)}`, actionOptions);
+	if (!selectedAction) return;
+	const action = actions[actionOptions.indexOf(selectedAction)];
+	if (!action) return;
+	if (action === "inspect") {
+		await showText(ctx, `Definition · ${sanitizeDisplay(job.id)}`, inspectionText(job));
+		return;
+	}
+	if (action === "logs") {
+		try {
+			const logs = await runCliJson(dependencies, ["logs", job.id, "--lines", "200"]);
+			const result = logs.result ?? {};
+			const body = `${sanitizeDisplay(result.logPath)}\n\n${boundedDisplay(result.content || "No log output.")}${result.truncated ? "\n\nEarlier output was truncated by the CLI." : ""}`;
+			await showText(ctx, `Recent output · ${sanitizeDisplay(job.id)}`, body);
+		} catch (error) {
+			ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
+		}
+		return;
+	}
+	let confirmation: string;
+	try {
+		confirmation = confirmationText(job, action);
+	} catch (error) {
+		ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
+		return;
+	}
+	if (!await ctx.ui.confirm(`${ACTION_LABELS[action]}?`, confirmation)) return;
+	try {
+		await runCliJson(dependencies, operationArguments(job, action));
+		ctx.ui.notify(successMessage(job, action), "info");
+	} catch (error) {
+		const failure = error instanceof SchedulerCommandError ? error : new SchedulerCommandError(String(error));
+		if (failure.code === "STALE_STATE" || failure.code === "STALE_CANDIDATE") {
+			ctx.ui.notify("Scheduler state changed before the operation; the dashboard was refreshed. Review it before trying again.", "warning");
+		} else ctx.ui.notify(boundedDisplay(failure.message), "error");
+	}
 }
 
 export function createSchedulerCommandHandler(dependencies: SchedulerDependencies) {
 	return async (_args: string, ctx: UiContext): Promise<void> => {
 		if (!ctx.hasUI) return;
-		let redisplayId: string | undefined;
+		if (ctx.mode !== "tui") {
+			ctx.ui.notify("/scheduler requires Pi's interactive TUI.", "error");
+			return;
+		}
 		for (;;) {
-			let jobs: JobView[];
+			let data: SchedulerDashboardData;
 			try {
-				jobs = await loadJobs(ctx.cwd, dependencies);
+				data = await loadDashboardData(ctx.cwd, dependencies);
 			} catch (error) {
 				ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
 				return;
 			}
-			if (jobs.length === 0) {
-				ctx.ui.notify("No scheduler jobs are declared in the global or current-project manifest.", "info");
-				return;
-			}
-			if (redisplayId) {
-				const refreshed = jobs.find((job) => job.id === redisplayId);
-				if (refreshed) await showText(ctx, "Scheduler state changed; refreshed details", inspectionText(refreshed));
-				redisplayId = undefined;
-			}
-			const options = jobs.map(jobOption);
-			const selected = await ctx.ui.select("Scheduler — choose a declared job", options);
-			if (!selected) return;
-			const selectedIndex = options.indexOf(selected);
-			if (selectedIndex < 0) return;
-			const job = jobs[selectedIndex];
-			const actions = applicableActions(job);
-			const actionOptions = actions.map((action) => ACTION_LABELS[action]);
-			const selectedAction = await ctx.ui.select(`${sanitizeDisplay(job.id)}\n${jobStatus(job)}`, actionOptions);
-			if (!selectedAction) continue;
-			const action = actions[actionOptions.indexOf(selectedAction)];
-			if (!action) continue;
-			if (action === "inspect") {
-				await showText(ctx, `Inspect ${sanitizeDisplay(job.id)}`, inspectionText(job));
+			const selected = await showDashboard(ctx, data);
+			if (selected.kind === "close") return;
+			if (selected.kind === "refresh") continue;
+			if (selected.kind === "run") {
+				await showRunOutput(ctx, dependencies, selected.id, selected.runId);
 				continue;
 			}
-			if (action === "logs") {
-				try {
-					const logs = await runCliJson(dependencies, ["logs", job.id, "--lines", "200"]);
-					const result = logs.result ?? {};
-					const body = `${sanitizeDisplay(result.logPath)}\n\n${result.content || "No log output."}${result.truncated ? "\n\nEarlier output was truncated by the CLI." : ""}`;
-					await showText(ctx, `Recent logs · ${sanitizeDisplay(job.id)}`, body);
-				} catch (error) {
-					ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
-				}
-				continue;
-			}
-			let confirmation: string;
-			try {
-				confirmation = confirmationText(job, action);
-			} catch (error) {
-				ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
-				continue;
-			}
-			const confirmed = await ctx.ui.confirm(`${ACTION_LABELS[action]}?`, confirmation);
-			if (!confirmed) continue;
-			try {
-				await runCliJson(dependencies, operationArguments(job, action));
-				ctx.ui.notify(successMessage(job, action), "info");
-			} catch (error) {
-				const failure = error instanceof SchedulerCommandError ? error : new SchedulerCommandError(String(error));
-				if (failure.code === "STALE_STATE" || failure.code === "STALE_CANDIDATE") {
-					ctx.ui.notify("Scheduler state changed before the operation; refreshed details will be shown.", "warning");
-					redisplayId = job.id;
-				} else ctx.ui.notify(boundedDisplay(failure.message), "error");
-			}
+			const overview = data.jobs.find((job) => job.id === selected.id);
+			if (!overview) continue;
+			const job = await loadJob(overview, dependencies);
+			const detail = await showDetails(ctx, overview, job);
+			if (detail.kind === "run") await showRunOutput(ctx, dependencies, detail.id, detail.runId);
+			else if (detail.kind === "actions") await chooseAction(ctx, job, dependencies);
 		}
 	};
 }

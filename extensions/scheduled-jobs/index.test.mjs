@@ -3,15 +3,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { run as runCli } from "../bin/scheduled-jobs.mjs";
+import { run as runCli } from "../../bin/scheduled-jobs.mjs";
 import scheduledJobsExtension, {
   applicableActions,
   createSchedulerCommandHandler,
   discoverManifestPaths,
+  loadDashboardData,
   globalManifestPath,
   jobOption,
   sanitizeDisplay,
-} from "./scheduled-jobs.ts";
+} from "./index.ts";
 
 function commandResult(stdout = "", code = 0, stderr = "") {
   return { stdout, stderr, code, killed: false };
@@ -25,15 +26,23 @@ function cliFailure(code, message) {
   return commandResult("", 7, JSON.stringify({ ok: false, error: { code, message, details: null } }));
 }
 
-function uiHarness(selectors = [], confirmations = []) {
+function uiHarness(selectors = [], confirmations = [], customs = []) {
   const selects = [];
   const confirms = [];
+  const customCalls = [];
   const notices = [];
   return {
     selects,
     confirms,
+    customCalls,
     notices,
     ui: {
+      async custom(factory) {
+        customCalls.push(factory);
+        const result = customs.shift();
+        if (typeof result === "function") return result(factory);
+        return result ?? { kind: "close" };
+      },
       async select(title, options) {
         selects.push({ title, options });
         const selector = selectors.shift();
@@ -87,6 +96,44 @@ function inspection({ installed = false, enabled = false, drift = false, health 
   };
 }
 
+function overviewJob(inspect = inspection()) {
+  const current = inspect.installation;
+  return {
+    id: "global:test:job",
+    key: "test:job",
+    scope: { kind: "global" },
+    description: "Fixture",
+    schedule: "30 17 * * 1-5",
+    sourcePath: "/tmp/config/pi-scheduler/jobs.json",
+    candidate: inspect.candidate
+      ? {
+          digest: inspect.candidate.digest,
+          adapter: { ...inspect.candidate.contract.adapter, warning: null },
+          workingDirectory: inspect.candidate.contract.workingDirectory,
+          timeoutSeconds: inspect.candidate.contract.timeoutSeconds,
+        }
+      : null,
+    candidateError: null,
+    installation: current.installed
+      ? {
+          installed: true,
+          health: current.health,
+          healthReason: current.healthReason ?? null,
+          enabled: current.metadata.enabled,
+          digest: current.metadata.digest,
+          revision: current.metadata.revision,
+          definitionDrift: current.definitionDrift,
+          adapterDrift: current.drift && Object.values(current.drift).some(Boolean),
+        }
+      : { installed: false, health: "absent" },
+    installationError: null,
+    nextRun: current.installed && current.metadata.enabled ? "2026-07-27T17:30:00.000Z" : null,
+    nextRunError: null,
+    recentRuns: [],
+    historyError: null,
+  };
+}
+
 function declaredJob(overrides = {}) {
   return {
     id: "global:test:job",
@@ -110,8 +157,11 @@ function scriptedDependencies({ inspect = inspection(), operation } = {}) {
         calls.push({ command, args });
         if (command === "git") return commandResult("", 1);
         const cliArgs = args.slice(1);
-        if (cliArgs[0] === "list") {
-          return cliSuccess({ command: "list", jobs: [{ id: "global:test:job", key: "test:job" }] });
+        if (cliArgs[0] === "overview") {
+          return cliSuccess({
+            command: "overview",
+            result: { generatedAt: "2026-07-25T09:00:00.000Z", jobs: [overviewJob(inspect)] },
+          });
         }
         if (cliArgs[0] === "inspect") return cliSuccess({ command: "inspect", ...inspect });
         if (operation) return operation(cliArgs, calls);
@@ -201,10 +251,14 @@ test("maps only applicable actions from health, drift, and enablement", () => {
 
 test("shows the exact reviewed contract and cancellation performs no mutation", async () => {
   const scripted = scriptedDependencies();
-  const harness = uiHarness(["Global jobs", "Install disabled", null], [false]);
+  const harness = uiHarness(["Install disabled"], [false], [
+    { kind: "job", id: "global:test:job" },
+    { kind: "actions" },
+    { kind: "close" },
+  ]);
   const handler = createSchedulerCommandHandler(scripted.dependencies);
 
-  await handler("", { cwd: "/work", hasUI: true, ui: harness.ui });
+  await handler("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
   assert.equal(scripted.calls.some((call) => call.args.includes("install")), false);
   assert.equal(harness.confirms.length, 1);
@@ -222,10 +276,14 @@ test("refuses mutation when the exact contract cannot fit in the bounded confirm
     ...Array.from({ length: 7 }, (_, index) => `${index}-${"x".repeat(4_000)}`),
   ];
   const scripted = scriptedDependencies({ inspect: oversized });
-  const harness = uiHarness(["Global jobs", "Install disabled", null]);
+  const harness = uiHarness(["Install disabled"], [], [
+    { kind: "job", id: "global:test:job" },
+    { kind: "actions" },
+    { kind: "close" },
+  ]);
   const handler = createSchedulerCommandHandler(scripted.dependencies);
 
-  await handler("", { cwd: "/work", hasUI: true, ui: harness.ui });
+  await handler("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
   assert.equal(harness.confirms.length, 0);
   assert.equal(scripted.calls.some((call) => call.args.includes("install")), false);
@@ -234,10 +292,14 @@ test("refuses mutation when the exact contract cannot fit in the bounded confirm
 
 test("update confirmation shows installed and candidate identities and their changed fields", async () => {
   const scripted = scriptedDependencies({ inspect: inspection({ installed: true, drift: true, revision: 4 }) });
-  const harness = uiHarness(["Global jobs", "Update installed snapshot", null], [false]);
+  const harness = uiHarness(["Update installed snapshot"], [false], [
+    { kind: "job", id: "global:test:job" },
+    { kind: "actions" },
+    { kind: "close" },
+  ]);
   const handler = createSchedulerCommandHandler(scripted.dependencies);
 
-  await handler("", { cwd: "/work", hasUI: true, ui: harness.ui });
+  await handler("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
   assert.equal(harness.confirms.length, 1);
   assert.match(harness.confirms[0].message, /Lifecycle revision: 4/);
@@ -258,7 +320,7 @@ test("refuses the command without UI before discovery or CLI execution", async (
     },
   });
 
-  await handler("", { cwd: "/work", hasUI: false, ui: uiHarness().ui });
+  await handler("", { cwd: "/work", hasUI: false, mode: "print", ui: uiHarness().ui });
   assert.equal(executions, 0);
 });
 
@@ -279,32 +341,35 @@ test("a stale mutation refreshes and redisplays the changed state", async () => 
     }
     return originalExec(command, args);
   };
-  const harness = uiHarness(["Global jobs", "Install disabled", "Back", null], [true]);
+  const harness = uiHarness(["Install disabled"], [true], [
+    { kind: "job", id: "global:test:job" },
+    { kind: "actions" },
+    { kind: "close" },
+  ]);
   const handler = createSchedulerCommandHandler(scripted.dependencies);
 
-  await handler("", { cwd: "/work", hasUI: true, ui: harness.ui });
+  await handler("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
-  assert.equal(inspectCount, 2);
+  assert.equal(inspectCount, 1);
+  assert.equal(scripted.calls.filter((call) => call.args.includes("overview")).length, 2);
   assert.equal(harness.notices.some((notice) => notice.level === "warning" && /refreshed/.test(notice.message)), true);
-  assert.equal(harness.selects.some((entry) => /refreshed details/.test(entry.title) && /new-digest/.test(entry.title)), true);
 });
 
-test("surfaces CLI failures without attempting a mutation", async () => {
-  const scripted = scriptedDependencies({
-    inspect: undefined,
-  });
+test("surfaces manifest failures as source errors without inventing a job", async () => {
+  const scripted = scriptedDependencies();
   scripted.dependencies.exec = async (command, args) => {
     scripted.calls.push({ command, args });
     if (command === "git") return commandResult("", 1);
-    if (args[1] === "list") return cliFailure("ENVIRONMENT", "Adapter unavailable\nretry later");
+    if (args[1] === "overview") return cliFailure("SCHEDULER_ERROR", "Invalid manifest\nunknown field: command");
     throw new Error("unexpected mutation");
   };
-  const harness = uiHarness(["Global jobs", "Inspect", "Back", null]);
-  const handler = createSchedulerCommandHandler(scripted.dependencies);
 
-  await handler("", { cwd: "/work", hasUI: true, ui: harness.ui });
+  const data = await loadDashboardData("/work", scripted.dependencies);
 
-  assert.match(harness.selects.find((entry) => /Inspect global:invalid-manifest/.test(entry.title)).title, /Adapter unavailable�retry later/);
+  assert.deepEqual(data.jobs, []);
+  assert.equal(data.sourceErrors.length, 1);
+  assert.equal(data.sourceErrors[0].scope, "global");
+  assert.match(data.sourceErrors[0].error.message, /Invalid manifest�unknown field/);
 });
 
 function lifecycleFixture(t) {
@@ -401,16 +466,21 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
     },
   };
   const harness = uiHarness([
-    "Global jobs", "Install disabled",
-    "Global jobs", "Run installed snapshot now",
-    "Global jobs", "Enable schedule",
-    "Global jobs", "Disable schedule",
-    "Global jobs", "Remove installed schedule",
-    null,
-  ], [true, true, true, true, true]);
+    "Install disabled",
+    "Run installed snapshot now",
+    "Enable schedule",
+    "Disable schedule",
+    "Remove installed schedule",
+  ], [true, true, true, true, true], [
+    ...Array.from({ length: 5 }, () => [
+      { kind: "job", id: "global:test:job" },
+      { kind: "actions" },
+    ]).flat(),
+    { kind: "close" },
+  ]);
   const handler = createSchedulerCommandHandler(dependencies);
 
-  await handler("", { cwd: value.env.HOME, hasUI: true, ui: harness.ui });
+  await handler("", { cwd: value.env.HOME, hasUI: true, mode: "tui", ui: harness.ui });
 
   for (const command of ["install", "run", "enable", "disable", "remove"]) {
     assert.equal(cliCommands.includes(command), true, `missing ${command}`);
