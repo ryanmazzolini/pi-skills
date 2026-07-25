@@ -157,7 +157,7 @@ function scriptedDependencies({ inspect = inspection(), operation } = {}) {
       async exec(command, args) {
         calls.push({ command, args });
         if (command === "git") return commandResult("", 1);
-        const cliArgs = args.slice(1);
+        const cliArgs = args;
         if (cliArgs[0] === "overview") {
           return cliSuccess({
             command: "overview",
@@ -187,6 +187,14 @@ test("an explicitly loaded scheduler extension uses its matching worktree CLI", 
     cwd: base,
     moduleCliPath: "/installed/pi-skills/bin/scheduled-jobs.mjs",
   }), cliPath);
+});
+
+test("invokes the scheduler CLI directly instead of Pi's packaged runtime", async () => {
+  const scripted = scriptedDependencies();
+  await loadDashboardData("/work", scripted.dependencies);
+  const overview = scripted.calls.find((call) => call.args[0] === "overview");
+  assert.match(overview.command, /scheduled-jobs\.mjs$/);
+  assert.equal(overview.args.at(-1), "--json");
 });
 
 test("registers only the human scheduler command and no LLM-callable tool", () => {
@@ -351,7 +359,7 @@ test("a stale mutation refreshes and redisplays the changed state", async () => 
   });
   const originalExec = scripted.dependencies.exec;
   scripted.dependencies.exec = async (command, args) => {
-    if (args[1] === "inspect") {
+    if (args[0] === "inspect") {
       inspectCount++;
       const current = inspection({ digest: inspectCount === 1 ? "old-digest" : "new-digest" });
       scripted.calls.push({ command, args });
@@ -378,7 +386,7 @@ test("surfaces manifest failures as source errors without inventing a job", asyn
   scripted.dependencies.exec = async (command, args) => {
     scripted.calls.push({ command, args });
     if (command === "git") return commandResult("", 1);
-    if (args[1] === "overview") return cliFailure("SCHEDULER_ERROR", "Invalid manifest\nunknown field: command");
+    if (args[0] === "overview") return cliFailure("SCHEDULER_ERROR", "Invalid manifest\nunknown field: command");
     throw new Error("unexpected mutation");
   };
 
@@ -470,7 +478,7 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
     exists: fs.existsSync,
     async exec(command, args) {
       if (command === "git") return commandResult("", 128, "not a worktree");
-      const cliArgs = args.slice(1);
+      const cliArgs = args;
       cliCommands.push(cliArgs[0]);
       try {
         const result = await runCli(cliArgs, value.runtime);
