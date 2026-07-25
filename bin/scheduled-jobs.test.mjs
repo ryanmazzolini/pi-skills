@@ -249,7 +249,8 @@ test("start returns a run receipt while the installed snapshot continues in the 
   const receipt = json(started).result;
   assert.equal(receipt.status, "started");
   assert.match(receipt.runId, /^[0-9a-f-]{36}$/);
-  assert.equal(readRunHistory(id, { env: value.env }).some((entry) => entry.runId === receipt.runId), true);
+  const acknowledged = readRunHistory(id, { env: value.env }).find((entry) => entry.runId === receipt.runId);
+  assert.equal(acknowledged?.pid, receipt.pid);
   const running = await waitFor(
     () => readRunHistory(id, { env: value.env }).find((entry) => entry.runId === receipt.runId && entry.status === "running"),
     "background run did not create a running receipt",
