@@ -228,6 +228,7 @@ async function executeCommand(command, positionals, options, runtime) {
         env,
         expectedDigest: options.expectedInstalledDigest,
         expectedRevision: options.expectedRevision,
+        trigger: command === "_run-installed" ? "scheduled" : "manual",
       }),
     };
   }

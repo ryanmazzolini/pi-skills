@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { resolveExecutable } from "../lib/scheduled-jobs/index.mjs";
+import { readRunHistory } from "../lib/scheduled-jobs/runtime.mjs";
 import { run } from "./scheduled-jobs.mjs";
 
 const DAILY_REPORT_CLI = fileURLToPath(new URL("../skills/notes/daily-report/scripts/daily-report.mjs", import.meta.url));
@@ -235,6 +236,7 @@ test("CLI completes the disabled install, run, enable, disable, logs, and remove
     env: status.snapshot.environment,
   });
   assert.equal(scheduled.status, 0, scheduled.stderr);
+  assert.equal(readRunHistory(id, { env: value.env })[0].trigger, "scheduled");
 
   const ran = await run(
     [
@@ -249,6 +251,7 @@ test("CLI completes the disabled install, run, enable, disable, logs, and remove
     value.runtime,
   );
   assert.equal(json(ran).result.status, "ok");
+  assert.deepEqual(readRunHistory(id, { env: value.env }).map((record) => record.trigger), ["manual", "scheduled"]);
 
   const enabled = await run(
     [
