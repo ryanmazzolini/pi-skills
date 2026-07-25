@@ -33,7 +33,7 @@ Keep routine investigation, repetitive mechanics, unrelated integration, and saf
 
 ## Preserve Ship's gates
 
-A coached contribution stays inside the confirmed outcome and current slice. Return to Align when learning exposes a requirement, experience, scope, or high-level shape decision.
+A coached contribution stays inside the confirmed benefit and current direct change, delivery change, or milestone. Return to Align when learning exposes a consequential requirement, experience, scope, or solution-direction decision.
 
 Let Align settle one decision per turn. Give the needed explanation before its short question; reserve a separate knowledge check for a later turn. Repository validation and commit, push, and pull-request approvals remain required after human participation and coaching feedback. Apply independent review at the delivery boundary and selective earlier cases defined by Ship's review gate.
 

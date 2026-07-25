@@ -8,14 +8,14 @@
     {
       "name": "ship",
       "source": "./skills/ship",
-      "description": "Align, slice, and advance durable work to completion",
+      "description": "Route direct changes, alignment, delivery plans, and milestone roadmaps to completion",
       "strict": false,
       "skills": [
         "./ship",
         "./ship-coach",
         "./align",
         "./prototype",
-        "./slice-plan"
+        "./delivery-plan"
       ]
     },
     {

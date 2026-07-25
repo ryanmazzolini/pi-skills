@@ -2,7 +2,7 @@
 
 The Ship coordinating thread owns review strategy. Get at least one independent review of the final integrated code-bearing target before its first delivery boundary: presenting a final branch for pull-request creation or update, pushing directly to the default branch, releasing, or deploying. Reuse that evidence at later boundaries while the code-bearing target and material risk remain unchanged. Local commits, alignment, plans, and intermediate implementation checkpoints do not need independent review by default.
 
-Use independent review earlier only for a named uncertainty or risk that is cheaper to challenge before delivery, or when an intermediate slice is independently deliverable or materially high-risk. A blocking question, alignment update, progress report, or local checkpoint does not need this gate.
+Use independent review earlier only for a named uncertainty or risk that is cheaper to challenge before delivery, or when an intermediate delivery change is independently deliverable or materially high-risk. A blocking question, alignment update, progress report, or local checkpoint does not need this gate.
 
 ## Choose enough review
 

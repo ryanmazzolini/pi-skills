@@ -13,7 +13,7 @@ Work in this order:
 discover → experience → shapes → boundary → TODOs → code → drift check
 ```
 
-At each checkpoint, show only what the user needs to confirm, recommend one next move, and wait. Start the next step after confirmation. Reuse confirmed work unless new evidence conflicts with it. If the work uncovers scope outside confirmed Now, stop for a scope decision.
+At each checkpoint, show only what the user needs to confirm, recommend one next move, and wait. Start the next step after confirmation. Reuse confirmed work unless new evidence conflicts with it. If the work uncovers scope outside the approved target benefit, stop for a scope decision.
 
 ## Discover
 
@@ -25,7 +25,7 @@ Done when the likely home for the change and the existing pattern it should foll
 
 Reuse a walkthrough already confirmed during alignment. Reopen only the part contradicted by new evidence. If every user- and caller-facing interaction stays the same, state what must remain unchanged.
 
-Otherwise, describe one Now walkthrough in user or caller language:
+Otherwise, describe one target walkthrough in user or caller language:
 
 - who starts, where, and for what outcome
 - the smallest successful path, including choices, feedback, waiting, and completion
@@ -34,7 +34,7 @@ Otherwise, describe one Now walkthrough in user or caller language:
 
 For UI work, describe what the person sees and can do. For an API, CLI, event, or library, describe what the caller sends, receives, retries, and handles. Leave proposed types, schemas, and internal statuses for later.
 
-Done when the user confirms the complete Now flow or the unchanged experience.
+Done when the user confirms the complete target flow or the unchanged experience.
 
 ## Shapes
 
@@ -81,6 +81,6 @@ Compare the implementation with the approved experience, shapes, boundary, and T
 - **boundary drift:** return to Boundary
 - **shape drift:** return to Shapes
 - **experience drift:** return to Experience
-- **scope drift:** stop and ask whether the added scope belongs in Now
+- **scope drift:** stop and ask whether the added scope belongs in the target benefit
 
 Recommend one return path or finish, then wait for the user.

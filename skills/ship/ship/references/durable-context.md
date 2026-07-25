@@ -1,6 +1,6 @@
 # Durable Context
 
-Read this when Ship creates or locates a durable workflow. The work-item files and live project are operational authority; conversation only helps locate them.
+Read this when Ship creates or locates durable context for a direct continuation, alignment, delivery plan, or roadmap. The work-item files and live project are operational authority; conversation only helps locate them.
 
 ## Preserve existing workflows
 
@@ -40,7 +40,7 @@ Resolve each vault-native read, creation, or update target through the helper de
 
 Read the resolved `projects/<project>/index.md` first when it exists. Then search only that project's work-item indexes by the current ticket or approved work-item slug, resolving each candidate through the helper and requiring its recorded workspace to match. Never reuse an item from workspace equality alone: several sequential ticketless items may share one repository root. Reuse one identity-and-workspace match and fail rather than guessing when several match. When no ticket or approved slug is known, ask which work item is current.
 
-Create files lazily. A new work item starts with `index.md`; add `alignment.md`, `plan.md`, `review-evidence.md`, or `working/` only when the workflow needs them.
+Create files lazily. A new work item starts with `index.md`; add a continuation handoff, `alignment.md`, `plan.md`, `roadmap.md`, `review-evidence.md`, or other `working/` material only when the chosen route needs it.
 
 Use this compact index shape:
 
@@ -51,10 +51,12 @@ Use this compact index shape:
 - Ticket: [ticket reference or None]
 - Profile: [configured profile]
 - Workspace: `/absolute/canonical/workspace`
-- Current: [Alignment](alignment.md)
+- Current: [Continuation](working/YYYY-MM-DD-handoff-subject.md)
 ```
 
-`Current` points to the document a fresh session should read after the index. It must be a canonical relative path inside the work item. Resolve its target with the work item as `--within` before reading it. Update the pointer when planning supersedes alignment or a handoff becomes the continuation entry point. This pointer is orientation, not a stage flag.
+`Current` points to the document a fresh session should read after the index. It may identify a direct handoff, alignment, delivery plan, roadmap, review result, or the index itself for a minimal roadmap milestone. It must be a canonical relative path inside the work item. Resolve its target with the work item as `--within` before reading it. Update the pointer when a more useful continuation supersedes it. This pointer is orientation, not a stage flag.
+
+A direct change needs no work item while it remains safely session-local. If it must survive a fresh session or context reset, create only the index and focused handoff described by the `handoff` skill; do not invent alignment or a plan. A roadmap follows [roadmaps.md](roadmaps.md) and creates minimal linked milestone indexes only after the human approves the graph.
 
 Keep discarded approaches, retained investigations, prototypes, temporary review aids, and handoffs under `working/`. Capture decision-relevant supporting material as it is found: keep synthesized investigation in `working/research/` and unedited source snapshots or outputs worth retaining in `working/raw/`. Treat raw captures as immutable, link useful conclusions from the current workflow document, and omit routine logs or redundant dumps. Fresh sessions read only the vault instructions, project index, work-item index, its current document, and directly linked evidence. Do not ingest `working/` by default.
 

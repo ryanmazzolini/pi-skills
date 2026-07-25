@@ -41,6 +41,6 @@ When the user settles the question, add the verdict to the open prototype withou
 
 Compare the working tree with the recorded baseline and confirm that no prototype entry point, task, or process remains in the production path. Only then replace the open prototype with the verdict, the evidence needed to understand it, and the affected alignment decisions.
 
-Return to `align` at the decision the prototype interrupted. Do not advance to planning or promote prototype code into production. Later implementation may reproduce the validated behavior under normal project standards.
+Return to `align` at the decision the prototype interrupted. Do not advance to planning or promote prototype code into production. Production implementation may later reproduce the validated behavior under normal project standards.
 
 Keep the user-facing result concise: where to try the prototype and what to judge before the verdict, then the learned decision and cleanup status afterward.

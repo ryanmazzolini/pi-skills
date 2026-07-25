@@ -26,7 +26,7 @@ See [the marketplace manifest](./.claude-plugin/marketplace.json) for every fami
 
 ## What to expect
 
-- [`ship`](./skills/ship/ship/SKILL.md) is my development workflow with durable artefacts. It moves from alignment, through optional prototyping and planning, to implementation and review.
+- [`ship`](./skills/ship/ship/SKILL.md) routes work through the lightest useful path: direct implementation by default, focused alignment or delivery planning when needed, and milestone roadmaps only for work that benefits from durable coordination.
 - New Ship workflows use durable Markdown instead of hidden session state and live under `projects/<project>/work/<work-item>/` in the vault selected by `~/.config/pi-skills/workflows.json`. LLMs can create or edit the complete routing file directly and check it with the workflow-profile doctor. Relevant existing `.plans`, `.plan`, `docs/plans`, and `PI_SKILLS_PLANS_ROOT` workflows are reused in place. See [workflow profiles](./skills/ship/ship/references/workflow-profiles.md) for configuration and diagnosis.
 - Most skills are guidance, not a subscription to every tool I happen to like. Optional integrations only matter when you use their matching skills.
 
@@ -38,11 +38,11 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 | Skill | What it helps with |
 |---|---|
-| [`ship`](./skills/ship/ship/SKILL.md) | Route substantial work through durable human checkpoints |
+| [`ship`](./skills/ship/ship/SKILL.md) | Route direct changes, alignment, delivery plans, and milestone roadmaps |
 | [`ship-coach`](./skills/ship/ship-coach/SKILL.md) | Ship real work through guided practice and feedback |
-| [`align`](./skills/ship/align/SKILL.md) | Settle the smallest useful release before planning |
+| [`align`](./skills/ship/align/SKILL.md) | Settle consequential human decisions for one target outcome |
 | [`prototype`](./skills/ship/prototype/SKILL.md) | Build a throwaway artifact to answer one experiential design question |
-| [`slice-plan`](./skills/ship/slice-plan/SKILL.md) | Turn approved scope into a compact plan with explicit dependencies |
+| [`delivery-plan`](./skills/ship/delivery-plan/SKILL.md) | Plan dependent delivery changes for one approved benefit |
 | [`ticket-workspace`](./skills/ticket-workspace/ticket-workspace/SKILL.md) | Create or reuse workspaces with one git worktree per PR |
 | [`ticket-workspace-cleanup`](./skills/ticket-workspace/ticket-workspace-cleanup/SKILL.md) | Safely remove completed ticket workspaces after checking git state |
 | [`handoff`](./skills/handoff/SKILL.md) | Write a Markdown handoff for another agent or fresh session |

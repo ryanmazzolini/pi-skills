@@ -11,7 +11,7 @@ First name the review question and what approval would cover. Then choose the sm
 - runtime behavior: sequence, flow, state, or decision diagram
 - change over time: before/after view, migration map, timeline, or rollout stages
 - alternatives: a side-by-side comparison of consequences
-- delivery shape: slice map, dependency graph, or PR/worktree layout
+- delivery shape: milestone map, dependency graph, or PR/worktree layout
 - mostly prose: a short brief or annotated `plan.md`
 - several distinct questions: a few linked views; use slides only when each view stands alone
 
