@@ -392,7 +392,7 @@ function operationArguments(job: JobView, action: SchedulerAction): string[] {
 			"--expected-revision", revision,
 		];
 	}
-	return [action, job.id, "--expected-installed-digest", installedDigest, "--expected-revision", revision];
+	return [action === "run" ? "start" : action, job.id, "--expected-installed-digest", installedDigest, "--expected-revision", revision];
 }
 
 async function showText(ctx: UiContext, title: string, text: string): Promise<void> {
@@ -401,9 +401,13 @@ async function showText(ctx: UiContext, title: string, text: string): Promise<vo
 	));
 }
 
-async function showDashboard(ctx: UiContext, data: SchedulerDashboardData): Promise<SchedulerDashboardResult> {
+async function showDashboard(
+	ctx: UiContext,
+	data: SchedulerDashboardData,
+	reload: () => Promise<SchedulerDashboardData>,
+): Promise<SchedulerDashboardResult> {
 	return ctx.ui.custom<SchedulerDashboardResult>((tui, theme, _keybindings, done) => (
-		new SchedulerDashboardComponent(data, tui, theme, done, new Date(data.generatedAt))
+		new SchedulerDashboardComponent(data, tui, theme, done, new Date(data.generatedAt), reload)
 	));
 }
 
@@ -417,6 +421,18 @@ async function showDetails(
 	));
 }
 
+async function loadRunOutput(dependencies: SchedulerDependencies, id: string, runId: string) {
+	const response = await runCliJson(dependencies, ["run-log", id, runId, "--lines", "500"]);
+	const result = response.result ?? {};
+	const run = result.run ?? {};
+	const status = sanitizeDisplay(run.status ?? "run");
+	return {
+		title: `${sanitizeDisplay(id)} · ${status} · ${sanitizeDisplay(run.startedAt ?? runId)}`,
+		text: `${sanitizeDisplay(result.logPath)}\n\n${boundedDisplay(result.content || "No output recorded for this run.")}${result.truncated ? "\n\nEarlier output was truncated by the CLI." : ""}`,
+		complete: status !== "running",
+	};
+}
+
 async function showRunOutput(
 	ctx: UiContext,
 	dependencies: SchedulerDependencies,
@@ -424,19 +440,22 @@ async function showRunOutput(
 	runId: string,
 ): Promise<void> {
 	try {
-		const response = await runCliJson(dependencies, ["run-log", id, runId, "--lines", "500"]);
-		const result = response.result ?? {};
-		const run = result.run ?? {};
-		const heading = `${sanitizeDisplay(id)} · ${sanitizeDisplay(run.status ?? "run")} · ${sanitizeDisplay(run.startedAt ?? runId)}`;
-		const body = `${sanitizeDisplay(result.logPath)}\n\n${boundedDisplay(result.content || "No output recorded for this run.")}${result.truncated ? "\n\nEarlier output was truncated by the CLI." : ""}`;
-		await showText(ctx, heading, body);
+		const initial = await loadRunOutput(dependencies, id, runId);
+		await ctx.ui.custom<void>((tui, theme, _keybindings, done) => new SchedulerTextComponent(
+			initial.title,
+			initial.text,
+			tui,
+			theme,
+			done,
+			initial.complete ? undefined : () => loadRunOutput(dependencies, id, runId),
+		));
 	} catch (error) {
 		ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
 	}
 }
 
 function successMessage(job: JobView, action: SchedulerAction): string {
-	if (action === "run") return `Completed ${sanitizeDisplay(job.id)}. Open Runs for its output.`;
+	if (action === "run") return `Started ${sanitizeDisplay(job.id)}. Track progress and output in Runs.`;
 	return `${ACTION_LABELS[action]} completed for ${sanitizeDisplay(job.id)}.`;
 }
 
@@ -500,7 +519,7 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 				ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
 				return;
 			}
-			const selected = await showDashboard(ctx, data);
+			const selected = await showDashboard(ctx, data, () => loadDashboardData(ctx.cwd, dependencies));
 			if (selected.kind === "close") return;
 			if (selected.kind === "refresh") continue;
 			if (selected.kind === "run") {
