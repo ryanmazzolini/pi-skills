@@ -4,6 +4,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import {
   SchedulerDashboardComponent,
   SchedulerJobDetailComponent,
+  SchedulerTextComponent,
   formatSchedulerTime,
   humanizeSchedule,
   schedulerJobState,
@@ -140,6 +141,46 @@ test("navigates tasks and runs without exposing run identifiers", () => {
   const closing = new SchedulerDashboardComponent(data, view.tui, theme, (result) => closeOutcomes.push(result));
   closing.handleInput("q");
   assert.deepEqual(closeOutcomes, [{ kind: "close" }]);
+});
+
+test("refreshes task progress in place and stops polling when disposed", async () => {
+  const view = harness();
+  const initial = { jobs: [job({ recentRuns: [] })], sourceErrors: [], generatedAt: "2026-07-25T09:00:00.000Z" };
+  const updated = {
+    jobs: [job({ recentRuns: [run({ status: "running", finishedAt: null })] })],
+    sourceErrors: [],
+    generatedAt: "2026-07-25T09:00:01.000Z",
+  };
+  let reloads = 0;
+  const component = new SchedulerDashboardComponent(initial, view.tui, theme, () => {}, new Date(initial.generatedAt), async () => {
+    reloads++;
+    return updated;
+  });
+
+  await component.refreshData();
+  assert.match(component.render(100).join("\n"), /ACTIVE/);
+  assert.match(component.render(100).join("\n"), /Running/);
+  assert.equal(reloads, 1);
+  component.dispose();
+  await component.refreshData();
+  assert.equal(reloads, 1);
+});
+
+test("refreshes running output until the receipt reaches a terminal state", async () => {
+  const view = harness();
+  const component = new SchedulerTextComponent(
+    "task · running",
+    "starting",
+    view.tui,
+    theme,
+    () => {},
+    async () => ({ title: "task · succeeded", text: "finished output", complete: true }),
+  );
+
+  await component.refreshText();
+  assert.match(component.render(80).join("\n"), /task · succeeded/);
+  assert.match(component.render(80).join("\n"), /finished output/);
+  component.dispose();
 });
 
 test("detail view progressively discloses runs and definition while retaining actions", () => {

@@ -230,11 +230,16 @@ export class SchedulerDashboardComponent implements Component {
 	private tab: DashboardTab = "tasks";
 	private selectedTask = 0;
 	private selectedRun = 0;
-	private readonly data: SchedulerDashboardData;
+	private data: SchedulerDashboardData;
 	private readonly tui: TuiView;
 	private readonly theme: Theme;
 	private readonly done: (result: SchedulerDashboardResult) => void;
-	private readonly now: Date;
+	private now: Date;
+	private readonly reload?: () => Promise<SchedulerDashboardData>;
+	private readonly refreshTimer?: ReturnType<typeof setInterval>;
+	private refreshing = false;
+	private refreshFailure: string | undefined;
+	private disposed = false;
 
 	constructor(
 		data: SchedulerDashboardData,
@@ -242,12 +247,18 @@ export class SchedulerDashboardComponent implements Component {
 		theme: Theme,
 		done: (result: SchedulerDashboardResult) => void,
 		now = new Date(),
+		reload?: () => Promise<SchedulerDashboardData>,
 	) {
 		this.data = data;
 		this.tui = tui;
 		this.theme = theme;
 		this.done = done;
 		this.now = now;
+		this.reload = reload;
+		if (reload) {
+			this.refreshTimer = setInterval(() => void this.refreshData(), 1_000);
+			this.refreshTimer.unref?.();
+		}
 	}
 
 	handleInput(data: string): void {
@@ -261,7 +272,8 @@ export class SchedulerDashboardComponent implements Component {
 			return;
 		}
 		if (data === "r" || data === "R") {
-			this.done({ kind: "refresh" });
+			if (this.reload) void this.refreshData();
+			else this.done({ kind: "refresh" });
 			return;
 		}
 		const count = this.tab === "tasks" ? this.data.jobs.length : allRuns(this.data).length;
@@ -305,10 +317,15 @@ export class SchedulerDashboardComponent implements Component {
 			...(paused ? [`${paused} paused`] : []),
 			...(issues ? [`${issues} need${issues === 1 ? "s" : ""} attention`] : []),
 		].join(" · ");
+		const refreshState = this.refreshing ? ` ${this.theme.fg("warning", "↻ refreshing")}` : "";
 		const lines = [
-			truncateToWidth(`${this.theme.bold("Scheduler")} ${this.theme.fg("dim", "· ")}${tabs} ${this.theme.fg("dim", `· ${counts}`)}`, innerWidth, ""),
+			truncateToWidth(`${this.theme.bold("Scheduler")} ${this.theme.fg("dim", "· ")}${tabs} ${this.theme.fg("dim", `· ${counts}`)}${refreshState}`, innerWidth, ""),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 		];
+		if (this.refreshFailure) {
+			lines.push(truncateToWidth(`${this.theme.fg("error", "!")} Refresh failed · ${this.theme.fg("error", this.refreshFailure)}`, innerWidth, ""));
+			lines.push(`  Press ${this.theme.fg("accent", "r")} to retry; the previous snapshot is still shown.`);
+		}
 		if (this.data.sourceErrors.length > 0) {
 			lines.push(this.theme.bold("SOURCE ERRORS"));
 			for (const sourceError of this.data.sourceErrors.slice(0, 2)) {
@@ -332,6 +349,41 @@ export class SchedulerDashboardComponent implements Component {
 	}
 
 	invalidate(): void {}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		if (this.refreshTimer) clearInterval(this.refreshTimer);
+	}
+
+	async refreshData(): Promise<void> {
+		if (!this.reload || this.refreshing || this.disposed) return;
+		this.refreshing = true;
+		this.tui.requestRender();
+		const selectedTaskId = this.data.jobs[this.selectedTask]?.id;
+		const selectedRunId = allRuns(this.data)[this.selectedRun]?.run.runId;
+		try {
+			const next = await this.reload();
+			if (this.disposed) return;
+			this.data = next;
+			this.now = new Date(next.generatedAt);
+			this.refreshFailure = undefined;
+			if (selectedTaskId) {
+				const taskIndex = next.jobs.findIndex((job) => job.id === selectedTaskId);
+				this.selectedTask = taskIndex >= 0 ? taskIndex : Math.min(this.selectedTask, Math.max(0, next.jobs.length - 1));
+			}
+			if (selectedRunId) {
+				const runs = allRuns(next);
+				const runIndex = runs.findIndex(({ run }) => run.runId === selectedRunId);
+				this.selectedRun = runIndex >= 0 ? runIndex : Math.min(this.selectedRun, Math.max(0, runs.length - 1));
+			}
+		} catch (error) {
+			if (!this.disposed) this.refreshFailure = error instanceof Error ? error.message : String(error);
+		} finally {
+			this.refreshing = false;
+			if (!this.disposed) this.tui.requestRender();
+		}
+	}
 
 	private taskLines(width: number, height: number): string[] {
 		if (this.data.jobs.length === 0) {
@@ -521,13 +573,25 @@ export class SchedulerJobDetailComponent implements Component {
 	}
 }
 
+export interface SchedulerTextSnapshot {
+	title: string;
+	text: string;
+	complete: boolean;
+}
+
 export class SchedulerTextComponent implements Component {
 	private scroll = 0;
-	private readonly title: string;
-	private readonly text: string;
+	private title: string;
+	private text: string;
 	private readonly tui: TuiView;
 	private readonly theme: Theme;
 	private readonly done: () => void;
+	private readonly reload?: () => Promise<SchedulerTextSnapshot>;
+	private readonly refreshTimer?: ReturnType<typeof setInterval>;
+	private refreshing = false;
+	private refreshFailure: string | undefined;
+	private complete = false;
+	private disposed = false;
 
 	constructor(
 		title: string,
@@ -535,12 +599,18 @@ export class SchedulerTextComponent implements Component {
 		tui: TuiView,
 		theme: Theme,
 		done: () => void,
+		reload?: () => Promise<SchedulerTextSnapshot>,
 	) {
 		this.title = title;
 		this.text = text;
 		this.tui = tui;
 		this.theme = theme;
 		this.done = done;
+		this.reload = reload;
+		if (reload) {
+			this.refreshTimer = setInterval(() => void this.refreshText(), 1_000);
+			this.refreshTimer.unref?.();
+		}
 	}
 
 	handleInput(data: string): void {
@@ -563,14 +633,44 @@ export class SchedulerTextComponent implements Component {
 		const content = this.text.split("\n").flatMap((line) => wrapTextWithAnsi(line || " ", innerWidth));
 		const start = Math.max(0, content.length - height - this.scroll);
 		const visible = content.slice(start, start + height);
+		const refreshState = this.refreshing ? ` ${this.theme.fg("warning", "↻ updating")}` : "";
+		const footer = this.refreshFailure
+			? `${this.theme.fg("error", `Refresh failed: ${this.refreshFailure}`)} · ${this.theme.fg("dim", "q/Esc back")}`
+			: this.theme.fg("dim", `↑/↓ scroll · End latest${this.reload && !this.complete ? " · updates automatically" : ""} · q/Esc back`);
 		return framed([
-			truncateToWidth(this.theme.bold(this.title), innerWidth, ""),
+			truncateToWidth(`${this.theme.bold(this.title)}${refreshState}`, innerWidth, ""),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 			...visible,
 			...Array.from({ length: Math.max(0, height - visible.length) }, () => ""),
-			this.theme.fg("dim", "↑/↓ scroll · End latest · q/Esc back"),
+			truncateToWidth(footer, innerWidth, ""),
 		], safeWidth, this.theme);
 	}
 
 	invalidate(): void {}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		if (this.refreshTimer) clearInterval(this.refreshTimer);
+	}
+
+	async refreshText(): Promise<void> {
+		if (!this.reload || this.refreshing || this.disposed) return;
+		this.refreshing = true;
+		this.tui.requestRender();
+		try {
+			const next = await this.reload();
+			if (this.disposed) return;
+			this.title = next.title;
+			this.text = next.text;
+			this.refreshFailure = undefined;
+			this.complete = next.complete;
+			if (next.complete && this.refreshTimer) clearInterval(this.refreshTimer);
+		} catch (error) {
+			if (!this.disposed) this.refreshFailure = error instanceof Error ? error.message : String(error);
+		} finally {
+			this.refreshing = false;
+			if (!this.disposed) this.tui.requestRender();
+		}
+	}
 }

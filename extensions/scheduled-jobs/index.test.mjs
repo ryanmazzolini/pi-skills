@@ -480,6 +480,9 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
       if (command === "git") return commandResult("", 128, "not a worktree");
       const cliArgs = args;
       cliCommands.push(cliArgs[0]);
+      if (cliArgs[0] === "start") {
+        return cliSuccess({ command: "start", result: { status: "started", runId: "00000000-0000-4000-8000-000000000001" } });
+      }
       try {
         const result = await runCli(cliArgs, value.runtime);
         return commandResult(result.stdout);
@@ -508,10 +511,11 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
 
   await handler("", { cwd: value.env.HOME, hasUI: true, mode: "tui", ui: harness.ui });
 
-  for (const command of ["install", "run", "enable", "disable", "remove"]) {
+  for (const command of ["install", "start", "enable", "disable", "remove"]) {
     assert.equal(cliCommands.includes(command), true, `missing ${command}`);
   }
-  assert.equal(harness.notices.filter((notice) => notice.level === "info" && /completed/i.test(notice.message)).length, 5);
+  assert.equal(harness.notices.filter((notice) => notice.level === "info" && /completed/i.test(notice.message)).length, 4);
+  assert.equal(harness.notices.some((notice) => notice.level === "info" && /Started/.test(notice.message)), true);
   assert.equal(fs.existsSync(path.join(value.env.XDG_STATE_HOME, "pi-scheduler", "jobs")), true);
   const remaining = fs.readdirSync(path.join(value.env.XDG_STATE_HOME, "pi-scheduler", "jobs"));
   assert.deepEqual(remaining, []);
