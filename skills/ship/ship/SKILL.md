@@ -1,71 +1,77 @@
 ---
 name: "ship"
-description: Route work to its next human checkpoint. Use at the outset of potentially sizeable work, when one-session work grows into multi-step implementation or delivery, after context compaction, or when resuming local workflow artifacts.
+description: Route coding work through the lightest useful path. Use for direct implementation, consequential alignment, dependency-aware delivery planning, milestone roadmaps, recovery, review, or delivery.
 ---
 
 # Ship
 
-Move durable work to its next useful human checkpoint, then stop. Use workflow files to track current state; do not add stage flags, a separate state file, or another workflow system.
+Move work to its next useful human checkpoint. Use the least process that keeps the outcome clear and the work recoverable. **Direct implementation is the default.** Alignment, delivery planning, and roadmaps are conditional tools, not required stages.
 
-## Decide whether the work needs a workflow
+## Choose the lightest route
 
-When the work can finish safely in one session, say so and continue normally without workflow files.
+Inspect the request, relevant project evidence, live repository, and any existing workflow before choosing:
 
-Reconsider that fast path when:
+- **Direct change:** the requested benefit, completion signal, and implementation boundary are clear; no consequential human decision or coordination graph remains. Proceed without alignment or a plan.
+- **Aligned change:** a requirements, UX/DX, scope, or solution-direction decision could materially change the outcome. Use `align`, then return here.
+- **Planned delivery:** one approved benefit needs dependent delivery changes, several PRs, migration sequencing, or worthwhile parallel work. Use `delivery-plan`.
+- **Roadmap:** several independently useful benefits need durable coordination or recovery under one shared destination. Read [references/roadmaps.md](references/roadmaps.md).
 
-- investigation is about to become substantial production editing
-- scope gains another independently deliverable outcome
-- the work becomes multi-repo, multi-session, worktree, pull request, or deployment shaped
+Size, production editing, session count, a feature branch, worktree, or pull request does not by itself move a direct change into another route. Several related improvements may stay direct when coordinating them separately would add no value. Reassess only when consequential uncertainty or coordination actually appears.
 
-When starting a durable workflow at the outset or after work grows, read [references/durable-context.md](references/durable-context.md). Preserve existing edits, explain the change, and reconcile the workflow files with the live repository. Before more production editing, establish or update alignment and planning far enough to identify one human-confirmed current slice. Do not move the work to another workspace without confirmation.
+When existing workflow files, interruption, or context compaction make the state unclear, read [references/recovery.md](references/recovery.md) before choosing.
+
+## Complete a direct change
+
+Honor the user's original implementation request without asking for alignment or planning approval again. Before substantial edits, verify:
+
+- the requested benefit and observable completion
+- the live repository, cwd, branch, and worktree
+- allowed scope and existing work to preserve
+- known sibling work
+- validation that exercises the real behavior and an important failure path
+
+Ask only about a gap that could change the result. Keep only trivial fixes and chores on the default branch. Before other work, propose a feature branch; use `ticket-workspace` when the work is durable or the current workspace is shared or dirty. Respect an explicit choice to remain on the default branch.
+
+Make ordinary repo-native interface, data, and structure choices directly. Use `shape-first` only when the user asks to shape the change or a consequential local design choice warrants its explicit checkpoints. Apply `simplest-sufficient-change` before code. Return to `align` only if implementation changes the approved benefit, experience, scope, or high-level solution direction.
+
+Do not create workflow files merely because a direct change lasts longer than expected. When it needs to survive a fresh session or context reset, read [references/durable-context.md](references/durable-context.md) and create only a minimal continuation record. Keep the direct route unless the work itself becomes uncertain or coordination-heavy.
+
+## Resume after alignment
+
+Alignment settles one consequential human decision at a time. Approval defines the target benefit and boundaries; it does not force a delivery plan. Return to direct implementation when one coherent change can deliver the result. Use `delivery-plan` only when its dependency map or delivery boundaries would help a fresh session execute safely.
+
+For an experiential question that words cannot settle, Align may temporarily use [`prototype`](../prototype/SKILL.md). A prototype supplies evidence and returns to alignment; it does not authorize production implementation.
+
+## Execute a delivery plan
+
+Dependencies in `plan.md`, not section order, determine which delivery changes can start. Recommend the most useful ready change and why, then get human confirmation before starting or dispatching coordinated work.
+
+Run one delivery change synchronously unless it contains independent work units whose parallelism is worth the integration cost. For that case, read [references/implementation-wave.md](references/implementation-wave.md). The Ship coordinator owns concurrency and integration.
+
+## Navigate a roadmap
+
+A roadmap coordinates human-centered milestones, not implementation tasks or PRs. Follow [references/roadmaps.md](references/roadmaps.md) to derive the ready milestones from their dependencies, recommend the next useful benefit, and preserve parent/child authority. Get confirmation before creating or materially changing a roadmap and before starting or dispatching a milestone.
+
+Each selected milestone returns to this router and follows the direct, aligned, or planned route it actually needs.
 
 ## Choose the next checkpoint
 
-The canonical work-item files and live repository decide current state. Conversation and notes outside the work item may help locate context but do not override that evidence.
-
-If work is interrupted, follows context compaction, or has unclear state, read [references/recovery.md](references/recovery.md) and reconcile it before routing.
-
-Then follow unresolved work in this order so delivery review and human approval happen before the actions they govern:
+The live project and canonical work-item files decide current state. Conversation and other notes may locate context but do not override that evidence. Handle unresolved work in this order:
 
 - A final code-bearing delivery lacks required independent review: apply [references/review-gate.md](references/review-gate.md).
 - Completed work awaits human review or approval: present the checkpoint and wait.
-- A human decision remains about requirements, UX/DX, scope, or high-level shape: use `align`.
-- Alignment is settled but no plan exists: use `slice-plan`.
-- A plan has work that can start: recommend the next synchronous slice or safe parallel wave.
-- All planned work is complete, or the user closes it: follow [references/graduation.md](references/graduation.md).
+- A consequential human decision remains: use `align`.
+- An approved outcome has a useful delivery plan: recommend a ready delivery change.
+- An approved roadmap has an unfinished ready milestone: recommend that milestone.
+- A direct continuation remains clear: resume it directly.
+- The work is complete or deliberately closed: follow [references/graduation.md](references/graduation.md) when a durable work item exists; otherwise report the result normally.
 
-If the state is truly ambiguous, give your interpretation and ask one direct question. Do not add tracking fields merely to avoid understanding the files.
+If state is truly ambiguous, give your interpretation and ask one direct question. Do not add tracking fields merely to avoid understanding the evidence.
 
-## Complete one checkpoint
+## Record and present results
 
-Alignment settles one human-owned decision at a time. Planning defines dependencies and which slices can start. Implementation completes and verifies one confirmed slice that can start; it does not silently advance another slice.
+Record material decisions, scope changes, implementation results, and validation evidence as they happen. Keep delivery-change evidence with its plan entry and milestone-specific evidence in the milestone work item. Do not report routine progress to First Mate; use [references/first-mate-escalation.md](references/first-mate-escalation.md) only for an on-demand cross-project blocker or missing context.
 
-Before substantial production edits, verify:
+Before presenting a final code-bearing delivery for approval, apply [references/review-gate.md](references/review-gate.md). Alignment, plans, and intermediate checkpoints do not require broad independent review by default.
 
-- the approved outcome and current slice
-- the live repository, cwd, branch, and worktree
-- the allowed scope and existing work that must be preserved
-- known sibling work
-- the validation that exercises the real behavior and its important failure path
-
-Proceed without ceremony when these are clear. Ask only about a gap that could change the work. Keep only trivial bug fixes and chores on the default branch. Before other work, propose a feature branch; use `ticket-workspace` when the work is durable or the current workspace is shared or dirty. Respect an explicit user choice to remain on the default branch.
-
-For an interface-facing slice, return to `align` if the primary UX/DX walkthrough is not explicit. During alignment, a user-approved [`prototype`](../prototype/SKILL.md) may answer one consequential experiential question that inspection and conversation cannot settle. Treat it as evidence gathering and resume alignment afterward; it does not satisfy planning or implementation gates.
-
-Once the experience is settled, use `shape-first` when local interfaces, data rules, or code structure still need shaping. Before code, apply `simplest-sufficient-change`; it is an implementation lens, not another approval step. Return to `align` if implementation changes the settled experience, requirements, scope, or high-level solution direction.
-
-Record material decisions, scope changes, implementation results, and review or validation evidence as they happen. Once a plan exists, keep slice-specific evidence with its slice.
-
-When a cross-project blocker or missing context needs on-demand First Mate reconciliation, read [references/first-mate-escalation.md](references/first-mate-escalation.md). Do not report routine progress to First Mate.
-
-## Confirm ready work
-
-Dependencies in `plan.md`, not section order, determine what can start. Recommend what should run next and why, then get human confirmation before starting or dispatching the work.
-
-Run one slice synchronously unless it contains independent work units whose parallelism is worth the coordination cost. For that case, read [references/implementation-wave.md](references/implementation-wave.md). The Ship coordinator owns concurrency and integration.
-
-## Present the checkpoint
-
-Before presenting a final code-bearing delivery for approval, apply [references/review-gate.md](references/review-gate.md). Apply independent review earlier only for the selective cases defined there; alignment, plans, and intermediate implementation checkpoints do not require it by default.
-
-Start the human update with the result or decision. Name the target when it is not already clear. Add the validation and independent-review status required for this checkpoint. Mention remaining risk only when it affects what happens next. Use a few connected sentences rather than compressing these points into one. End with one short next step or question when the user needs to act. When plain Markdown cannot make a consequential decision clear, read [references/review-artifacts.md](references/review-artifacts.md) and create the smallest useful review aid.
+Start a human update with the result or decision. Add required validation and review status. Mention remaining risk only when it affects what happens next. End with one short action or question when the user must respond. When Markdown cannot make a consequential decision clear, read [references/review-artifacts.md](references/review-artifacts.md) and create the smallest useful review aid.

@@ -1,0 +1,62 @@
+# Milestone Roadmaps
+
+Use a roadmap only when several independently useful human or caller benefits need durable coordination or recovery under one shared destination. A low-complexity coherent change stays direct even when its improvements can be named separately. Multiple files, sessions, branches, PRs, or implementation dependencies do not by themselves justify a roadmap.
+
+## Frame human-centered milestones
+
+A **milestone** is the roadmap's vertical outcome slice. It names one benefit that can be approved, delivered, or abandoned independently. It is not a task group, phase, branch, PR, status, or percentage.
+
+Before creating files, inspect breadth-first and propose:
+
+- the shared destination and observable completion
+- each milestone's benefit and completion condition
+- dependencies that truly prevent one milestone from starting
+- sharp open decisions
+- in-scope uncertainty that is not precise enough to become a decision
+- explicit boundaries
+
+Keep fog visible instead of inventing premature milestones. A question is sharp when it can be stated precisely, even if it cannot yet be answered. Route sharp questions to inspection, research, Align, or Prototype as appropriate.
+
+Ask for one semantic confirmation of the roadmap, milestone boundaries, and dependency graph. That confirmation authorizes the corresponding workflow files. It does not authorize tickets, workspace movement, branches, worktrees, implementation dispatch, commits, pushes, pull requests, releases, or deployments.
+
+## Keep the parent low resolution
+
+The parent work item owns `roadmap.md` and points `Current` to it. The roadmap contains only:
+
+- destination and completion
+- shared decisions and boundaries
+- milestone names, benefits, completion conditions, links, and dependencies
+- sharp open decisions and unresolved fog
+
+The parent is an index, not an executable plan. Do not copy milestone alignment, implementation tasks, validation, or progress into it. Do not add stored ready, blocked, stage, or percentage fields.
+
+Use this compact milestone shape:
+
+```md
+### [Human-centered milestone]
+
+**Benefit:** [What becomes useful to a person or caller.]
+**Complete when:** [Observable result.]
+**Depends on:** None | [other milestone names]
+**Work item:** [link to milestone index]
+```
+
+Dependencies, not section order, determine the ready set. A milestone with no incomplete dependencies is ready. Prefer the ready milestone with the strongest human benefit or risk-reduction value, explain why, and get confirmation before starting it.
+
+## Give every milestone a stable home
+
+Roadmap approval creates one minimal sibling work item per milestone so links and dependencies survive fresh sessions. Its `index.md` records the project, ticket, profile, workspace, parent roadmap, benefit, completion condition, and dependencies. Until another continuation exists, `Current` may point to the milestone index itself.
+
+Add `alignment.md`, `plan.md`, a ticket workspace, or review evidence only when that milestone's chosen route needs it. A selected milestone returns to Ship and proceeds directly by default. Use Align only for consequential human decisions and `delivery-plan` only for a useful implementation dependency graph.
+
+A milestone may use several PR worktrees without becoming several milestones when every PR contributes to the same benefit and approval decision.
+
+## Complete and reconcile milestones
+
+Graduating a milestone records its durable `Result` in its own index. The parent derives completion from that result and may add a one-line outcome gist with the link; the milestone remains the detailed authority. Recompute the ready set and recommend the next useful benefit.
+
+When a parent decision or dependency changes, identify affected milestone descendants. Do not rewrite their alignments or plans from the parent. Route each affected milestone through its own Ship state, returning to Align when human judgment is needed.
+
+Get confirmation before materially changing the graph or boundaries: adding, reparenting, merging, abandoning, or rescoping a milestone; changing a dependency that changes the route; or invalidating approved milestone behavior. Mechanical link repair and derived completion refresh after approved delivery do not need another confirmation.
+
+Close the roadmap when every intended milestone has a durable result or the human explicitly removes or closes the remaining benefits. Record the overall result in the parent index and keep it pointed at the roadmap or most useful result evidence.
