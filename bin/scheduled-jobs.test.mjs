@@ -217,6 +217,7 @@ test("start returns a run receipt while the installed snapshot continues in the 
   const releasePath = path.join(path.dirname(value.env.HOME), "release-job");
   fs.writeFileSync(value.scriptPath, `
     import fs from "node:fs";
+    console.log("background run waiting");
     while (!fs.existsSync(${JSON.stringify(releasePath)})) await new Promise((resolve) => setTimeout(resolve, 20));
     console.log("background run complete");
   `);
@@ -248,11 +249,29 @@ test("start returns a run receipt while the installed snapshot continues in the 
   const receipt = json(started).result;
   assert.equal(receipt.status, "started");
   assert.match(receipt.runId, /^[0-9a-f-]{36}$/);
+  assert.equal(readRunHistory(id, { env: value.env }).some((entry) => entry.runId === receipt.runId), true);
   const running = await waitFor(
     () => readRunHistory(id, { env: value.env }).find((entry) => entry.runId === receipt.runId && entry.status === "running"),
     "background run did not create a running receipt",
   );
   assert.equal(running.trigger, "manual");
+  await waitFor(
+    () => /background run waiting/.test(readRunOutput(id, receipt.runId, { env: value.env }).content),
+    "background job did not begin execution",
+  );
+
+  const overlappingStart = await run([
+    "start", id,
+    "--expected-installed-digest", status.metadata.digest,
+    "--expected-revision", String(status.metadata.revision),
+    "--json",
+  ], value.runtime);
+  const overlapReceipt = json(overlappingStart).result;
+  const skipped = await waitFor(
+    () => readRunHistory(id, { env: value.env }).find((entry) => entry.runId === overlapReceipt.runId && entry.status === "skipped"),
+    "overlapping background start did not become a skipped receipt",
+  );
+  assert.equal(skipped.reason, "overlap");
 
   fs.writeFileSync(releasePath, "continue\n");
   const completed = await waitFor(
