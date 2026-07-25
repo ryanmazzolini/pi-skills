@@ -18,10 +18,14 @@ import {
   removeJob,
   updateJob,
 } from "../lib/scheduled-jobs/lifecycle.mjs";
+import { manifestOverview } from "../lib/scheduled-jobs/overview.mjs";
 import {
+  MAX_RUN_HISTORY,
   executeInstalled,
   readInstalled,
   readLog,
+  readRunHistory,
+  readRunOutput,
   stateRoot as resolvedStateRoot,
   verifyInstalledShims,
 } from "../lib/scheduled-jobs/runtime.mjs";
@@ -31,6 +35,7 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 function usage() {
   return `Usage:
   scheduled-jobs list --manifest PATH [--json]
+  scheduled-jobs overview --manifest PATH [--history-limit N] [--adapter auto|cron] [--json]
   scheduled-jobs inspect JOB_ID --manifest PATH [--adapter auto|cron] [--json]
   scheduled-jobs doctor JOB_ID --manifest PATH [--adapter auto|cron] [--json]
   scheduled-jobs install JOB_ID --manifest PATH --expected-candidate-digest DIGEST [--json]
@@ -41,6 +46,8 @@ function usage() {
   scheduled-jobs remove JOB_ID --expected-installed-digest DIGEST --expected-revision N [--json]
   scheduled-jobs status JOB_ID [--json]
   scheduled-jobs logs JOB_ID [--lines N] [--json]
+  scheduled-jobs runs JOB_ID [--limit N] [--json]
+  scheduled-jobs run-log JOB_ID RUN_ID [--lines N] [--json]
 
 PATH must be the fixed global manifest or an exact Git-root .pi/scheduler.json.
 The CLI performs no project discovery and never prompts. Install creates a disabled job.`;
@@ -64,6 +71,8 @@ function parseArguments(argv) {
     "--expected-installed-digest",
     "--expected-revision",
     "--lines",
+    "--history-limit",
+    "--limit",
     "--state-root",
   ]);
   for (let index = 0; index < argv.length; index += 1) {
@@ -80,6 +89,8 @@ function parseArguments(argv) {
       else if (argument === "--expected-installed-digest") options.expectedInstalledDigest = value;
       else if (argument === "--expected-revision") options.expectedRevision = integerOption(argument, value, 1, Number.MAX_SAFE_INTEGER);
       else if (argument === "--state-root") options.stateRoot = value;
+      else if (argument === "--history-limit") options.historyLimit = integerOption(argument, value, 1, MAX_RUN_HISTORY);
+      else if (argument === "--limit") options.limit = integerOption(argument, value, 1, MAX_RUN_HISTORY);
       else options.lines = integerOption(argument, value, 1, 10_000);
     } else if (argument.startsWith("--")) throw new SchedulerUsageError(`Unknown option: ${argument}`);
     else positionals.push(argument);
@@ -114,6 +125,27 @@ function commandList(positionals, options, env) {
   if (positionals.length !== 0) throw new SchedulerUsageError("list does not accept a JOB_ID.");
   const declarations = loadDeclarations({ manifestPath: options.manifestPath, env });
   return { command: "list", jobs: declarations.map(declarationSummary) };
+}
+
+function commandOverview(positionals, options, runtime, env) {
+  if (positionals.length !== 0) throw new SchedulerUsageError("overview does not accept a JOB_ID.");
+  return {
+    command: "overview",
+    result: manifestOverview({
+      manifestPath: options.manifestPath,
+      adapter: options.adapter,
+      env,
+      platform: runtime.platform,
+      runnerPath: fs.realpathSync(SCRIPT_PATH),
+      adapterOptions: runtime.adapterOptions,
+      historyLimit: options.historyLimit ?? 10,
+    }),
+  };
+}
+
+function commandRunLog(positionals, options, env) {
+  if (positionals.length !== 2) throw new SchedulerUsageError("run-log requires one JOB_ID and one RUN_ID.");
+  return { command: "run-log", result: readRunOutput(positionals[0], positionals[1], { env, lines: options.lines ?? 200 }) };
 }
 
 function requireAvailableInstallation(installation) {
@@ -211,6 +243,8 @@ async function executeCommand(command, positionals, options, runtime) {
     }
   }
   if (command === "list") return commandList(positionals, options, env);
+  if (command === "overview") return commandOverview(positionals, options, runtime, env);
+  if (command === "run-log") return commandRunLog(positionals, options, env);
   if (command === "inspect" || command === "doctor") {
     return commandInspect(command, positionals, options, env, platform, adapterOptions);
   }
@@ -236,6 +270,7 @@ async function executeCommand(command, positionals, options, runtime) {
     return { command, result: requireAvailableInstallation(installedStatus(id, { env, adapterOptions })) };
   }
   if (command === "logs") return { command, result: readLog(id, { env, lines: options.lines ?? 200 }) };
+  if (command === "runs") return { command, result: { id, runs: readRunHistory(id, { env, limit: options.limit ?? 20 }) } };
   throw new SchedulerUsageError(`Unknown command: ${command}`);
 }
 
@@ -268,10 +303,45 @@ function humanCandidate(result) {
   return lines.join("\n");
 }
 
+function humanOverview(result) {
+  if (result.result.jobs.length === 0) return "No scheduler jobs declared.";
+  return result.result.jobs.map((job) => {
+    const state = !job.installation.installed
+      ? "draft"
+      : job.installation.health !== "ok"
+        ? `needs attention (${display(job.installation.health)})`
+        : job.installation.enabled
+          ? "active"
+          : "paused";
+    const lastRun = job.recentRuns[0];
+    return [
+      `${display(job.id)} — ${state}`,
+      `  ${display(job.description)}`,
+      `  schedule: ${display(job.schedule)}`,
+      `  next: ${display(job.nextRun ?? "not scheduled")}`,
+      `  last: ${lastRun ? `${display(lastRun.status)} at ${display(lastRun.startedAt)}` : "no recorded runs"}`,
+      ...(job.candidateError ? [`  candidate error: ${display(job.candidateError.message)}`] : []),
+      ...(job.installationError ? [`  installation error: ${display(job.installationError.message)}`] : []),
+      ...(job.historyError ? [`  history error: ${display(job.historyError.message)}`] : []),
+    ].join("\n");
+  }).join("\n\n");
+}
+
+function humanRuns(result) {
+  if (result.result.runs.length === 0) return `No recorded runs for ${display(result.result.id)}.`;
+  return result.result.runs.map((run) => (
+    `${display(run.status)}  ${display(run.startedAt)}  ${display(run.trigger)}  ${display(run.runId)}`
+  )).join("\n");
+}
+
 function humanResult(result) {
   if (result.command === "list") return humanList(result);
+  if (result.command === "overview") return humanOverview(result);
   if (result.command === "inspect" || result.command === "doctor") return humanCandidate(result);
-  if (result.command === "logs") return result.result.content || `No log output at ${result.result.logPath}`;
+  if (result.command === "logs" || result.command === "run-log") {
+    return result.result.content || `No log output at ${result.result.logPath}`;
+  }
+  if (result.command === "runs") return humanRuns(result);
   return JSON.stringify(result.result, null, 2);
 }
 

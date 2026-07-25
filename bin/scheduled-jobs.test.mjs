@@ -252,6 +252,15 @@ test("CLI completes the disabled install, run, enable, disable, logs, and remove
   );
   assert.equal(json(ran).result.status, "ok");
   assert.deepEqual(readRunHistory(id, { env: value.env }).map((record) => record.trigger), ["manual", "scheduled"]);
+  const runs = json(await run(["runs", id, "--limit", "10", "--json"], value.runtime)).result.runs;
+  assert.deepEqual(runs.map((record) => record.status), ["succeeded", "succeeded"]);
+  const runLog = json(await run(["run-log", id, runs[0].runId, "--lines", "20", "--json"], value.runtime)).result;
+  assert.match(runLog.content, /cli lifecycle output/);
+  const disabledOverview = json(await run([
+    "overview", "--manifest", value.manifestPath, "--history-limit", "10", "--json",
+  ], value.runtime)).result;
+  assert.equal(disabledOverview.jobs[0].nextRun, null);
+  assert.equal(disabledOverview.jobs[0].recentRuns.length, 2);
 
   const enabled = await run(
     [
@@ -269,6 +278,9 @@ test("CLI completes the disabled install, run, enable, disable, logs, and remove
   assert.equal(status.metadata.revision, 2);
   assert.equal(status.metadata.enabled, true);
   assert.equal(status.adapter.loaded, true);
+  const activeOverview = json(await run(["overview", "--manifest", value.manifestPath, "--json"], value.runtime)).result;
+  assert.equal(typeof activeOverview.jobs[0].nextRun, "string");
+  assert.equal(activeOverview.jobs[0].installation.enabled, true);
 
   const statusResult = await run(["status", id, "--json"], value.runtime);
   assert.equal(json(statusResult).result.drift.enabled, false);
