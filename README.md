@@ -128,7 +128,7 @@ Pi gets a few extras that are not skills:
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
 - `intercom` provides local peer messaging, capability-gated bounded read-only tails, and an ephemeral First Mate presence role.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
-- `scheduled-jobs` adds the human-only `/scheduler` interface.
+- `scheduled-jobs` adds the human-only `/scheduler` dashboard for task health, next runs, run history, output, and reviewed lifecycle operations.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.
 
 ## Contributing

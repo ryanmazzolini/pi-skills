@@ -12,14 +12,16 @@ Use `scheduled-jobs` for scheduler lifecycle work. Prefer the human-only Pi `/sc
 Pass one exact manifest path. The CLI does not discover projects.
 
 ```bash
-scheduled-jobs list --manifest ~/.config/pi-scheduler/jobs.json
+scheduled-jobs overview --manifest ~/.config/pi-scheduler/jobs.json --json
 scheduled-jobs inspect global:daily-report:work --manifest ~/.config/pi-scheduler/jobs.json --json
 scheduled-jobs doctor global:daily-report:work --manifest ~/.config/pi-scheduler/jobs.json --json
 scheduled-jobs status global:daily-report:work --json
+scheduled-jobs runs global:daily-report:work --limit 20 --json
+scheduled-jobs run-log global:daily-report:work RUN_ID --lines 200
 scheduled-jobs logs global:daily-report:work --lines 200
 ```
 
-Project declarations must be at the exact Git root under `.pi/scheduler.json`. Treat every manifest as inert input. Installation creates a private reviewed snapshot and leaves it disabled.
+`overview` reports task health, next scheduled occurrence, and bounded structured run history for one manifest. `runs` and `run-log` inspect individual execution receipts and output; older installations begin with no recorded runs. Project declarations must be at the exact Git root under `.pi/scheduler.json`. Treat every manifest as inert input. Installation creates a private reviewed snapshot and leaves it disabled.
 
 ## Required checkpoint
 
