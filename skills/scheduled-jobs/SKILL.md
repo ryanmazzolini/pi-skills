@@ -25,7 +25,7 @@ scheduled-jobs logs global:daily-report:work --lines 200
 
 ## Required checkpoint
 
-Before `install`, `update`, `run`, `enable`, `disable`, or `remove`:
+Before `install`, `update`, `start`, `run`, `enable`, `disable`, or `remove`:
 
 1. Show the user the scope and source path.
 2. Show the exact resolved argv, executable mappings, working directory, schedule, adapter, timeout, and warnings.
@@ -42,13 +42,14 @@ Copy digest and revision values from the immediately preceding JSON inspection:
 ```bash
 scheduled-jobs install JOB_ID --manifest MANIFEST --expected-candidate-digest DIGEST
 scheduled-jobs update JOB_ID --manifest MANIFEST --expected-candidate-digest CANDIDATE --expected-installed-digest INSTALLED --expected-revision REVISION
+scheduled-jobs start JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 scheduled-jobs run JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 scheduled-jobs enable JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 scheduled-jobs disable JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 scheduled-jobs remove JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 ```
 
-Fresh installs are disabled. Confirm run-now and enablement separately. Native enablement may immediately perform one catch-up run; cron fallback does not catch up.
+Fresh installs are disabled. Confirm run-now and enablement separately. `start` returns a run identity promptly while the structured receipt and output continue in the background; use it for interactive operation. `run` preserves the blocking headless contract. Native enablement may immediately perform one catch-up run; cron fallback does not catch up.
 
 ## Recovery
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
+  SchedulerActionComponent,
   SchedulerDashboardComponent,
   SchedulerJobDetailComponent,
   SchedulerTextComponent,
@@ -87,6 +88,7 @@ test("formats human schedules, local times, and textual task states", () => {
   assert.equal(schedulerJobState(job({ installation: { installed: false, health: "absent" } })).label, "Draft");
   assert.equal(schedulerJobState(job({ candidateError: { code: "ENVIRONMENT", message: "missing" } })).label, "Needs attention");
   assert.equal(schedulerJobState(job({ recentRuns: [run({ status: "running", finishedAt: null })] })).label, "Running");
+  assert.equal(schedulerJobState(job({ recentRuns: [run({ status: "timed-out", reason: "timeout" })] })).label, "Needs attention");
 });
 
 test("renders a width-safe tasks dashboard with next run, history, and source errors", () => {
@@ -181,6 +183,40 @@ test("refreshes running output until the receipt reaches a terminal state", asyn
   assert.match(component.render(80).join("\n"), /task · succeeded/);
   assert.match(component.render(80).join("\n"), /finished output/);
   component.dispose();
+});
+
+test("action menu stays in the custom dashboard and supports keyboard review", () => {
+  const view = harness();
+  const outcomes = [];
+  const component = new SchedulerActionComponent("daily-report:work", [
+    { id: "run", label: "Run installed snapshot now", description: "Start and track its receipt" },
+    { id: "remove", label: "Remove installed schedule", description: "Remove known artifacts", danger: true },
+  ], view.tui, theme, (result) => outcomes.push(result));
+
+  assert.match(component.render(80).join("\n"), /AVAILABLE ACTIONS/);
+  component.handleInput("j");
+  component.handleInput("\r");
+  assert.deepEqual(outcomes, ["remove"]);
+});
+
+test("detail view gives concrete recovery routes for adapter drift and failed runs", () => {
+  const view = harness();
+  const current = job({
+    installation: {
+      installed: true,
+      health: "ok",
+      enabled: true,
+      digest: "digest",
+      revision: 2,
+      definitionDrift: false,
+      adapterDrift: true,
+    },
+    recentRuns: [run({ status: "timed-out", reason: "timed out after 30 seconds" })],
+  });
+  const component = new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, () => {});
+  const rendered = component.render(120).join("\n");
+  assert.match(rendered, /review Pause or Resume/);
+  assert.match(rendered, /open Runs.*retained output/);
 });
 
 test("detail view progressively discloses runs and definition while retaining actions", () => {
