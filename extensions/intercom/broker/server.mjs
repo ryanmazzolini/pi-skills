@@ -253,24 +253,23 @@ function findTargets(value) {
 	return [...sessions.values()].filter((connection) => connection.info.name?.toLowerCase() === lowered);
 }
 
+function advertisedPiSessionId(connection) {
+	return connection.info.piSessionId ?? connection.info.piSession?.sessionId;
+}
+
 function selectorTargets(value) {
 	const lowered = value.toLowerCase();
 	return new Set([...sessions.values()].filter((connection) =>
 		connection.sessionId === value
-		|| connection.info.piSessionId === value
+		|| advertisedPiSessionId(connection) === value
 		|| connection.info.name?.toLowerCase() === lowered));
-}
-
-function advertisedPiSessionId(connection) {
-	return connection.info.piSessionId ?? connection.info.piSession?.sessionId;
 }
 
 function piSessionAdvertisers(value) {
 	return [...sessions.values()].filter((connection) => advertisedPiSessionId(connection) === value);
 }
 
-function explicitIdentityNamespaceConflict(owner, value) {
-	if (owner.info.piSessionId === undefined) return false;
+function identityNamespaceConflict(owner, value) {
 	const lowered = value.toLowerCase();
 	return [...sessions.values()].some((candidate) => candidate !== owner && (
 		candidate.sessionId === value
@@ -283,7 +282,7 @@ function deliveryValidationFailure(sender, target, request) {
 	const senderPiSessionId = advertisedPiSessionId(sender);
 	if (senderPiSessionId !== undefined && (
 		piSessionAdvertisers(senderPiSessionId).length !== 1
-		|| explicitIdentityNamespaceConflict(sender, senderPiSessionId)
+		|| identityNamespaceConflict(sender, senderPiSessionId)
 	)) {
 		return "Sender Pi session identity is not unique";
 	}
@@ -313,7 +312,7 @@ function deliveryValidationFailure(sender, target, request) {
 			candidate.info.id === request.expectedPiSessionId
 			|| candidate.info.name?.toLowerCase() === expectedName
 		));
-		if (target.info.piSessionId !== request.expectedPiSessionId || advertisers.length !== 1 || namespaceConflict) {
+		if (advertisedPiSessionId(target) !== request.expectedPiSessionId || advertisers.length !== 1 || namespaceConflict) {
 			return advertisers.length > 1
 				? "Multiple connected sessions advertise the expected Pi session ID"
 				: namespaceConflict
@@ -324,7 +323,7 @@ function deliveryValidationFailure(sender, target, request) {
 	const targetPiSessionId = advertisedPiSessionId(target);
 	if (targetPiSessionId !== undefined && (
 		piSessionAdvertisers(targetPiSessionId).length !== 1
-		|| explicitIdentityNamespaceConflict(target, targetPiSessionId)
+		|| identityNamespaceConflict(target, targetPiSessionId)
 	)) {
 		return "Recipient Pi session identity is not unique";
 	}

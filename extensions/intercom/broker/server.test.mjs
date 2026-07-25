@@ -53,6 +53,36 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 	assert.match(failed.reason, /Session not found/);
 });
 
+test("persisted presence IDs support stable routing for compatible peers", async (t) => {
+	const { paths } = await isolatedIntercom(t, "presence-id-");
+	const broker = await startOwnedBroker(paths);
+	t.after(() => stopChild(broker));
+	const sender = await connectNew(paths, "sender");
+	const compatiblePeer = new IntercomClient({ socketPath: paths.socketPath });
+	await compatiblePeer.connect(registration("compatible-peer", {
+		piSession: {
+			sessionId: "pi-compatible-peer",
+			fileLocator: "/tmp/compatible-peer.jsonl",
+			activeLeafId: "leaf",
+			revision: 1,
+		},
+	}));
+	t.after(() => closeAll(sender, compatiblePeer));
+
+	const received = waitEvent(compatiblePeer, "message", (_from, message) => message.id === "presence-identity");
+	const routed = await sender.send(
+		compatiblePeer.sessionId,
+		{ messageId: "presence-identity", text: "stable target" },
+		undefined,
+		undefined,
+		"pi-compatible-peer",
+		"pi-compatible-peer",
+		compatiblePeer.sessionId,
+	);
+	assert.equal(routed.delivered, true);
+	assert.equal((await received)[1].content.text, "stable target");
+});
+
 test("stable identity expectations cannot shadow legacy names and fail duplicate races atomically", async (t) => {
 	const { paths } = await isolatedIntercom(t, "identity-route-");
 	const broker = await startOwnedBroker(paths);
@@ -105,7 +135,7 @@ test("stable identity expectations cannot shadow legacy names and fail duplicate
 		named.sessionId,
 	);
 	assert.equal(rejected.delivered, false);
-	assert.match(rejected.reason, /Multiple connected sessions advertise the expected Pi session ID/);
+	assert.equal(rejected.reason, "Target selector became ambiguous or changed");
 	const legacyDirect = await sender.send(named.sessionId, { messageId: "legacy-duplicate-target", text: "must not route" });
 	assert.equal(legacyDirect.delivered, false);
 	assert.equal(legacyDirect.reason, "Recipient Pi session identity is not unique");
@@ -239,7 +269,7 @@ test("queued deliveries revalidate selector, sender, and modern or legacy recipi
 		legacySend,
 	]);
 	assert.equal(identityResult.delivered, false);
-	assert.match(identityResult.reason, /Multiple connected sessions advertise the expected Pi session ID/);
+	assert.equal(identityResult.reason, "Target selector became ambiguous or changed");
 	assert.equal(selectorResult.delivered, false);
 	assert.equal(selectorResult.reason, "Target selector became ambiguous or changed");
 	assert.equal(senderResult.delivered, false);

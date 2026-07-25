@@ -34,8 +34,8 @@ export interface SessionInfo {
 	piSession?: PiSessionPresence;
 }
 
-export function piSessionIdOf(session: Pick<SessionInfo, "piSessionId">): string | undefined {
-	return session.piSessionId;
+export function piSessionIdOf(session: Pick<SessionInfo, "piSessionId" | "piSession">): string | undefined {
+	return session.piSessionId ?? session.piSession?.sessionId;
 }
 
 export interface Attachment {

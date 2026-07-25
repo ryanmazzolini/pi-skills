@@ -180,6 +180,38 @@ test("bounds maximum-inventory identity details without dropping the current ses
 	assert.ok(details.firstMateSessionIds.includes(current.piSessionId));
 });
 
+test("inventory details retain stable IDs advertised through persisted presence", () => {
+	const current = {
+		id: "current-transport",
+		piSessionId: "pi-current",
+		cwd: "/repo",
+		model: "test",
+		pid: 1,
+		startedAt: 1,
+		lastActivity: 1,
+	};
+	const compatiblePeer = {
+		id: "compatible-transport",
+		name: "compatible-peer",
+		cwd: "/repo",
+		model: "test",
+		pid: 2,
+		startedAt: 1,
+		lastActivity: 1,
+		piSession: {
+			sessionId: "pi-compatible",
+			fileLocator: "/tmp/compatible.jsonl",
+			activeLeafId: "leaf",
+			revision: 1,
+		},
+	};
+	const details = boundedSessionIdentityDetails([current, compatiblePeer], current, false);
+	assert.deepEqual(details.sessionIds, ["pi-current", "pi-compatible"]);
+	assert.equal(details.unidentifiedSessions, 0);
+	assert.equal(details.omittedSessionIds, 0);
+	assert.equal(details.truncated, false);
+});
+
 test("bounds and coalesces inbound Pi delivery per sender and globally", async () => {
 	const calls = [];
 	const pi = { sendMessage: (...args) => calls.push(args) };

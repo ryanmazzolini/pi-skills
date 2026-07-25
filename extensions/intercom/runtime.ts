@@ -428,7 +428,7 @@ export class IntercomRuntime extends EventEmitter {
 	private assertUniquePiSessionTarget(target: SessionInfo, sessions: readonly SessionInfo[]): void {
 		const sessionId = piSessionIdOf(target);
 		if (!sessionId) return;
-		if (sessions.filter((session) => (piSessionIdOf(session) ?? session.piSession?.sessionId) === sessionId).length !== 1) {
+		if (sessions.filter((session) => piSessionIdOf(session) === sessionId).length !== 1) {
 			throw new Error(`Multiple connected sessions advertise Pi session ID ${JSON.stringify(sessionId)}`);
 		}
 		const loweredSessionId = sessionId.toLowerCase();
@@ -443,7 +443,7 @@ export class IntercomRuntime extends EventEmitter {
 	private requireUniquePiSession(target: SessionInfo, sessions: readonly SessionInfo[]): PiSessionPresence {
 		const presence = target.piSession;
 		if (!presence) throw new Error("Target session does not advertise an available persisted Pi session");
-		const advertisers = sessions.filter((session) => (piSessionIdOf(session) ?? session.piSession?.sessionId) === presence.sessionId);
+		const advertisers = sessions.filter((session) => piSessionIdOf(session) === presence.sessionId);
 		if (advertisers.length !== 1) throw new Error("Multiple connected sessions advertise the same Pi session ID");
 		return presence;
 	}

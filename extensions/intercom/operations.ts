@@ -17,7 +17,7 @@ export interface IntercomOperationSnapshot {
 }
 
 export interface OperationResult {
-	/** Stable Pi session ID when the target advertises one; otherwise a bounded legacy-peer label. */
+	/** Stable Pi session ID when the target advertises one; otherwise a bounded unidentified-peer label. */
 	target?: string;
 	targetSessionId?: string;
 	reply?: boolean;

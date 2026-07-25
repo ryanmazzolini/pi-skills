@@ -61,7 +61,7 @@ test("stable Pi session identity is bounded and must match persisted presence", 
 	assert.equal(isSessionInfo({ ...base, piSessionId: "pi/session" }), false);
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, sessionId: "pi-\u202ereordered" } }), false);
 	assert.equal(piSessionIdOf(base), "pi-session");
-	assert.equal(piSessionIdOf({ piSession }), undefined);
+	assert.equal(piSessionIdOf({ piSession }), "pi-session");
 	assert.equal(piSessionIdOf({}), undefined);
 
 	const client = new IntercomClient();

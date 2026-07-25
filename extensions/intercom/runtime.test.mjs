@@ -136,7 +136,7 @@ test("role acknowledgement fails when reconnect replaces the acknowledged transp
 	await runtime.dispose();
 });
 
-test("runtime reads a stable legacy-presence tail without messaging the target", async () => {
+test("runtime resolves a stable presence identity without messaging the target", async () => {
 	const presence = { sessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", revision: 4 };
 	const { piSessionId: _legacyIdentity, ...legacyPeer } = peer("target", "worker");
 	const target = { ...legacyPeer, piSession: presence };
@@ -151,7 +151,7 @@ test("runtime reads a stable legacy-presence tail without messaging the target",
 			return { snapshot, verifyStable: () => { verified++; }, close: () => { closed++; } };
 		},
 	});
-	const result = await runtime.tail("worker", 8, undefined, 1_024);
+	const result = await runtime.tail("pi-target", 8, undefined, 1_024);
 	assert.equal(result.target.id, "target");
 	assert.equal(result.target.piSessionId, undefined);
 	assert.equal(result.targetSessionId, "pi-target");

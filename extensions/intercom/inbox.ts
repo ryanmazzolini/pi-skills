@@ -21,7 +21,7 @@ function retainedBytes(from: SessionInfo, message: Message): number {
 
 function retainedProjectionBytes(entry: InboxEntry): number {
 	const sessionId = piSessionIdOf(entry.from);
-	const pendingLine = `\n- Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable (legacy peer)"} · message ${JSON.stringify(entry.message.id)} · 9999999999999s ago`;
+	const pendingLine = `\n- Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable"} · message ${JSON.stringify(entry.message.id)} · 9999999999999s ago`;
 	const compactDetails = {
 		...(sessionId === undefined ? {} : { fromSessionId: sessionId }),
 		messageId: entry.message.id,

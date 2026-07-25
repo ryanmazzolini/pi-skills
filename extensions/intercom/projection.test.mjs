@@ -151,6 +151,18 @@ test("maximum valid session inventory truncates complete identities instead of f
 	assert.doesNotMatch(projected.text, /Pi session ID: "[^"]*\n/u, "session IDs must not be cut in half");
 });
 
+test("session list projection uses stable IDs advertised through persisted presence", () => {
+	const current = session("current");
+	const compatiblePeer = session("compatible", {
+		piSessionId: undefined,
+		piSession: { sessionId: "pi-compatible", fileLocator: "/tmp/compatible.jsonl", activeLeafId: "leaf", revision: 1 },
+	});
+	const projected = projectSessionList([current, compatiblePeer], current);
+	assert.match(projected.text, /Pi session ID: "pi-compatible"/);
+	assert.doesNotMatch(projected.text, /legacy peer/);
+	assert.doesNotMatch(projected.text, /compatible\.jsonl/);
+});
+
 test("session list projection exposes exact First Mate roles with stable Pi session IDs", () => {
 	const current = session("current-full-id", { role: "first-mate" });
 	const duplicate = session("duplicate-first-mate-full-id", { role: "first-mate" });
