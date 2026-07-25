@@ -169,7 +169,7 @@ async function runCliJson(
 	dependencies: SchedulerDependencies,
 	args: string[],
 ): Promise<Record<string, any>> {
-	const result = await dependencies.exec(process.execPath, [CLI_PATH, ...args, "--json"], { timeout: 86_410_000 });
+	const result = await dependencies.exec(CLI_PATH, [...args, "--json"], { timeout: 86_410_000 });
 	if (result.code !== 0) {
 		const failure = parseCliError(result.stderr);
 		throw new SchedulerCommandError(boundedDisplay(failure.message), failure.code, failure.details);
