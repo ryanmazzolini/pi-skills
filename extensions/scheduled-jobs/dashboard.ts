@@ -45,6 +45,8 @@ export interface SchedulerJobOverview {
 		enabled?: boolean;
 		digest?: string | null;
 		revision?: number | null;
+		schedule?: string | null;
+		workingDirectory?: string | null;
 		definitionDrift?: boolean;
 		adapterDrift?: boolean;
 	};
@@ -142,6 +144,16 @@ export function humanizeSchedule(schedule: string): string {
 		return `${days} at ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} local time`;
 	}
 	return `${schedule} · local time`;
+}
+
+function effectiveSchedule(job: SchedulerJobOverview): string {
+	return job.installation.installed && job.installation.schedule ? job.installation.schedule : job.schedule;
+}
+
+function effectiveWorkingDirectory(job: SchedulerJobOverview): string {
+	return job.installation.installed && job.installation.workingDirectory
+		? job.installation.workingDirectory
+		: job.candidate?.workingDirectory ?? job.sourcePath;
 }
 
 export function schedulerJobState(job: SchedulerJobOverview): { label: string; icon: string; color: "success" | "warning" | "error" | "muted" | "accent" } {
@@ -280,7 +292,7 @@ export class SchedulerDashboardComponent implements Component {
 		const selected = this.data.jobs[this.selectedTask];
 		if (this.tab === "tasks" && selected) {
 			lines.push(truncateToWidth(`${selected.description} ${this.theme.fg("dim", `· ${selected.scope.kind}`)}`, innerWidth, ""));
-			lines.push(truncateToWidth(this.theme.fg("dim", `${humanizeSchedule(selected.schedule)} · ${selected.candidate?.workingDirectory ?? selected.sourcePath}`), innerWidth, ""));
+			lines.push(truncateToWidth(this.theme.fg("dim", `${humanizeSchedule(effectiveSchedule(selected))} · ${effectiveWorkingDirectory(selected)}`), innerWidth, ""));
 		} else lines.push(this.theme.fg("dim", this.tab === "runs" ? "Enter opens the selected run output." : "No tasks are declared in the available scheduler sources."));
 		lines.push(truncateToWidth(this.theme.fg("dim", "↑/↓ j/k select · Tab tasks/runs · Enter details · r refresh · Esc close"), innerWidth, ""));
 		return framed(lines, safeWidth, this.theme);
@@ -291,8 +303,11 @@ export class SchedulerDashboardComponent implements Component {
 	private taskLines(width: number, height: number): string[] {
 		if (this.data.jobs.length === 0) return [this.theme.fg("dim", "No scheduler tasks declared."), ...Array.from({ length: Math.max(0, height - 1) }, () => "")];
 		this.selectedTask = Math.min(this.selectedTask, this.data.jobs.length - 1);
-		const rowHeight = width < 82 ? 2 : 1;
-		const visibleCount = Math.max(1, Math.floor(height / rowHeight));
+		const wide = width >= 82;
+		const headingHeight = wide ? 1 : 0;
+		const availableHeight = Math.max(1, height - headingHeight);
+		const rowHeight = wide ? 1 : 2;
+		const visibleCount = Math.max(1, Math.floor(availableHeight / rowHeight));
 		const visible = selectedWindow(this.data.jobs, this.selectedTask, visibleCount);
 		const start = this.data.jobs.indexOf(visible[0]!);
 		const lines = visible.flatMap((job, relativeIndex) => {
@@ -314,7 +329,9 @@ export class SchedulerDashboardComponent implements Component {
 			const next = padAnsi(formatSchedulerTime(job.nextRun, this.now), nextWidth);
 			return [truncateToWidth(`${task} ${status} ${next} ${this.lastRun(job)}`, width, "")];
 		});
-		return [...lines.slice(0, height), ...Array.from({ length: Math.max(0, height - lines.length) }, () => "")];
+		const heading = wide ? [this.theme.fg("dim", "  TASK                         STATE                   NEXT             LAST")] : [];
+		const visibleLines = lines.slice(0, availableHeight);
+		return [...heading, ...visibleLines, ...Array.from({ length: Math.max(0, height - heading.length - visibleLines.length) }, () => "")];
 	}
 
 	private runLines(width: number, height: number): string[] {
@@ -434,12 +451,12 @@ export class SchedulerJobDetailComponent implements Component {
 		return [
 			...wrapTextWithAnsi(this.job.description, width),
 			"",
-			`Schedule: ${humanizeSchedule(this.job.schedule)}`,
+			`Schedule: ${humanizeSchedule(effectiveSchedule(this.job))}`,
 			`Next run: ${formatSchedulerTime(this.job.nextRun, this.now)}`,
 			`Last run: ${latest ? `${runState(latest).label} · ${formatSchedulerTime(latest.startedAt, this.now)} · ${duration(latest.durationMilliseconds)}` : "No recorded runs"}`,
 			`Scope: ${this.job.scope.kind}`,
 			`Source: ${this.job.sourcePath}`,
-			`Working directory: ${this.job.candidate?.workingDirectory ?? "Unavailable"}`,
+			`Working directory: ${effectiveWorkingDirectory(this.job)}`,
 			...(failures.length === 0 ? [] : ["", ...failures.flatMap((error) => wrapTextWithAnsi(this.theme.fg("error", `${error!.code}: ${error!.message}`), width))]),
 		].flatMap((line) => wrapTextWithAnsi(line, width));
 	}
