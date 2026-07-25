@@ -109,6 +109,7 @@ test("renders a width-safe tasks dashboard with next run, history, and source er
   assert.match(wide.join("\n"), /daily-report:work · global · Active · Weekdays at 17:30 local time · next Today 17:30/);
   assert.match(wide.join("\n"), /! Project tasks · jobs\.bad contains unknown field/);
   assert.match(wide.join("\n"), /Active/);
+  assert.equal(wide.length, 22);
   assert.equal(wide.every((line) => visibleWidth(line) <= 100), true);
 
   const narrow = component.render(54);
@@ -134,6 +135,11 @@ test("navigates tasks and runs without exposing run identifiers", () => {
   component.handleInput("\r");
   assert.deepEqual(outcomes, [{ kind: "run", id: "global:daily-report:work", runId: secondRun.runId }]);
   assert.equal(view.renders() >= 2, true);
+
+  const closeOutcomes = [];
+  const closing = new SchedulerDashboardComponent(data, view.tui, theme, (result) => closeOutcomes.push(result));
+  closing.handleInput("q");
+  assert.deepEqual(closeOutcomes, [{ kind: "close" }]);
 });
 
 test("detail view progressively discloses runs and definition while retaining actions", () => {

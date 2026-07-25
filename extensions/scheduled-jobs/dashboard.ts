@@ -251,7 +251,7 @@ export class SchedulerDashboardComponent implements Component {
 	}
 
 	handleInput(data: string): void {
-		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape")) {
+		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || data === "q") {
 			this.done({ kind: "close" });
 			return;
 		}
@@ -310,7 +310,7 @@ export class SchedulerDashboardComponent implements Component {
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 		];
 		if (this.data.sourceErrors.length > 0) {
-			lines.push(this.theme.fg("dim", "SOURCE ERRORS"));
+			lines.push(this.theme.bold("SOURCE ERRORS"));
 			for (const sourceError of this.data.sourceErrors.slice(0, 2)) {
 				lines.push(truncateToWidth(`${this.theme.fg("error", "!")} ${sourceError.scope === "global" ? "Global" : "Project"} tasks · ${this.theme.fg("error", sourceError.error.message)}`, innerWidth, ""));
 				lines.push(truncateToWidth(this.theme.fg("dim", `  ${sourceError.manifestPath}`), innerWidth, ""));
@@ -318,9 +318,16 @@ export class SchedulerDashboardComponent implements Component {
 			if (this.data.jobs.length > 0) lines.push("");
 		}
 		const bodyHeight = this.bodyHeight(lines.length);
-		if (this.tab === "tasks") lines.push(...this.taskLines(innerWidth, bodyHeight));
-		else lines.push(...this.runLines(innerWidth, bodyHeight));
-		lines.push(truncateToWidth(this.theme.fg("dim", `↑/↓ j/k select · Enter ${this.tab === "tasks" ? "details" : "output"} · Tab ${this.tab === "tasks" ? "runs" : "tasks"} · r refresh · Esc close`), innerWidth, ""));
+		const body = this.tab === "tasks" ? this.taskLines(innerWidth, bodyHeight) : this.runLines(innerWidth, bodyHeight);
+		lines.push(...body, ...Array.from({ length: Math.max(0, bodyHeight - body.length) }, () => ""));
+		const footer = [
+			`${this.theme.fg("accent", "↑/↓ j/k")} ${this.theme.fg("dim", "select")}`,
+			`${this.theme.fg("accent", "Enter")} ${this.theme.fg("dim", this.tab === "tasks" ? "details" : "output")}`,
+			`${this.theme.fg("accent", "Tab")} ${this.theme.fg("dim", this.tab === "tasks" ? "runs" : "tasks")}`,
+			`${this.theme.fg("accent", "r")} ${this.theme.fg("dim", "refresh")}`,
+			`${this.theme.fg("accent", "q/Esc")} ${this.theme.fg("dim", "close")}`,
+		].join(this.theme.fg("dim", " · "));
+		lines.push(truncateToWidth(footer, innerWidth, ""));
 		return framed(lines, safeWidth, this.theme);
 	}
 
@@ -328,10 +335,9 @@ export class SchedulerDashboardComponent implements Component {
 
 	private taskLines(width: number, height: number): string[] {
 		if (this.data.jobs.length === 0) {
-			const message = this.data.sourceErrors.length > 0
-				? "No tasks loaded. Fix the source above, then press r to retry."
-				: "No scheduler tasks declared. Use /skill:scheduled-jobs to create one.";
-			return [this.theme.fg("dim", message)];
+			return this.data.sourceErrors.length > 0
+				? [`No tasks loaded. Fix the source above, then press ${this.theme.fg("accent", "r")} to retry.`]
+				: ["No scheduler tasks declared. Use /skill:scheduled-jobs to create one."];
 		}
 		this.selectedTask = Math.min(this.selectedTask, this.data.jobs.length - 1);
 		const display = this.taskDisplayLines(width);
@@ -346,7 +352,7 @@ export class SchedulerDashboardComponent implements Component {
 			const jobs = this.data.jobs.map((job, taskIndex) => ({ job, taskIndex })).filter(({ job }) => taskSection(job) === section);
 			if (jobs.length === 0) continue;
 			if (lines.length > 0) lines.push({ text: "" });
-			lines.push({ text: this.theme.fg("dim", label) });
+			lines.push({ text: this.theme.bold(label) });
 			for (const { job, taskIndex } of jobs) {
 				lines.push({ text: this.taskLine(job, taskIndex === this.selectedTask, width), taskIndex });
 			}
@@ -361,15 +367,15 @@ export class SchedulerDashboardComponent implements Component {
 		const next = job.nextRun ? `next ${formatSchedulerTime(job.nextRun, this.now)}` : state.label.startsWith("Paused") ? "schedule paused" : state.label === "Draft" ? "not installed" : "next run unavailable";
 		const latest = job.recentRuns[0];
 		const last = latest ? `last ${runState(latest).label.toLowerCase()} ${formatSchedulerTime(latest.startedAt, this.now)}` : "no recorded runs";
-		return truncateToWidth(`${marker} ${this.theme.fg(state.color, state.icon)} ${label} ${this.theme.fg("dim", `· ${job.scope.kind} · ${state.label} · ${humanizeSchedule(effectiveSchedule(job))} · ${next} · ${last}`)}`, width, "");
+		return truncateToWidth(`${marker} ${this.theme.fg(state.color, state.icon)} ${label} ${this.theme.fg("dim", `· ${job.scope.kind} ·`)} ${this.theme.fg(state.color, state.label)} · ${humanizeSchedule(effectiveSchedule(job))} ${this.theme.fg("dim", `· ${next} · ${last}`)}`, width, "");
 	}
 
 	private runLines(width: number, height: number): string[] {
 		const runs = allRuns(this.data);
-		if (runs.length === 0) return [this.theme.fg("dim", "No recorded scheduler runs yet. New runs will appear here.")];
+		if (runs.length === 0) return ["No recorded scheduler runs yet. New runs will appear here."];
 		this.selectedRun = Math.min(this.selectedRun, runs.length - 1);
 		const display: SchedulerDisplayLine[] = [
-			{ text: this.theme.fg("dim", "RECENT RUNS") },
+			{ text: this.theme.bold("RECENT RUNS") },
 			...runs.map(({ job, run }, runIndex) => ({
 				text: this.runLine(job, run, runIndex === this.selectedRun, width),
 				runIndex,
@@ -384,7 +390,7 @@ export class SchedulerDashboardComponent implements Component {
 		const state = runState(run);
 		const marker = selected ? this.theme.fg("accent", "›") : " ";
 		const label = selected ? this.theme.fg("accent", job.key) : job.key;
-		return truncateToWidth(`${marker} ${this.theme.fg(state.color, state.icon)} ${label} ${this.theme.fg("dim", `· ${state.label} · ${formatSchedulerTime(run.startedAt, this.now)} · ${duration(run.durationMilliseconds)} · ${run.trigger}`)}`, width, "");
+		return truncateToWidth(`${marker} ${this.theme.fg(state.color, state.icon)} ${label} · ${this.theme.fg(state.color, state.label)} ${this.theme.fg("dim", `· ${formatSchedulerTime(run.startedAt, this.now)} · ${duration(run.durationMilliseconds)} · ${run.trigger}`)}`, width, "");
 	}
 
 	private bodyHeight(linesBeforeBody: number): number {
@@ -422,7 +428,7 @@ export class SchedulerJobDetailComponent implements Component {
 	}
 
 	handleInput(data: string): void {
-		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || matchesKey(data, "left")) {
+		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || matchesKey(data, "left") || data === "q") {
 			this.done({ kind: "back" });
 			return;
 		}
@@ -476,8 +482,9 @@ export class SchedulerJobDetailComponent implements Component {
 			this.theme.fg("dim", tabs),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 			...visible,
+			...Array.from({ length: Math.max(0, bodyHeight - visible.length) }, () => ""),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
-			truncateToWidth(this.theme.fg("dim", "Tab switch · ↑/↓ scroll · Enter run output · a actions · Esc tasks"), innerWidth, ""),
+			truncateToWidth(this.theme.fg("dim", "Tab switch · ↑/↓ scroll · Enter run output · a actions · q/Esc tasks"), innerWidth, ""),
 		], safeWidth, this.theme);
 	}
 
@@ -537,7 +544,7 @@ export class SchedulerTextComponent implements Component {
 	}
 
 	handleInput(data: string): void {
-		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || matchesKey(data, "left")) {
+		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || matchesKey(data, "left") || data === "q") {
 			this.done();
 			return;
 		}
@@ -561,7 +568,7 @@ export class SchedulerTextComponent implements Component {
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 			...visible,
 			...Array.from({ length: Math.max(0, height - visible.length) }, () => ""),
-			this.theme.fg("dim", "↑/↓ scroll · End latest · Esc back"),
+			this.theme.fg("dim", "↑/↓ scroll · End latest · q/Esc back"),
 		], safeWidth, this.theme);
 	}
 
