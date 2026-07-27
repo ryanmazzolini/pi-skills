@@ -32,17 +32,20 @@ function uiHarness(selectors = [], confirmations = [], customs = []) {
   const selects = [];
   const confirms = [];
   const customCalls = [];
+  const customOptions = [];
   const notices = [];
   const editorTexts = [];
   return {
     selects,
     confirms,
     customCalls,
+    customOptions,
     notices,
     editorTexts,
     ui: {
-      async custom(factory) {
+      async custom(factory, options) {
         customCalls.push(factory);
+        customOptions.push(options);
         const result = customs.shift();
         if (typeof result === "function") return result(factory);
         return result ?? { kind: "close" };
@@ -422,6 +425,10 @@ test("refreshes the current task inside one detail component", async () => {
   assert.equal(scripted.calls.filter((call) => call.args[0] === "overview").length, 4);
   assert.equal(scripted.calls.filter((call) => call.args[0] === "inspect").length, 2);
   assert.equal(harness.customCalls.length, 3);
+  assert.deepEqual(harness.customOptions, Array.from({ length: 3 }, () => ({
+    overlay: true,
+    overlayOptions: { anchor: "center", width: "90%", maxHeight: "85%", margin: 1 },
+  })));
 });
 
 test("prefills an evidence-based diagnostic request for the open agent", async () => {

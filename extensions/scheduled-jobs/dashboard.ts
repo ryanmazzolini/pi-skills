@@ -95,6 +95,16 @@ type TuiView = Pick<TUI, "requestRender"> & { terminal?: { rows: number } };
 type DashboardTab = "tasks" | "runs";
 type DetailTab = "overview" | "runs" | "definition";
 
+function schedulerPanelLines(tui: TuiView): number {
+	return Math.max(1, Math.floor((tui.terminal?.rows ?? 24) * 0.85));
+}
+
+function compactPanelLines(height: number, header: string, content: string[], footer: string): string[] {
+	if (height <= 1) return [footer];
+	if (height === 2) return [header, footer];
+	return [header, ...content.slice(0, height - 2), footer];
+}
+
 function padAnsi(value: string, width: number): string {
 	const truncated = truncateToWidth(value, Math.max(1, width), "");
 	return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
@@ -116,6 +126,22 @@ function framed(lines: string[], width: number, theme: Theme): string[] {
 		...lines.map((line) => `${border("│")}${padAnsi(line, innerWidth)}${border("│")}`),
 		border(`╰${"─".repeat(innerWidth)}╯`),
 	], safeWidth, theme);
+}
+
+function sizedPanel(lines: string[], width: number, height: number, theme: Theme): string[] {
+	const safeWidth = Math.max(1, width);
+	const safeHeight = Math.max(1, height);
+	if (safeWidth < 3) {
+		const visible = lines.slice(0, safeHeight);
+		return opaque([...visible, ...Array.from({ length: safeHeight - visible.length }, () => "")], safeWidth, theme);
+	}
+	if (safeHeight < 3) {
+		const compact = safeHeight === 1 ? [lines.at(-1) ?? ""] : [lines[0] ?? "", lines.at(-1) ?? ""];
+		return opaque(compact, safeWidth, theme);
+	}
+	const innerHeight = safeHeight - 2;
+	const visible = lines.slice(0, innerHeight);
+	return framed([...visible, ...Array.from({ length: innerHeight - visible.length }, () => "")], safeWidth, theme);
 }
 
 function dayDifference(left: Date, right: Date): number {
@@ -339,10 +365,17 @@ export class SchedulerDashboardComponent implements Component {
 			...(issues ? [`${issues} need${issues === 1 ? "s" : ""} attention`] : []),
 		].join(" · ");
 		const refreshState = this.refreshing ? ` ${this.theme.fg("warning", "↻ refreshing")}` : "";
-		const lines = [
-			truncateToWidth(`${this.theme.bold("Scheduler")} ${this.theme.fg("dim", "· ")}${tabs} ${this.theme.fg("dim", `· ${counts}`)}${refreshState}`, innerWidth, ""),
-			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
-		];
+		const panelHeight = schedulerPanelLines(this.tui);
+		const innerHeight = Math.max(0, panelHeight - 2);
+		const header = truncateToWidth(`${this.theme.bold("Scheduler")} ${this.theme.fg("dim", "· ")}${tabs} ${this.theme.fg("dim", `· ${counts}`)}${refreshState}`, innerWidth, "");
+		const footer = truncateToWidth([
+			`${this.theme.fg("accent", "↑/↓ j/k")} ${this.theme.fg("dim", "select")}`,
+			`${this.theme.fg("accent", "Enter")} ${this.theme.fg("dim", this.tab === "tasks" ? "details" : "output")}`,
+			`${this.theme.fg("accent", "Tab")} ${this.theme.fg("dim", this.tab === "tasks" ? "runs" : "tasks")}`,
+			`${this.theme.fg("accent", "r")} ${this.theme.fg("dim", "refresh")}`,
+			`${this.theme.fg("accent", "q/Esc")} ${this.theme.fg("dim", "close")}`,
+		].join(this.theme.fg("dim", " · ")), innerWidth, "");
+		const lines = [header, this.theme.fg("borderMuted", "─".repeat(innerWidth))];
 		if (this.refreshFailure) {
 			lines.push(truncateToWidth(`${this.theme.fg("error", "!")} Refresh failed · ${this.theme.fg("error", this.refreshFailure)}`, innerWidth, ""));
 			lines.push(`  Press ${this.theme.fg("accent", "r")} to retry; the previous snapshot is still shown.`);
@@ -356,17 +389,13 @@ export class SchedulerDashboardComponent implements Component {
 			if (this.data.jobs.length > 0) lines.push("");
 		}
 		const bodyHeight = this.bodyHeight(lines.length);
+		if (bodyHeight < 1) {
+			const compactBody = this.tab === "tasks" ? this.taskLines(innerWidth, 1) : this.runLines(innerWidth, 1);
+			return sizedPanel(compactPanelLines(innerHeight, header, compactBody, footer), safeWidth, panelHeight, this.theme);
+		}
 		const body = this.tab === "tasks" ? this.taskLines(innerWidth, bodyHeight) : this.runLines(innerWidth, bodyHeight);
-		lines.push(...body, ...Array.from({ length: Math.max(0, bodyHeight - body.length) }, () => ""));
-		const footer = [
-			`${this.theme.fg("accent", "↑/↓ j/k")} ${this.theme.fg("dim", "select")}`,
-			`${this.theme.fg("accent", "Enter")} ${this.theme.fg("dim", this.tab === "tasks" ? "details" : "output")}`,
-			`${this.theme.fg("accent", "Tab")} ${this.theme.fg("dim", this.tab === "tasks" ? "runs" : "tasks")}`,
-			`${this.theme.fg("accent", "r")} ${this.theme.fg("dim", "refresh")}`,
-			`${this.theme.fg("accent", "q/Esc")} ${this.theme.fg("dim", "close")}`,
-		].join(this.theme.fg("dim", " · "));
-		lines.push(truncateToWidth(footer, innerWidth, ""));
-		return framed(lines, safeWidth, this.theme);
+		lines.push(...body, ...Array.from({ length: Math.max(0, bodyHeight - body.length) }, () => ""), footer);
+		return sizedPanel(lines, safeWidth, panelHeight, this.theme);
 	}
 
 	invalidate(): void {}
@@ -508,9 +537,7 @@ export class SchedulerDashboardComponent implements Component {
 	}
 
 	private bodyHeight(linesBeforeBody: number): number {
-		const terminalRows = this.tui.terminal?.rows ?? 24;
-		const maxLines = Math.max(6, Math.floor(terminalRows * 0.85));
-		return Math.max(1, maxLines - linesBeforeBody - 1);
+		return Math.max(0, schedulerPanelLines(this.tui) - linesBeforeBody - 3);
 	}
 }
 
@@ -560,7 +587,9 @@ export class SchedulerActionComponent implements Component {
 	render(width: number): string[] {
 		const safeWidth = Math.max(1, width);
 		const innerWidth = Math.max(1, safeWidth - 2);
-		const bodyHeight = Math.max(3, Math.min(14, (this.tui.terminal?.rows ?? 24) - 6));
+		const panelHeight = schedulerPanelLines(this.tui);
+		const innerHeight = Math.max(0, panelHeight - 2);
+		const bodyHeight = Math.max(0, panelHeight - 6);
 		const display = this.options.map((option, index) => {
 			const selected = index === this.selected;
 			const marker = selected ? this.theme.fg("accent", "›") : " ";
@@ -571,16 +600,21 @@ export class SchedulerActionComponent implements Component {
 					: option.label;
 			return truncateToWidth(`${marker} ${label} ${this.theme.fg("dim", `· ${option.description}`)}`, innerWidth, "");
 		});
+		const header = truncateToWidth(`${this.theme.bold(`Scheduler / ${this.jobKey}`)} ${this.theme.fg("dim", "· Actions")}`, innerWidth, "");
+		const footer = this.theme.fg("dim", "↑/↓ j/k select · Enter review · q/Esc back");
+		if (bodyHeight < 1) {
+			return sizedPanel(compactPanelLines(innerHeight, header, [display[this.selected] ?? "No actions available."], footer), safeWidth, panelHeight, this.theme);
+		}
 		const start = Math.min(Math.max(0, this.selected - Math.floor(bodyHeight / 2)), Math.max(0, display.length - bodyHeight));
 		const visible = display.slice(start, start + bodyHeight);
-		return framed([
-			truncateToWidth(`${this.theme.bold(`Scheduler / ${this.jobKey}`)} ${this.theme.fg("dim", "· Actions")}`, innerWidth, ""),
+		return sizedPanel([
+			header,
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 			this.theme.bold("AVAILABLE ACTIONS"),
 			...visible,
 			...Array.from({ length: Math.max(0, bodyHeight - visible.length) }, () => ""),
-			this.theme.fg("dim", "↑/↓ j/k select · Enter review · q/Esc back"),
-		], safeWidth, this.theme);
+			footer,
+		], safeWidth, panelHeight, this.theme);
 	}
 
 	invalidate(): void {}
@@ -674,24 +708,29 @@ export class SchedulerJobDetailComponent implements Component {
 			: this.refreshStatus
 				? this.theme.fg(this.refreshStatus.color, ` · ${this.refreshStatus.message}`)
 				: "";
-		const header = `${this.theme.bold(`Scheduler / ${this.job.key}`)} ${this.theme.fg(state.color, `· ${state.icon} ${state.label}`)}${refreshState}`;
-		const bodyHeight = Math.max(4, Math.min(14, (this.tui.terminal?.rows ?? 24) - 7));
+		const panelHeight = schedulerPanelLines(this.tui);
+		const innerHeight = Math.max(0, panelHeight - 2);
+		const renderedHeader = truncateToWidth(`${this.theme.bold(`Scheduler / ${this.job.key}`)} ${this.theme.fg(state.color, `· ${state.icon} ${state.label}`)}${refreshState}`, innerWidth, "");
+		const footer = truncateToWidth(this.theme.fg("dim", `Tab switch · ↑/↓ scroll · Enter run output · r refresh${state.label === "Needs attention" ? " · d diagnose with agent" : ""} · a actions · q/Esc tasks`), innerWidth, "");
+		const bodyHeight = Math.max(0, panelHeight - 6);
 		const body = this.tab === "overview"
 			? this.overviewLines(innerWidth)
 			: this.tab === "runs"
 				? this.detailRunLines(innerWidth)
 				: this.definitionLines(innerWidth);
+		if (bodyHeight < 1) {
+			return sizedPanel(compactPanelLines(innerHeight, renderedHeader, [this.theme.fg("dim", tabs), ...body], footer), safeWidth, panelHeight, this.theme);
+		}
 		const start = this.tab === "runs" ? 0 : Math.min(this.scroll, Math.max(0, body.length - bodyHeight));
 		const visible = body.slice(start, start + bodyHeight);
-		return framed([
-			truncateToWidth(header, innerWidth, ""),
+		return sizedPanel([
+			renderedHeader,
 			this.theme.fg("dim", tabs),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 			...visible,
 			...Array.from({ length: Math.max(0, bodyHeight - visible.length) }, () => ""),
-			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
-			truncateToWidth(this.theme.fg("dim", `Tab switch · ↑/↓ scroll · Enter run output · r refresh${state.label === "Needs attention" ? " · d diagnose with agent" : ""} · a actions · q/Esc tasks`), innerWidth, ""),
-		], safeWidth, this.theme);
+			footer,
+		], safeWidth, panelHeight, this.theme);
 	}
 
 	invalidate(): void {}
@@ -983,21 +1022,28 @@ export class SchedulerTextComponent implements Component {
 	render(width: number): string[] {
 		const safeWidth = Math.max(1, width);
 		const innerWidth = Math.max(1, safeWidth - 2);
-		const height = Math.max(4, Math.min(16, (this.tui.terminal?.rows ?? 24) - 5));
+		const panelHeight = schedulerPanelLines(this.tui);
+		const innerHeight = Math.max(0, panelHeight - 2);
+		const height = Math.max(0, panelHeight - 5);
 		const content = this.text.split("\n").flatMap((line) => wrapTextWithAnsi(line || " ", innerWidth));
+		const refreshState = this.refreshing ? ` ${this.theme.fg("warning", "↻ updating")}` : "";
+		const header = truncateToWidth(`${this.theme.bold(this.title)}${refreshState}`, innerWidth, "");
+		const footer = truncateToWidth(this.refreshFailure
+			? `${this.theme.fg("error", `Refresh failed: ${this.refreshFailure}`)} · ${this.theme.fg("dim", "q/Esc back")}`
+			: this.theme.fg("dim", `↑/↓ scroll · End latest${this.reload && !this.complete ? " · updates automatically" : ""} · q/Esc back`), innerWidth, "");
+		if (height < 1) {
+			const compactIndex = Math.max(0, content.length - 1 - this.scroll);
+			return sizedPanel(compactPanelLines(innerHeight, header, [content[compactIndex] ?? "No output recorded."], footer), safeWidth, panelHeight, this.theme);
+		}
 		const start = Math.max(0, content.length - height - this.scroll);
 		const visible = content.slice(start, start + height);
-		const refreshState = this.refreshing ? ` ${this.theme.fg("warning", "↻ updating")}` : "";
-		const footer = this.refreshFailure
-			? `${this.theme.fg("error", `Refresh failed: ${this.refreshFailure}`)} · ${this.theme.fg("dim", "q/Esc back")}`
-			: this.theme.fg("dim", `↑/↓ scroll · End latest${this.reload && !this.complete ? " · updates automatically" : ""} · q/Esc back`);
-		return framed([
-			truncateToWidth(`${this.theme.bold(this.title)}${refreshState}`, innerWidth, ""),
+		return sizedPanel([
+			header,
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 			...visible,
 			...Array.from({ length: Math.max(0, height - visible.length) }, () => ""),
-			truncateToWidth(footer, innerWidth, ""),
-		], safeWidth, this.theme);
+			footer,
+		], safeWidth, panelHeight, this.theme);
 	}
 
 	invalidate(): void {}
