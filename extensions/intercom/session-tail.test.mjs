@@ -292,6 +292,26 @@ test("the text limit selects latest text while retaining every later outcome", a
 	});
 });
 
+test("resolves a later tool result whose call precedes the selected text", async (t) => {
+	const records = [
+		header(),
+		entry("custom", "older", null, { customType: "older" }),
+		assistant("call", "older", [toolCall("cross-text", "read")], "toolUse"),
+		user("selected", "call", "selected text"),
+		toolResult("result", "selected", "cross-text", "read", false),
+	];
+	const path = writeRecords(t, records);
+	await withHandle(open(path, "result", 1), (handle) => {
+		assert.deepEqual(handle.snapshot.events, [
+			{ kind: "user", text: "selected text" },
+			{ kind: "tool", name: "read", outcome: "succeeded" },
+		]);
+		assert.equal(handle.snapshot.counts.scannedEntries, 3);
+		assert.equal(handle.snapshot.counts.branchEntries, 3);
+		assert.equal(handle.snapshot.historyTruncated, true);
+	});
+});
+
 test("returns the latest default eight and maximum thirty-two text events", async (t) => {
 	const records = [header()];
 	let parent = null;

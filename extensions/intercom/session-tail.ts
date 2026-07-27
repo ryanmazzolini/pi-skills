@@ -856,6 +856,7 @@ async function scanAdvertisedBranch(
 	let expectedId: string | null = activeLeafId;
 	let foundLeaf = false;
 	let eligibleTextEvents = 0;
+	const unresolvedToolResultIds = new Set<string>();
 
 	while (true) {
 		const line = await reader.nextLine();
@@ -882,8 +883,20 @@ async function scanAdvertisedBranch(
 		retainedBytes = reserveCompactEntry(retainedBytes, compact);
 		branch.push({ id, parentId, entry: compact });
 		expectedId = parentId;
+		if (compact.type === "message") {
+			const message = compact.message as Record<string, unknown>;
+			// Only results newer than the selected text boundary can be projected.
+			// Continue far enough to find the older calls that authenticate them.
+			if (message.role === "toolResult" && eligibleTextEvents < limit) {
+				unresolvedToolResultIds.add(message.toolCallId as string);
+			} else if (message.role === "assistant" && unresolvedToolResultIds.size > 0) {
+				for (const block of message.content as Record<string, unknown>[]) {
+					if (block.type === "toolCall") unresolvedToolResultIds.delete(block.id as string);
+				}
+			}
+		}
 		if (isEligibleTextEntry(compact)) eligibleTextEvents++;
-		if (expectedId === null || eligibleTextEvents >= limit) break;
+		if (expectedId === null || (eligibleTextEvents >= limit && unresolvedToolResultIds.size === 0)) break;
 	}
 
 	return {
