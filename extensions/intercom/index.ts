@@ -49,7 +49,7 @@ export const IntercomParams = Type.Object({
 	replyTo: Type.Optional(Type.String({ description: "Exact inbound message ID for reply selection, or thread ID for send/ask" })),
 	operationId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Operation ID for operations inspection or cancellation" })),
 	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32, description: "Maximum operation snapshots or tail text messages to return; ignored for list" })),
-	tailScanBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: SESSION_TAIL_LIMITS.scanBytes, description: "For tail only: maximum session-file bytes to scan (default 16 MiB)" })),
+	tailScanBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: SESSION_TAIL_LIMITS.scanBytes, description: "For tail only: emergency ceiling for file bytes read while finding requested text (default 512 MiB)" })),
 	tailProjectionBytes: Type.Optional(Type.Integer({ minimum: INTERCOM_TAIL_PROJECTION_MIN_BYTES, maximum: INTERCOM_PROJECTION_MAX_BYTES, description: "For tail only: maximum UTF-8 bytes in the model projection (default 48 KiB)" })),
 }, { additionalProperties: false });
 
@@ -575,11 +575,14 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 							requestedMessages: params.limit ?? 8,
 							requestedScanBytes: params.tailScanBytes ?? SESSION_TAIL_LIMITS.scanBytes,
 							requestedProjectionBytes: params.tailProjectionBytes ?? INTERCOM_PROJECTION_MAX_BYTES,
-							availableTextMessages: result.snapshot.counts.eligibleTextEvents,
+							...(result.snapshot.historyTruncated
+								? { observedTextMessages: result.snapshot.counts.eligibleTextEvents }
+								: { availableTextMessages: result.snapshot.counts.eligibleTextEvents }),
 							returnedTextMessages: result.snapshot.counts.returnedTextEvents,
 							lastConversationalTimestamp: result.snapshot.lastConversationalTimestamp,
 							timelineEvents: result.snapshot.events.length,
-							truncated: result.snapshot.truncated || result.snapshot.outcomeEventsTruncated || result.snapshot.ignoredFinalFragment || projected.truncated,
+							branchHistoryTruncated: result.snapshot.historyTruncated,
+							truncated: result.snapshot.truncated || result.snapshot.historyTruncated || result.snapshot.outcomeEventsTruncated || result.snapshot.ignoredFinalFragment || projected.truncated,
 						};
 						assertCompactRecord(details, "Intercom tail details");
 						return { content: [{ type: "text" as const, text: projected.text }], details };

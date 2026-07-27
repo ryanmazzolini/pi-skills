@@ -151,11 +151,12 @@ export class IntercomRuntime extends EventEmitter {
 		this.assertNotSelf(target.id);
 		const presence = this.requireUniquePiSession(target, before);
 		throwIfAborted(signal);
-		const opened = this.openTail({
+		const opened = await this.openTail({
 			piSessionId: presence.sessionId,
 			fileLocator: presence.fileLocator,
 			activeLeafId: presence.activeLeafId,
 			limit,
+			...(signal === undefined ? {} : { signal }),
 			...(scanBytes === undefined ? {} : { scanBytes }),
 		});
 		try {
