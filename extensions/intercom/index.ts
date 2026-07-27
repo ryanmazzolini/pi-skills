@@ -9,7 +9,7 @@ import { spawnBrokerIfNeeded } from "./broker/spawn.ts";
 import type { InboxEntry } from "./inbox.ts";
 import { IntercomRuntime, type IntercomStatus } from "./runtime.ts";
 import { IntercomOperations, type IntercomOperationSnapshot } from "./operations.ts";
-import { PiSessionPresenceTracker } from "./presence.ts";
+import { lastConversationalTimestamp, PiSessionPresenceTracker } from "./presence.ts";
 import { SESSION_TAIL_LIMITS } from "./session-tail.ts";
 import {
 	INTERCOM_PROJECTION_MAX_BYTES,
@@ -393,11 +393,23 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	let model = "unknown";
 	let startedAt = 0;
 	let agentRunning = false;
+	let conversationalLeafId: string | null | undefined;
+	let conversationalTimestamp: number | null = null;
 	const activeTools = new Map<string, string>();
 
 	const lifecycleStatus = () => {
 		const tool = activeTools.values().next().value;
 		return tool ? `tool:${tool}` : agentRunning ? "thinking" : "idle";
+	};
+
+	const currentConversationalTimestamp = (): number | null => {
+		if (!context) return null;
+		const leafId = context.sessionManager.getLeafId();
+		if (leafId !== conversationalLeafId) {
+			conversationalLeafId = leafId;
+			conversationalTimestamp = lastConversationalTimestamp(context.sessionManager);
+		}
+		return conversationalTimestamp;
 	};
 
 	const registration = (): Omit<SessionInfo, "id"> => {
@@ -411,6 +423,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 			pid: process.pid,
 			startedAt,
 			lastActivity: Date.now(),
+			lastConversationalTimestamp: currentConversationalTimestamp(),
 			status: lifecycleStatus(),
 			...(persisted ? { piSession: persisted } : {}),
 		};
@@ -434,6 +447,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 			name: current.name,
 			model: current.model,
 			status: current.status,
+			lastConversationalTimestamp: current.lastConversationalTimestamp ?? null,
 			...(tailChanged?.changed ? { piSession: tailChanged.presence ?? null } : {}),
 		});
 	};
@@ -503,7 +517,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "intercom",
 		label: "Intercom",
-		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it; role synchronously publishes or clears the ephemeral First Mate role when the broker advertises support; list discovers peers, roles, and stable Pi session IDs; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current Pi session ID, connectivity, capabilities, and startup diagnostics.",
+		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it; role synchronously publishes or clears the ephemeral First Mate role when the broker advertises support; list discovers peers, roles, stable Pi session IDs, and available conversational timestamps; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current Pi session ID, connectivity, capabilities, and startup diagnostics.",
 		promptSnippet: "List, message, ask, reply, or publish the First Mate role for local Pi sessions",
 		promptGuidelines: [
 			"intercom send, ask, and reply return receipts immediately and deliver terminal results automatically; continue independent work instead of polling operations.",
@@ -740,6 +754,8 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		startedAt = Date.now();
 		roleLifecycleGeneration++;
 		agentRunning = false;
+		conversationalLeafId = undefined;
+		conversationalTimestamp = null;
 		activeTools.clear();
 		inboundDelivery?.dispose();
 		inboundDelivery = undefined;
@@ -788,6 +804,8 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		piPresence = undefined;
 		stopBashPresenceWatcher();
 		agentRunning = false;
+		conversationalLeafId = undefined;
+		conversationalTimestamp = null;
 		activeTools.clear();
 		const previousDelivery = inboundDelivery;
 		inboundDelivery = undefined;
