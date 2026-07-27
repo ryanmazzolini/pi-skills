@@ -237,6 +237,10 @@ function taskSection(job: SchedulerJobOverview): TaskSection {
 	return "active";
 }
 
+function orderedTasks(data: SchedulerDashboardData): SchedulerJobOverview[] {
+	return TASK_SECTIONS.flatMap(({ section }) => data.jobs.filter((job) => taskSection(job) === section));
+}
+
 function hasRunningRuns(data: SchedulerDashboardData): boolean {
 	return data.jobs.some((job) => job.recentRuns.some((run) => run.status === "running"));
 }
@@ -289,7 +293,7 @@ export class SchedulerDashboardComponent implements Component {
 			else this.done({ kind: "refresh" });
 			return;
 		}
-		const count = this.tab === "tasks" ? this.data.jobs.length : allRuns(this.data).length;
+		const count = this.tab === "tasks" ? orderedTasks(this.data).length : allRuns(this.data).length;
 		const selected = this.tab === "tasks" ? this.selectedTask : this.selectedRun;
 		if ((matchesKey(data, "up") || data === "k") && selected > 0) {
 			if (this.tab === "tasks") this.selectedTask--;
@@ -305,7 +309,7 @@ export class SchedulerDashboardComponent implements Component {
 		}
 		if (matchesKey(data, "return") || matchesKey(data, "right")) {
 			if (this.tab === "tasks") {
-				const job = this.data.jobs[this.selectedTask];
+				const job = orderedTasks(this.data)[this.selectedTask];
 				if (job) this.done({ kind: "job", id: job.id });
 			} else {
 				const selectedRun = allRuns(this.data)[this.selectedRun];
@@ -378,7 +382,7 @@ export class SchedulerDashboardComponent implements Component {
 		const abort = new AbortController();
 		this.refreshAbort = abort;
 		this.tui.requestRender();
-		const selectedTaskId = this.data.jobs[this.selectedTask]?.id;
+		const selectedTaskId = orderedTasks(this.data)[this.selectedTask]?.id;
 		const selectedRunId = allRuns(this.data)[this.selectedRun]?.run.runId;
 		try {
 			const next = await this.reload(abort.signal);
@@ -387,8 +391,9 @@ export class SchedulerDashboardComponent implements Component {
 			this.now = new Date(next.generatedAt);
 			this.refreshFailure = undefined;
 			if (selectedTaskId) {
-				const taskIndex = next.jobs.findIndex((job) => job.id === selectedTaskId);
-				this.selectedTask = taskIndex >= 0 ? taskIndex : Math.min(this.selectedTask, Math.max(0, next.jobs.length - 1));
+				const tasks = orderedTasks(next);
+				const taskIndex = tasks.findIndex((job) => job.id === selectedTaskId);
+				this.selectedTask = taskIndex >= 0 ? taskIndex : Math.min(this.selectedTask, Math.max(0, tasks.length - 1));
 			}
 			if (selectedRunId) {
 				const runs = allRuns(next);
@@ -422,7 +427,7 @@ export class SchedulerDashboardComponent implements Component {
 				? [`No tasks loaded. Fix the source above, then press ${this.theme.fg("accent", "r")} to retry.`]
 				: ["No scheduler tasks declared. Use /skill:scheduled-jobs to create one."];
 		}
-		this.selectedTask = Math.min(this.selectedTask, this.data.jobs.length - 1);
+		this.selectedTask = Math.min(this.selectedTask, orderedTasks(this.data).length - 1);
 		const display = this.taskDisplayLines(width);
 		const selectedLine = Math.max(0, display.findIndex((line) => line.taskIndex === this.selectedTask));
 		const start = Math.min(Math.max(0, selectedLine - Math.floor(height / 2)), Math.max(0, display.length - height));
@@ -431,8 +436,9 @@ export class SchedulerDashboardComponent implements Component {
 
 	private taskDisplayLines(width: number): SchedulerDisplayLine[] {
 		const lines: SchedulerDisplayLine[] = [];
+		const tasks = orderedTasks(this.data);
 		for (const { section, label } of TASK_SECTIONS) {
-			const jobs = this.data.jobs.map((job, taskIndex) => ({ job, taskIndex })).filter(({ job }) => taskSection(job) === section);
+			const jobs = tasks.map((job, taskIndex) => ({ job, taskIndex })).filter(({ job }) => taskSection(job) === section);
 			if (jobs.length === 0) continue;
 			if (lines.length > 0) lines.push({ text: "" });
 			lines.push({ text: this.theme.bold(label) });
