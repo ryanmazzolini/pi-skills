@@ -811,6 +811,8 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.equal(tailed.details.requestedScanBytes, beforeTail.length);
 	assert.equal(tailed.details.requestedProjectionBytes, 4_096);
 	assert.equal(tailed.details.lastConversationalTimestamp, Date.parse("2026-01-01T00:00:02.000Z"));
+	assert.equal(tailed.details.availableTextMessages, 2);
+	assert.equal(tailed.details.branchHistoryTruncated, false);
 	assert.equal(tailed.details.returnedTextMessages, 2);
 	assert.ok(Buffer.byteLength(tailed.content[0].text, "utf8") <= 4_096);
 	assert.match(tailed.content[0].text, /tail question/);
@@ -820,6 +822,26 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.equal(JSON.stringify(tailed.details).includes(sessionPath), false);
 	assert.equal(JSON.stringify(tailed.details).includes(privateSentinel), false);
 	assert.deepEqual(afterTail, beforeTail);
+	assert.equal(targetMessages, 0);
+
+	const windowedRecords = [
+		sessionRecords[0],
+		{ type: "custom", id: "old-padding", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", customType: "padding", data: privateSentinel.repeat(1_024) },
+		{ type: "message", id: "recent-u", parentId: "old-padding", timestamp: "2026-01-01T00:00:04.000Z", message: { role: "user", content: "recent window question", timestamp: 4 } },
+		{ type: "message", id: "recent-a", parentId: "recent-u", timestamp: "2026-01-01T00:00:05.000Z", message: { role: "assistant", content: [{ type: "text", text: "recent window answer" }], stopReason: "stop", timestamp: 5 } },
+	];
+	await writeFile(sessionPath, `${windowedRecords.map((record) => JSON.stringify(record)).join("\n")}\n`);
+	peer.updatePresence({ piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "recent-a", revision: 2 } });
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 2);
+	const windowedTail = await execute({ action: "tail", to: peerSessionId, limit: 2, tailScanBytes: 8_192 });
+	assert.match(windowedTail.content[0].text, /recent window question/);
+	assert.match(windowedTail.content[0].text, /recent window answer/);
+	assert.match(windowedTail.content[0].text, /Earlier branch history was not scanned after the requested text was found/);
+	assert.equal(windowedTail.content[0].text.includes(privateSentinel), false);
+	assert.equal(windowedTail.details.branchHistoryTruncated, true);
+	assert.equal(windowedTail.details.observedTextMessages, 2);
+	assert.equal("availableTextMessages" in windowedTail.details, false);
+	assert.equal(windowedTail.details.truncated, true);
 	assert.equal(targetMessages, 0);
 
 	const incoming = waitEvent(peer, "message", (_from, message) => message.content.text === "compact-outgoing-secret");
