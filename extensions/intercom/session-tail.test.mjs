@@ -4,6 +4,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	renameSync,
+	statSync,
 	symlinkSync,
 	truncateSync,
 	writeFileSync,
@@ -97,16 +98,17 @@ function open(path, activeLeafId, limit = 32, overrides = {}) {
 	});
 }
 
-function withHandle(handle, callback) {
+async function withHandle(handlePromise, callback) {
+	const handle = await handlePromise;
 	try {
-		return callback(handle);
+		return await callback(handle);
 	} finally {
 		handle.close();
 	}
 }
 
-function assertStaticSafeError(callback, sentinels = []) {
-	assert.throws(callback, (error) => {
+async function assertStaticSafeError(callback, sentinels = []) {
+	await assert.rejects(async () => callback(), (error) => {
 		assert.ok(error instanceof Error);
 		assert.ok([
 			"Session tail input is invalid",
@@ -115,6 +117,8 @@ function assertStaticSafeError(callback, sentinels = []) {
 			"Session file is malformed",
 			"Session file format is unsupported",
 			"Session file exceeds safety limits",
+			"Session tail exceeds emergency read ceiling",
+			"Session tail operation cancelled",
 			"Session file does not match the advertised snapshot",
 			"Session tail handle is closed",
 		].includes(error.message), `unexpected non-static error: ${error.message}`);
@@ -123,7 +127,7 @@ function assertStaticSafeError(callback, sentinels = []) {
 	});
 }
 
-test("projects only privacy-safe text and completed outcome events", (t) => {
+test("projects only privacy-safe text and completed outcome events", async (t) => {
 	const secret = "PRIVACY_SENTINEL_NEVER_PROJECT";
 	const records = [
 		header(),
@@ -150,7 +154,7 @@ test("projects only privacy-safe text and completed outcome events", (t) => {
 		user("u2", "b1", "done"),
 	];
 	const path = writeRecords(t, records);
-	withHandle(open(path, "u2"), (handle) => {
+	await withHandle(open(path, "u2"), (handle) => {
 		assert.deepEqual(handle.snapshot.events, [
 			{ kind: "user", text: "hello" },
 			{ kind: "assistant", text: "working" },
@@ -172,7 +176,7 @@ test("projects only privacy-safe text and completed outcome events", (t) => {
 	});
 });
 
-test("follows only the advertised older leaf and supports a null root", (t) => {
+test("follows only the advertised older leaf and supports a null root", async (t) => {
 	const records = [
 		header(),
 		user("root", null, "root text"),
@@ -182,7 +186,7 @@ test("follows only the advertised older leaf and supports a null root", (t) => {
 		user("new-leaf", "common", "active-at-write-time"),
 	];
 	const path = writeRecords(t, records);
-	withHandle(open(path, "old-end"), (handle) => {
+	await withHandle(open(path, "old-end"), (handle) => {
 		assert.deepEqual(handle.snapshot.events, [
 			{ kind: "user", text: "root text" },
 			{ kind: "assistant", text: "common text" },
@@ -193,10 +197,10 @@ test("follows only the advertised older leaf and supports a null root", (t) => {
 		assert.equal(handle.snapshot.counts.scannedEntries, 5);
 		assert.equal(handle.snapshot.counts.branchEntries, 4);
 	});
-	withHandle(open(path, null), (handle) => {
+	await withHandle(open(path, null), (handle) => {
 		assert.deepEqual(handle.snapshot.events, []);
 		assert.deepEqual(handle.snapshot.counts, {
-			scannedEntries: 5,
+			scannedEntries: 0,
 			branchEntries: 0,
 			eligibleTextEvents: 0,
 			returnedTextEvents: 0,
@@ -206,7 +210,7 @@ test("follows only the advertised older leaf and supports a null root", (t) => {
 	});
 });
 
-test("pairs only matching completed tools and maps completed user Bash outcomes", (t) => {
+test("pairs only matching completed tools and maps completed user Bash outcomes", async (t) => {
 	const records = [header(), user("anchor", null, "anchor")];
 	let parent = "anchor";
 	for (const specification of [
@@ -227,7 +231,7 @@ test("pairs only matching completed tools and maps completed user Bash outcomes"
 	records.push(bashExecution("bash-cancel", "bash-fail", { exitCode: undefined, cancelled: true }));
 	records.push(bashExecution("bash-incomplete", "bash-cancel", { exitCode: undefined, cancelled: false }));
 	const path = writeRecords(t, records);
-	withHandle(open(path, "bash-incomplete"), (handle) => {
+	await withHandle(open(path, "bash-incomplete"), (handle) => {
 		assert.deepEqual(handle.snapshot.events, [
 			{ kind: "user", text: "anchor" },
 			{ kind: "tool", name: "read", outcome: "succeeded" },
@@ -241,7 +245,7 @@ test("pairs only matching completed tools and maps completed user Bash outcomes"
 	});
 });
 
-test("projects completed outcomes even when the active branch has no text", (t) => {
+test("projects completed outcomes even when the active branch has no text", async (t) => {
 	const records = [
 		header(),
 		assistant("tool-only", null, [toolCall("call-only", "read")], "toolUse"),
@@ -249,7 +253,7 @@ test("projects completed outcomes even when the active branch has no text", (t) 
 		bashExecution("bash-only", "result-only", { exitCode: 3 }),
 	];
 	const path = writeRecords(t, records);
-	withHandle(open(path, "bash-only", 8), (handle) => {
+	await withHandle(open(path, "bash-only", 8), (handle) => {
 		assert.deepEqual(handle.snapshot.events, [
 			{ kind: "tool", name: "read", outcome: "succeeded" },
 			{ kind: "bash", outcome: "failed" },
@@ -259,7 +263,7 @@ test("projects completed outcomes even when the active branch has no text", (t) 
 	});
 });
 
-test("the text limit selects latest text while retaining every later outcome", (t) => {
+test("the text limit selects latest text while retaining every later outcome", async (t) => {
 	const records = [
 		header(),
 		user("u0", null, "too old"),
@@ -273,7 +277,7 @@ test("the text limit selects latest text while retaining every later outcome", (
 		assistant("a2", "b2", [{ type: "text", text: "latest" }]),
 	];
 	const path = writeRecords(t, records);
-	withHandle(open(path, "a2", 2), (handle) => {
+	await withHandle(open(path, "a2", 2), (handle) => {
 		assert.deepEqual(handle.snapshot.events, [
 			{ kind: "user", text: "earliest returned" },
 			{ kind: "tool", name: "write", outcome: "failed" },
@@ -281,13 +285,34 @@ test("the text limit selects latest text while retaining every later outcome", (
 			{ kind: "bash", outcome: "failed" },
 			{ kind: "assistant", text: "latest" },
 		]);
-		assert.equal(handle.snapshot.counts.eligibleTextEvents, 3);
+		assert.equal(handle.snapshot.counts.eligibleTextEvents, 2);
 		assert.equal(handle.snapshot.counts.returnedTextEvents, 2);
-		assert.equal(handle.snapshot.truncated, true);
+		assert.equal(handle.snapshot.truncated, false);
+		assert.equal(handle.snapshot.historyTruncated, true);
 	});
 });
 
-test("returns the latest default eight and maximum thirty-two text events", (t) => {
+test("resolves a later tool result whose call precedes the selected text", async (t) => {
+	const records = [
+		header(),
+		entry("custom", "older", null, { customType: "older" }),
+		assistant("call", "older", [toolCall("cross-text", "read")], "toolUse"),
+		user("selected", "call", "selected text"),
+		toolResult("result", "selected", "cross-text", "read", false),
+	];
+	const path = writeRecords(t, records);
+	await withHandle(open(path, "result", 1), (handle) => {
+		assert.deepEqual(handle.snapshot.events, [
+			{ kind: "user", text: "selected text" },
+			{ kind: "tool", name: "read", outcome: "succeeded" },
+		]);
+		assert.equal(handle.snapshot.counts.scannedEntries, 3);
+		assert.equal(handle.snapshot.counts.branchEntries, 3);
+		assert.equal(handle.snapshot.historyTruncated, true);
+	});
+});
+
+test("returns the latest default eight and maximum thirty-two text events", async (t) => {
 	const records = [header()];
 	let parent = null;
 	for (let index = 0; index < 40; index++) {
@@ -296,17 +321,17 @@ test("returns the latest default eight and maximum thirty-two text events", (t) 
 		parent = id;
 	}
 	const path = writeRecords(t, records);
-	withHandle(open(path, parent, 8), (handle) => {
+	await withHandle(open(path, parent, 8), (handle) => {
 		assert.equal(handle.snapshot.counts.returnedTextEvents, 8);
 		assert.deepEqual(handle.snapshot.events.map((event) => event.text), Array.from({ length: 8 }, (_, index) => `message-${index + 32}`));
 	});
-	withHandle(open(path, parent, 32), (handle) => {
+	await withHandle(open(path, parent, 32), (handle) => {
 		assert.equal(handle.snapshot.counts.returnedTextEvents, 32);
 		assert.deepEqual(handle.snapshot.events.map((event) => event.text), Array.from({ length: 32 }, (_, index) => `message-${index + 8}`));
 	});
 });
 
-test("retains the newest eligible conversational timestamp beyond the text limit", (t) => {
+test("does not scan older conversational timestamps after satisfying the text limit", async (t) => {
 	const oldTimestamp = "2026-01-01T00:00:03.000Z";
 	const latestTimestamp = "2026-01-01T00:00:02.000Z";
 	const records = [
@@ -315,37 +340,165 @@ test("retains the newest eligible conversational timestamp beyond the text limit
 		entry("message", "latest", "old", { timestamp: latestTimestamp, message: { role: "assistant", content: [{ type: "text", text: "latest text" }], stopReason: "stop", timestamp: 2 } }),
 	];
 	const path = writeRecords(t, records);
-	withHandle(open(path, "latest", 1), (handle) => {
+	await withHandle(open(path, "latest", 1), (handle) => {
 		assert.deepEqual(handle.snapshot.events, [{ kind: "assistant", text: "latest text" }]);
-		// The older text is omitted by the limit, but its canonical entry timestamp remains authoritative.
-		assert.equal(handle.snapshot.lastConversationalTimestamp, Date.parse(oldTimestamp));
+		assert.equal(handle.snapshot.lastConversationalTimestamp, Date.parse(latestTimestamp));
+		assert.equal(handle.snapshot.historyTruncated, true);
 	});
 });
 
-test("validates canonical timestamps only for eligible conversational entries", (t) => {
+test("validates canonical timestamps only for eligible conversational entries", async (t) => {
 	const invalidEligible = writeRecords(t, [
 		header(),
 		entry("message", "bad", null, { timestamp: "not-a-timestamp", message: { role: "user", content: "old omitted text", timestamp: 1 } }),
 		entry("message", "latest", "bad", { timestamp: TS, message: { role: "user", content: "latest text", timestamp: 2 } }),
 	]);
-	assertStaticSafeError(() => open(invalidEligible, "latest", 1));
+	await withHandle(open(invalidEligible, "latest", 1), (handle) => {
+		assert.deepEqual(handle.snapshot.events, [{ kind: "user", text: "latest text" }]);
+		assert.equal(handle.snapshot.historyTruncated, true);
+	});
+	await assertStaticSafeError(() => open(invalidEligible, "bad", 1));
 
 	const ignored = writeRecords(t, [
 		header(),
 		entry("message", "aborted", null, { timestamp: "not-a-timestamp", message: { role: "assistant", content: [{ type: "text", text: "not eligible" }], stopReason: "aborted", timestamp: 1 } }),
 	]);
-	withHandle(open(ignored, "aborted"), (handle) => assert.equal(handle.snapshot.lastConversationalTimestamp, null));
+	await withHandle(open(ignored, "aborted"), (handle) => assert.equal(handle.snapshot.lastConversationalTimestamp, null));
 });
 
-test("enforces a caller scan ceiling exactly", (t) => {
+test("enforces a caller scan ceiling exactly", async (t) => {
 	const records = [header(), user("u", null, "界")];
 	const path = writeRecords(t, records);
 	const bytes = readFileSync(path).length;
-	withHandle(open(path, "u", 8, { scanBytes: bytes }), (handle) => assert.equal(handle.snapshot.events[0].text, "界"));
-	assertStaticSafeError(() => open(path, "u", 8, { scanBytes: bytes - 1 }));
+	await withHandle(open(path, "u", 8, { scanBytes: bytes }), (handle) => assert.equal(handle.snapshot.events[0].text, "界"));
+	await assertStaticSafeError(() => open(path, "u", 8, { scanBytes: bytes - 1 }));
 });
 
-test("accepts exact v2 and v3 headers without migration", (t) => {
+test("an explicit emergency ceiling can return text established before it", async (t) => {
+	const records = [
+		header(),
+		entry("custom", "old", null, { customType: "padding", data: "x".repeat(16_384) }),
+		user("recent-user", "old", "recent question"),
+		assistant("recent-assistant", "recent-user", [{ type: "text", text: "recent answer" }]),
+	];
+	const path = writeRecords(t, records);
+	const scanBytes = 8_192;
+	assert.ok(readFileSync(path).length > scanBytes);
+
+	await withHandle(open(path, "recent-assistant", 2, { scanBytes }), (handle) => {
+		assert.deepEqual(handle.snapshot.events, [
+			{ kind: "user", text: "recent question" },
+			{ kind: "assistant", text: "recent answer" },
+		]);
+		assert.deepEqual(handle.snapshot.counts, {
+			scannedEntries: 2,
+			branchEntries: 2,
+			eligibleTextEvents: 2,
+			returnedTextEvents: 2,
+			toolEvents: 0,
+			bashEvents: 0,
+		});
+		assert.equal(handle.snapshot.truncated, false);
+		assert.equal(handle.snapshot.historyTruncated, true);
+	});
+});
+
+test("streams requested text past the former 16 MiB whole-file ceiling", async (t) => {
+	const privateSentinel = "PRIVATE_OLDER_HISTORY_SENTINEL";
+	const path = writeRaw(t, `${JSON.stringify(header())}\n`, "large-session.jsonl");
+	const padding = "x".repeat(4 * 1024 * 1024 - 8_192);
+	let parent = null;
+	for (let index = 0; index < 5; index++) {
+		const id = `padding-${index}`;
+		appendFileSync(path, `${JSON.stringify(entry("custom", id, parent, {
+			customType: "padding",
+			data: padding,
+			privateSentinel,
+		}))}\n`);
+		parent = id;
+	}
+	appendFileSync(path, `${JSON.stringify(user("large-recent-user", parent, "large recent question"))}\n`);
+	appendFileSync(path, `${JSON.stringify(assistant("large-recent-assistant", "large-recent-user", [{ type: "text", text: "large recent answer" }]))}\n`);
+	assert.ok(statSync(path).size > 16 * 1024 * 1024);
+
+	await withHandle(open(path, "large-recent-assistant", 2), (handle) => {
+		handle.verifyStable();
+		assert.deepEqual(handle.snapshot.events, [
+			{ kind: "user", text: "large recent question" },
+			{ kind: "assistant", text: "large recent answer" },
+		]);
+		assert.equal(handle.snapshot.historyTruncated, true);
+		assert.equal(JSON.stringify(handle.snapshot).includes(privateSentinel), false);
+	});
+});
+
+test("rejects an explicit emergency ceiling that cannot establish the requested tail", async (t) => {
+	const records = [
+		header(),
+		entry("custom", "old", null, { customType: "padding", data: "x".repeat(16_384) }),
+		user("recent-user", "old", "recent question"),
+		assistant("recent-assistant", "recent-user", [{ type: "text", text: "recent answer" }]),
+	];
+	const path = writeRecords(t, records);
+	await assert.rejects(
+		() => open(path, "recent-assistant", 3, { scanBytes: 8_192 }),
+		/Session tail exceeds emergency read ceiling/,
+	);
+	await assert.rejects(
+		() => open(path, "old", 1, { scanBytes: 8_192 }),
+		/Session tail exceeds emergency read ceiling/,
+	);
+});
+
+test("honors cancellation after asynchronous reverse scanning starts", async (t) => {
+	const path = writeRecords(t, [header()], { name: "cancel-stream.jsonl" });
+	truncateSync(path, statSync(path).size + SESSION_TAIL_LIMITS.lineBytes - 1);
+	const controller = new AbortController();
+	const pending = open(path, "missing", 1, { signal: controller.signal });
+	setImmediate(() => controller.abort());
+	await assert.rejects(pending, /Session tail operation cancelled/);
+});
+
+test("streams past consecutive eight MiB images without counting or projecting them", async (t) => {
+	const privateSentinel = "PRIVATE_LARGE_IMAGE_SENTINEL";
+	const imageData = `${privateSentinel}${"x".repeat(8 * 1024 * 1024)}`;
+	const imageResult = (id, parentId, callId, toolName) => entry("message", id, parentId, {
+		message: {
+			role: "toolResult",
+			toolCallId: callId,
+			toolName,
+			content: [
+				{ type: "text", text: privateSentinel },
+				{ type: "image", data: imageData, mimeType: "image/png" },
+			],
+			isError: false,
+			timestamp: 1,
+		},
+	});
+	const records = [
+		header(),
+		user("question", null, "question"),
+		assistant("call-1-entry", "question", [toolCall("call-1", "read-one")], "toolUse"),
+		imageResult("result-1", "call-1-entry", "call-1", "read-one"),
+		assistant("call-2-entry", "result-1", [toolCall("call-2", "read-two")], "toolUse"),
+		imageResult("result-2", "call-2-entry", "call-2", "read-two"),
+		user("latest", "result-2", "latest"),
+	];
+	const path = writeRecords(t, records);
+	assert.ok(statSync(path).size > 16 * 1024 * 1024);
+	await withHandle(open(path, "latest", 2), (handle) => {
+		assert.deepEqual(handle.snapshot.events, [
+			{ kind: "user", text: "question" },
+			{ kind: "tool", name: "read-one", outcome: "succeeded" },
+			{ kind: "tool", name: "read-two", outcome: "succeeded" },
+			{ kind: "user", text: "latest" },
+		]);
+		assert.equal(handle.snapshot.historyTruncated, false);
+		assert.equal(JSON.stringify(handle.snapshot).includes(privateSentinel), false);
+	});
+});
+
+test("accepts exact v2 and v3 headers without migration", async (t) => {
 	for (const version of [2, 3]) {
 		const extra = version === 2
 			? [entry("message", "legacy", "u", { message: { role: "hookMessage", content: "private" } })]
@@ -353,11 +506,11 @@ test("accepts exact v2 and v3 headers without migration", (t) => {
 		const records = [header({ version }), user("u", null, `v${version}`), ...extra];
 		const leaf = version === 2 ? "legacy" : "u";
 		const path = writeRecords(t, records, { name: `v${version}.jsonl` });
-		withHandle(open(path, leaf), (handle) => assert.deepEqual(handle.snapshot.events, [{ kind: "user", text: `v${version}` }]));
+		await withHandle(open(path, leaf), (handle) => assert.deepEqual(handle.snapshot.events, [{ kind: "user", text: `v${version}` }]));
 	}
 });
 
-test("rejects malformed, blank, unsupported, mismatched, duplicate, cyclic, and orphaned input", (t) => {
+test("rejects malformed, blank, unsupported, mismatched, duplicate, cyclic, and orphaned input", async (t) => {
 	const malformedSentinel = "MALFORMED_SOURCE_SENTINEL";
 	const cases = [
 		{
@@ -368,7 +521,7 @@ test("rejects malformed, blank, unsupported, mismatched, duplicate, cyclic, and 
 		{
 			name: "blank line",
 			contents: `${JSON.stringify(header())}\n\n`,
-			leaf: null,
+			leaf: "x",
 		},
 		{
 			name: "unsupported version",
@@ -407,7 +560,7 @@ test("rejects malformed, blank, unsupported, mismatched, duplicate, cyclic, and 
 		},
 		{
 			name: "duplicate id",
-			records: [header(), user("same", null, "first"), user("same", null, "second")],
+			records: [header(), user("same", null, "first"), user("same", "same", "second")],
 			leaf: "same",
 		},
 		{
@@ -426,13 +579,13 @@ test("rejects malformed, blank, unsupported, mismatched, duplicate, cyclic, and 
 		const path = fixture.contents === undefined
 			? writeRecords(t, fixture.records, { name: `${fixture.name.replaceAll(" ", "-")}.jsonl` })
 			: writeRaw(t, fixture.contents, `${fixture.name.replaceAll(" ", "-")}.jsonl`);
-		assertStaticSafeError(() => open(path, fixture.leaf), [malformedSentinel, path]);
+		await assertStaticSafeError(() => open(path, fixture.leaf), [malformedSentinel, path]);
 	}
 });
 
-test("uses fatal UTF-8 and ignores only one bounded unterminated final fragment", (t) => {
+test("uses fatal UTF-8 and ignores only one bounded unterminated final fragment", async (t) => {
 	const path = writeRecords(t, [header(), user("u", null, "complete")], { fragment: "UNTERMINATED_PRIVATE_FRAGMENT" });
-	withHandle(open(path, "u"), (handle) => {
+	await withHandle(open(path, "u"), (handle) => {
 		assert.deepEqual(handle.snapshot.events, [{ kind: "user", text: "complete" }]);
 		assert.equal(handle.snapshot.ignoredFinalFragment, true);
 		assert.equal(JSON.stringify(handle.snapshot).includes("UNTERMINATED_PRIVATE_FRAGMENT"), false);
@@ -443,55 +596,65 @@ test("uses fatal UTF-8 and ignores only one bounded unterminated final fragment"
 		Buffer.from(`${JSON.stringify(header())}\n`, "utf8"),
 		Buffer.from([0xff, 0x0a]),
 	]));
-	assertStaticSafeError(() => open(invalidPath, null), [invalidPath]);
+	await assertStaticSafeError(() => open(invalidPath, "x"), [invalidPath]);
 
-	const finalPath = writeRecords(t, [header()], { fragment: "x".repeat(SESSION_TAIL_LIMITS.lineBytes + 1) });
-	assertStaticSafeError(() => open(finalPath, null), [finalPath]);
+	const finalPath = writeRecords(t, [header()], { name: "oversized-fragment.jsonl" });
+	truncateSync(finalPath, statSync(finalPath).size + SESSION_TAIL_LIMITS.lineBytes + 1);
+	await assertStaticSafeError(() => open(finalPath, null), [finalPath]);
 });
 
-test("enforces independent locator, line, retained-byte, entry, scan, and text limits", (t) => {
-	assertStaticSafeError(() => openSessionTail({
+test("enforces independent locator, line, retained-byte, entry, and text limits", async (t) => {
+	await assertStaticSafeError(() => openSessionTail({
 		piSessionId: SESSION_ID,
 		fileLocator: `/${"x".repeat(SESSION_TAIL_LIMITS.locatorBytes + 1)}`,
 		activeLeafId: null,
 		limit: 1,
 	}));
 	for (const limit of [0, SESSION_TAIL_LIMITS.textEvents + 1]) {
-		assertStaticSafeError(() => openSessionTail({ piSessionId: SESSION_ID, fileLocator: "/tmp/unused", activeLeafId: null, limit }));
+		await assertStaticSafeError(() => openSessionTail({ piSessionId: SESSION_ID, fileLocator: "/tmp/unused", activeLeafId: null, limit }));
 	}
 
-	const longLinePath = writeRecords(t, [
-		header(),
-		user("long", null, "x".repeat(SESSION_TAIL_LIMITS.lineBytes)),
-	]);
-	assertStaticSafeError(() => open(longLinePath, "long"), [longLinePath]);
+	const longLinePath = writeRecords(t, [header()], { name: "long-line.jsonl" });
+	truncateSync(longLinePath, statSync(longLinePath).size + SESSION_TAIL_LIMITS.lineBytes + 1);
+	await assertStaticSafeError(() => open(longLinePath, "long"), [longLinePath]);
 
 	const retainedRecords = [header()];
 	let retainedParent = null;
-	const retainedTextBytes = Math.floor(SESSION_TAIL_LIMITS.lineBytes / 3);
+	const retainedTextBytes = Math.floor(SESSION_TAIL_LIMITS.retainedBytes / 3);
 	for (let index = 0; index < Math.ceil(SESSION_TAIL_LIMITS.retainedBytes / retainedTextBytes) + 1; index++) {
 		const id = `retained-${index}`;
 		retainedRecords.push(user(id, retainedParent, "r".repeat(retainedTextBytes)));
 		retainedParent = id;
 	}
 	const retainedPath = writeRecords(t, retainedRecords);
-	assertStaticSafeError(() => open(retainedPath, retainedParent), [retainedPath]);
+	await assertStaticSafeError(() => open(retainedPath, retainedParent), [retainedPath]);
+
+	const timestampRecords = [header()];
+	let timestampParent = null;
+	for (let index = 0; index < 3; index++) {
+		const id = `timestamp-${index}`;
+		timestampRecords.push(entry("custom", id, timestampParent, {
+			customType: "timestamp-bound",
+			timestamp: "t".repeat(200_000),
+		}));
+		timestampParent = id;
+	}
+	timestampRecords.push(user("timestamp-leaf", timestampParent, "only text"));
+	const timestampPath = writeRecords(t, timestampRecords);
+	await assertStaticSafeError(() => open(timestampPath, "timestamp-leaf", 2), [timestampPath]);
 
 	const entryRecords = [header()];
+	let entryParent = null;
 	for (let index = 0; index < SESSION_TAIL_LIMITS.entries + 1; index++) {
-		entryRecords.push(entry("custom", `entry-${index}`, null, { customType: "bound" }));
+		const id = `entry-${index}`;
+		entryRecords.push(entry("custom", id, entryParent, { customType: "bound" }));
+		entryParent = id;
 	}
 	const entryPath = writeRecords(t, entryRecords);
-	assertStaticSafeError(() => open(entryPath, null), [entryPath]);
-
-	const scanDirectory = makeDirectory(t);
-	const scanPath = join(scanDirectory, "scan.jsonl");
-	const scanChunk = `${JSON.stringify(header())}\n`;
-	writeFileSync(scanPath, scanChunk + "s".repeat(SESSION_TAIL_LIMITS.scanBytes - Buffer.byteLength(scanChunk) + 1));
-	assertStaticSafeError(() => open(scanPath, null), [scanPath]);
+	await assertStaticSafeError(() => open(entryPath, entryParent, 1), [entryPath]);
 });
 
-test("caps oldest mixed outcomes while preserving sixteen requested text events", (t) => {
+test("caps oldest mixed outcomes while preserving sixteen requested text events", async (t) => {
 	const records = [header(), user("text-0", null, "message-0")];
 	let parent = "text-0";
 	for (let index = 0; index < 25; index++) {
@@ -515,7 +678,7 @@ test("caps oldest mixed outcomes while preserving sixteen requested text events"
 	}
 
 	const path = writeRecords(t, records);
-	withHandle(open(path, parent, 16), (handle) => {
+	await withHandle(open(path, parent, 16), (handle) => {
 		assert.equal(handle.snapshot.events.length, SESSION_TAIL_LIMITS.events);
 		assert.deepEqual(
 			handle.snapshot.events
@@ -540,54 +703,54 @@ test("caps oldest mixed outcomes while preserving sixteen requested text events"
 	});
 });
 
-test("rejects symlinks and non-files without exposing the locator", (t) => {
+test("rejects symlinks and non-files without exposing the locator", async (t) => {
 	const directory = makeDirectory(t, "session-tail-private-locator-");
 	const target = join(directory, "target-private.jsonl");
 	const link = join(directory, "link-private.jsonl");
 	writeFileSync(target, `${JSON.stringify(header())}\n`);
 	symlinkSync(target, link);
-	assertStaticSafeError(() => open(link, null), [directory, link]);
-	assertStaticSafeError(() => open(directory, null), [directory]);
+	await assertStaticSafeError(() => open(link, null), [directory, link]);
+	await assertStaticSafeError(() => open(directory, null), [directory]);
 });
 
-test("detects post-open append and path replacement", (t) => {
+test("detects post-open append and path replacement", async (t) => {
 	const appendPath = writeRecords(t, [header(), user("u", null, "stable")], { name: "append.jsonl" });
-	const appended = open(appendPath, "u");
+	const appended = await open(appendPath, "u");
 	try {
 		appended.verifyStable();
 		appendFileSync(appendPath, `${JSON.stringify(user("later", "u", "not advertised"))}\n`);
-		assertStaticSafeError(() => appended.verifyStable(), [appendPath, "not advertised"]);
+		await assertStaticSafeError(() => appended.verifyStable(), [appendPath, "not advertised"]);
 	} finally {
 		appended.close();
 	}
 
 	const replacementPath = writeRecords(t, [header(), user("u", null, "stable")], { name: "replacement.jsonl" });
 	const originalContents = `${JSON.stringify(header())}\n${JSON.stringify(user("u", null, "stable"))}\n`;
-	const replaced = open(replacementPath, "u");
+	const replaced = await open(replacementPath, "u");
 	try {
 		renameSync(replacementPath, `${replacementPath}.old`);
 		writeFileSync(replacementPath, originalContents);
-		assertStaticSafeError(() => replaced.verifyStable(), [replacementPath]);
+		await assertStaticSafeError(() => replaced.verifyStable(), [replacementPath]);
 	} finally {
 		replaced.close();
 	}
-	assertStaticSafeError(() => replaced.verifyStable(), [replacementPath]);
+	await assertStaticSafeError(() => replaced.verifyStable(), [replacementPath]);
 
 	const shrinkPath = writeRecords(t, [header(), user("u", null, "stable")], { name: "shrink.jsonl" });
-	const shrunk = open(shrinkPath, "u");
+	const shrunk = await open(shrinkPath, "u");
 	try {
 		truncateSync(shrinkPath, 1);
-		assertStaticSafeError(() => shrunk.verifyStable(), [shrinkPath]);
+		await assertStaticSafeError(() => shrunk.verifyStable(), [shrinkPath]);
 	} finally {
 		shrunk.close();
 	}
 
 	const rewritePath = writeRecords(t, [header(), user("u", null, "stable")], { name: "rewrite.jsonl" });
-	const rewritten = open(rewritePath, "u");
+	const rewritten = await open(rewritePath, "u");
 	try {
 		const contents = readFileSync(rewritePath);
 		writeFileSync(rewritePath, contents);
-		assertStaticSafeError(() => rewritten.verifyStable(), [rewritePath]);
+		await assertStaticSafeError(() => rewritten.verifyStable(), [rewritePath]);
 	} finally {
 		rewritten.close();
 	}

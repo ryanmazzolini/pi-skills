@@ -226,6 +226,23 @@ test("tail projection reports omitted outcome events as truncated source context
 	assert.match(projected.text, /latest conclusion/);
 });
 
+test("tail projection distinguishes unscanned branch history from the message limit", () => {
+	const snapshot = {
+		events: [{ kind: "assistant", text: "bounded conclusion" }],
+		counts: { scannedEntries: 10, branchEntries: 8, eligibleTextEvents: 1, returnedTextEvents: 1, toolEvents: 0, bashEvents: 0 },
+		lastConversationalTimestamp: Date.parse("2026-01-01T00:00:02.000Z"),
+		truncated: false,
+		historyTruncated: true,
+		outcomeEventsTruncated: false,
+		ignoredFinalFragment: false,
+	};
+	const projected = projectSessionTail(snapshot, session("windowed-peer"));
+	assert.equal(projected.truncated, true);
+	assert.match(projected.text, /Earlier branch history was not scanned after the requested text was found/);
+	assert.doesNotMatch(projected.text, /requested message limit/);
+	assert.match(projected.text, /bounded conclusion/);
+});
+
 test("tail projection honors an exact caller ceiling with multibyte newest evidence", () => {
 	const newest = `NEWEST_MULTIBYTE_SENTINEL-${"界".repeat(10_000)}`;
 	const snapshot = {

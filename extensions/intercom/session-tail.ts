@@ -4,7 +4,7 @@ import {
 	fstatSync,
 	lstatSync,
 	openSync,
-	readSync,
+	read,
 	type BigIntStats,
 } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -13,8 +13,9 @@ import { TextDecoder } from "node:util";
 /** Independent hard limits for untrusted local session files. */
 export const SESSION_TAIL_LIMITS = Object.freeze({
 	locatorBytes: 4_096,
-	scanBytes: 16 * 1024 * 1024,
-	lineBytes: 512 * 1024,
+	scanBytes: 512 * 1024 * 1024,
+	lineBytes: 64 * 1024 * 1024,
+	headerBytes: 64 * 1024,
 	entries: 16_384,
 	retainedBytes: 512 * 1024,
 	events: 64,
@@ -29,11 +30,11 @@ export type SessionTailEvent =
 	| { kind: "bash"; outcome: "succeeded" | "failed" | "cancelled" };
 
 export interface SessionTailCounts {
-	/** All complete entries in the file, including entries on other branches. */
+	/** Complete physical entries validated while scanning backward, including other branches. */
 	readonly scannedEntries: number;
-	/** Entries on the advertised leaf-to-root chain. */
+	/** Entries followed on the advertised leaf-to-root chain. */
 	readonly branchEntries: number;
-	/** Eligible user/assistant text events on that chain, before applying limit. */
+	/** Eligible user/assistant text events found before the scan stopped. */
 	readonly eligibleTextEvents: number;
 	readonly returnedTextEvents: number;
 	readonly toolEvents: number;
@@ -43,10 +44,12 @@ export interface SessionTailCounts {
 export interface SessionTailSnapshot {
 	readonly events: readonly SessionTailEvent[];
 	readonly counts: SessionTailCounts;
-	/** Epoch milliseconds from the newest eligible user/assistant entry on this branch. */
+	/** Epoch milliseconds from the newest eligible user/assistant entry in the scanned branch history. */
 	readonly lastConversationalTimestamp: number | null;
 	/** True only when eligible text was omitted by the requested text limit. */
 	readonly truncated: boolean;
+	/** Earlier branch entries were not scanned after the requested text was established. */
+	readonly historyTruncated: boolean;
 	/** Older completed tool or Bash outcomes were omitted by the event limit. */
 	readonly outcomeEventsTruncated: boolean;
 	/** A bounded, valid UTF-8 final fragment without a newline was ignored. */
@@ -64,8 +67,10 @@ export interface OpenSessionTailInput {
 	fileLocator: string;
 	activeLeafId: string | null;
 	limit: number;
-	/** Maximum bytes to scan from this one session file (default: scanBytes hard limit). */
+	/** Emergency ceiling for total file bytes read while finding the requested text. */
 	scanBytes?: number;
+	/** Cancels between asynchronous file reads. */
+	signal?: AbortSignal;
 }
 
 const ERROR = Object.freeze({
@@ -75,6 +80,8 @@ const ERROR = Object.freeze({
 	malformed: "Session file is malformed",
 	unsupported: "Session file format is unsupported",
 	oversized: "Session file exceeds safety limits",
+	window: "Session tail exceeds emergency read ceiling",
+	cancelled: "Session tail operation cancelled",
 	mismatch: "Session file does not match the advertised snapshot",
 	closed: "Session tail handle is closed",
 });
@@ -183,11 +190,6 @@ interface LineSpan {
 	end: number;
 }
 
-interface SplitLinesResult {
-	lines: LineSpan[];
-	ignoredFinalFragment: boolean;
-}
-
 const FATAL_UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 function decodeUtf8(buffer: Buffer, span: LineSpan): string {
@@ -196,27 +198,6 @@ function decodeUtf8(buffer: Buffer, span: LineSpan): string {
 	} catch {
 		fail(ERROR.malformed);
 	}
-}
-
-function splitCompleteLines(buffer: Buffer): SplitLinesResult {
-	const lines: LineSpan[] = [];
-	let start = 0;
-	for (let index = 0; index < buffer.length; index++) {
-		if (buffer[index] !== 0x0a) continue;
-		if (index - start > SESSION_TAIL_LIMITS.lineBytes) fail(ERROR.oversized);
-		lines.push({ start, end: index });
-		if (lines.length > SESSION_TAIL_LIMITS.entries + 1) fail(ERROR.oversized);
-		start = index + 1;
-	}
-
-	const ignoredFinalFragment = start < buffer.length;
-	if (ignoredFinalFragment) {
-		if (buffer.length - start > SESSION_TAIL_LIMITS.lineBytes) fail(ERROR.oversized);
-		// Even ignored bytes must not smuggle invalid encoding past the strict reader.
-		decodeUtf8(buffer, { start, end: buffer.length });
-	}
-	if (lines.length === 0) fail(ERROR.malformed);
-	return { lines, ignoredFinalFragment };
 }
 
 function parseJsonLine(buffer: Buffer, span: LineSpan): Record<string, unknown> {
@@ -379,16 +360,10 @@ function validateEntryShape(entry: Record<string, unknown>, version: 2 | 3): voi
 	}
 }
 
-interface IndexedEntry {
+interface BranchEntry {
 	id: string;
 	parentId: string | null;
-	lineIndex: number;
-	span: LineSpan;
-}
-
-interface EntryIndexResult {
-	entries: Map<string, IndexedEntry>;
-	retainedBytes: number;
+	entry: Record<string, unknown>;
 }
 
 function reserveRetained(current: number, ...values: string[]): number {
@@ -398,64 +373,54 @@ function reserveRetained(current: number, ...values: string[]): number {
 	return next;
 }
 
-function indexEntries(
-	buffer: Buffer,
-	lines: readonly LineSpan[],
-	version: 2 | 3,
-): EntryIndexResult {
-	const entries = new Map<string, IndexedEntry>();
-	let retainedBytes = 0;
-	// Parse backwards so the append-only tail is encountered first, while still
-	// validating every complete line before trusting the advertised branch.
-	for (let index = lines.length - 1; index >= 1; index--) {
-		const entry = parseJsonLine(buffer, lines[index]);
-		validateEntryShape(entry, version);
-		const id = entry.id as string;
-		const parentId = entry.parentId as string | null;
-		if (entries.has(id)) fail(ERROR.malformed);
-		retainedBytes = reserveRetained(retainedBytes, id, ...(parentId === null ? [] : [parentId]));
-		entries.set(id, { id, parentId, lineIndex: index, span: lines[index] });
-	}
-	return { entries, retainedBytes };
-}
-
-function validateParentsAndCycles(entries: ReadonlyMap<string, IndexedEntry>): void {
-	for (const entry of entries.values()) {
-		if (entry.parentId === null) continue;
-		const parent = entries.get(entry.parentId);
-		if (!parent || parent.lineIndex >= entry.lineIndex) fail(ERROR.malformed);
-	}
-
-	const state = new Map<string, 1 | 2>();
-	for (const first of entries.values()) {
-		if (state.get(first.id) === 2) continue;
-		const path: IndexedEntry[] = [];
-		let current: IndexedEntry | undefined = first;
-		while (current) {
-			const currentState = state.get(current.id);
-			if (currentState === 1) fail(ERROR.malformed);
-			if (currentState === 2) break;
-			state.set(current.id, 1);
-			path.push(current);
-			current = current.parentId === null ? undefined : entries.get(current.parentId);
+function compactValidatedEntry(entry: Record<string, unknown>): Record<string, unknown> {
+	const compact: Record<string, unknown> = {
+		type: entry.type,
+		id: entry.id,
+		parentId: entry.parentId,
+		timestamp: entry.timestamp,
+	};
+	if (entry.type !== "message") return compact;
+	const message = entry.message as Record<string, unknown>;
+	switch (message.role) {
+		case "user":
+			compact.message = {
+				role: "user",
+				content: typeof message.content === "string"
+					? message.content
+					: (message.content as Record<string, unknown>[])
+						.filter((block) => block.type === "text")
+						.map((block) => ({ type: "text", text: block.text })),
+			};
+			break;
+		case "assistant": {
+			const content: Record<string, unknown>[] = [];
+			for (const block of message.content as Record<string, unknown>[]) {
+				if (block.type === "text") content.push({ type: "text", text: block.text });
+				else if (block.type === "toolCall") content.push({ type: "toolCall", id: block.id, name: block.name });
+			}
+			compact.message = { role: "assistant", stopReason: message.stopReason, content };
+			break;
 		}
-		for (const entry of path) state.set(entry.id, 2);
+		case "toolResult":
+			compact.message = {
+				role: "toolResult",
+				toolCallId: message.toolCallId,
+				toolName: message.toolName,
+				isError: message.isError,
+			};
+			break;
+		case "bashExecution":
+			compact.message = {
+				role: "bashExecution",
+				cancelled: message.cancelled,
+				...(message.exitCode === undefined ? {} : { exitCode: message.exitCode }),
+			};
+			break;
+		default:
+			compact.message = { role: message.role };
 	}
-}
-
-function advertisedBranch(
-	entries: ReadonlyMap<string, IndexedEntry>,
-	activeLeafId: string | null,
-): IndexedEntry[] {
-	if (activeLeafId === null) return [];
-	let current = entries.get(activeLeafId);
-	if (!current) fail(ERROR.mismatch);
-	const leafToRoot: IndexedEntry[] = [];
-	while (current) {
-		leafToRoot.push(current);
-		current = current.parentId === null ? undefined : entries.get(current.parentId);
-	}
-	return leafToRoot;
+	return compact;
 }
 
 function textFromUser(message: Record<string, unknown>): string | undefined {
@@ -475,6 +440,28 @@ function textFromAssistant(message: Record<string, unknown>): string | undefined
 	if (parts.length === 0) return undefined;
 	const text = parts.join("\n");
 	return text.length === 0 ? undefined : text;
+}
+
+function reserveCompactEntry(current: number, entry: Record<string, unknown>): number {
+	let retained = reserveRetained(current, entry.timestamp as string);
+	if (entry.type !== "message") return retained;
+	const message = entry.message as Record<string, unknown>;
+	if (message.role === "user") {
+		const text = textFromUser(message);
+		return text === undefined ? retained : reserveRetained(retained, text);
+	}
+	if (message.role === "assistant") {
+		const text = textFromAssistant(message);
+		if (text !== undefined) retained = reserveRetained(retained, text);
+		for (const block of message.content as Record<string, unknown>[]) {
+			if (block.type === "toolCall") retained = reserveRetained(retained, block.id as string, block.name as string);
+		}
+		return retained;
+	}
+	if (message.role === "toolResult") {
+		return reserveRetained(retained, message.toolCallId as string, message.toolName as string);
+	}
+	return retained;
 }
 
 interface PositionedEvent {
@@ -498,12 +485,9 @@ function canonicalTimestamp(value: unknown): number {
 }
 
 function projectBranch(
-	buffer: Buffer,
-	leafToRoot: readonly IndexedEntry[],
+	leafToRoot: readonly BranchEntry[],
 	limit: number,
-	initialRetainedBytes: number,
 ): SessionTailSnapshot {
-	let retainedBytes = initialRetainedBytes;
 	let eligibleTextEvents = 0;
 	let lastConversationalTimestamp: number | null = null;
 	let selectedTextEvents = 0;
@@ -514,7 +498,7 @@ function projectBranch(
 	for (let reverseIndex = 0; reverseIndex < leafToRoot.length; reverseIndex++) {
 		const indexed = leafToRoot[reverseIndex];
 		const position = leafToRoot.length - reverseIndex - 1;
-		const entry = parseJsonLine(buffer, indexed.span);
+		const entry = indexed.entry;
 		if (entry.type !== "message") continue;
 		const message = entry.message as Record<string, unknown>;
 
@@ -522,7 +506,6 @@ function projectBranch(
 			if (selectedTextEvents < limit) {
 				const id = message.toolCallId as string;
 				const name = message.toolName as string;
-				retainedBytes = reserveRetained(retainedBytes, id, name);
 				const pending = pendingToolResults.get(id) ?? [];
 				pending.push({
 					position,
@@ -576,7 +559,6 @@ function projectBranch(
 			if (lastConversationalTimestamp === null || timestamp > lastConversationalTimestamp) lastConversationalTimestamp = timestamp;
 			eligibleTextEvents++;
 			if (selectedTextEvents < limit) {
-				retainedBytes = reserveRetained(retainedBytes, text);
 				candidates.push({ position, sequence: sequence++, event: { kind: "assistant", text } });
 				selectedTextEvents++;
 			}
@@ -590,7 +572,6 @@ function projectBranch(
 			if (lastConversationalTimestamp === null || timestamp > lastConversationalTimestamp) lastConversationalTimestamp = timestamp;
 			eligibleTextEvents++;
 			if (selectedTextEvents < limit) {
-				retainedBytes = reserveRetained(retainedBytes, text);
 				candidates.push({ position, sequence: sequence++, event: { kind: "user", text } });
 				selectedTextEvents++;
 			}
@@ -621,7 +602,7 @@ function projectBranch(
 	const toolEvents = events.filter((event) => event.kind === "tool").length;
 	const bashEvents = events.filter((event) => event.kind === "bash").length;
 	const counts: SessionTailCounts = Object.freeze({
-		scannedEntries: 0, // Replaced by the caller after indexing all branches.
+		scannedEntries: 0, // Replaced by the caller after scanning physical entries.
 		branchEntries: leafToRoot.length,
 		eligibleTextEvents,
 		returnedTextEvents: selectedTextEvents,
@@ -633,26 +614,297 @@ function projectBranch(
 		counts,
 		lastConversationalTimestamp,
 		truncated: eligibleTextEvents > selectedTextEvents,
+		historyTruncated: false,
 		outcomeEventsTruncated,
 		ignoredFinalFragment: false,
 	});
 }
 
-function readExactSnapshot(fd: number, size: bigint, scanBytes: number): Buffer {
-	if (size < 0n || size > BigInt(scanBytes)) fail(ERROR.oversized);
-	const buffer = Buffer.alloc(Number(size));
+function throwIfCancelled(signal?: AbortSignal): void {
+	if (signal?.aborted) fail(ERROR.cancelled);
+}
+
+function readOnce(
+	fd: number,
+	buffer: Buffer,
+	offset: number,
+	length: number,
+	position: bigint,
+): Promise<number> {
+	if (position < 0n || position > BigInt(Number.MAX_SAFE_INTEGER)) fail(ERROR.oversized);
+	return new Promise((resolve, reject) => {
+		read(fd, buffer, offset, length, Number(position), (error, bytesRead) => {
+			if (error) reject(error);
+			else resolve(bytesRead);
+		});
+	});
+}
+
+async function readExactRange(
+	fd: number,
+	position: bigint,
+	length: number,
+	signal?: AbortSignal,
+): Promise<Buffer> {
+	if (position < 0n || !Number.isSafeInteger(length) || length < 0) fail(ERROR.unstable);
+	const buffer = Buffer.alloc(length);
 	let offset = 0;
 	while (offset < buffer.length) {
+		throwIfCancelled(signal);
 		let bytesRead: number;
 		try {
-			bytesRead = readSync(fd, buffer, offset, buffer.length - offset, offset);
+			bytesRead = await readOnce(fd, buffer, offset, buffer.length - offset, position + BigInt(offset));
 		} catch {
 			fail(ERROR.unstable);
 		}
+		throwIfCancelled(signal);
 		if (bytesRead === 0) fail(ERROR.unstable);
 		offset += bytesRead;
 	}
 	return buffer;
+}
+
+interface HeaderWindow {
+	buffer: Buffer;
+	span: LineSpan;
+	bodyStart: bigint;
+	leadingBody: Buffer;
+	scannedBytes: number;
+}
+
+const HEADER_SCAN_CHUNK_BYTES = 4 * 1024;
+const REVERSE_SCAN_CHUNK_BYTES = 256 * 1024;
+
+async function readHeaderWindow(
+	fd: number,
+	size: bigint,
+	scanBytes: number,
+	signal?: AbortSignal,
+): Promise<HeaderWindow> {
+	const maximum = Number([
+		size,
+		BigInt(scanBytes),
+		BigInt(SESSION_TAIL_LIMITS.headerBytes + 1),
+	].reduce((smallest, candidate) => candidate < smallest ? candidate : smallest));
+	if (maximum <= 0) fail(ERROR.window);
+
+	const buffer = Buffer.alloc(maximum);
+	let offset = 0;
+	while (offset < buffer.length) {
+		const length = Math.min(HEADER_SCAN_CHUNK_BYTES, buffer.length - offset);
+		const chunk = await readExactRange(fd, BigInt(offset), length, signal);
+		chunk.copy(buffer, offset);
+		offset += length;
+		const newline = buffer.indexOf(0x0a, offset - length);
+		if (newline >= 0) {
+			if (newline > SESSION_TAIL_LIMITS.headerBytes) fail(ERROR.oversized);
+			return {
+				buffer: buffer.subarray(0, newline),
+				span: { start: 0, end: newline },
+				bodyStart: BigInt(newline + 1),
+				leadingBody: Buffer.from(buffer.subarray(newline + 1, offset)),
+				scannedBytes: offset,
+			};
+		}
+	}
+
+	if (buffer.length > SESSION_TAIL_LIMITS.headerBytes) fail(ERROR.oversized);
+	if (buffer.length === scanBytes && BigInt(buffer.length) < size) fail(ERROR.window);
+	fail(ERROR.malformed);
+}
+
+class ReverseLineReader {
+	private readonly fd: number;
+	private readonly bodyStart: bigint;
+	private readonly scanBytes: number;
+	private readonly signal?: AbortSignal;
+	private readonly leadingEnd: bigint;
+	private position: bigint;
+	private available: Buffer = Buffer.alloc(0);
+	private availableEnd = 0;
+	private leadingBody: Buffer;
+	private initialized = false;
+	private scanned: number;
+	ignoredFinalFragment = false;
+
+	constructor(
+		fd: number,
+		bodyStart: bigint,
+		size: bigint,
+		scanBytes: number,
+		initialScannedBytes: number,
+		leadingBody: Buffer,
+		signal?: AbortSignal,
+	) {
+		this.fd = fd;
+		this.bodyStart = bodyStart;
+		this.leadingBody = leadingBody;
+		this.leadingEnd = bodyStart + BigInt(leadingBody.length);
+		this.position = size;
+		this.scanBytes = scanBytes;
+		this.scanned = initialScannedBytes;
+		this.signal = signal;
+	}
+
+	private async loadEarlier(): Promise<boolean> {
+		if (this.position <= this.bodyStart) return false;
+		if (this.leadingBody.length > 0 && this.position === this.leadingEnd) {
+			this.available = this.leadingBody;
+			this.availableEnd = this.available.length;
+			this.leadingBody = Buffer.alloc(0);
+			this.position = this.bodyStart;
+			return true;
+		}
+		const remainingBudget = this.scanBytes - this.scanned;
+		if (remainingBudget <= 0) fail(ERROR.window);
+		const floor = this.leadingBody.length > 0 ? this.leadingEnd : this.bodyStart;
+		const remainingFile = this.position - floor;
+		const length = Math.min(
+			REVERSE_SCAN_CHUNK_BYTES,
+			remainingBudget,
+			Number(remainingFile > BigInt(REVERSE_SCAN_CHUNK_BYTES) ? BigInt(REVERSE_SCAN_CHUNK_BYTES) : remainingFile),
+		);
+		if (length <= 0) fail(ERROR.window);
+		const start = this.position - BigInt(length);
+		this.available = await readExactRange(this.fd, start, length, this.signal);
+		this.availableEnd = this.available.length;
+		this.position = start;
+		this.scanned += length;
+		return true;
+	}
+
+	private async takeRawLine(): Promise<Buffer | null> {
+		const reversedParts: Buffer[] = [];
+		let lineBytes = 0;
+		while (true) {
+			if (this.availableEnd > 0) {
+				const newline = this.available.lastIndexOf(0x0a, this.availableEnd - 1);
+				if (newline >= 0) {
+					const part = this.available.subarray(newline + 1, this.availableEnd);
+					lineBytes += part.length;
+					if (lineBytes > SESSION_TAIL_LIMITS.lineBytes) fail(ERROR.oversized);
+					if (part.length > 0) reversedParts.push(part);
+					this.availableEnd = newline;
+					if (this.availableEnd === 0) this.available = Buffer.alloc(0);
+					return Buffer.concat(reversedParts.reverse(), lineBytes);
+				}
+				const part = this.available.subarray(0, this.availableEnd);
+				lineBytes += part.length;
+				if (lineBytes > SESSION_TAIL_LIMITS.lineBytes) fail(ERROR.oversized);
+				reversedParts.push(part);
+				this.available = Buffer.alloc(0);
+				this.availableEnd = 0;
+			}
+
+			if (!await this.loadEarlier()) {
+				if (reversedParts.length === 0) return null;
+				return Buffer.concat(reversedParts.reverse(), lineBytes);
+			}
+		}
+	}
+
+	async initialize(): Promise<void> {
+		if (this.initialized) return;
+		this.initialized = true;
+		const finalFragment = await this.takeRawLine();
+		if (finalFragment === null || finalFragment.length === 0) return;
+		decodeUtf8(finalFragment, { start: 0, end: finalFragment.length });
+		this.ignoredFinalFragment = true;
+	}
+
+	async nextLine(): Promise<Buffer | null> {
+		await this.initialize();
+		return this.takeRawLine();
+	}
+}
+
+interface BranchScanResult {
+	branch: BranchEntry[];
+	scannedEntries: number;
+	historyTruncated: boolean;
+	ignoredFinalFragment: boolean;
+}
+
+function isEligibleTextEntry(entry: Record<string, unknown>): boolean {
+	if (entry.type !== "message") return false;
+	const message = entry.message as Record<string, unknown>;
+	if (message.role === "user") return textFromUser(message) !== undefined;
+	if (message.role !== "assistant" || message.stopReason === "error" || message.stopReason === "aborted") return false;
+	return textFromAssistant(message) !== undefined;
+}
+
+async function scanAdvertisedBranch(
+	reader: ReverseLineReader,
+	activeLeafId: string | null,
+	limit: number,
+	version: 2 | 3,
+): Promise<BranchScanResult> {
+	await reader.initialize();
+	if (activeLeafId === null) {
+		return {
+			branch: [],
+			scannedEntries: 0,
+			historyTruncated: false,
+			ignoredFinalFragment: reader.ignoredFinalFragment,
+		};
+	}
+
+	const seen = new Set<string>();
+	const branch: BranchEntry[] = [];
+	let retainedBytes = 0;
+	let scannedEntries = 0;
+	let expectedId: string | null = activeLeafId;
+	let foundLeaf = false;
+	let eligibleTextEvents = 0;
+	const unresolvedToolResultIds = new Set<string>();
+
+	while (true) {
+		const line = await reader.nextLine();
+		if (line === null) {
+			if (!foundLeaf) fail(ERROR.mismatch);
+			if (expectedId !== null) fail(ERROR.malformed);
+			break;
+		}
+		if (line.length === 0) fail(ERROR.malformed);
+		scannedEntries++;
+		if (scannedEntries > SESSION_TAIL_LIMITS.entries) fail(ERROR.oversized);
+		const entry = parseJsonLine(line, { start: 0, end: line.length });
+		validateEntryShape(entry, version);
+		const id = entry.id as string;
+		const parentId = entry.parentId as string | null;
+		if (seen.has(id)) fail(ERROR.malformed);
+		seen.add(id);
+		retainedBytes = reserveRetained(retainedBytes, id, ...(parentId === null ? [] : [parentId]));
+
+		if (id !== expectedId) continue;
+		foundLeaf = true;
+		if (parentId !== null && seen.has(parentId)) fail(ERROR.malformed);
+		const compact = compactValidatedEntry(entry);
+		retainedBytes = reserveCompactEntry(retainedBytes, compact);
+		branch.push({ id, parentId, entry: compact });
+		expectedId = parentId;
+		if (compact.type === "message") {
+			const message = compact.message as Record<string, unknown>;
+			// Only results newer than the selected text boundary can be projected.
+			// Continue far enough to find the older calls that authenticate them.
+			if (message.role === "toolResult" && eligibleTextEvents < limit) {
+				unresolvedToolResultIds.add(message.toolCallId as string);
+			} else if (message.role === "assistant" && unresolvedToolResultIds.size > 0) {
+				for (const block of message.content as Record<string, unknown>[]) {
+					if (block.type === "toolCall") unresolvedToolResultIds.delete(block.id as string);
+				}
+			}
+		}
+		if (isEligibleTextEntry(compact)) eligibleTextEvents++;
+		if (expectedId === null || (eligibleTextEvents >= limit && unresolvedToolResultIds.size === 0)) break;
+	}
+
+	return {
+		branch,
+		scannedEntries,
+		historyTruncated: expectedId !== null,
+		ignoredFinalFragment: reader.ignoredFinalFragment,
+	};
 }
 
 function validateInput(input: OpenSessionTailInput): void {
@@ -672,11 +924,11 @@ function validateInput(input: OpenSessionTailInput): void {
 }
 
 /**
- * Open and project one exact, descriptor-backed Pi v2/v3 session snapshot.
- * The caller must verify stability immediately before using the projection and
- * close the handle in a finally block.
+ * Open and project one stable, descriptor-backed Pi v2/v3 session tail.
+ * Records are streamed backward until the requested text is established; the
+ * caller must verify stability immediately before use and close the handle.
  */
-export function openSessionTail(input: OpenSessionTailInput): SessionTailHandle {
+export async function openSessionTail(input: OpenSessionTailInput): Promise<SessionTailHandle> {
 	validateInput(input);
 	const uid = currentUid();
 	const noFollow = fsConstants.O_NOFOLLOW;
@@ -703,25 +955,35 @@ export function openSessionTail(input: OpenSessionTailInput): SessionTailHandle 
 			|| !sameIdentity(beforeRead, openedPath)
 			|| !sameState(openedPath, stableState)) fail(ERROR.unstable);
 
-		const buffer = readExactSnapshot(fd, stableState.size, input.scanBytes ?? SESSION_TAIL_LIMITS.scanBytes);
-		assertPathAndDescriptorStable(fd, input.fileLocator, stableState, uid);
-		const { lines, ignoredFinalFragment } = splitCompleteLines(buffer);
-		const header = parseJsonLine(buffer, lines[0]);
+		if (stableState.size < 0n) fail(ERROR.oversized);
+		const scanBytes = input.scanBytes ?? SESSION_TAIL_LIMITS.scanBytes;
+		const headerWindow = await readHeaderWindow(fd, stableState.size, scanBytes, input.signal);
+		const header = parseJsonLine(headerWindow.buffer, headerWindow.span);
 		const version = validateHeader(header, input.piSessionId);
-		const indexed = indexEntries(buffer, lines, version);
-		validateParentsAndCycles(indexed.entries);
-		const branch = advertisedBranch(indexed.entries, input.activeLeafId);
-		const projected = projectBranch(buffer, branch, input.limit, indexed.retainedBytes);
+		const reader = new ReverseLineReader(
+			fd,
+			headerWindow.bodyStart,
+			stableState.size,
+			scanBytes,
+			headerWindow.scannedBytes,
+			headerWindow.leadingBody,
+			input.signal,
+		);
+		const scanned = await scanAdvertisedBranch(reader, input.activeLeafId, input.limit, version);
+		throwIfCancelled(input.signal);
+		assertPathAndDescriptorStable(fd, input.fileLocator, stableState, uid);
+		const projected = projectBranch(scanned.branch, input.limit);
 		const snapshot: SessionTailSnapshot = Object.freeze({
 			events: projected.events,
 			counts: Object.freeze({
 				...projected.counts,
-				scannedEntries: indexed.entries.size,
+				scannedEntries: scanned.scannedEntries,
 			}),
 			lastConversationalTimestamp: projected.lastConversationalTimestamp,
 			truncated: projected.truncated,
+			historyTruncated: scanned.historyTruncated,
 			outcomeEventsTruncated: projected.outcomeEventsTruncated,
-			ignoredFinalFragment,
+			ignoredFinalFragment: scanned.ignoredFinalFragment,
 		});
 
 		let open = true;
