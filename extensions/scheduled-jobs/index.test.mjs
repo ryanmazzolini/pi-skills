@@ -395,6 +395,21 @@ test("a stale mutation refreshes and redisplays the changed state", async () => 
   assert.equal(harness.notices.some((notice) => notice.level === "warning" && /refreshed/.test(notice.message)), true);
 });
 
+test("refreshes and reopens the current task from its detail view", async () => {
+  const scripted = scriptedDependencies();
+  const harness = uiHarness([], [], [
+    { kind: "job", id: "global:test:job" },
+    { kind: "refresh" },
+    { kind: "back" },
+    { kind: "close" },
+  ]);
+
+  await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
+
+  assert.equal(scripted.calls.filter((call) => call.args[0] === "overview").length, 4);
+  assert.equal(scripted.calls.filter((call) => call.args[0] === "inspect").length, 2);
+});
+
 test("reloads the current task before opening details", async () => {
   let overviewCount = 0;
   const scripted = scriptedDependencies();

@@ -78,6 +78,7 @@ export type SchedulerDashboardResult =
 
 export type SchedulerDetailResult =
 	| { kind: "back" }
+	| { kind: "refresh" }
 	| { kind: "actions" }
 	| { kind: "run"; id: string; runId: string };
 
@@ -586,6 +587,10 @@ export class SchedulerJobDetailComponent implements Component {
 			this.tui.requestRender();
 			return;
 		}
+		if (data === "r" || data === "R") {
+			this.done({ kind: "refresh" });
+			return;
+		}
 		if (data === "a" || data === "A") {
 			this.done({ kind: "actions" });
 			return;
@@ -632,7 +637,7 @@ export class SchedulerJobDetailComponent implements Component {
 			...visible,
 			...Array.from({ length: Math.max(0, bodyHeight - visible.length) }, () => ""),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
-			truncateToWidth(this.theme.fg("dim", "Tab switch · ↑/↓ scroll · Enter run output · a actions · q/Esc tasks"), innerWidth, ""),
+			truncateToWidth(this.theme.fg("dim", "Tab switch · ↑/↓ scroll · Enter run output · r refresh · a actions · q/Esc tasks"), innerWidth, ""),
 		], safeWidth, this.theme);
 	}
 
@@ -658,7 +663,7 @@ export class SchedulerJobDetailComponent implements Component {
 		const failures = [this.job.candidateError, this.job.installationError, this.job.historyError, this.job.nextRunError].filter((value) => value !== null);
 		if (failures.length > 0) {
 			lines.push("", ...failures.map((error) => this.theme.fg("error", `${error!.code}: ${error!.message}`)));
-			if (this.job.candidateError) lines.push("Recovery: fix the declared command or environment, then return to Tasks and press r.");
+			if (this.job.candidateError) lines.push("Recovery: fix the declared command or environment, then press r to retry.");
 			else if (this.job.installationError) lines.push("Recovery: press r to retry status inspection; use Definition to inspect the reviewed identities first.");
 			else if (this.job.historyError) lines.push("Recovery: repair the private run-history state, then press r; lifecycle actions remain independently reviewed.");
 		}
