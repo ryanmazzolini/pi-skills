@@ -220,7 +220,51 @@ test("action menu stays in the custom dashboard and supports keyboard review", (
   assert.deepEqual(outcomes, ["remove"]);
 });
 
-test("detail view refreshes the same task directly", () => {
+test("detail view refreshes in place without closing", async () => {
+  const view = harness();
+  const outcomes = [];
+  const component = new SchedulerJobDetailComponent(
+    job({ candidateError: { code: "ENVIRONMENT", message: "ambiguous node" } }),
+    "Old definition",
+    view.tui,
+    theme,
+    (result) => outcomes.push(result),
+    new Date(2026, 6, 25, 9, 0),
+    async () => ({
+      job: job({ candidateError: null, description: "Recovered task" }),
+      definition: "New definition",
+      generatedAt: "2026-07-25T09:01:00.000Z",
+    }),
+  );
+
+  assert.match(component.render(120).join("\n"), /diagnose with the open agent/);
+  await component.refreshData();
+  const rendered = component.render(120).join("\n");
+  assert.match(rendered, /Updated/);
+  assert.match(rendered, /Recovered task/);
+  assert.deepEqual(outcomes, []);
+  component.dispose();
+});
+
+test("detail refresh reports when the task is still blocked", async () => {
+  const view = harness();
+  const blocked = job({ candidateError: { code: "ENVIRONMENT", message: "ambiguous node" } });
+  const component = new SchedulerJobDetailComponent(
+    blocked,
+    "Definition",
+    view.tui,
+    theme,
+    () => {},
+    new Date(2026, 6, 25, 9, 0),
+    async () => ({ job: blocked, definition: "Definition", generatedAt: "2026-07-25T09:01:00.000Z" }),
+  );
+
+  await component.refreshData();
+  assert.match(component.render(120).join("\n"), /Still blocked/);
+  component.dispose();
+});
+
+test("detail view hands failures to the open agent", () => {
   const view = harness();
   const outcomes = [];
   const component = new SchedulerJobDetailComponent(
@@ -231,11 +275,9 @@ test("detail view refreshes the same task directly", () => {
     (result) => outcomes.push(result),
   );
 
-  const rendered = component.render(120).join("\n");
-  assert.match(rendered, /then press r to retry/);
-  assert.match(rendered, /r refresh/);
-  component.handleInput("r");
-  assert.deepEqual(outcomes, [{ kind: "refresh" }]);
+  assert.match(component.render(120).join("\n"), /d diagnose with agent/);
+  component.handleInput("d");
+  assert.deepEqual(outcomes, [{ kind: "diagnose" }]);
 });
 
 test("detail view gives concrete recovery routes for adapter drift and failed runs", () => {

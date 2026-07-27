@@ -78,9 +78,15 @@ export type SchedulerDashboardResult =
 
 export type SchedulerDetailResult =
 	| { kind: "back" }
-	| { kind: "refresh" }
+	| { kind: "diagnose" }
 	| { kind: "actions" }
 	| { kind: "run"; id: string; runId: string };
+
+export interface SchedulerDetailSnapshot {
+	job: SchedulerJobOverview;
+	definition: string;
+	generatedAt: string;
+}
 
 type TuiView = Pick<TUI, "requestRender"> & { terminal?: { rows: number } };
 type DashboardTab = "tasks" | "runs";
@@ -553,12 +559,17 @@ export class SchedulerJobDetailComponent implements Component {
 	private tab: DetailTab = "overview";
 	private selectedRun = 0;
 	private scroll = 0;
-	private readonly job: SchedulerJobOverview;
-	private readonly definition: string;
+	private job: SchedulerJobOverview;
+	private definition: string;
 	private readonly tui: TuiView;
 	private readonly theme: Theme;
 	private readonly done: (result: SchedulerDetailResult) => void;
-	private readonly now: Date;
+	private now: Date;
+	private readonly reload?: (signal: AbortSignal) => Promise<SchedulerDetailSnapshot>;
+	private refreshAbort?: AbortController;
+	private refreshing = false;
+	private refreshStatus: { message: string; color: "success" | "warning" | "error" } | undefined;
+	private disposed = false;
 
 	constructor(
 		job: SchedulerJobOverview,
@@ -567,6 +578,7 @@ export class SchedulerJobDetailComponent implements Component {
 		theme: Theme,
 		done: (result: SchedulerDetailResult) => void,
 		now = new Date(),
+		reload?: (signal: AbortSignal) => Promise<SchedulerDetailSnapshot>,
 	) {
 		this.job = job;
 		this.definition = definition;
@@ -574,6 +586,7 @@ export class SchedulerJobDetailComponent implements Component {
 		this.theme = theme;
 		this.done = done;
 		this.now = now;
+		this.reload = reload;
 	}
 
 	handleInput(data: string): void {
@@ -588,7 +601,11 @@ export class SchedulerJobDetailComponent implements Component {
 			return;
 		}
 		if (data === "r" || data === "R") {
-			this.done({ kind: "refresh" });
+			if (this.reload) void this.refreshData();
+			return;
+		}
+		if ((data === "d" || data === "D") && schedulerJobState(this.job).label === "Needs attention") {
+			this.done({ kind: "diagnose" });
 			return;
 		}
 		if (data === "a" || data === "A") {
@@ -621,7 +638,12 @@ export class SchedulerJobDetailComponent implements Component {
 		const tabs = ["overview", "runs", "definition"].map((tab) => tab === this.tab
 			? this.theme.fg("accent", `[${tab[0]!.toUpperCase()}${tab.slice(1)}]`)
 			: this.theme.fg("dim", `${tab[0]!.toUpperCase()}${tab.slice(1)}`)).join("  ");
-		const header = `${this.theme.bold(`Scheduler / ${this.job.key}`)} ${this.theme.fg(state.color, `· ${state.icon} ${state.label}`)}`;
+		const refreshState = this.refreshing
+			? this.theme.fg("warning", " · ↻ refreshing")
+			: this.refreshStatus
+				? this.theme.fg(this.refreshStatus.color, ` · ${this.refreshStatus.message}`)
+				: "";
+		const header = `${this.theme.bold(`Scheduler / ${this.job.key}`)} ${this.theme.fg(state.color, `· ${state.icon} ${state.label}`)}${refreshState}`;
 		const bodyHeight = Math.max(4, Math.min(14, (this.tui.terminal?.rows ?? 24) - 7));
 		const body = this.tab === "overview"
 			? this.overviewLines(innerWidth)
@@ -637,11 +659,47 @@ export class SchedulerJobDetailComponent implements Component {
 			...visible,
 			...Array.from({ length: Math.max(0, bodyHeight - visible.length) }, () => ""),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
-			truncateToWidth(this.theme.fg("dim", "Tab switch · ↑/↓ scroll · Enter run output · r refresh · a actions · q/Esc tasks"), innerWidth, ""),
+			truncateToWidth(this.theme.fg("dim", `Tab switch · ↑/↓ scroll · Enter run output · r refresh${state.label === "Needs attention" ? " · d diagnose with agent" : ""} · a actions · q/Esc tasks`), innerWidth, ""),
 		], safeWidth, this.theme);
 	}
 
 	invalidate(): void {}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.refreshAbort?.abort();
+		this.refreshAbort = undefined;
+	}
+
+	async refreshData(): Promise<void> {
+		if (!this.reload || this.refreshing || this.disposed) return;
+		this.refreshing = true;
+		this.refreshStatus = undefined;
+		const abort = new AbortController();
+		this.refreshAbort = abort;
+		this.tui.requestRender();
+		try {
+			const next = await this.reload(abort.signal);
+			if (this.disposed) return;
+			this.job = next.job;
+			this.definition = next.definition;
+			this.now = new Date(next.generatedAt);
+			const blocked = schedulerJobState(next.job).label === "Needs attention";
+			this.refreshStatus = {
+				message: blocked ? "Still blocked" : "Updated",
+				color: blocked ? "warning" : "success",
+			};
+		} catch (error) {
+			if (!this.disposed && !abort.signal.aborted) {
+				this.refreshStatus = { message: `Refresh failed: ${error instanceof Error ? error.message : String(error)}`, color: "error" };
+			}
+		} finally {
+			if (this.refreshAbort === abort) this.refreshAbort = undefined;
+			this.refreshing = false;
+			if (!this.disposed) this.tui.requestRender();
+		}
+	}
 
 	private overviewLines(width: number): string[] {
 		const latest = this.job.recentRuns[0];
@@ -663,9 +721,10 @@ export class SchedulerJobDetailComponent implements Component {
 		const failures = [this.job.candidateError, this.job.installationError, this.job.historyError, this.job.nextRunError].filter((value) => value !== null);
 		if (failures.length > 0) {
 			lines.push("", ...failures.map((error) => this.theme.fg("error", `${error!.code}: ${error!.message}`)));
-			if (this.job.candidateError) lines.push("Recovery: fix the declared command or environment, then press r to retry.");
-			else if (this.job.installationError) lines.push("Recovery: press r to retry status inspection; use Definition to inspect the reviewed identities first.");
-			else if (this.job.historyError) lines.push("Recovery: repair the private run-history state, then press r; lifecycle actions remain independently reviewed.");
+			if (this.job.candidateError) lines.push(`Recovery: press ${this.theme.fg("accent", "d")} to diagnose with the open agent. Refresh with r after the source or environment changes.`);
+			else if (this.job.installationError) lines.push(`Recovery: press ${this.theme.fg("accent", "d")} to diagnose status inspection with the open agent; Definition retains the reviewed identities.`);
+			else if (this.job.historyError) lines.push(`Recovery: press ${this.theme.fg("accent", "d")} to diagnose the private run-history state; lifecycle actions remain independently reviewed.`);
+			else lines.push(`Recovery: press ${this.theme.fg("accent", "d")} to diagnose this task with the open agent.`);
 		}
 		if (this.job.candidate?.adapter.warning) lines.push("", this.theme.fg("warning", this.job.candidate.adapter.warning));
 		if (this.job.installation.installed && this.job.installation.health !== "ok") {
