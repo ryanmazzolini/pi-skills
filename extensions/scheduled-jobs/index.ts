@@ -618,7 +618,7 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 				const overview = current.jobs.find((job) => job.id === id);
 				if (!overview) return undefined;
 				const job = await loadJob(overview, dependencies, signal);
-				return { overview, job, generatedAt: current.generatedAt };
+				return { overview, job, generatedAt: current.generatedAt, dashboard: current };
 			};
 			const loadDetail = async (id: string, signal: AbortSignal): Promise<SchedulerDetailSnapshot> => {
 				const loaded = await loadSelectedTask(id, signal);
@@ -627,6 +627,7 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 					job: loaded.overview,
 					definition: inspectionText(loaded.job),
 					generatedAt: loaded.generatedAt,
+					dashboard: loaded.dashboard,
 				};
 			};
 			const selected = await showDashboard(

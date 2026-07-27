@@ -152,18 +152,24 @@ test("task selection follows the grouped visual order", () => {
   assert.deepEqual(nextOutcomes, [{ kind: "job", id: draft.id }]);
 });
 
-test("workspace switches between task list and details without closing custom UI", async () => {
+test("workspace switches views without closing, stale lists, or hidden polling", async () => {
   const view = harness();
   const outcomes = [];
-  const current = job();
+  const current = job({ recentRuns: [run({ status: "running", finishedAt: null })] });
+  const updated = job({ candidateError: { code: "ENVIRONMENT", message: "missing command" }, recentRuns: [] });
   const data = { jobs: [current], sourceErrors: [], generatedAt: "2026-07-25T09:00:00.000Z" };
+  const updatedData = { jobs: [updated], sourceErrors: [], generatedAt: "2026-07-25T09:00:01.000Z" };
+  let hiddenReloads = 0;
   const component = new SchedulerWorkspaceComponent(
     data,
     view.tui,
     theme,
     (result) => outcomes.push(result),
-    async () => data,
-    async () => ({ job: current, definition: "Candidate definition", generatedAt: data.generatedAt }),
+    async () => {
+      hiddenReloads++;
+      return updatedData;
+    },
+    async () => ({ job: updated, definition: "Candidate definition", generatedAt: updatedData.generatedAt, dashboard: updatedData }),
     (error) => { throw error; },
   );
 
@@ -171,9 +177,12 @@ test("workspace switches between task list and details without closing custom UI
   await new Promise((resolve) => setImmediate(resolve));
   assert.match(component.render(120).join("\n"), /Scheduler \/ daily-report:work/);
   assert.deepEqual(outcomes, []);
+  await new Promise((resolve) => setTimeout(resolve, 1_050));
+  assert.equal(hiddenReloads, 0);
 
   component.handleInput("q");
   assert.match(component.render(120).join("\n"), /\[Tasks\]/);
+  assert.match(component.render(120).join("\n"), /Needs attention/);
   assert.deepEqual(outcomes, []);
 
   component.handleInput("q");

@@ -88,6 +88,7 @@ export interface SchedulerDetailSnapshot {
 	job: SchedulerJobOverview;
 	definition: string;
 	generatedAt: string;
+	dashboard: SchedulerDashboardData;
 }
 
 type TuiView = Pick<TUI, "requestRender"> & { terminal?: { rows: number } };
@@ -261,6 +262,7 @@ export class SchedulerDashboardComponent implements Component {
 	private refreshAbort?: AbortController;
 	private refreshing = false;
 	private refreshFailure: string | undefined;
+	private suspended = false;
 	private disposed = false;
 
 	constructor(
@@ -369,6 +371,23 @@ export class SchedulerDashboardComponent implements Component {
 
 	invalidate(): void {}
 
+	suspend(): void {
+		if (this.suspended || this.disposed) return;
+		this.suspended = true;
+		if (this.refreshTimer) clearInterval(this.refreshTimer);
+		this.refreshTimer = undefined;
+		this.refreshAbort?.abort();
+		this.refreshAbort = undefined;
+	}
+
+	resume(data?: SchedulerDashboardData): void {
+		if (this.disposed) return;
+		if (data) this.applyData(data);
+		this.suspended = false;
+		this.syncPolling();
+		this.tui.requestRender();
+	}
+
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
@@ -379,30 +398,15 @@ export class SchedulerDashboardComponent implements Component {
 	}
 
 	async refreshData(): Promise<void> {
-		if (!this.reload || this.refreshing || this.disposed) return;
+		if (!this.reload || this.refreshing || this.suspended || this.disposed) return;
 		this.refreshing = true;
 		const abort = new AbortController();
 		this.refreshAbort = abort;
 		this.tui.requestRender();
-		const selectedTaskId = orderedTasks(this.data)[this.selectedTask]?.id;
-		const selectedRunId = allRuns(this.data)[this.selectedRun]?.run.runId;
 		try {
 			const next = await this.reload(abort.signal);
-			if (this.disposed) return;
-			this.data = next;
-			this.now = new Date(next.generatedAt);
-			this.refreshFailure = undefined;
-			if (selectedTaskId) {
-				const tasks = orderedTasks(next);
-				const taskIndex = tasks.findIndex((job) => job.id === selectedTaskId);
-				this.selectedTask = taskIndex >= 0 ? taskIndex : Math.min(this.selectedTask, Math.max(0, tasks.length - 1));
-			}
-			if (selectedRunId) {
-				const runs = allRuns(next);
-				const runIndex = runs.findIndex(({ run }) => run.runId === selectedRunId);
-				this.selectedRun = runIndex >= 0 ? runIndex : Math.min(this.selectedRun, Math.max(0, runs.length - 1));
-			}
-			this.syncPolling();
+			if (this.disposed || this.suspended) return;
+			this.applyData(next);
 		} catch (error) {
 			if (!this.disposed && !abort.signal.aborted) this.refreshFailure = error instanceof Error ? error.message : String(error);
 		} finally {
@@ -412,8 +416,27 @@ export class SchedulerDashboardComponent implements Component {
 		}
 	}
 
+	private applyData(next: SchedulerDashboardData): void {
+		const selectedTaskId = orderedTasks(this.data)[this.selectedTask]?.id;
+		const selectedRunId = allRuns(this.data)[this.selectedRun]?.run.runId;
+		this.data = next;
+		this.now = new Date(next.generatedAt);
+		this.refreshFailure = undefined;
+		if (selectedTaskId) {
+			const tasks = orderedTasks(next);
+			const taskIndex = tasks.findIndex((job) => job.id === selectedTaskId);
+			this.selectedTask = taskIndex >= 0 ? taskIndex : Math.min(this.selectedTask, Math.max(0, tasks.length - 1));
+		}
+		if (selectedRunId) {
+			const runs = allRuns(next);
+			const runIndex = runs.findIndex(({ run }) => run.runId === selectedRunId);
+			this.selectedRun = runIndex >= 0 ? runIndex : Math.min(this.selectedRun, Math.max(0, runs.length - 1));
+		}
+		this.syncPolling();
+	}
+
 	private syncPolling(): void {
-		const shouldPoll = Boolean(this.reload) && hasRunningRuns(this.data) && !this.disposed;
+		const shouldPoll = Boolean(this.reload) && hasRunningRuns(this.data) && !this.suspended && !this.disposed;
 		if (shouldPoll && !this.refreshTimer) {
 			this.refreshTimer = setInterval(() => void this.refreshData(), 1_000);
 			this.refreshTimer.unref?.();
@@ -780,6 +803,7 @@ export class SchedulerWorkspaceComponent implements Component {
 	private readonly dashboard: SchedulerDashboardComponent;
 	private detail?: SchedulerJobDetailComponent;
 	private detailId?: string;
+	private detailDashboard?: SchedulerDashboardData;
 	private opening = false;
 	private openAbort?: AbortController;
 	private disposed = false;
@@ -814,7 +838,7 @@ export class SchedulerWorkspaceComponent implements Component {
 				this.openAbort?.abort();
 				this.openAbort = undefined;
 				this.opening = false;
-				this.tui.requestRender();
+				this.dashboard.resume();
 			}
 			return;
 		}
@@ -852,7 +876,8 @@ export class SchedulerWorkspaceComponent implements Component {
 			this.detail?.dispose();
 			this.detail = undefined;
 			this.detailId = undefined;
-			this.tui.requestRender();
+			this.dashboard.resume(this.detailDashboard);
+			this.detailDashboard = undefined;
 			return;
 		}
 		const id = this.detailId;
@@ -866,6 +891,7 @@ export class SchedulerWorkspaceComponent implements Component {
 
 	private async openDetail(id: string): Promise<void> {
 		if (this.opening || this.disposed) return;
+		this.dashboard.suspend();
 		this.opening = true;
 		const abort = new AbortController();
 		this.openAbort = abort;
@@ -873,6 +899,7 @@ export class SchedulerWorkspaceComponent implements Component {
 			const snapshot = await this.loadDetail(id, abort.signal);
 			if (this.disposed || abort.signal.aborted) return;
 			this.detailId = id;
+			this.detailDashboard = snapshot.dashboard;
 			this.detail = new SchedulerJobDetailComponent(
 				snapshot.job,
 				snapshot.definition,
@@ -880,10 +907,17 @@ export class SchedulerWorkspaceComponent implements Component {
 				this.theme,
 				(result) => this.handleDetailResult(result),
 				new Date(snapshot.generatedAt),
-				(signal) => this.loadDetail(id, signal),
+				async (signal) => {
+					const refreshed = await this.loadDetail(id, signal);
+					this.detailDashboard = refreshed.dashboard;
+					return refreshed;
+				},
 			);
 		} catch (error) {
-			if (!this.disposed && !abort.signal.aborted) this.onError(error);
+			if (!this.disposed && !abort.signal.aborted) {
+				this.dashboard.resume();
+				this.onError(error);
+			}
 		} finally {
 			if (this.openAbort === abort) this.openAbort = undefined;
 			this.opening = false;
