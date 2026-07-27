@@ -346,7 +346,7 @@ export class IntercomRuntime extends EventEmitter {
 		this.client.setRegistration(registration);
 	}
 
-	updatePresence(updates: { name?: string; status?: string; model?: string; piSession?: PiSessionPresence | null }): void {
+	updatePresence(updates: { name?: string; status?: string; model?: string; lastConversationalTimestamp?: number | null; piSession?: PiSessionPresence | null }): void {
 		this.client.updatePresence(updates);
 	}
 

@@ -385,6 +385,7 @@ test("presence advertises only persisted snapshots and follows idle tree and use
 			getSessionFile: () => sessionPath,
 			getLeafId: () => leaf,
 			getEntries: () => [...entries],
+			getBranch: () => [...entries],
 		},
 	};
 	await handlers.get("session_start")({}, ctx);
@@ -449,7 +450,8 @@ test("first user Bash stays unadvertised until Pi actually persists the session"
 	const ctx = { cwd: fixture.base, model: { id: "fixture-model" }, sessionManager: manager };
 	await handlers.get("session_start")({}, ctx);
 	t.after(() => handlers.get("session_shutdown")());
-	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "first-bash"));
+	await waitFor(async () => (await observer.listSessions()).some((session) =>
+		session.name === "first-bash" && session.lastConversationalTimestamp === null));
 	handlers.get("user_bash")();
 	manager.appendMessage({ role: "bashExecution", command: "first", output: "done", exitCode: 0, cancelled: false, truncated: false, timestamp: 1 });
 	await assert.rejects(readFile(manager.getSessionFile()), /ENOENT/);
@@ -463,6 +465,7 @@ test("first user Bash stays unadvertised until Pi actually persists the session"
 	});
 	assert.equal(advertised.piSession.sessionId, "first-bash-pi-session");
 	assert.equal(advertised.piSession.activeLeafId, manager.getLeafId());
+	assert.equal(advertised.lastConversationalTimestamp, Date.parse(manager.getLeafEntry().timestamp));
 });
 
 test("a Bash started before first persistence refreshes when it finishes after agent_end", async (t) => {
@@ -684,7 +687,7 @@ test("tree and compaction fence both role publication race orders", async (t) =>
 	const ctx = {
 		cwd: fixture.base,
 		model: { id: "fixture-model" },
-		sessionManager: { getSessionId: () => "role-race-pi", getSessionFile: () => undefined, getLeafId: () => null },
+		sessionManager: { getSessionId: () => "role-race-pi", getSessionFile: () => undefined, getLeafId: () => null, getBranch: () => [] },
 	};
 	await handlers.get("session_start")({}, ctx);
 	t.after(() => handlers.get("session_shutdown")());
@@ -746,7 +749,7 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	const ctx = {
 		cwd: "/repo",
 		model: { id: "fixture-model" },
-		sessionManager: { getSessionId: () => "full-pi-session-id", getSessionFile: () => undefined, getLeafId: () => null },
+		sessionManager: { getSessionId: () => "full-pi-session-id", getSessionFile: () => undefined, getLeafId: () => null, getBranch: () => [] },
 	};
 	await handlers.get("session_start")({}, ctx);
 	t.after(() => handlers.get("session_shutdown")());
@@ -952,7 +955,7 @@ test("broker delivery rejection is reported as definitive through the tool opera
 	const ctx = {
 		cwd: "/repo",
 		model: { id: "fixture-model" },
-		sessionManager: { getSessionId: () => "pi-session", getSessionFile: () => undefined, getLeafId: () => null },
+		sessionManager: { getSessionId: () => "pi-session", getSessionFile: () => undefined, getLeafId: () => null, getBranch: () => [] },
 	};
 	await handlers.get("session_start")({}, ctx);
 	t.after(() => handlers.get("session_shutdown")());
@@ -995,7 +998,7 @@ test("tool execution throws action-qualified operational failures and status sur
 	const ctx = {
 		cwd: "/repo",
 		model: { id: "fixture-model" },
-		sessionManager: { getSessionId: () => "full-pi-session-id", getSessionFile: () => undefined, getLeafId: () => null },
+		sessionManager: { getSessionId: () => "full-pi-session-id", getSessionFile: () => undefined, getLeafId: () => null, getBranch: () => [] },
 	};
 	await handlers.get("session_start")({}, ctx);
 	t.after(async () => handlers.get("session_shutdown")());

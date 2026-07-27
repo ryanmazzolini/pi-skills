@@ -28,15 +28,19 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 	assert.equal(alice.supportsCapability("pi-session-tail-v1"), true);
 	assert.equal(alice.supportsCapability("first-mate-role-v1"), true);
 	assert.equal(alice.supportsCapability("pi-session-identity-v1"), true);
+	assert.equal(alice.supportsCapability("pi-session-conversation-age-v1"), true);
 	const sessions = await alice.listSessions();
 	assert.equal(sessions.length, 2);
 	const aliceInfo = sessions.find((session) => session.id === alice.sessionId);
 	assert.equal(aliceInfo.name, "alice");
 	assert.equal(aliceInfo.piSessionId, alice.currentPiSessionId());
 
+	const conversationalTimestamp = Date.parse("2026-01-01T00:00:00.000Z");
 	const presence = waitEvent(bob, "presence_update", (session) => session.id === alice.sessionId && session.status === "thinking");
-	alice.updatePresence({ status: "thinking", model: "next-model" });
-	assert.equal((await presence)[0].model, "next-model");
+	alice.updatePresence({ status: "thinking", model: "next-model", lastConversationalTimestamp: conversationalTimestamp });
+	const [updatedAlice] = await presence;
+	assert.equal(updatedAlice.model, "next-model");
+	assert.equal(updatedAlice.lastConversationalTimestamp, conversationalTimestamp);
 
 	const attachment = { type: "snippet", name: "answer.ts", content: "export const answer = 42", language: "typescript" };
 	const received = waitEvent(bob, "message", (_from, message) => message.id === "attachment-1");

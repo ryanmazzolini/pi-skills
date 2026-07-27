@@ -13,7 +13,8 @@ process.umask(0o077);
 const TAIL_CAPABILITY = "pi-session-tail-v1";
 const ROLE_CAPABILITY = "first-mate-role-v1";
 const IDENTITY_CAPABILITY = "pi-session-identity-v1";
-const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY, ROLE_CAPABILITY, IDENTITY_CAPABILITY]);
+const CONVERSATION_AGE_CAPABILITY = "pi-session-conversation-age-v1";
+const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY, ROLE_CAPABILITY, IDENTITY_CAPABILITY, CONVERSATION_AGE_CAPABILITY]);
 const MAX_GRACEFUL_CONNECTION_REJECTIONS = 16;
 
 const runtimeDir = process.env.PI_INTERCOM_RUNTIME_DIR || join(homedir(), ".pi", "agent", "intercom");
@@ -71,6 +72,10 @@ function finiteNumber(value) {
 	return typeof value === "number" && Number.isFinite(value);
 }
 
+function isConversationalTimestamp(value) {
+	return value === null || (Number.isSafeInteger(value) && value >= 0 && value <= 8_640_000_000_000_000);
+}
+
 function isRole(value) {
 	return value === "first-mate";
 }
@@ -119,6 +124,7 @@ function isRegistration(value) {
 		&& Number.isSafeInteger(value.pid)
 		&& finiteNumber(value.startedAt)
 		&& finiteNumber(value.lastActivity)
+		&& (value.lastConversationalTimestamp === undefined || isConversationalTimestamp(value.lastConversationalTimestamp))
 		&& (value.name === undefined || boundedString(value.name, LIMITS.sessionString, true))
 		&& (value.status === undefined || boundedString(value.status, LIMITS.sessionString, true))
 		&& (value.piSession === undefined || isPiSessionPresence(value.piSession))
@@ -135,6 +141,7 @@ function sessionFromRegistration(value, id) {
 		pid: value.pid,
 		startedAt: value.startedAt,
 		lastActivity: value.lastActivity,
+		...(value.lastConversationalTimestamp === undefined ? {} : { lastConversationalTimestamp: value.lastConversationalTimestamp }),
 		...(value.status === undefined ? {} : { status: value.status }),
 		...(value.piSession === undefined ? {} : { piSession: { ...value.piSession } }),
 	};
@@ -513,6 +520,9 @@ async function handleMessage(connection, value) {
 			for (const field of ["name", "status", "model"]) {
 				if (value[field] !== undefined && !boundedString(value[field], LIMITS.sessionString, true)) throw new Error(`Invalid presence ${field}`);
 			}
+			if (value.lastConversationalTimestamp !== undefined && !isConversationalTimestamp(value.lastConversationalTimestamp)) {
+				throw new Error("Invalid presence lastConversationalTimestamp");
+			}
 			if (value.piSession !== undefined && value.piSession !== null) {
 				if (
 					!isPiSessionPresence(value.piSession)
@@ -533,6 +543,7 @@ async function handleMessage(connection, value) {
 			if (value.name !== undefined) nextInfo.name = value.name;
 			if (value.status !== undefined) nextInfo.status = value.status;
 			if (value.model !== undefined) nextInfo.model = value.model;
+			if (value.lastConversationalTimestamp !== undefined) nextInfo.lastConversationalTimestamp = value.lastConversationalTimestamp;
 			if (value.piSession === null) delete nextInfo.piSession;
 			else if (value.piSession !== undefined) nextInfo.piSession = { ...value.piSession };
 			if (value.role === null) delete nextInfo.role;

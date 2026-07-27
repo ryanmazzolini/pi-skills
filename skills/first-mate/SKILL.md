@@ -31,8 +31,9 @@ The role is ephemeral same-user metadata and grants no authority. Tree navigatio
 
 ## Route requests
 
-- When the human requests triage directly or accepts the startup question `Run triage now?`, read [connected-session triage](references/triage.md). Take one bounded comparative snapshot and report every peer. When recon candidates exist, display the complete list and ask whether to send the fixed status request to it; otherwise report that no recon is proposed and stop.
-- Read [confirmed stale-session recon](references/recon.md) only when the human's next response clearly directs First Mate to send that request to the displayed list without changing it. Any other response expires the proposal; a later direction requires a new triage snapshot.
+- When the human requests triage directly or accepts the startup question `Run triage now?`, read [connected-session triage](references/triage.md). Take its coherent snapshot, load the oldest page, and ask whether to load the next retained page when one remains.
+- Continue [connected-session triage](references/triage.md) only when the human's next response clearly accepts its displayed next page, declines further pages, or explicitly asks to stop loading and finish. Other responses expire the retained queue.
+- Read [confirmed stale-session recon](references/recon.md) only when the human's next response clearly directs First Mate to send that request to the displayed candidate list without changing it. Any other response expires the proposal; a later direction requires a new triage snapshot.
 - On an explicit request to inspect, tail, send, ask, or reply to a peer, read [peer inspection and contact](references/peer-inspection.md).
 - For an exact project-session escalation, or when confirmed inspection needs an explicit work-item pointer, read [project evidence](references/project-evidence.md).
 

@@ -9,6 +9,7 @@ import { getBrokerSocketPath } from "./broker/paths.ts";
 export const INTERCOM_TAIL_CAPABILITY = "pi-session-tail-v1";
 export const INTERCOM_ROLE_CAPABILITY = "first-mate-role-v1";
 export const INTERCOM_IDENTITY_CAPABILITY = "pi-session-identity-v1";
+export const INTERCOM_CONVERSATION_AGE_CAPABILITY = "pi-session-conversation-age-v1";
 export type IntercomRole = "first-mate";
 
 export interface PiSessionPresence {
@@ -29,6 +30,8 @@ export interface SessionInfo {
 	pid: number;
 	startedAt: number;
 	lastActivity: number;
+	/** Epoch milliseconds for the latest completed user/assistant text used by triage, or null when unavailable. */
+	lastConversationalTimestamp?: number | null;
 	status?: string;
 	role?: IntercomRole;
 	piSession?: PiSessionPresence;
@@ -122,6 +125,11 @@ function finiteNumber(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value);
 }
 
+function isConversationalTimestamp(value: unknown): value is number | null {
+	return value === null
+		|| (Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= 8_640_000_000_000_000);
+}
+
 export function isAttachment(value: unknown): value is Attachment {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const attachment = value as Record<string, unknown>;
@@ -187,6 +195,7 @@ export function isSessionInfo(value: unknown): value is SessionInfo {
 		&& Number.isSafeInteger(session.pid)
 		&& finiteNumber(session.startedAt)
 		&& finiteNumber(session.lastActivity)
+		&& (session.lastConversationalTimestamp === undefined || isConversationalTimestamp(session.lastConversationalTimestamp))
 		&& (session.name === undefined || boundedString(session.name, INTERCOM_LIMITS.maxSessionStringBytes, true))
 		&& (session.status === undefined || boundedString(session.status, INTERCOM_LIMITS.maxSessionStringBytes, true))
 		&& (session.role === undefined || isIntercomRole(session.role))
@@ -199,7 +208,12 @@ function validateRegistration(session: Omit<SessionInfo, "id">): void {
 }
 
 function registrationForWire(session: Omit<SessionInfo, "id">): Omit<SessionInfo, "id"> {
-	const { piSession: _piSession, role: _role, ...legacyCompatible } = session;
+	const {
+		piSession: _piSession,
+		role: _role,
+		lastConversationalTimestamp: _lastConversationalTimestamp,
+		...legacyCompatible
+	} = session;
 	return legacyCompatible;
 }
 
@@ -541,9 +555,16 @@ export class IntercomClient extends EventEmitter {
 				});
 			});
 		}).then(async () => {
-			if (session.piSession && this.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
-				await this.enqueue({ type: "presence", piSession: session.piSession });
-			}
+			const presence = {
+				type: "presence",
+				...(session.lastConversationalTimestamp !== undefined && this.supportsCapability(INTERCOM_CONVERSATION_AGE_CAPABILITY)
+					? { lastConversationalTimestamp: session.lastConversationalTimestamp }
+					: {}),
+				...(session.piSession && this.supportsCapability(INTERCOM_TAIL_CAPABILITY)
+					? { piSession: session.piSession }
+					: {}),
+			};
+			if (Object.keys(presence).length > 1) await this.enqueue(presence);
 		});
 	}
 
@@ -580,12 +601,19 @@ export class IntercomClient extends EventEmitter {
 		if (!desired) return;
 		const piSessionChanged = this.supportsCapability(INTERCOM_TAIL_CAPABILITY)
 			&& !samePiSession(desired.piSession, sent.piSession);
-		if (desired.name === sent.name && desired.model === sent.model && desired.status === sent.status && !piSessionChanged) return;
+		const conversationalTimestampChanged = this.supportsCapability(INTERCOM_CONVERSATION_AGE_CAPABILITY)
+			&& desired.lastConversationalTimestamp !== sent.lastConversationalTimestamp;
+		if (desired.name === sent.name
+			&& desired.model === sent.model
+			&& desired.status === sent.status
+			&& !conversationalTimestampChanged
+			&& !piSessionChanged) return;
 		await this.enqueue({
 			type: "presence",
 			...(desired.name === undefined ? {} : { name: desired.name }),
 			...(desired.model === undefined ? {} : { model: desired.model }),
 			...(desired.status === undefined ? {} : { status: desired.status }),
+			...(conversationalTimestampChanged ? { lastConversationalTimestamp: desired.lastConversationalTimestamp ?? null } : {}),
 			...(piSessionChanged ? { piSession: desired.piSession ?? null } : {}),
 		});
 	}
@@ -999,10 +1027,11 @@ export class IntercomClient extends EventEmitter {
 		if (socket && !socket.destroyed) socket.destroy(error);
 	}
 
-	updatePresence(updates: { name?: string; status?: string; model?: string; piSession?: PiSessionPresence | null }): void {
+	updatePresence(updates: { name?: string; status?: string; model?: string; lastConversationalTimestamp?: number | null; piSession?: PiSessionPresence | null }): void {
 		for (const value of [updates.name, updates.status, updates.model]) {
 			if (value !== undefined && !boundedString(value, INTERCOM_LIMITS.maxSessionStringBytes, true)) return;
 		}
+		if (updates.lastConversationalTimestamp !== undefined && !isConversationalTimestamp(updates.lastConversationalTimestamp)) return;
 		if (updates.piSession !== undefined && updates.piSession !== null && !isPiSessionPresence(updates.piSession)) return;
 		const stableSessionId = this.currentPiSessionId();
 		if (updates.piSession && stableSessionId && updates.piSession.sessionId !== stableSessionId) return;
@@ -1017,6 +1046,9 @@ export class IntercomClient extends EventEmitter {
 			...(updates.name === undefined ? {} : { name: updates.name }),
 			...(updates.status === undefined ? {} : { status: updates.status }),
 			...(updates.model === undefined ? {} : { model: updates.model }),
+			...(this.supportsCapability(INTERCOM_CONVERSATION_AGE_CAPABILITY) && updates.lastConversationalTimestamp !== undefined
+				? { lastConversationalTimestamp: updates.lastConversationalTimestamp }
+				: {}),
 			...(this.supportsCapability(INTERCOM_TAIL_CAPABILITY) && updates.piSession !== undefined ? { piSession: updates.piSession } : {}),
 		};
 		if (Object.keys(outbound).length === 0) return;

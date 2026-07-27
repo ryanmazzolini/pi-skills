@@ -233,10 +233,16 @@ export function projectSessionTail(
 
 function sessionSegments(session: SessionInfo, current: SessionInfo, prefix = "", optionalIdentity = false): ProjectionSegment[] {
 	const sessionId = piSessionIdOf(session);
+	const conversationalAge = session.lastConversationalTimestamp === undefined
+		? undefined
+		: session.lastConversationalTimestamp === null
+			? "last conversational timestamp unavailable"
+			: `last conversational timestamp: ${new Date(session.lastConversationalTimestamp).toISOString()}`;
 	const tags = [
 		session.id === current.id ? "self" : undefined,
 		session.cwd === current.cwd && session.id !== current.id ? "same self-declared cwd" : undefined,
 		session.status ? `self-declared status: ${declared(session.status)}` : undefined,
+		conversationalAge,
 		session.piSession ? "persisted tail advertised" : undefined,
 	].filter((tag): tag is string => Boolean(tag));
 	return [

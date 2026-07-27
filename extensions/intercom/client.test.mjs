@@ -44,6 +44,10 @@ test("persisted Pi presence is an exact bounded optional session field", () => {
 	const base = { id: "peer", cwd: "/tmp", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
 	const piSession = { sessionId: "pi-session", fileLocator: "/tmp/session.jsonl", activeLeafId: null, revision: 1 };
 	assert.equal(isSessionInfo({ ...base, piSession }), true);
+	assert.equal(isSessionInfo({ ...base, lastConversationalTimestamp: null, piSession }), true);
+	assert.equal(isSessionInfo({ ...base, lastConversationalTimestamp: Date.now(), piSession }), true);
+	assert.equal(isSessionInfo({ ...base, lastConversationalTimestamp: -1, piSession }), false);
+	assert.equal(isSessionInfo({ ...base, lastConversationalTimestamp: Number.MAX_SAFE_INTEGER, piSession }), false);
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, fileLocator: "relative.jsonl" } }), false);
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, revision: 0 } }), false);
 	assert.equal(isSessionInfo({ ...base, piSession: { ...piSession, snapshotBytes: 100 } }), false);

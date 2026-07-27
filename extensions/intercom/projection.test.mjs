@@ -151,6 +151,17 @@ test("maximum valid session inventory truncates complete identities instead of f
 	assert.doesNotMatch(projected.text, /Pi session ID: "[^"]*\n/u, "session IDs must not be cut in half");
 });
 
+test("session list projection exposes sortable conversational timestamps when advertised", () => {
+	const timestamp = Date.parse("2026-01-01T00:00:00.000Z");
+	const current = session("current", { lastConversationalTimestamp: null });
+	const peer = session("peer", { lastConversationalTimestamp: timestamp });
+	const legacy = session("legacy", { lastConversationalTimestamp: undefined });
+	const projected = projectSessionList([current, peer, legacy], current);
+	assert.match(projected.text, /last conversational timestamp unavailable/);
+	assert.match(projected.text, /last conversational timestamp: 2026-01-01T00:00:00.000Z/);
+	assert.doesNotMatch(projected.text.split("Pi session ID: \"pi-legacy\"")[1], /last conversational timestamp/);
+});
+
 test("session list projection uses stable IDs advertised through persisted presence", () => {
 	const current = session("current");
 	const compatiblePeer = session("compatible", {

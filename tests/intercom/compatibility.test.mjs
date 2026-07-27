@@ -101,20 +101,28 @@ test("new clients hide unsupported stable IDs and persisted locators behind a le
 	const broker = await startLegacyBroker(fixture.home, fixture.paths.socketPath);
 	t.after(() => stopChild(broker));
 	const observer = await connectNew(fixture.paths, "observer");
+	const legacyObserver = await createPeer("old", fixture, "legacy-observer");
 	const target = new IntercomClient({ socketPath: fixture.paths.socketPath, reconnectDelaysMs: [20] });
 	const privateLocator = "/private/persisted/session.jsonl";
-	await target.start(registration("target", { piSessionId: "private-pi-session", piSession: { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "leaf", revision: 1 } }), async () => undefined);
-	t.after(async () => Promise.allSettled([observer.disconnect(), target.disconnect()]));
+	const conversationalTimestamp = Date.parse("2026-01-01T00:00:00.000Z");
+	await target.start(registration("target", { piSessionId: "private-pi-session", lastConversationalTimestamp: conversationalTimestamp, piSession: { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "leaf", revision: 1 } }), async () => undefined);
+	t.after(async () => Promise.allSettled([observer.disconnect(), legacyObserver.close(), target.disconnect()]));
 	assert.equal(target.supportsCapability("pi-session-tail-v1"), false);
 	assert.equal(target.supportsCapability("pi-session-identity-v1"), false);
 	assert.equal(target.currentPiSessionId(), "private-pi-session");
 	let listed = (await observer.listSessions()).find((session) => session.id === target.sessionId);
 	assert.equal(listed.piSessionId, undefined);
 	assert.equal(listed.piSession, undefined);
+	assert.equal(listed.lastConversationalTimestamp, undefined);
 	assert.equal(JSON.stringify(listed).includes(privateLocator), false);
-	target.updatePresence({ piSession: { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "new", revision: 2 } });
-	listed = (await observer.listSessions()).find((session) => session.id === target.sessionId);
+	assert.equal((await legacyObserver.list()).some((session) => session.id === target.sessionId && session.name === "target"), true);
+	target.updatePresence({ status: "timestamp-updated", lastConversationalTimestamp: conversationalTimestamp + 1_000, piSession: { sessionId: "private-pi-session", fileLocator: privateLocator, activeLeafId: "new", revision: 2 } });
+	listed = await waitFor(async () => {
+		const session = (await observer.listSessions()).find((item) => item.id === target.sessionId);
+		return session?.status === "timestamp-updated" ? session : undefined;
+	});
 	assert.equal(listed.piSession, undefined);
+	assert.equal(listed.lastConversationalTimestamp, undefined);
 	assert.equal(JSON.stringify(listed).includes(privateLocator), false);
 });
 
