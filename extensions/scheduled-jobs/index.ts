@@ -557,16 +557,20 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 				await showRunOutput(ctx, dependencies, selected.id, selected.runId);
 				continue;
 			}
-			const current = await loadDashboardData(ctx.cwd, dependencies);
-			const overview = current.jobs.find((job) => job.id === selected.id);
-			if (!overview) {
-				ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
-				continue;
+			for (;;) {
+				const current = await loadDashboardData(ctx.cwd, dependencies);
+				const overview = current.jobs.find((job) => job.id === selected.id);
+				if (!overview) {
+					ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
+					break;
+				}
+				const job = await loadJob(overview, dependencies);
+				const detail = await showDetails(ctx, overview, job);
+				if (detail.kind === "refresh") continue;
+				if (detail.kind === "run") await showRunOutput(ctx, dependencies, detail.id, detail.runId);
+				else if (detail.kind === "actions") await chooseAction(ctx, job, dependencies);
+				break;
 			}
-			const job = await loadJob(overview, dependencies);
-			const detail = await showDetails(ctx, overview, job);
-			if (detail.kind === "run") await showRunOutput(ctx, dependencies, detail.id, detail.runId);
-			else if (detail.kind === "actions") await chooseAction(ctx, job, dependencies);
 		}
 	};
 }

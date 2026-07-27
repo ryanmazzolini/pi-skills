@@ -220,6 +220,24 @@ test("action menu stays in the custom dashboard and supports keyboard review", (
   assert.deepEqual(outcomes, ["remove"]);
 });
 
+test("detail view refreshes the same task directly", () => {
+  const view = harness();
+  const outcomes = [];
+  const component = new SchedulerJobDetailComponent(
+    job({ candidateError: { code: "ENVIRONMENT", message: "ambiguous node" } }),
+    "Definition",
+    view.tui,
+    theme,
+    (result) => outcomes.push(result),
+  );
+
+  const rendered = component.render(120).join("\n");
+  assert.match(rendered, /then press r to retry/);
+  assert.match(rendered, /r refresh/);
+  component.handleInput("r");
+  assert.deepEqual(outcomes, [{ kind: "refresh" }]);
+});
+
 test("detail view gives concrete recovery routes for adapter drift and failed runs", () => {
   const view = harness();
   const current = job({
