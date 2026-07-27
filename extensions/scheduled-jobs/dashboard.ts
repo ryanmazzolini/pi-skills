@@ -74,6 +74,8 @@ export type SchedulerDashboardResult =
 	| { kind: "close" }
 	| { kind: "refresh" }
 	| { kind: "job"; id: string }
+	| { kind: "diagnose"; id: string }
+	| { kind: "actions"; id: string }
 	| { kind: "run"; id: string; runId: string };
 
 export type SchedulerDetailResult =
@@ -766,6 +768,127 @@ export class SchedulerJobDetailComponent implements Component {
 
 	private definitionLines(width: number): string[] {
 		return this.definition.split("\n").flatMap((line) => wrapTextWithAnsi(line || " ", width));
+	}
+}
+
+export class SchedulerWorkspaceComponent implements Component {
+	private readonly tui: TuiView;
+	private readonly theme: Theme;
+	private readonly done: (result: SchedulerDashboardResult) => void;
+	private readonly loadDetail: (id: string, signal: AbortSignal) => Promise<SchedulerDetailSnapshot>;
+	private readonly onError: (error: unknown) => void;
+	private readonly dashboard: SchedulerDashboardComponent;
+	private detail?: SchedulerJobDetailComponent;
+	private detailId?: string;
+	private opening = false;
+	private openAbort?: AbortController;
+	private disposed = false;
+
+	constructor(
+		data: SchedulerDashboardData,
+		tui: TuiView,
+		theme: Theme,
+		done: (result: SchedulerDashboardResult) => void,
+		reload: (signal: AbortSignal) => Promise<SchedulerDashboardData>,
+		loadDetail: (id: string, signal: AbortSignal) => Promise<SchedulerDetailSnapshot>,
+		onError: (error: unknown) => void,
+	) {
+		this.tui = tui;
+		this.theme = theme;
+		this.done = done;
+		this.loadDetail = loadDetail;
+		this.onError = onError;
+		this.dashboard = new SchedulerDashboardComponent(
+			data,
+			tui,
+			theme,
+			(result) => this.handleDashboardResult(result),
+			new Date(data.generatedAt),
+			reload,
+		);
+	}
+
+	handleInput(data: string): void {
+		if (this.opening) {
+			if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || data === "q") {
+				this.openAbort?.abort();
+				this.openAbort = undefined;
+				this.opening = false;
+				this.tui.requestRender();
+			}
+			return;
+		}
+		(this.detail ?? this.dashboard).handleInput(data);
+	}
+
+	render(width: number): string[] {
+		return (this.detail ?? this.dashboard).render(width);
+	}
+
+	invalidate(): void {
+		(this.detail ?? this.dashboard).invalidate();
+	}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.openAbort?.abort();
+		this.openAbort = undefined;
+		this.dashboard.dispose();
+		this.detail?.dispose();
+		this.detail = undefined;
+	}
+
+	private handleDashboardResult(result: SchedulerDashboardResult): void {
+		if (result.kind === "job") {
+			void this.openDetail(result.id);
+			return;
+		}
+		this.done(result);
+	}
+
+	private handleDetailResult(result: SchedulerDetailResult): void {
+		if (result.kind === "back") {
+			this.detail?.dispose();
+			this.detail = undefined;
+			this.detailId = undefined;
+			this.tui.requestRender();
+			return;
+		}
+		const id = this.detailId;
+		if (!id) return;
+		if (result.kind === "diagnose" || result.kind === "actions") {
+			this.done({ kind: result.kind, id });
+			return;
+		}
+		this.done(result);
+	}
+
+	private async openDetail(id: string): Promise<void> {
+		if (this.opening || this.disposed) return;
+		this.opening = true;
+		const abort = new AbortController();
+		this.openAbort = abort;
+		try {
+			const snapshot = await this.loadDetail(id, abort.signal);
+			if (this.disposed || abort.signal.aborted) return;
+			this.detailId = id;
+			this.detail = new SchedulerJobDetailComponent(
+				snapshot.job,
+				snapshot.definition,
+				this.tui,
+				this.theme,
+				(result) => this.handleDetailResult(result),
+				new Date(snapshot.generatedAt),
+				(signal) => this.loadDetail(id, signal),
+			);
+		} catch (error) {
+			if (!this.disposed && !abort.signal.aborted) this.onError(error);
+		} finally {
+			if (this.openAbort === abort) this.openAbort = undefined;
+			this.opening = false;
+			if (!this.disposed) this.tui.requestRender();
+		}
 	}
 }
 

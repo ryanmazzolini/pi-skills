@@ -6,6 +6,7 @@ import {
   SchedulerDashboardComponent,
   SchedulerJobDetailComponent,
   SchedulerTextComponent,
+  SchedulerWorkspaceComponent,
   formatSchedulerTime,
   humanizeSchedule,
   schedulerJobState,
@@ -149,6 +150,35 @@ test("task selection follows the grouped visual order", () => {
   assert.match(next.render(120).join("\n"), /› ◇ smoke:dashboard/);
   next.handleInput("\r");
   assert.deepEqual(nextOutcomes, [{ kind: "job", id: draft.id }]);
+});
+
+test("workspace switches between task list and details without closing custom UI", async () => {
+  const view = harness();
+  const outcomes = [];
+  const current = job();
+  const data = { jobs: [current], sourceErrors: [], generatedAt: "2026-07-25T09:00:00.000Z" };
+  const component = new SchedulerWorkspaceComponent(
+    data,
+    view.tui,
+    theme,
+    (result) => outcomes.push(result),
+    async () => data,
+    async () => ({ job: current, definition: "Candidate definition", generatedAt: data.generatedAt }),
+    (error) => { throw error; },
+  );
+
+  component.handleInput("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(component.render(120).join("\n"), /Scheduler \/ daily-report:work/);
+  assert.deepEqual(outcomes, []);
+
+  component.handleInput("q");
+  assert.match(component.render(120).join("\n"), /\[Tasks\]/);
+  assert.deepEqual(outcomes, []);
+
+  component.handleInput("q");
+  assert.deepEqual(outcomes, [{ kind: "close" }]);
+  component.dispose();
 });
 
 test("navigates tasks and runs without exposing run identifiers", () => {
