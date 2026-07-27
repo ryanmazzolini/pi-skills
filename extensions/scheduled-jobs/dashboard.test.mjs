@@ -121,6 +121,36 @@ test("renders a width-safe tasks dashboard with next run, history, and source er
   assert.equal(narrow.every((line) => visibleWidth(line) <= 54), true);
 });
 
+test("task selection follows the grouped visual order", () => {
+  const view = harness();
+  const draft = job({
+    id: "global:smoke:dashboard",
+    key: "smoke:dashboard",
+    installation: { installed: false, health: "absent" },
+    recentRuns: [],
+  });
+  const blocked = job({
+    id: "global:smoke:diagnostic",
+    key: "smoke:diagnostic",
+    candidateError: { code: "ENVIRONMENT", message: "missing command" },
+    recentRuns: [],
+  });
+  const data = { jobs: [draft, blocked], sourceErrors: [], generatedAt: new Date().toISOString() };
+  const outcomes = [];
+  const component = new SchedulerDashboardComponent(data, view.tui, theme, (result) => outcomes.push(result));
+
+  assert.match(component.render(120).join("\n"), /› ! smoke:diagnostic/);
+  component.handleInput("\r");
+  assert.deepEqual(outcomes, [{ kind: "job", id: blocked.id }]);
+
+  const nextOutcomes = [];
+  const next = new SchedulerDashboardComponent(data, view.tui, theme, (result) => nextOutcomes.push(result));
+  next.handleInput("j");
+  assert.match(next.render(120).join("\n"), /› ◇ smoke:dashboard/);
+  next.handleInput("\r");
+  assert.deepEqual(nextOutcomes, [{ kind: "job", id: draft.id }]);
+});
+
 test("navigates tasks and runs without exposing run identifiers", () => {
   const view = harness();
   const outcomes = [];
