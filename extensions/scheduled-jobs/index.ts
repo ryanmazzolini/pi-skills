@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
 	SchedulerActionComponent,
-	SchedulerDashboardComponent,
 	SchedulerJobDetailComponent,
 	SchedulerTextComponent,
+	SchedulerWorkspaceComponent,
 	type SchedulerDashboardData,
 	type SchedulerDashboardResult,
 	type SchedulerDetailResult,
@@ -478,9 +478,16 @@ async function showDashboard(
 	ctx: UiContext,
 	data: SchedulerDashboardData,
 	reload: (signal: AbortSignal) => Promise<SchedulerDashboardData>,
+	loadDetail: (id: string, signal: AbortSignal) => Promise<SchedulerDetailSnapshot>,
 ): Promise<SchedulerDashboardResult> {
-	return ctx.ui.custom<SchedulerDashboardResult>((tui, theme, _keybindings, done) => (
-		new SchedulerDashboardComponent(data, tui, theme, done, new Date(data.generatedAt), reload)
+	return ctx.ui.custom<SchedulerDashboardResult>((tui, theme, _keybindings, done) => new SchedulerWorkspaceComponent(
+		data,
+		tui,
+		theme,
+		done,
+		reload,
+		loadDetail,
+		(error) => ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error"),
 	));
 }
 
@@ -606,38 +613,36 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 				ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
 				return;
 			}
-			const selected = await showDashboard(ctx, data, (signal) => loadDashboardData(ctx.cwd, dependencies, { signal }));
+			const loadSelectedTask = async (id: string, signal?: AbortSignal) => {
+				const current = await loadDashboardData(ctx.cwd, dependencies, { signal });
+				const overview = current.jobs.find((job) => job.id === id);
+				if (!overview) return undefined;
+				const job = await loadJob(overview, dependencies, signal);
+				return { overview, job, generatedAt: current.generatedAt };
+			};
+			const loadDetail = async (id: string, signal: AbortSignal): Promise<SchedulerDetailSnapshot> => {
+				const loaded = await loadSelectedTask(id, signal);
+				if (!loaded) throw new SchedulerCommandError("The selected scheduler task changed or disappeared.", "STALE_STATE");
+				return {
+					job: loaded.overview,
+					definition: inspectionText(loaded.job),
+					generatedAt: loaded.generatedAt,
+				};
+			};
+			const selected = await showDashboard(
+				ctx,
+				data,
+				(signal) => loadDashboardData(ctx.cwd, dependencies, { signal }),
+				loadDetail,
+			);
 			if (selected.kind === "close") return;
 			if (selected.kind === "refresh") continue;
 			if (selected.kind === "run") {
 				await showRunOutput(ctx, dependencies, selected.id, selected.runId);
 				continue;
 			}
-			const loadSelectedTask = async (signal?: AbortSignal) => {
-				const current = await loadDashboardData(ctx.cwd, dependencies, { signal });
-				const overview = current.jobs.find((job) => job.id === selected.id);
-				if (!overview) return undefined;
-				const job = await loadJob(overview, dependencies, signal);
-				return { overview, job, generatedAt: current.generatedAt };
-			};
-			const loaded = await loadSelectedTask();
-			if (!loaded) {
-				ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
-				continue;
-			}
-			const detail = await showDetails(ctx, loaded.overview, loaded.job, async (signal) => {
-				const refreshed = await loadSelectedTask(signal);
-				if (!refreshed) throw new SchedulerCommandError("The selected scheduler task changed or disappeared.", "STALE_STATE");
-				return {
-					job: refreshed.overview,
-					definition: inspectionText(refreshed.job),
-					generatedAt: refreshed.generatedAt,
-				};
-			});
-			if (detail.kind === "run") {
-				await showRunOutput(ctx, dependencies, detail.id, detail.runId);
-			} else if (detail.kind === "diagnose") {
-				const latest = await loadSelectedTask();
+			if (selected.kind === "diagnose") {
+				const latest = await loadSelectedTask(selected.id);
 				if (!latest) {
 					ctx.ui.notify("The selected scheduler task changed or disappeared; select its current state before diagnosing.", "warning");
 					continue;
@@ -645,8 +650,32 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 				ctx.ui.setEditorText(schedulerDiagnosticPrompt(latest.overview, latest.job));
 				ctx.ui.notify("Diagnostic request is ready. Review it, then press Enter to send it to the open agent.", "info");
 				return;
+			}
+			if (selected.kind === "actions") {
+				const latest = await loadSelectedTask(selected.id);
+				if (!latest) ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
+				else await chooseAction(ctx, latest.job, dependencies);
+				continue;
+			}
+
+			// Legacy direct dashboard result retained for compatibility with older scripted callers.
+			const loaded = await loadSelectedTask(selected.id);
+			if (!loaded) {
+				ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
+				continue;
+			}
+			const detail = await showDetails(ctx, loaded.overview, loaded.job, (signal) => loadDetail(selected.id, signal));
+			if (detail.kind === "run") await showRunOutput(ctx, dependencies, detail.id, detail.runId);
+			else if (detail.kind === "diagnose") {
+				const latest = await loadSelectedTask(selected.id);
+				if (!latest) ctx.ui.notify("The selected scheduler task changed or disappeared; select its current state before diagnosing.", "warning");
+				else {
+					ctx.ui.setEditorText(schedulerDiagnosticPrompt(latest.overview, latest.job));
+					ctx.ui.notify("Diagnostic request is ready. Review it, then press Enter to send it to the open agent.", "info");
+					return;
+				}
 			} else if (detail.kind === "actions") {
-				const latest = await loadSelectedTask();
+				const latest = await loadSelectedTask(selected.id);
 				if (!latest) ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
 				else await chooseAction(ctx, latest.job, dependencies);
 			}
