@@ -22,6 +22,10 @@ export const GLOBAL_MANIFEST_NAME = "jobs.json";
 
 const MODULE_CLI_PATH = fileURLToPath(new URL("../../bin/scheduled-jobs.mjs", import.meta.url));
 const DISPLAY_LIMIT = 24_000;
+const SCHEDULER_OVERLAY_OPTIONS = {
+	overlay: true,
+	overlayOptions: { anchor: "center", width: "90%", maxHeight: "85%", margin: 1 },
+} as const;
 
 export function resolveSchedulerCliPath(options: {
 	argv?: string[];
@@ -471,7 +475,7 @@ function operationArguments(job: JobView, action: SchedulerAction): string[] {
 async function showText(ctx: UiContext, title: string, text: string): Promise<void> {
 	await ctx.ui.custom<void>((tui, theme, _keybindings, done) => (
 		new SchedulerTextComponent(title, boundedDisplay(text), tui, theme, done)
-	));
+	), SCHEDULER_OVERLAY_OPTIONS);
 }
 
 async function showDashboard(
@@ -488,7 +492,7 @@ async function showDashboard(
 		reload,
 		loadDetail,
 		(error) => ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error"),
-	));
+	), SCHEDULER_OVERLAY_OPTIONS);
 }
 
 async function showDetails(
@@ -499,7 +503,7 @@ async function showDetails(
 ): Promise<SchedulerDetailResult> {
 	return ctx.ui.custom<SchedulerDetailResult>((tui, theme, _keybindings, done) => (
 		new SchedulerJobDetailComponent(overview, inspectionText(job), tui, theme, done, new Date(), reload)
-	));
+	), SCHEDULER_OVERLAY_OPTIONS);
 }
 
 async function loadRunOutput(dependencies: SchedulerDependencies, id: string, runId: string, signal?: AbortSignal) {
@@ -529,7 +533,7 @@ async function showRunOutput(
 			theme,
 			done,
 			initial.complete ? undefined : (signal) => loadRunOutput(dependencies, id, runId, signal),
-		));
+		), SCHEDULER_OVERLAY_OPTIONS);
 	} catch (error) {
 		ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
 	}
@@ -552,7 +556,7 @@ async function showActionMenu(ctx: UiContext, job: JobView, actions: SchedulerAc
 		tui,
 		theme,
 		done,
-	));
+	), SCHEDULER_OVERLAY_OPTIONS);
 	return actions.find((action) => action === selected);
 }
 

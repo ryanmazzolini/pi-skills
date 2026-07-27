@@ -71,10 +71,10 @@ function job(overrides = {}) {
   };
 }
 
-function harness() {
+function harness(rows = 24) {
   let renders = 0;
   return {
-    tui: { terminal: { rows: 24 }, requestRender: () => renders++ },
+    tui: { terminal: { rows }, requestRender: () => renders++ },
     renders: () => renders,
   };
 }
@@ -113,7 +113,7 @@ test("renders a width-safe tasks dashboard with next run, history, and source er
   assert.match(wide.join("\n"), /daily-report:work · global · Active · Weekdays at 17:30 local time · next Today 17:30/);
   assert.match(wide.join("\n"), /! Project tasks · jobs\.bad contains unknown field/);
   assert.match(wide.join("\n"), /Active/);
-  assert.equal(wide.length, 22);
+  assert.equal(wide.length, 20);
   assert.equal(wide.every((line) => visibleWidth(line) <= 100), true);
 
   const narrow = component.render(54);
@@ -173,9 +173,13 @@ test("workspace switches views without closing, stale lists, or hidden polling",
     (error) => { throw error; },
   );
 
+  const listHeight = component.render(120).length;
   component.handleInput("\r");
   await new Promise((resolve) => setImmediate(resolve));
-  assert.match(component.render(120).join("\n"), /Scheduler \/ daily-report:work/);
+  const detailLines = component.render(120);
+  assert.match(detailLines.join("\n"), /Scheduler \/ daily-report:work/);
+  assert.equal(detailLines.length, listHeight);
+  assert.equal(detailLines.length, Math.floor(view.tui.terminal.rows * 0.85));
   assert.deepEqual(outcomes, []);
   await new Promise((resolve) => setTimeout(resolve, 1_050));
   assert.equal(hiddenReloads, 0);
@@ -270,8 +274,10 @@ test("refreshes running output until the receipt reaches a terminal state", asyn
   );
 
   await component.refreshText();
-  assert.match(component.render(80).join("\n"), /task · succeeded/);
-  assert.match(component.render(80).join("\n"), /finished output/);
+  const rendered = component.render(80);
+  assert.match(rendered.join("\n"), /task · succeeded/);
+  assert.match(rendered.join("\n"), /finished output/);
+  assert.equal(rendered.length, Math.floor(view.tui.terminal.rows * 0.85));
   component.dispose();
 });
 
@@ -283,10 +289,48 @@ test("action menu stays in the custom dashboard and supports keyboard review", (
     { id: "remove", label: "Remove installed schedule", description: "Remove known artifacts", danger: true },
   ], view.tui, theme, (result) => outcomes.push(result));
 
-  assert.match(component.render(80).join("\n"), /AVAILABLE ACTIONS/);
+  const rendered = component.render(80);
+  assert.match(rendered.join("\n"), /AVAILABLE ACTIONS/);
+  assert.equal(rendered.length, Math.floor(view.tui.terminal.rows * 0.85));
   component.handleInput("j");
   component.handleInput("\r");
   assert.deepEqual(outcomes, ["remove"]);
+});
+
+test("scheduler surfaces retain navigation within very short overlay budgets", () => {
+  const view = harness(8);
+  const expectedHeight = Math.floor(view.tui.terminal.rows * 0.85);
+  const blocked = job({ candidateError: { code: "ENVIRONMENT", message: "missing command" } });
+  const sourceErrors = ["global", "project"].map((scope) => ({
+    scope,
+    manifestPath: `/${scope}/scheduler.json`,
+    error: { code: "SOURCE", message: `${scope} source failed` },
+  }));
+  const data = { jobs: [blocked], sourceErrors, generatedAt: new Date().toISOString() };
+  const surfaces = [
+    new SchedulerDashboardComponent(data, view.tui, theme, () => {}),
+    new SchedulerJobDetailComponent(blocked, "Definition", view.tui, theme, () => {}),
+    new SchedulerActionComponent("daily-report:work", [
+      { id: "run", label: "Run installed snapshot now", description: "Start and track its receipt" },
+    ], view.tui, theme, () => {}),
+    new SchedulerTextComponent("Recent output", "line one\nline two", view.tui, theme, () => {}),
+  ];
+
+  for (const surface of surfaces) {
+    const rendered = surface.render(120);
+    assert.equal(rendered.length, expectedHeight);
+    assert.equal(rendered.every((line) => visibleWidth(line) <= 120), true);
+    assert.match(rendered.join("\n"), /q\/Esc/);
+  }
+  assert.match(surfaces[1].render(120).join("\n"), /d diagnose with agent/);
+  for (const width of [1, 2]) {
+    for (const surface of surfaces) {
+      const rendered = surface.render(width);
+      assert.equal(rendered.length, expectedHeight);
+      assert.equal(rendered.every((line) => visibleWidth(line) <= width), true);
+    }
+  }
+  for (const surface of surfaces) surface.dispose?.();
 });
 
 test("detail view refreshes in place without closing", async () => {
