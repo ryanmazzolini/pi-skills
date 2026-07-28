@@ -297,6 +297,30 @@ test("action menu stays in the custom dashboard and supports keyboard review", (
   assert.deepEqual(outcomes, ["remove"]);
 });
 
+test("scheduler surfaces share accent-styled hotkey chrome", () => {
+  const view = harness();
+  const styledTheme = {
+    fg: (color, text) => color === "accent" ? `\x1b[36m${text}\x1b[39m` : color === "dim" ? `\x1b[2m${text}\x1b[22m` : text,
+    bg: (_color, text) => text,
+    bold: (text) => text,
+  };
+  const blocked = job({ candidateError: { code: "ENVIRONMENT", message: "missing command" } });
+  const data = { jobs: [blocked], sourceErrors: [], generatedAt: new Date().toISOString() };
+  const surfaces = [
+    new SchedulerDashboardComponent(data, view.tui, styledTheme, () => {}),
+    new SchedulerJobDetailComponent(blocked, "Definition", view.tui, styledTheme, () => {}),
+    new SchedulerActionComponent("daily-report:work", [
+      { id: "run", label: "Run installed snapshot now", description: "Start and track its receipt" },
+    ], view.tui, styledTheme, () => {}),
+    new SchedulerTextComponent("Recent output", "line one", view.tui, styledTheme, () => {}),
+  ];
+
+  for (const surface of surfaces) {
+    assert.match(surface.render(160).join("\n"), /\x1b\[36mq\/Esc\x1b\[39m/);
+    surface.dispose?.();
+  }
+});
+
 test("scheduler surfaces retain navigation within very short overlay budgets", () => {
   const view = harness(8);
   const expectedHeight = Math.floor(view.tui.terminal.rows * 0.85);
@@ -322,7 +346,12 @@ test("scheduler surfaces retain navigation within very short overlay budgets", (
     assert.equal(rendered.every((line) => visibleWidth(line) <= 120), true);
     assert.match(rendered.join("\n"), /q\/Esc/);
   }
-  assert.match(surfaces[1].render(120).join("\n"), /d diagnose with agent/);
+  assert.match(surfaces[1].render(120).join("\n"), /d diagnose/);
+  for (const surface of surfaces) {
+    const narrow = surface.render(50);
+    assert.match(narrow.join("\n"), /q\/Esc/);
+    assert.equal(narrow.every((line) => visibleWidth(line) <= 50), true);
+  }
   for (const width of [1, 2]) {
     for (const surface of surfaces) {
       const rendered = surface.render(width);
@@ -388,7 +417,7 @@ test("detail view hands failures to the open agent", () => {
     (result) => outcomes.push(result),
   );
 
-  assert.match(component.render(120).join("\n"), /d diagnose with agent/);
+  assert.match(component.render(120).join("\n"), /d diagnose/);
   component.handleInput("d");
   assert.deepEqual(outcomes, [{ kind: "diagnose" }]);
 });
@@ -424,11 +453,14 @@ test("detail view progressively discloses runs and definition while retaining ac
     (result) => outcomes.push(result),
     new Date(2026, 6, 25, 9, 0),
   );
-  assert.match(component.render(80).join("\n"), /\[Overview\]/);
+  assert.match(component.render(160).join("\n"), /\[Overview\]/);
+  assert.doesNotMatch(component.render(160).join("\n"), /Enter output/);
   component.handleInput("\t");
-  assert.match(component.render(80).join("\n"), /\[Runs\]/);
+  assert.match(component.render(160).join("\n"), /\[Runs\]/);
+  assert.match(component.render(160).join("\n"), /Enter output/);
   component.handleInput("\t");
-  assert.match(component.render(80).join("\n"), /Argv: \["node"\]/);
+  assert.match(component.render(160).join("\n"), /Argv: \["node"\]/);
+  assert.doesNotMatch(component.render(160).join("\n"), /Enter output/);
   component.handleInput("a");
   assert.deepEqual(outcomes, [{ kind: "actions" }]);
 });
