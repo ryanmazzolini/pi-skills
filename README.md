@@ -104,7 +104,9 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 Start First Mate with `/skill:first-mate` when you want a compact view of your open Pi sessions. It reports how many peers it can see and stays idle until you ask it to triage, inspect a session, contact one, or help with a focused blocker.
 
-Triage inspects sessions idle for at least 24 hours first. When none are confirmed, it falls back to newer sessions. It processes bounded pages automatically, collapses sessions that need no interaction, and returns clear next steps only for sessions worth your attention. First Mate waits for approval before requesting status and brings replies back without changing project files or notes, committing work, closing sessions, or performing cleanup.
+Triage inspects sessions idle for at least 24 hours first. When none are confirmed, it falls back to newer sessions. It processes bounded pages automatically, collapses sessions that need no interaction, and returns clear next steps only for sessions worth your attention.
+
+First Mate can sanity-check an owning session's current request and automatically authorize very-low-risk preparation such as a feature-branch commit, ordinary feature push, or draft PR. It bundles reversible decisions that still need judgment for one human response and keeps consequential choices individual. First Mate relays authority through Intercom; it does not change project files, commit work, deploy, close sessions, or perform cleanup itself.
 
 A Pi session keeps the same Intercom identity across reloads and reconnects, while its First Mate role remains runtime-scoped. First Mate is available only in Pi, not the Claude marketplace. If another session can no longer find it after restarting or reconnecting Pi, run `/skill:first-mate` again.
 

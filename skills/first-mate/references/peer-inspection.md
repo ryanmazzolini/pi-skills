@@ -28,7 +28,7 @@ Return the useful finding and next choice. Mention that project files were not c
 
 ## Contact explicitly
 
-Ordinary contact requires the human to request the operation and supply the content or question. The narrow exception is the human's next-response direction to send triage's fixed status request to its displayed candidate list. It authorizes only that retained set under [confirmed stale-session recon](recon.md), not different content, new peers, or another operation.
+Ordinary contact requires the human to request the operation and supply the content or question. Two bounded exceptions use retained triage evidence: [decision handling](decision-handling.md) may auto-authorize a qualifying very-low-risk action or relay the human's response to a displayed decision bundle, and [confirmed stale-session recon](recon.md) may send its fixed status request after confirmation. Neither exception authorizes different content, new peers, or another operation.
 
 Use:
 
@@ -39,4 +39,4 @@ Use:
 
 An accepted `send`, `ask`, or `reply` receipt means queued. Report the terminal outcome as routed or failed, and call peer handling unconfirmed until later evidence shows otherwise. Continue independent work after a background operation when possible; wait once only when its answer blocks the current request.
 
-Contact may exchange facts, status, questions, or recovery instructions. Return human-owned decisions in this session instead of relaying them. If delivery fails or the target disconnects, preserve the content and offer a fresh selection rather than retrying automatically.
+Contact may exchange facts, status, questions, recovery instructions, policy-authorized actions, and exact human decisions. Apply [decision handling](decision-handling.md) before relaying an approval: preserve whether authority came from First Mate policy or the human, include the exact scope and fences, and never upgrade one into broader permission. If delivery fails or the target disconnects, preserve the content and offer a fresh selection rather than retrying automatically.

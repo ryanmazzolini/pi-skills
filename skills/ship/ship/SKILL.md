@@ -59,7 +59,7 @@ Each selected milestone returns to this router and follows the direct, aligned, 
 The live project and canonical work-item files decide current state. Conversation and other notes may locate context but do not override that evidence. Handle unresolved work in this order:
 
 - A final code-bearing delivery lacks required independent review: apply [references/review-gate.md](references/review-gate.md).
-- Completed work awaits human review or approval: present the checkpoint and wait.
+- Completed work has passed its required review gate and awaits approval: when the request is exact and may be routine enough for a discoverable First Mate, use [references/first-mate-escalation.md](references/first-mate-escalation.md); otherwise present the checkpoint and wait.
 - A consequential human decision remains: use `align`.
 - An approved outcome has a useful delivery plan: recommend a ready delivery change.
 - An approved roadmap has an unfinished ready milestone: recommend that milestone.
@@ -70,7 +70,7 @@ If state is truly ambiguous, give your interpretation and ask one direct questio
 
 ## Record and present results
 
-Record material decisions, scope changes, implementation results, and validation evidence as they happen. Keep delivery-change evidence with its plan entry and milestone-specific evidence in the milestone work item. Do not report routine progress to First Mate; use [references/first-mate-escalation.md](references/first-mate-escalation.md) only for an on-demand cross-project blocker or missing context.
+Record material decisions, scope changes, implementation results, and validation evidence as they happen. Keep delivery-change evidence with its plan entry and milestone-specific evidence in the milestone work item. Do not report routine progress to First Mate; use [references/first-mate-escalation.md](references/first-mate-escalation.md) only for an exact approval request, cross-project blocker, or missing context.
 
 Before presenting a final code-bearing delivery for approval, apply [references/review-gate.md](references/review-gate.md). Alignment, plans, and intermediate checkpoints do not require broad independent review by default.
 
