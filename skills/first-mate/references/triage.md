@@ -1,61 +1,54 @@
 # Connected-session triage
 
-Read this only for a human-requested First Mate triage or an immediate response to its retained `Load the next page?` question. Triage is a read-only, oldest-first series of bounded evidence pages. It ends when every page is loaded or the human stops, then may propose exact stale-session recon.
+Read this only for a human-requested First Mate triage. Triage is read-only. It automatically inspects the relevant idle sessions in bounded internal pages, then returns one compact, recommendation-oriented result.
 
-## Take the initial snapshot
+## Take the snapshot and choose the sweep
 
 1. Call `intercom` `status`, then `intercom` `list`. Use the inventory only when both report the same current Pi session ID, `truncated` is false, and `omittedSessionIds` is zero; do not retry a changed or capacity-truncated snapshot automatically. Record the coherent inventory time as the triage snapshot timestamp.
 2. Call `intercom` once with only `action: "pending"`. Its projection is already bounded, so do not pass `limit` or other fields.
-3. Exclude First Mate and account for every other connected peer. Put unidentified peers and duplicate live advertisements of one Pi session ID under `Unknown`; do not inspect or contact them.
-4. Put every exact pending ask under `Needs attention` without tailing it. Put active peers without a pending ask under `No action` without tailing them.
-5. Order the remaining identified idle peers without pending asks by advertised last conversational timestamp, oldest first. Put peers whose age is unavailable after timestamped peers. Use the full Pi session ID as the tie-breaker. Retain this exact queue and the advertised timestamps for the triage series.
-6. Load the first page as described below.
+3. Exclude First Mate and account for every other connected peer. Peers without a unique stable ID cannot be inspected or contacted; retain only their count as a limitation.
+4. Surface every exact pending ask without tailing it. Skip active peers without a pending ask.
+5. Partition the remaining identified idle peers from their advertised last conversational timestamp:
+   - **First sweep:** at least 24 hours old.
+   - **Newer fallback:** under 24 hours old, followed by peers whose age is unavailable.
+   Order each sweep oldest first, use the full Pi session ID as the tie-breaker, and retain the advertised timestamps.
+6. Load the entire first sweep when it is nonempty. If it contains no peer whose tail confirms a last conversational message at least 24 hours old, load the newer fallback instead. When the first sweep is empty, load the newer fallback directly. Do not mix newer peers into a successful first sweep merely to fill a page.
 
-An advertised timestamp orders the queue; the confirmed tail supplies classification and recon evidence. Older or unreloaded peers may not advertise one and sort after known ages.
+An advertised timestamp selects and orders a sweep; the confirmed tail supplies recommendation and status-recon evidence. Older or unreloaded peers may not advertise an age and therefore enter the fallback. Without tail capability, do not attempt the sweep: return any pending asks and one compact inspection limitation.
 
-## Load one page
+## Load the sweep
 
-Take at most the next 16 retained peers. Tail each by full ID with `limit: 8`, `tailScanBytes: 2097152`, and `tailProjectionBytes: 4096`. A page is therefore bounded to 32 MiB scanned and 64 KiB projected. Pending asks and active peers do not consume page slots.
+Process the selected sweep to completion in internal pages of at most 16 peers. Do not stop, ask permission, or emit a report between pages. Tail each peer by full ID with `limit: 8`, `tailScanBytes: 2097152`, and `tailProjectionBytes: 4096`. Each page is bounded to 32 MiB scanned and 64 KiB projected.
 
-Classify each loaded peer using the narrowest supported category:
+Use current conversational evidence to choose a concrete next step:
 
-- **Needs attention:** an unanswered persisted user request, or current text saying work is blocked or awaiting a human decision.
-- **May need attention:** current text shows unfinished work, a failed attempted step, or an unresolved next action without a clear human blocker.
-- **Unknown:** the tail is unavailable, oversized, malformed, replaced, changed, or truncated past evidence needed to classify it.
-- **No action:** current evidence clearly says the requested work completed or intentionally stopped with no unresolved request.
+- **Reply:** an exact pending Intercom ask needs a human answer.
+- **Decide:** current text clearly identifies a human-owned choice or blocker.
+- **Resume:** the latest persisted user request has no assistant answer.
+- **Inspect:** work appears unfinished, an attempted step failed, a next action remains unresolved, or the tail lacks enough evidence.
+- **Ask for status:** the peer is confirmed idle for at least 24 hours and no more specific human action supersedes a status check.
+- **No interaction:** current evidence clearly says the requested work completed or intentionally stopped, unless a 24-hour status check would usefully confirm that it is safe to close.
 
-Idle status, age, tool volume, cwd, a failed outcome, or silence does not establish attention by itself. Tool outcomes support nearby conversational text; they do not independently establish a blocker. When two categories remain plausible, choose the less certain one and name the limitation.
+Idle status, age, tool volume, cwd, a failed outcome, or silence does not establish unfinished work by itself. Tool outcomes support nearby conversational text; they do not independently establish a blocker. Do not read project files, infer disconnected sessions, or contact a peer during triage.
 
-Do not read project files, infer disconnected sessions, or contact a peer during triage. Missing tail capability leaves page classifications `Unknown`; the inventory and page order remain useful.
+Retain each successful tail's exact `lastConversationalTimestamp` and compute age against the initial snapshot timestamp. A peer is eligible for status recon when it was idle in the initial snapshot, has no exact pending ask or more specific human-owned next step, and its confirmed last conversational message was at least 24 hours before the snapshot. Missing or unusable confirmed timestamps do not establish eligibility.
 
-Retain each successful tail's exact `lastConversationalTimestamp`. Compute every displayed age against the initial triage snapshot timestamp. A loaded peer is **stale** when its confirmed last conversational message was at least seven days (168 hours) before that timestamp. A missing or unusable confirmed timestamp does not establish staleness.
+## Return a compact result
 
-## Present pages and continue
+Return one user-facing response after the automatic sweep. Lead with the sessions where interaction could help, one compact bullet each:
 
-On the first page, lead with `Needs attention`, then `May need attention`, `Unknown`, and `No action`. On later pages, report the newly loaded peers under those same categories without repeating earlier entries. Give each reported peer its self-declared name, one useful evidence sentence, and one of these forms:
+- `Decide for deploy-check — choose whether to retry production validation (27h idle).`
+- `Ask api-cleanup for status — implementation stopped after a failed integration test (31h idle).`
+- `Inspect notes-sync — the available tail does not show whether cleanup finished (6h idle).`
 
-- `last message 13 days ago`
-- `active now`
-- `last message age unavailable`
+Use the peer's self-declared name and one evidence sentence. Show a full Pi session ID only when the name is missing or duplicated. Keep recommendation verbs explicit: `Reply`, `Decide`, `Resume`, `Inspect`, or `Ask for status`. Order recommendations by those verbs, with status checks last.
 
-Use sensible smaller units for ages under a day. Show a full Pi session ID only when the name is missing or duplicated. Include the initial snapshot timestamp and cumulative accounting totals: pending asks, active peers skipped, peers loaded, peers limited by capability or invalid identity, and peers not yet loaded.
+Collapse peers with no suggested interaction into one count. Mention active, unidentified, unavailable, or uninspected counts only when they materially limit the result. Omit successful capability checks, the snapshot timestamp, category headings, cumulative accounting, page sizes, and pagination mechanics.
 
-Do not list every not-yet-loaded peer under `Unknown`. Report one `Not loaded yet` count instead. For example, with 21 queued idle peers, load the oldest 16, report `Not loaded yet: 5`, and ask to load those 5; do not classify them or propose recon yet.
+The `Ask for status` bullets are the complete status-recon candidate list; do not repeat them in a separate report. When at least one exists, end with one question:
 
-When retained peers remain, show the next page size and the oldest available age at its front, then ask one question:
+> Ask these sessions for status?
 
-> Load the next 5 sessions?
+Stop without contacting them. Retain each candidate's full Pi session ID, raw conversational timestamp, and rendered age with the initial snapshot timestamp. Route to [confirmed stale-session recon](recon.md) only when the human's next response clearly directs First Mate to send that request to the displayed list without changing it. Any other response expires the proposal.
 
-Stop without loading them. A clear acceptance in the human's next response loads exactly that retained page without refreshing or reordering the initial snapshot. A clear decline, or an explicit direction to stop loading and finish, ends pagination and proceeds to the recon proposal below. Any other response expires the retained queue and proposal; a later continuation requires a new triage.
-
-## Finish with a recon proposal
-
-After every page is loaded or the human stops pagination, list every recon candidate accumulated from loaded pages. A candidate must have been idle in the initial snapshot, have no exact pending ask, and be stale from its confirmed tail timestamp. Its attention category does not otherwise affect eligibility. Exclude active peers, pending asks, peers with unknown ages, peers not loaded, and peers whose tail changed or failed.
-
-When candidates exist, display the complete candidate list with names and pre-recon ages, then ask:
-
-> Send the status-only recon request to these sessions?
-
-Stop without contacting a peer. Retain each candidate's full Pi session ID, raw conversational timestamp, and rendered age with the initial snapshot timestamp. Route to [confirmed stale-session recon](recon.md) only when the human's next response clearly directs First Mate to send that request to the displayed list without changing it. Any other response expires the proposal.
-
-When there are no candidates, report that no recon is proposed and stop. Suggest Ship only when evidence explicitly shows a cross-session recovery or coordination need. Triage does not create work items.
+When there are no status-recon candidates, do not explain the cutoff or say that no recon is proposed. Recommend the highest-value supported interaction from the loaded evidence and end with one short question for the next operation First Mate can perform, such as `Inspect checkout-ui?` If a reply or decision requires human content, ask for that content instead of guessing. When no peer needs interaction, say only `No session needs interaction right now.`
