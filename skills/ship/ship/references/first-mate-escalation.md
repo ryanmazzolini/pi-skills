@@ -1,6 +1,6 @@
 # First Mate escalation
 
-Use First Mate for an exact approval request, or for an on-demand cross-project blocker or missing context that the owning project session cannot resolve efficiently. Do not send routine progress. The project session remains responsible for execution, verification, the owning human conversation, and durable capture.
+Use First Mate for an exact approval request, or for an on-demand cross-project blocker or missing context that the owning project session cannot resolve efficiently. Keep routine progress and outcomes in the canonical work item instead of sending them through Intercom. The project session remains responsible for execution, verification, the owning human conversation, and durable capture.
 
 ## Address the current First Mate
 
@@ -14,7 +14,7 @@ If the selected ID disappears or has duplicate live advertisements before the as
 
 ## Send the useful context first
 
-When the issue must survive a restart, record it in the canonical work item before escalation. Then use `intercom ask` with one focused request.
+Record material context in the canonical work item before escalation, and check that durable record before asking for missing context. Then use `intercom ask` with one focused request only when a live answer is still needed.
 
 For an approval request, include:
 
