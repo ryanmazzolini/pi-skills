@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +16,7 @@ import {
   linkifyToolDefinition,
   linkifyToolOutput,
   registerBuiltInToolLinks,
+  startBridge,
 } from "./editor-links.ts";
 
 function fixture(t) {
@@ -41,6 +43,66 @@ function osc8Url(text) {
   assert.ok(url, `missing OSC 8 URL in ${JSON.stringify(text)}`);
   return url;
 }
+
+async function requestBridge(t, target, zedCli) {
+  const launches = [];
+  const server = startBridge(0, "open", zedCli, (command, args) => {
+    launches.push({ command, args: [...args] });
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/open?url=${encodeURIComponent(target)}`,
+  );
+  assert.equal(response.status, 200);
+  return launches;
+}
+
+test("opens a repository file in its nearest Zed workspace and preserves its position", async (t) => {
+  const { cwd } = fixture(t);
+  fs.mkdirSync(path.join(cwd, ".git"));
+  const repository = path.join(cwd, "nested-repository");
+  const report = path.join(repository, "docs", "report.md");
+  fs.mkdirSync(path.join(repository, ".git"), { recursive: true });
+  fs.mkdirSync(path.dirname(report), { recursive: true });
+  fs.writeFileSync(report, "# Report\n");
+  const zedCli = path.join(cwd, "zed");
+  fs.writeFileSync(zedCli, "");
+  fs.chmodSync(zedCli, 0o755);
+  const target = `zed://file${pathToFileURL(report).pathname}:12:3`;
+
+  const launches = await requestBridge(t, target, zedCli);
+
+  assert.deepEqual(launches, [{
+    command: zedCli,
+    args: [repository, `${report}:12:3`],
+  }]);
+});
+
+test("falls back to the Zed URL outside a Git repository", async (t) => {
+  const { cwd, report } = fixture(t);
+  const zedCli = path.join(cwd, "zed");
+  fs.writeFileSync(zedCli, "");
+  fs.chmodSync(zedCli, 0o755);
+  const target = `zed://file${pathToFileURL(report).pathname}`;
+
+  const launches = await requestBridge(t, target, zedCli);
+
+  assert.deepEqual(launches, [{ command: "open", args: [target] }]);
+});
+
+test("falls back to the Zed URL when the Zed CLI is unavailable", async (t) => {
+  const { cwd, report } = fixture(t);
+  fs.mkdirSync(path.join(cwd, ".git"));
+  const target = `zed://file${pathToFileURL(report).pathname}:7`;
+
+  const launches = await requestBridge(t, target, path.join(cwd, "missing-zed"));
+
+  assert.deepEqual(launches, [{ command: "open", args: [target] }]);
+});
 
 test("rewrites an existing local Markdown destination", (t) => {
   const { cwd, report } = fixture(t);
