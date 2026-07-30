@@ -1,6 +1,6 @@
 import { watch, type FSWatcher } from "node:fs";
 import { basename, dirname } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { keyHint, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import { INTERCOM_ROLE_CAPABILITY, IntercomClient, piSessionIdOf, type Attachment, type IntercomRole, type Message, type SessionInfo } from "./client.ts";
@@ -8,7 +8,7 @@ import { getIntercomPaths } from "./broker/paths.ts";
 import { spawnBrokerIfNeeded } from "./broker/spawn.ts";
 import type { InboxEntry } from "./inbox.ts";
 import { IntercomRuntime, type IntercomStatus } from "./runtime.ts";
-import { IntercomOperations, type IntercomOperationSnapshot } from "./operations.ts";
+import { INTERCOM_OPERATION_LIMITS, IntercomOperations, type IntercomOperationSnapshot } from "./operations.ts";
 import { lastConversationalTimestamp, PiSessionPresenceTracker } from "./presence.ts";
 import { SESSION_TAIL_LIMITS } from "./session-tail.ts";
 import {
@@ -106,10 +106,10 @@ export function deliverInboundMessage(pi: Pick<ExtensionAPI, "sendMessage">, ent
 	const projected = projectInboundEntry(entry);
 	const details = { count: 1, entries: [projected.details], views: [projected.view], truncated: projected.truncated };
 	assertProjectionBound(details, "Inbound intercom details");
-	const deliverAs = entry.replyable && entry.message.expectsReply === true ? "steer" : "followUp";
+	const requestsReply = entry.replyable && entry.message.expectsReply === true;
 	pi.sendMessage(
 		{ customType: "intercom_message", content: projected.text, display: true, details },
-		{ deliverAs, triggerTurn: true },
+		{ deliverAs: requestsReply ? "steer" : "followUp", triggerTurn: requestsReply },
 	);
 }
 
@@ -122,6 +122,7 @@ export const INBOUND_DELIVERY_LIMITS = Object.freeze({
 	pendingMessages: 16,
 	pendingBytes: INTERCOM_PROJECTION_MAX_BYTES,
 	automaticTurns: 4,
+	passiveBatches: 4,
 	flushDelayMs: 10,
 });
 
@@ -138,9 +139,11 @@ export class InboundDelivery {
 	private globalMessages = 0;
 	private globalBytes = 0;
 	private automaticTurns = 0;
+	private passiveBatches = 0;
 	private overflowNotified = false;
 	private passiveBatchDelivered = false;
 	private turnOutstanding = false;
+	private agentActive = false;
 	private pending: InboundProjection[] = [];
 	private pendingBytes = 0;
 	private flushTimer: NodeJS.Timeout | null = null;
@@ -204,8 +207,13 @@ export class InboundDelivery {
 		return true;
 	}
 
+	started(): void {
+		if (!this.disposed) this.agentActive = true;
+	}
+
 	settled(): void {
 		if (this.disposed) return;
+		this.agentActive = false;
 		this.turnOutstanding = false;
 		if (this.pending.length > 0) this.scheduleFlush();
 	}
@@ -227,6 +235,7 @@ export class InboundDelivery {
 		this.globalMessages = 0;
 		this.globalBytes = 0;
 		this.automaticTurns = 0;
+		this.passiveBatches = 0;
 		this.passiveBatchDelivered = false;
 	}
 
@@ -240,6 +249,10 @@ export class InboundDelivery {
 
 	private flush(): void {
 		if (this.disposed || this.turnOutstanding || this.pending.length === 0) return;
+		const requestsReply = this.pending.some((entry) => entry.details.expectsReply && entry.details.replyable);
+		// Pi processes a streaming follow-up as another model turn even when triggerTurn is false.
+		// Hold passive traffic until agent_settled so it can be appended without continuing the run.
+		if (this.agentActive && !requestsReply) return;
 		const entries = this.pending;
 		this.pending = [];
 		this.pendingBytes = 0;
@@ -252,15 +265,24 @@ export class InboundDelivery {
 		};
 		assertProjectionBound(content, "Inbound intercom batch");
 		assertProjectionBound(details, "Inbound intercom batch details");
+		if (!requestsReply) {
+			if (this.passiveBatches >= this.limits.passiveBatches) {
+				this.noticeOverflow();
+				return;
+			}
+			this.passiveBatches++;
+			this.pi.sendMessage(
+				{ customType: "intercom_message", content, display: true, details },
+				{ deliverAs: "followUp", triggerTurn: false },
+			);
+			return;
+		}
 		if (this.automaticTurns < this.limits.automaticTurns) {
 			this.automaticTurns++;
 			this.turnOutstanding = true;
-			const deliverAs = entries.some((entry) => entry.details.expectsReply && entry.details.replyable)
-				? "steer"
-				: "followUp";
 			this.pi.sendMessage(
 				{ customType: "intercom_message", content, display: true, details },
-				{ deliverAs, triggerTurn: true },
+				{ deliverAs: "steer", triggerTurn: true },
 			);
 			return;
 		}
@@ -380,10 +402,73 @@ function firstText(result: { content?: Array<{ type: string; text?: string }> })
 	return result.content?.find((item) => item.type === "text")?.text ?? "Intercom";
 }
 
+interface OperationMessageView {
+	preview: string;
+	previewTruncated: boolean;
+	contentCompacted: boolean;
+	attachmentCount: number;
+}
+
+interface OperationNotificationDetails extends IntercomOperationSnapshot {
+	targetSessionId?: string;
+	payloadStored: boolean;
+}
+
+interface PassiveOperationNotification {
+	content: string;
+	details: OperationNotificationDetails;
+}
+
+function operationMessageView(
+	message: string,
+	attachments?: readonly { type: string; name: string; content: string; language?: string }[],
+): OperationMessageView {
+	const fullPreview = sanitizeSelfDeclaredMetadata(message);
+	const preview = truncateUtf8(fullPreview, 256);
+	return {
+		preview,
+		previewTruncated: preview !== fullPreview,
+		contentCompacted: preview !== message,
+		attachmentCount: attachments?.length ?? 0,
+	};
+}
+
+function expandedOperationInput(
+	message: string,
+	attachments?: readonly { type: string; name: string; content: string; language?: string }[],
+): string {
+	let text = message;
+	for (const attachment of attachments ?? []) {
+		const type = sanitizeSelfDeclaredMetadata(attachment.type);
+		const name = sanitizeSelfDeclaredMetadata(attachment.name);
+		const language = attachment.language ? ` · ${sanitizeSelfDeclaredMetadata(attachment.language)}` : "";
+		text += `\n\nAttachment · ${type} · ${name}${language}\n${attachment.content}`;
+	}
+	return text;
+}
+
+function operationNotificationView(
+	content: string,
+	kind: IntercomOperationSnapshot["kind"],
+): (OperationMessageView & { label: "message" | "reply" }) | undefined {
+	if (kind === "ask") {
+		const replyHeader = content.indexOf("**Reply to intercom ask**");
+		const replyDelimiter = "\n\n---\n\n";
+		const replyIndex = replyHeader < 0 ? -1 : content.indexOf(replyDelimiter, replyHeader);
+		if (replyIndex >= 0) {
+			return { ...operationMessageView(content.slice(replyIndex + replyDelimiter.length)), label: "reply" };
+		}
+	}
+	const request = content.match(/\n\n(?:Question|Message) preview:\n([^\n]*)/);
+	return request?.[1] ? { ...operationMessageView(request[1]), label: "message" } : undefined;
+}
+
 export default function intercomExtension(pi: ExtensionAPI): void {
 	let runtime: IntercomRuntime | undefined;
 	let inboundDelivery: InboundDelivery | undefined;
 	let operations: IntercomOperations | undefined;
+	const operationViews = new Map<string, OperationMessageView>();
+	const passiveOperationNotifications: PassiveOperationNotification[] = [];
 	let context: ExtensionContext | undefined;
 	let piPresence: PiSessionPresenceTracker | undefined;
 	let bashPresenceWatcher: FSWatcher | undefined;
@@ -514,16 +599,47 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		return operations;
 	};
 
+	const sendOperationNotification = (
+		content: string,
+		details: OperationNotificationDetails,
+		triggerTurn: boolean,
+	) => {
+		// A follow-up queued while streaming always continues the model loop. Defer passive
+		// terminal notifications until agent_settled, then append them without a turn.
+		if (!triggerTurn && context?.isIdle?.() === false) {
+			passiveOperationNotifications.push({ content, details });
+			if (passiveOperationNotifications.length > INTERCOM_OPERATION_LIMITS.maxRetained) {
+				passiveOperationNotifications.shift();
+			}
+			return;
+		}
+		pi.sendMessage(
+			{ customType: "intercom_operation", content, display: true, details },
+			{ deliverAs: "followUp", triggerTurn },
+		);
+	};
+
+	const flushPassiveOperationNotifications = () => {
+		for (const notification of passiveOperationNotifications.splice(0)) {
+			pi.sendMessage(
+				{ customType: "intercom_operation", content: notification.content, display: true, details: notification.details },
+				{ deliverAs: "followUp", triggerTurn: false },
+			);
+		}
+	};
+
 	pi.registerTool({
 		name: "intercom",
 		label: "Intercom",
-		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing; tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it; role synchronously publishes or clears the ephemeral First Mate role when the broker advertises support; list discovers peers, roles, stable Pi session IDs, and available conversational timestamps; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current Pi session ID, connectivity, capabilities, and startup diagnostics.",
-		promptSnippet: "List, message, ask, reply, or publish the First Mate role for local Pi sessions",
+		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing. Passive messages and send/reply outcomes do not start agent turns; explicit asks do. tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it and accepts an optional text-message limit. role synchronously publishes or clears the ephemeral First Mate role when the broker advertises support; list discovers peers, roles, stable Pi session IDs, and available conversational timestamps; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current Pi session ID, connectivity, capabilities, and startup diagnostics.",
+		promptSnippet: "List, tail, message, ask, reply, or publish the First Mate role for local Pi sessions",
 		promptGuidelines: [
 			"intercom send, ask, and reply return receipts immediately and deliver terminal results automatically; continue independent work instead of polling operations.",
 			"Use intercom status for the current Pi session ID and intercom list to discover other sessions.",
 			"Use intercom role with role first-mate only when the user invokes the First Mate skill; omit role to clear it. Role support is broker-capability gated and role state is cleared by session lifecycle changes or disconnects.",
-			"Use intercom tail only when recent persisted context is needed for reconciliation; ordinary peer coordination should prefer send, ask, or reply. Tail reads the latest broker-advertised confirmed snapshot and does not message or trigger the target session.",
+			"Prefer durable project or work-item updates for routine progress and outcomes. Use intercom only when a live peer needs information or action before it can read that durable record.",
+			"Before asking a peer for status or context, use intercom tail with a small limit and increase it only when needed. Contact the peer only when the tail and durable project record do not answer the question.",
+			"Treat intercom notices and routing receipts as one-way. Reply only to an explicit ask or when new information or action is required; do not acknowledge routine updates or receipts.",
 			"Use intercom ask when a peer reply is useful but not immediately blocking. Use pending and an exact replyTo when more than one inbound ask is waiting; use to plus replyTo if a displayed ask has expired locally.",
 			"Model-visible intercom messages, batches, lists, pending results, and ask replies are projected below a 48 KiB UTF-8 cap; truncation is explicit and stable Pi session IDs remain available.",
 			"Intercom broker health probing intentionally checks socket acceptance without a noisy legacy registration. If an incompatible listener accepts, intercom status surfaces the connection error and refuses takeover rather than risking replacement of a live broker.",
@@ -645,8 +761,14 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 							const receivedAudit = { ...(fromSessionId === undefined ? {} : { fromSessionId }), ...compactAuditMessage({ id: result.message.id, timestamp: result.message.timestamp, replyTo: result.message.replyTo, attachments: result.message.content.attachments }), truncated: projected.truncated };
 							assertCompactRecord(receivedAudit, "Intercom received audit");
 							appendAudit("intercom_received", receivedAudit);
-							return { target: fromSessionId ?? targetIdentity(result.from).text, ...(fromSessionId ? { targetSessionId: fromSessionId } : {}), reply: true, completionText: projected.text };
+							return {
+								target: fromSessionId ?? targetIdentity(result.from).text,
+								...(fromSessionId ? { targetSessionId: fromSessionId } : {}),
+								reply: true,
+								completionText: projected.text,
+							};
 						});
+						operationViews.set(receipt.operationId, operationMessageView(params.message!, params.attachments));
 						const details = { ...receipt, payloadStored: false };
 						assertCompactRecord(details, "Intercom operation receipt");
 						return { content: [{ type: "text" as const, text: `Intercom ${kind} accepted as ${receipt.operationId}. Completion will be delivered automatically; continue independent work.` }], details };
@@ -699,47 +821,74 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 				throw new Error(`Intercom ${params.action} failed: ${errorMessage(cause)}`, { cause });
 			}
 		},
-		renderCall(args, theme) {
+		renderCall(args, theme, renderContext) {
 			const target = args.to ? ` → ${args.to}` : "";
-			return new Text(`${theme.fg("toolTitle", theme.bold("intercom "))}${theme.fg(args.action === "ask" ? "warning" : args.action === "reply" ? "success" : "accent", args.action)}${theme.fg("muted", target)}`, 0, 0);
+			let text = `${theme.fg("toolTitle", theme.bold("intercom "))}${theme.fg(args.action === "ask" ? "warning" : args.action === "reply" ? "success" : "accent", args.action)}${theme.fg("muted", target)}`;
+			if (args.message) {
+				const view = operationMessageView(args.message, args.attachments);
+				if (renderContext.expanded) {
+					text += `\n\n${expandedOperationInput(args.message, args.attachments)}`;
+				} else {
+					text += ` · ${theme.fg("muted", view.preview)}${view.previewTruncated ? "…" : ""}`;
+					if (view.contentCompacted || view.attachmentCount > 0) {
+						text += ` (${keyHint("app.tools.expand", "to expand")})`;
+					}
+				}
+			}
+			return new Text(text, 0, 0);
 		},
-		renderResult(result, { isPartial }, theme, renderContext) {
+		renderResult(result, { isPartial, expanded }, theme, renderContext) {
 			if (isPartial) return new Text(theme.fg("warning", "Intercom working…"), 0, 0);
 			const failed = renderContext.isError || (result.details as { error?: unknown } | undefined)?.error === true;
-			return new Text(`${theme.fg(failed ? "error" : "success", failed ? "✗ " : "✓ ")}${theme.fg(failed ? "error" : "text", firstText(result))}`, 0, 0);
+			const output = firstText(result);
+			if (expanded) {
+				return new Text(`${theme.fg(failed ? "error" : "success", failed ? "✗ " : "✓ ")}${theme.fg(failed ? "error" : "text", output)}`, 0, 0);
+			}
+			const firstLine = output.split(/\r?\n/, 1)[0] ?? "Intercom";
+			const compact = sanitizeSelfDeclaredMetadata(firstLine);
+			const summary = truncateUtf8(compact, 256);
+			const expandable = output.includes("\n") || compact !== output || summary !== compact;
+			const hint = expandable ? ` (${keyHint("app.tools.expand", "to expand")})` : "";
+			return new Text(`${theme.fg(failed ? "error" : "success", failed ? "✗ " : "✓ ")}${theme.fg(failed ? "error" : "text", summary)}${summary !== compact ? "…" : ""}${hint}`, 0, 0);
 		},
 	});
 
-	pi.registerMessageRenderer<{ entries?: CompactInboundDetails[]; views?: Array<{ fromName?: string; preview: string; previewTruncated: boolean }> }>("intercom_message", (message, { expanded }, theme) => {
+	pi.registerMessageRenderer<{ entries?: CompactInboundDetails[]; views?: Array<{ fromName?: string; preview: string; previewTruncated: boolean }> }>("intercom_message", (message, { expanded, outputPad }, theme) => {
 		const content = typeof message.content === "string" ? message.content : "Intercom message";
 		const views = message.details?.views ?? [];
 		const entries = message.details?.entries ?? [];
-		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
+		const box = new Box(outputPad, 0, (text) => theme.bg("customMessageBg", text));
 		if (views.length === 0 || expanded) { box.addChild(new Text(content, 0, 0)); return box; }
+		const hint = `(${keyHint("app.tools.expand", "to expand")})`;
 		if (views.length > 1) {
-			box.addChild(new Text(`${theme.fg("customMessageLabel", theme.bold(`📨 intercom · ${views.length} messages`))}\n${views.map((view, index) => `${theme.fg("muted", view.fromName ?? entries[index]?.fromSessionId ?? "peer")} · ${view.preview}${view.previewTruncated ? "…" : ""}`).join("\n")}`, 0, 0));
+			const visible = views.slice(0, 2);
+			const remaining = views.length - visible.length;
+			const previews = visible.map((view, index) => `${theme.fg("muted", view.fromName ?? entries[index]?.fromSessionId ?? "peer")} · ${view.preview}${view.previewTruncated ? "…" : ""}`);
+			if (remaining > 0) previews.push(theme.fg("dim", `… ${remaining} more`));
+			box.addChild(new Text(`${theme.fg("customMessageLabel", theme.bold(`📨 intercom · ${views.length} messages`))} ${hint}\n${previews.join("\n")}`, 0, 0));
 			return box;
 		}
 		const view = views[0]!;
 		const entry = entries[0];
-		let text = `${theme.fg("customMessageLabel", theme.bold("📨 intercom"))} ${theme.fg("muted", "←")} ${theme.fg("muted", view.fromName ?? entry?.fromSessionId ?? "peer")}\n\n${view.preview}${view.previewTruncated ? "…" : ""}`;
-		if (entry?.expectsReply && entry.replyable) text += `\n\n${theme.fg("warning", "reply requested")}`;
-		if (view.previewTruncated || (entry?.attachmentCount ?? 0) > 0 || entry?.truncated) text += `\n${theme.fg("dim", "Ctrl+O to expand")}`;
+		let text = `${theme.fg("customMessageLabel", theme.bold("📨 intercom"))} ${theme.fg("muted", "←")} ${theme.fg("muted", view.fromName ?? entry?.fromSessionId ?? "peer")} ${hint}\n${view.preview}${view.previewTruncated ? "…" : ""}`;
+		if (entry?.expectsReply && entry.replyable) text += `\n${theme.fg("warning", "reply requested")}`;
 		box.addChild(new Text(text, 0, 0));
 		return box;
 	});
 
-	pi.registerMessageRenderer<IntercomOperationSnapshot & { targetSessionId?: string }>("intercom_operation", (message, { expanded }, theme) => {
+	pi.registerMessageRenderer<IntercomOperationSnapshot & { targetSessionId?: string }>("intercom_operation", (message, { expanded, outputPad }, theme) => {
 		const snapshot = message.details;
 		const content = typeof message.content === "string" ? message.content : "Intercom operation";
-		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
+		const box = new Box(outputPad, 0, (text) => theme.bg("customMessageBg", text));
 		if (!snapshot || expanded) { box.addChild(new Text(content, 0, 0)); return box; }
 		const state = snapshot.state === "completed"
 			? theme.fg("success", "completed")
 			: theme.fg(snapshot.state === "failed" || snapshot.state === "timed_out" ? "error" : "warning", snapshot.state);
-		const target = snapshot.targetSessionId ?? snapshot.target ?? "peer";
+		const view = operationNotificationView(content, snapshot.kind);
+		const preview = view ? `\n${theme.fg("muted", `${view.label}: ${view.preview}${view.previewTruncated ? "…" : ""}`)}` : "";
 		const reason = snapshot.reason ? `\n${theme.fg("error", snapshot.reason)}` : "";
-		box.addChild(new Text(`${theme.fg("customMessageLabel", theme.bold("intercom"))} · ${snapshot.kind} ${state}\n${theme.fg("muted", target)}${reason}`, 0, 0));
+		const hint = `(${keyHint("app.tools.expand", "to expand")})`;
+		box.addChild(new Text(`${theme.fg("customMessageLabel", theme.bold("intercom"))} · ${snapshot.kind} ${state} ${hint}${preview}${reason}`, 0, 0));
 		return box;
 	});
 
@@ -757,6 +906,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		conversationalLeafId = undefined;
 		conversationalTimestamp = null;
 		activeTools.clear();
+		passiveOperationNotifications.length = 0;
 		inboundDelivery?.dispose();
 		inboundDelivery = undefined;
 		if (runtime) await runtime.dispose();
@@ -767,6 +917,8 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		inboundDelivery = delivery;
 		operations?.dispose();
 		operations = new IntercomOperations((snapshot, result) => {
+			const requestView = operationViews.get(snapshot.operationId);
+			operationViews.delete(snapshot.operationId);
 			if (generation !== sessionGeneration || runtime !== next) return;
 			const target = result?.targetSessionId
 				? `Pi session ID ${JSON.stringify(result.targetSessionId)}`
@@ -776,12 +928,19 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 					? `ask reply received from ${target}.`
 					: `${snapshot.kind} routed to ${target}. This confirms socket routing, not peer processing.`
 				: `${snapshot.kind} ${snapshot.state}: ${snapshot.reason ?? "operation ended"}`;
-			const details = { ...snapshot, ...(result?.targetSessionId ? { targetSessionId: result.targetSessionId } : {}), payloadStored: false };
+			const details = {
+				...snapshot,
+				...(result?.targetSessionId ? { targetSessionId: result.targetSessionId } : {}),
+				payloadStored: false,
+			};
 			assertCompactRecord(details, "Intercom operation completion");
 			const reply = result?.completionText ? truncateUtf8(result.completionText, 40 * 1024) : "";
-			const content = `**Intercom operation ${snapshot.operationId}**\n\n${outcome}${snapshot.deliveryUncertain ? "\n\nDelivery is uncertain; the peer may or may not have received it." : ""}${snapshot.remoteMayProcess ? "\n\nThe peer may still process an already-routed message." : ""}${reply ? `\n\n${reply}` : ""}`;
+			const requestPreview = requestView
+				? `\n\n${snapshot.kind === "ask" ? "Question" : "Message"} preview:\n${requestView.preview}${requestView.previewTruncated ? "…" : ""}${requestView.attachmentCount > 0 ? `\n${requestView.attachmentCount} attachment(s)` : ""}`
+				: "";
+			const content = `**Intercom operation ${snapshot.operationId}**\n\n${outcome}${snapshot.deliveryUncertain ? "\n\nDelivery is uncertain; the peer may or may not have received it." : ""}${snapshot.remoteMayProcess ? "\n\nThe peer may still process an already-routed message." : ""}${requestPreview}${reply ? `\n\n${reply}` : ""}`;
 			assertProjectionBound(content, "Intercom operation completion");
-			pi.sendMessage({ customType: "intercom_operation", content, display: true, details }, { deliverAs: "followUp", triggerTurn: true });
+			sendOperationNotification(content, details, snapshot.kind === "ask");
 		});
 		next.on("message",  (entry: InboxEntry) => {
 			if (generation !== sessionGeneration || runtime !== next || context !== ctx || inboundDelivery !== delivery) return;
@@ -812,6 +971,8 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		previousDelivery?.dispose();
 		operations?.dispose();
 		operations = undefined;
+		operationViews.clear();
+		passiveOperationNotifications.length = 0;
 		const previous = runtime;
 		runtime = undefined;
 		if (previous) await previous.dispose();
@@ -842,6 +1003,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	pi.on("agent_start", () => {
 		agentRunning = true;
 		activeTools.clear();
+		inboundDelivery?.started();
 		syncPresence();
 	});
 	pi.on("agent_end", () => {
@@ -851,6 +1013,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	});
 	pi.on("agent_settled", () => {
 		inboundDelivery?.settled();
+		flushPassiveOperationNotifications();
 		syncPresence();
 	});
 	pi.on("tool_execution_start", (event) => {
