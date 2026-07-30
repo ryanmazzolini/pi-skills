@@ -44,7 +44,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`prototype`](./skills/ship/prototype/SKILL.md) | Build a throwaway artifact to answer one experiential design question |
 | [`delivery-plan`](./skills/ship/delivery-plan/SKILL.md) | Plan dependent delivery changes for one approved benefit |
 | [`ticket-workspace`](./skills/ticket-workspace/ticket-workspace/SKILL.md) | Create or reuse workspaces with one git worktree per PR |
-| [`ticket-workspace-cleanup`](./skills/ticket-workspace/ticket-workspace-cleanup/SKILL.md) | Safely remove completed ticket workspaces after checking git state |
+| [`ticket-workspace-cleanup`](./skills/ticket-workspace/ticket-workspace-cleanup/SKILL.md) | Stop confirmed workspace-local processes and safely remove completed ticket workspaces |
 | [`handoff`](./skills/handoff/SKILL.md) | Write a Markdown handoff for another agent or fresh session |
 | [`commit-simple`](./skills/commit/commit-simple/SKILL.md) | Prepare branches, commits, and pushes |
 | [`commit-pr`](./skills/commit/commit-pr/SKILL.md) | Create or update a draft pull request |
