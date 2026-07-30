@@ -18,7 +18,7 @@ An advertised timestamp selects and orders a sweep; the confirmed tail supplies 
 
 ## Load the sweep
 
-Process the selected sweep to completion in internal pages of at most 16 peers. Do not stop, ask permission, or emit a report between pages. Tail each peer by full ID with `limit: 8`, `tailScanBytes: 2097152`, and `tailProjectionBytes: 4096`. Each page is bounded to 32 MiB scanned and 64 KiB projected.
+Process the selected sweep to completion in internal pages of at most 2 peers. Do not stop, ask permission, or emit a report between pages. Tail each peer by full ID with `limit: 8` and `tailProjectionBytes: 4096`; omit `tailScanBytes` so the streaming reader can use its 512 MiB per-peer emergency read ceiling when large local records separate the requested messages. This is a local I/O bound, not model context: each page has a 1 GiB local scan ceiling and 8 KiB model projection ceiling.
 
 Use current conversational evidence to choose a concrete next step:
 

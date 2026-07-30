@@ -30,6 +30,8 @@ Return the useful finding and next choice. Mention that project files were not c
 
 Ordinary contact requires the human to request the operation and supply the content or question. Two bounded exceptions use retained triage evidence: [decision handling](decision-handling.md) may auto-authorize a qualifying very-low-risk action or relay the human's response to a displayed decision bundle, and [confirmed stale-session recon](recon.md) may send its fixed status request after confirmation. Neither exception authorizes different content, new peers, or another operation.
 
+Before asking for status or context that may already exist, tail the selected peer with `limit: 4` and `tailProjectionBytes: 4096`, omitting a local scan override so the streaming reader can reach recent conversation behind large records. Follow an explicit durable project pointer when one is available. If either source answers the question, return that evidence without contacting the peer. An exact human-requested notice or reply may proceed directly after identity revalidation.
+
 Use:
 
 - `tail` for read-only recent context
@@ -37,6 +39,6 @@ Use:
 - `ask` for a question where a reply is useful but not immediately blocking
 - `reply` for one exact inbound ask; use its exact ask ID, and call `pending` without extra fields when disambiguation is needed
 
-An accepted `send`, `ask`, or `reply` receipt means queued. Report the terminal outcome as routed or failed, and call peer handling unconfirmed until later evidence shows otherwise. Continue independent work after a background operation when possible; wait once only when its answer blocks the current request.
+An accepted `send`, `ask`, or `reply` receipt means queued. Report the terminal outcome as routed or failed, and call peer handling unconfirmed until later evidence shows otherwise. Continue independent work after a background operation when possible; wait once only when its answer blocks the current request. Do not send an acknowledgment for a notice, progress update, or routing receipt.
 
 Contact may exchange facts, status, questions, recovery instructions, policy-authorized actions, and exact human decisions. Apply [decision handling](decision-handling.md) before relaying an approval: preserve whether authority came from First Mate policy or the human, include the exact scope and fences, and never upgrade one into broader permission. If delivery fails or the target disconnects, preserve the content and offer a fresh selection rather than retrying automatically.

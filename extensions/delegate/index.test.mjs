@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import delegateExtension, { agentDeskTarget, currentDelegationRun, currentHeldRun, delegateLaunchText, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
+import delegateExtension, { agentDeskTarget, currentDelegationRun, currentHeldRun, delegateLaunchText, heldEntryData, heldEntryState, heldEntryTitle, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
 
 test("validates the one-or-batch task boundary", () => {
   assert.deepEqual(normalizeTasks({ task: " Read it " }), [{ task: "Read it", label: "Read it" }]);
@@ -116,6 +116,62 @@ test("selects the newest manageable run for the no-argument agents command", () 
   assert.equal(currentHeldRun([delivered]), undefined);
 });
 
+test("names agents in durable held-update messages", () => {
+  const run = {
+    id: "run-1",
+    recordRef: "/tmp/run.json",
+    children: [
+      { id: "child-1", label: "README audit", state: "completed" },
+      { id: "child-2", label: "Test review", state: "failed" },
+    ],
+  };
+  const result = heldEntryData(run, "user_intervened", { kind: "result", eventId: "run-1:result" });
+  assert.equal(result.agentCount, 2);
+  assert.equal(result.status, "partial");
+  assert.equal(result.outcome, "failed");
+  assert.equal(heldEntryTitle(result), "2-agent run finished with mixed results: README audit, Test review");
+  assert.equal(heldEntryState(result), "failed");
+
+  const attention = heldEntryData({
+    ...run,
+    children: [run.children[0], { ...run.children[1], state: "needs_attention" }],
+  }, "user_intervened", { kind: "attention", eventId: "attention-1", childId: "child-2" });
+  assert.deepEqual(attention.agents, [
+    { childId: "child-2", label: "Test review", state: "needs_attention" },
+  ]);
+  assert.equal(heldEntryTitle(attention), "Test review needs attention");
+  assert.equal(heldEntryState(attention), "needs_attention");
+
+  const completed = heldEntryData({
+    ...run,
+    children: [run.children[0]],
+  }, "user_intervened", { kind: "result", eventId: "completed:result" });
+  assert.equal(heldEntryTitle(completed), "README audit finished");
+  assert.equal(heldEntryState(completed), "completed");
+  assert.equal(heldEntryTitle({ ...completed, agentCount: undefined, agents: undefined, outcome: undefined }), "agent result ready");
+  assert.equal(heldEntryState({ ...completed, agents: undefined, outcome: undefined }), undefined);
+});
+
+test("bounds labels and retained agents in durable held batches", () => {
+  const children = [
+    `One\nforged ${"x".repeat(100)}`,
+    "Two",
+    "Three",
+    "Four",
+  ].map((label, index) => ({ id: `child-${index}`, label, state: "completed" }));
+  const entry = heldEntryData({
+    id: "run-1",
+    recordRef: "/tmp/run.json",
+    children,
+  }, "user_intervened", { kind: "result", eventId: "run-1:result" });
+
+  assert.equal(entry.agentCount, 4);
+  assert.equal(entry.agents.length, 3);
+  assert.equal(entry.agents[0].label.includes("\n"), false);
+  assert.ok(entry.agents[0].label.length <= 56);
+  assert.match(heldEntryTitle(entry), /^4 agents finished: One forged x+…, Two, Three \+ 1 more$/);
+});
+
 test("builds bare, run-targeted, and child-targeted Agent Desk entry points", () => {
   assert.deepEqual(agentDeskTarget(), {});
   assert.deepEqual(agentDeskTarget("run-1"), { runId: "run-1" });
@@ -125,12 +181,13 @@ test("builds bare, run-targeted, and child-targeted Agent Desk entry points", ()
 test("registers a small execution tool and separate control tool", async () => {
   const tools = [];
   const commands = [];
+  const entryRenderers = [];
   const events = [];
   const pi = {
     registerTool: (tool) => tools.push(tool),
     registerCommand: (name, options) => commands.push({ name, options }),
     registerMessageRenderer() {},
-    registerEntryRenderer() {},
+    registerEntryRenderer: (name, renderer) => entryRenderers.push({ name, renderer }),
     on: (name, handler) => events.push({ name, handler }),
   };
 
@@ -176,6 +233,23 @@ test("registers a small execution tool and separate control tool", async () => {
   assert.match(control.promptGuidelines.join("\n"), /Choose one result path/);
   assert.match(control.promptGuidelines.join("\n"), /Reserve status for one-time inspection/);
   assert.match(control.promptGuidelines.join("\n"), /Never repeat them in user-facing prose/);
+  const heldRenderer = entryRenderers.find((renderer) => renderer.name === "delegate-held");
+  assert.ok(heldRenderer);
+  const heldTheme = {
+    fg: (color, text) => `<${color}>${text}</${color}>`,
+    bold: (text) => `<bold>${text}</bold>`,
+  };
+  const heldText = heldRenderer.renderer({
+    data: {
+      runId: "run-1",
+      reason: "user_intervened",
+      recordRef: "/tmp/run.json",
+      kind: "result",
+      agents: [{ childId: "child-1", label: "README audit", state: "completed" }],
+    },
+  }, { expanded: false }, heldTheme).render(100).join("\n");
+  assert.match(heldText, /<success>✓<\/success> <bold>README audit finished<\/bold> <dim>· open <\/dim><accent>\/agents<\/accent>/);
+  assert.doesNotMatch(heldText, /■|agent result ready|conversation moved on|agents use/);
   assert.deepEqual(commands.map((command) => command.name), ["agents"]);
   assert.equal(events.some((event) => event.name === "session_start"), true);
   const shutdown = events.find((event) => event.name === "session_shutdown");
