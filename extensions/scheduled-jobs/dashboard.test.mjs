@@ -79,11 +79,31 @@ function harness(rows = 24) {
   };
 }
 
+function overlayHarness(rows = 24) {
+  let renders = 0;
+  let current;
+  const tui = {
+    terminal: { rows },
+    requestRender: () => renders++,
+    showOverlay(component, options) {
+      const entry = { component, options };
+      current = entry;
+      return {
+        hide() {
+          if (current === entry) current = undefined;
+        },
+      };
+    },
+  };
+  return { tui, renders: () => renders, overlay: () => current };
+}
+
 test("formats human schedules, local times, and textual task states", () => {
   const now = new Date(2026, 6, 25, 9, 0);
   const today = new Date(2026, 6, 25, 17, 30).toISOString();
   assert.equal(humanizeSchedule("30 17 * * 1-5"), "Weekdays at 17:30 local time");
-  assert.equal(humanizeSchedule("*/10 * * * *"), "*/10 * * * * · local time");
+  assert.equal(humanizeSchedule("0 0 1 1 *"), "Every Jan 1 at midnight local time");
+  assert.equal(humanizeSchedule("*/10 * * * *"), "Every 10 minutes");
   assert.equal(formatSchedulerTime(today, now), "Today 17:30");
   assert.equal(schedulerJobState(job()).label, "Active");
   assert.equal(schedulerJobState(job({ installation: { installed: false, health: "absent" } })).label, "Draft");
@@ -165,12 +185,17 @@ test("workspace switches views without closing, stale lists, or hidden polling",
     view.tui,
     theme,
     (result) => outcomes.push(result),
-    async () => {
-      hiddenReloads++;
-      return updatedData;
+    {
+      async reloadDashboard() {
+        hiddenReloads++;
+        return updatedData;
+      },
+      async loadDetail() {
+        return { job: updated, definition: "Candidate definition", generatedAt: updatedData.generatedAt, dashboard: updatedData };
+      },
+      async prepareActions() { throw new Error("not used"); },
+      async loadRunOutput() { throw new Error("not used"); },
     },
-    async () => ({ job: updated, definition: "Candidate definition", generatedAt: updatedData.generatedAt, dashboard: updatedData }),
-    (error) => { throw error; },
   );
 
   const listHeight = component.render(120).length;
@@ -189,6 +214,191 @@ test("workspace switches views without closing, stale lists, or hidden polling",
   assert.match(component.render(120).join("\n"), /Needs attention/);
   assert.deepEqual(outcomes, []);
 
+  component.handleInput("q");
+  assert.deepEqual(outcomes, [{ kind: "close" }]);
+  component.dispose();
+});
+
+test("workspace keeps action review and pending execution inside one overlay", async () => {
+  const view = harness();
+  const outcomes = [];
+  const data = { jobs: [job()], sourceErrors: [], generatedAt: new Date().toISOString() };
+  let finishAction;
+  const component = new SchedulerWorkspaceComponent(
+    data,
+    view.tui,
+    theme,
+    (result) => outcomes.push(result),
+    {
+      async reloadDashboard() { return data; },
+      async loadDetail() { throw new Error("not used"); },
+      async prepareActions() {
+        return {
+          id: data.jobs[0].id,
+          key: data.jobs[0].key,
+          job: data.jobs[0],
+          actions: [{
+            id: "disable",
+            label: "Pause schedule",
+            description: "Stop future scheduled runs",
+            open: async () => ({
+              kind: "mutation",
+              review: "Future scheduled runs will be paused.\n\nInstalled snapshot: digest · revision 2",
+              presentation: {
+                fromStatus: "Active",
+                toStatus: "Paused",
+                schedule: "30 17 * * 1-5",
+                adapter: "launchd",
+              },
+              cancelled: { status: "error", message: "Cancellation requested.", dashboard: data },
+              apply: async () => new Promise((resolve) => { finishAction = resolve; }),
+            }),
+          }],
+        };
+      },
+      async loadRunOutput() { throw new Error("not used"); },
+    },
+  );
+
+  component.handleInput("a");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(component.render(120).join("\n"), /Actions for daily-report:work/);
+  component.handleInput("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+  const review = component.render(120).join("\n");
+  assert.match(review, /Pause daily-report:work\?/);
+  assert.match(review, /Active  →  Paused/);
+  assert.match(review, /Weekdays at 17:30 local time/);
+  assert.match(review, /\[ Pause schedule \].*\[ Cancel \]/);
+  component.handleInput("\r");
+  assert.match(component.render(120).join("\n"), /Pause schedule…/);
+  assert.deepEqual(outcomes, []);
+
+  finishAction({ status: "success", message: "Pause schedule completed.", dashboard: data });
+  await new Promise((resolve) => setImmediate(resolve));
+  const restored = component.render(120).join("\n");
+  assert.match(restored, /\[Tasks\]/);
+  assert.match(restored, /Pause schedule completed/);
+  assert.deepEqual(outcomes, []);
+  component.handleInput("q");
+  assert.deepEqual(outcomes, [{ kind: "close" }]);
+  component.dispose();
+});
+
+test("actions and lifecycle decisions stay compact over the selected task", async () => {
+  const view = overlayHarness();
+  const paused = job({
+    key: "smoke:dashboard",
+    schedule: "0 0 1 1 *",
+    installation: {
+      installed: true,
+      health: "ok",
+      enabled: false,
+      schedule: "0 0 1 1 *",
+      digest: "digest",
+      revision: 2,
+      definitionDrift: false,
+      adapterDrift: false,
+    },
+    nextRun: null,
+    recentRuns: [],
+  });
+  const data = { jobs: [paused], sourceErrors: [], generatedAt: "2026-07-30T12:00:00.000Z" };
+  const component = new SchedulerWorkspaceComponent(data, view.tui, theme, () => {}, {
+    async reloadDashboard() { return data; },
+    async loadDetail() { throw new Error("not used"); },
+    async prepareActions() {
+      return {
+        id: paused.id,
+        key: paused.key,
+        job: paused,
+        actions: [{
+          id: "enable",
+          label: "Resume schedule",
+          description: "Schedule future runs",
+          open: async () => ({
+            kind: "mutation",
+            review: "Scheduled runs will resume.",
+            presentation: {
+              fromStatus: "Paused",
+              toStatus: "Active",
+              schedule: "0 0 1 1 *",
+              adapter: "cron",
+              nextRun: "2027-01-01T00:00:00.000Z",
+              note: "Missed runs won’t run automatically after downtime.",
+            },
+            cancelled: { status: "error", message: "Cancelled", dashboard: data },
+            apply: async () => ({ status: "success", message: "Resumed", dashboard: data }),
+          }),
+        }],
+      };
+    },
+    async loadRunOutput() { throw new Error("not used"); },
+  });
+
+  component.handleInput("a");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(component.render(120).join("\n"), /smoke:dashboard/);
+  assert.match(view.overlay().component.render(64).join("\n"), /Actions for smoke:dashboard/);
+  assert.equal(view.overlay().options.width, 64);
+  assert.equal(view.overlay().options.maxHeight, "100%");
+  assert.equal(view.overlay().options.margin, 0);
+
+  view.overlay().component.handleInput("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+  const review = view.overlay().component.render(68).join("\n");
+  assert.match(review, /Resume smoke:dashboard\?/);
+  assert.match(review, /Paused  →  Active/);
+  assert.match(review, /Every Jan 1 at midnight local time/);
+  assert.match(review, /0 0 1 1 \* · cron/);
+  assert.match(review, /Next run     Jan 1, 2027 at midnight/);
+  assert.match(review, /Missed runs won’t run automatically after downtime/);
+  assert.match(review, /› \[ Resume schedule \].*\[ Cancel \]/);
+  assert.equal(view.overlay().options.width, 68);
+  assert.equal(view.overlay().options.maxHeight, "100%");
+  assert.equal(view.overlay().options.margin, 0);
+  assert.equal(view.overlay().component.render(68).length < component.render(120).length, true);
+  view.tui.terminal.rows = 8;
+  const shortReview = view.overlay().component.render(68);
+  assert.equal(shortReview.length <= 8, true);
+  assert.match(shortReview.join("\n"), /\[ Resume schedule \].*\[ Cancel \]/);
+  assert.match(shortReview.join("\n"), /Enter Select.*Esc Cancel/);
+
+  view.overlay().component.handleInput("\x1b[C");
+  assert.match(view.overlay().component.render(68).join("\n"), /› \[ Cancel \]/);
+  view.overlay().component.handleInput("\r");
+  assert.match(view.overlay().component.render(64).join("\n"), /Actions for smoke:dashboard/);
+  component.dispose();
+});
+
+test("workspace opens run output and returns without closing the overlay", async () => {
+  const view = harness();
+  const outcomes = [];
+  const data = { jobs: [job()], sourceErrors: [], generatedAt: new Date().toISOString() };
+  const component = new SchedulerWorkspaceComponent(
+    data,
+    view.tui,
+    theme,
+    (result) => outcomes.push(result),
+    {
+      async reloadDashboard() { return data; },
+      async loadDetail() { throw new Error("not used"); },
+      async prepareActions() { throw new Error("not used"); },
+      async loadRunOutput() {
+        return { title: "daily-report:work · succeeded", text: "retained output", complete: true };
+      },
+    },
+  );
+
+  component.handleInput("\t");
+  component.handleInput("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(component.render(120).join("\n"), /retained output/);
+  assert.deepEqual(outcomes, []);
+
+  component.handleInput("q");
+  assert.match(component.render(120).join("\n"), /\[Runs\]/);
+  assert.deepEqual(outcomes, []);
   component.handleInput("q");
   assert.deepEqual(outcomes, [{ kind: "close" }]);
   component.dispose();
@@ -284,14 +494,15 @@ test("refreshes running output until the receipt reaches a terminal state", asyn
 test("action menu stays in the custom dashboard and supports keyboard review", () => {
   const view = harness();
   const outcomes = [];
-  const component = new SchedulerActionComponent("daily-report:work", [
+  const component = new SchedulerActionComponent(job(), [
     { id: "run", label: "Run installed snapshot now", description: "Start and track its receipt" },
     { id: "remove", label: "Remove installed schedule", description: "Remove known artifacts", danger: true },
   ], view.tui, theme, (result) => outcomes.push(result));
 
   const rendered = component.render(80);
-  assert.match(rendered.join("\n"), /AVAILABLE ACTIONS/);
-  assert.equal(rendered.length, Math.floor(view.tui.terminal.rows * 0.85));
+  assert.match(rendered.join("\n"), /Actions for daily-report:work/);
+  assert.match(rendered.join("\n"), /Active · Weekdays at 17:30 local time/);
+  assert.equal(rendered.length, 8);
   component.handleInput("j");
   component.handleInput("\r");
   assert.deepEqual(outcomes, ["remove"]);
@@ -309,16 +520,18 @@ test("scheduler surfaces share accent-styled hotkey chrome", () => {
   const surfaces = [
     new SchedulerDashboardComponent(data, view.tui, styledTheme, () => {}),
     new SchedulerJobDetailComponent(blocked, "Definition", view.tui, styledTheme, () => {}),
-    new SchedulerActionComponent("daily-report:work", [
-      { id: "run", label: "Run installed snapshot now", description: "Start and track its receipt" },
-    ], view.tui, styledTheme, () => {}),
     new SchedulerTextComponent("Recent output", "line one", view.tui, styledTheme, () => {}),
   ];
+  const actions = new SchedulerActionComponent(blocked, [
+    { id: "run", label: "Run installed snapshot now", description: "Start and track its receipt" },
+  ], view.tui, styledTheme, () => {});
 
   for (const surface of surfaces) {
     assert.match(surface.render(160).join("\n"), /\x1b\[36mq\/Esc\x1b\[39m/);
     surface.dispose?.();
   }
+  assert.match(actions.render(64).join("\n"), /\x1b\[36mEnter\x1b\[39m/);
+  assert.match(actions.render(64).join("\n"), /\x1b\[36mEsc\x1b\[39m/);
 });
 
 test("scheduler surfaces retain navigation within very short overlay budgets", () => {
@@ -334,11 +547,11 @@ test("scheduler surfaces retain navigation within very short overlay budgets", (
   const surfaces = [
     new SchedulerDashboardComponent(data, view.tui, theme, () => {}),
     new SchedulerJobDetailComponent(blocked, "Definition", view.tui, theme, () => {}),
-    new SchedulerActionComponent("daily-report:work", [
-      { id: "run", label: "Run installed snapshot now", description: "Start and track its receipt" },
-    ], view.tui, theme, () => {}),
     new SchedulerTextComponent("Recent output", "line one\nline two", view.tui, theme, () => {}),
   ];
+  const actions = new SchedulerActionComponent(blocked, [
+    { id: "run", label: "Run installed snapshot now", description: "Start and track its receipt" },
+  ], view.tui, theme, () => {});
 
   for (const surface of surfaces) {
     const rendered = surface.render(120);
@@ -346,6 +559,8 @@ test("scheduler surfaces retain navigation within very short overlay budgets", (
     assert.equal(rendered.every((line) => visibleWidth(line) <= 120), true);
     assert.match(rendered.join("\n"), /q\/Esc/);
   }
+  assert.equal(actions.render(50).every((line) => visibleWidth(line) <= 50), true);
+  assert.match(actions.render(50).join("\n"), /Esc Close/);
   assert.match(surfaces[1].render(120).join("\n"), /d diagnose/);
   for (const surface of surfaces) {
     const narrow = surface.render(50);

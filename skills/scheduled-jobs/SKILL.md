@@ -25,15 +25,11 @@ scheduled-jobs logs global:daily-report:work --lines 200
 
 ## Required checkpoint
 
-Before `install`, `update`, `start`, `run`, `enable`, `disable`, or `remove`:
+Before `install`, `update`, `start`, `run`, `enable`, `disable`, or `remove`, re-inspect and show the scope, source path, relevant lifecycle effect, and the candidate digest or installed digest plus lifecycle revision.
 
-1. Show the user the scope and source path.
-2. Show the exact resolved argv, executable mappings, working directory, schedule, adapter, timeout, and warnings.
-3. Show the candidate digest for install/update or the installed digest and lifecycle revision for other operations.
-4. For updates, summarize the installed-to-candidate differences.
-5. Ask for explicit confirmation of that exact operation.
+For `install`, `update`, `start`, or `run`, also show the exact resolved argv, executable mappings, working directory, schedule, adapter, timeout, and warnings. For updates, summarize the installed-to-candidate differences. For `enable` or `disable`, show the schedule, adapter, warnings, and whether future runs will start or stop. For `remove`, show the adapter artifacts and installed state being removed and make clear that the declaration remains.
 
-Do not reuse an earlier approval after any digest or revision changes. Re-inspect and ask again. Run-now always uses the installed snapshot; never run an uninstalled declaration directly.
+Ask for explicit confirmation of that exact operation. Do not reuse approval after a digest or revision changes. Run-now always uses the installed snapshot; never run an uninstalled declaration directly.
 
 ## Lifecycle
 

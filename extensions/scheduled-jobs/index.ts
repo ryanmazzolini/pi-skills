@@ -3,16 +3,20 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { nextCronOccurrence } from "../../lib/scheduled-jobs/schedule.mjs";
 import {
-	SchedulerActionComponent,
-	SchedulerJobDetailComponent,
-	SchedulerTextComponent,
+	formatSchedulerTime,
 	SchedulerWorkspaceComponent,
+	type SchedulerActionOutcome,
+	type SchedulerActionPresentation,
+	type SchedulerActionSession,
 	type SchedulerDashboardData,
 	type SchedulerDashboardResult,
-	type SchedulerDetailResult,
 	type SchedulerDetailSnapshot,
 	type SchedulerJobOverview,
+	type SchedulerPreparedAction,
+	type SchedulerTextSnapshot,
+	type SchedulerWorkspaceController,
 } from "./dashboard.ts";
 
 export const CONFIG_DIRECTORY_NAME = ".pi";
@@ -419,30 +423,47 @@ export function schedulerDiagnosticPrompt(
 	return `${header}\n${boundedDiagnostics}\n${footer}`;
 }
 
-function confirmationText(job: JobView, action: SchedulerAction): string {
+export function actionReviewText(job: JobView, action: SchedulerAction): string {
 	const candidate = job.inspection?.candidate;
 	const current = installation(job);
 	const usesCandidate = action === "install" || action === "update";
 	const contract = usesCandidate ? candidate?.contract : current?.snapshot?.contract;
 	const digest = usesCandidate ? candidate?.digest : current?.metadata?.digest;
 	const revision = current?.metadata?.revision;
-	const lines = [
-		`${ACTION_LABELS[action]} will ${action === "run" ? "execute code" : "change scheduler state"}.`,
-		"",
-		...contractLines(contract ?? {}, digest, revision),
-	];
-	if (action === "update") {
-		lines.push(
+	let lines: string[];
+	if (action === "enable" || action === "disable") {
+		const adapter = sanitizeDisplay(contract?.adapter?.selected);
+		lines = [
+			action === "enable" ? "Scheduled runs will resume." : "Scheduled runs will pause.",
+			`${sanitizeDisplay(contract?.schedule)} · ${adapter}`,
+		];
+		if (action === "enable" && ["launchd", "systemd"].includes(String(contract?.adapter?.selected))) {
+			lines.push("A missed run may start immediately.");
+		} else if (action === "enable" && contract?.adapter?.warning) {
+			lines.push(String(contract.adapter.warning).includes("does not provide catch-up")
+				? "No catch-up after downtime."
+				: "Adapter warning applies; review Definition before resuming.");
+		}
+	} else if (action === "remove") {
+		lines = [
+			`Remove the installed ${sanitizeDisplay(contract?.adapter?.selected)} schedule and snapshot.`,
+			"The declaration stays available as a draft.",
+		];
+	} else {
+		lines = [
+			`${ACTION_LABELS[action]} will ${action === "run" ? "execute the installed code" : "create or replace reviewed scheduler state"}.`,
 			"",
-			`Installed digest: ${sanitizeDisplay(current?.metadata?.digest)}`,
-			`Candidate digest: ${sanitizeDisplay(candidate?.digest)}`,
-			`Changed fields: ${changedContractFields(current?.snapshot?.contract ?? {}, candidate?.contract ?? {}).join(", ") || "digest changed"}`,
-		);
+			...contractLines(contract ?? {}, digest, revision),
+		];
+		if (action === "update") {
+			lines.push(
+				"",
+				`Installed digest: ${sanitizeDisplay(current?.metadata?.digest)}`,
+				`Candidate digest: ${sanitizeDisplay(candidate?.digest)}`,
+				`Changed fields: ${changedContractFields(current?.snapshot?.contract ?? {}, candidate?.contract ?? {}).join(", ") || "digest changed"}`,
+			);
+		}
 	}
-	if (action === "enable" && ["launchd", "systemd"].includes(String(contract?.adapter?.selected))) {
-		lines.push("", "Catch-up warning: the native adapter may run one missed schedule immediately.");
-	}
-	if (action === "remove") lines.push("", "This removes the installed snapshot and all known host adapter artifacts.");
 	const text = sanitizeMultiline(lines.join("\n"));
 	if (text.length > DISPLAY_LIMIT) {
 		throw new SchedulerCommandError(
@@ -451,6 +472,35 @@ function confirmationText(job: JobView, action: SchedulerAction): string {
 		);
 	}
 	return text;
+}
+
+function actionPresentation(job: JobView, action: SchedulerAction): SchedulerActionPresentation | undefined {
+	if (action !== "enable" && action !== "disable" && action !== "remove") return undefined;
+	const current = installation(job);
+	const contract = current?.snapshot?.contract ?? {};
+	const schedule = sanitizeDisplay(contract.schedule);
+	const adapter = sanitizeDisplay(contract.adapter?.selected);
+	let note: string | undefined;
+	if (action === "enable" && ["launchd", "systemd"].includes(String(contract.adapter?.selected))) {
+		note = "A missed run may start immediately.";
+	} else if (action === "enable" && contract.adapter?.warning) {
+		note = String(contract.adapter.warning).includes("does not provide catch-up")
+			? "Missed runs won’t run automatically after downtime."
+			: "The installed adapter has a warning; review Definition before resuming.";
+	} else if (action === "remove") {
+		note = "The declaration stays available as a draft.";
+	}
+	const nextRun = action === "enable"
+		? nextCronOccurrence(schedule, { after: new Date() })?.toISOString()
+		: undefined;
+	return {
+		fromStatus: action === "enable" ? "Paused" : current?.metadata?.enabled ? "Active" : "Paused",
+		toStatus: action === "enable" ? "Active" : action === "disable" ? "Paused" : "Draft",
+		schedule,
+		adapter,
+		nextRun,
+		note,
+	};
 }
 
 function operationArguments(job: JobView, action: SchedulerAction): string[] {
@@ -472,41 +522,26 @@ function operationArguments(job: JobView, action: SchedulerAction): string[] {
 	return [action === "run" ? "start" : action, job.id, "--expected-installed-digest", installedDigest, "--expected-revision", revision];
 }
 
-async function showText(ctx: UiContext, title: string, text: string): Promise<void> {
-	await ctx.ui.custom<void>((tui, theme, _keybindings, done) => (
-		new SchedulerTextComponent(title, boundedDisplay(text), tui, theme, done)
-	), SCHEDULER_OVERLAY_OPTIONS);
-}
-
 async function showDashboard(
 	ctx: UiContext,
 	data: SchedulerDashboardData,
-	reload: (signal: AbortSignal) => Promise<SchedulerDashboardData>,
-	loadDetail: (id: string, signal: AbortSignal) => Promise<SchedulerDetailSnapshot>,
+	controller: SchedulerWorkspaceController,
 ): Promise<SchedulerDashboardResult> {
 	return ctx.ui.custom<SchedulerDashboardResult>((tui, theme, _keybindings, done) => new SchedulerWorkspaceComponent(
 		data,
 		tui,
 		theme,
 		done,
-		reload,
-		loadDetail,
-		(error) => ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error"),
+		controller,
 	), SCHEDULER_OVERLAY_OPTIONS);
 }
 
-async function showDetails(
-	ctx: UiContext,
-	overview: SchedulerJobOverview,
-	job: JobView,
-	reload: (signal: AbortSignal) => Promise<SchedulerDetailSnapshot>,
-): Promise<SchedulerDetailResult> {
-	return ctx.ui.custom<SchedulerDetailResult>((tui, theme, _keybindings, done) => (
-		new SchedulerJobDetailComponent(overview, inspectionText(job), tui, theme, done, new Date(), reload)
-	), SCHEDULER_OVERLAY_OPTIONS);
-}
-
-async function loadRunOutput(dependencies: SchedulerDependencies, id: string, runId: string, signal?: AbortSignal) {
+async function loadRunOutput(
+	dependencies: SchedulerDependencies,
+	id: string,
+	runId: string,
+	signal?: AbortSignal,
+): Promise<SchedulerTextSnapshot> {
 	const response = await runCliJson(dependencies, ["run-log", id, runId, "--lines", "500"], { signal });
 	const result = response.result ?? {};
 	const run = result.run ?? {};
@@ -518,88 +553,21 @@ async function loadRunOutput(dependencies: SchedulerDependencies, id: string, ru
 	};
 }
 
-async function showRunOutput(
-	ctx: UiContext,
-	dependencies: SchedulerDependencies,
-	id: string,
-	runId: string,
-): Promise<void> {
-	try {
-		const initial = await loadRunOutput(dependencies, id, runId);
-		await ctx.ui.custom<void>((tui, theme, _keybindings, done) => new SchedulerTextComponent(
-			initial.title,
-			initial.text,
-			tui,
-			theme,
-			done,
-			initial.complete ? undefined : (signal) => loadRunOutput(dependencies, id, runId, signal),
-		), SCHEDULER_OVERLAY_OPTIONS);
-	} catch (error) {
-		ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
-	}
-}
-
-function successMessage(job: JobView, action: SchedulerAction): string {
-	if (action === "run") return `Started ${sanitizeDisplay(job.id)}. Track progress and output in Runs.`;
-	return `${ACTION_LABELS[action]} completed for ${sanitizeDisplay(job.id)}.`;
-}
-
-async function showActionMenu(ctx: UiContext, job: JobView, actions: SchedulerAction[]): Promise<SchedulerAction | undefined> {
-	const selected = await ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => new SchedulerActionComponent(
-		sanitizeDisplay(job.key),
-		actions.map((action) => ({
-			id: action,
-			label: ACTION_LABELS[action],
-			description: ACTION_DESCRIPTIONS[action],
-			danger: action === "remove",
-		})),
-		tui,
-		theme,
-		done,
-	), SCHEDULER_OVERLAY_OPTIONS);
-	return actions.find((action) => action === selected);
-}
-
-async function chooseAction(
-	ctx: UiContext,
+function successMessage(
 	job: JobView,
-	dependencies: SchedulerDependencies,
-): Promise<void> {
-	const actions = applicableActions(job);
-	const action = await showActionMenu(ctx, job, actions);
-	if (!action) return;
-	if (action === "inspect") {
-		await showText(ctx, `Definition · ${sanitizeDisplay(job.id)}`, inspectionText(job));
-		return;
+	action: SchedulerAction,
+	refreshed?: { overview: SchedulerJobOverview; generatedAt: string },
+): string {
+	if (action === "run") return `Started ${sanitizeDisplay(job.id)}. Track progress and output in Runs.`;
+	if (action === "enable") {
+		const next = refreshed?.overview.nextRun
+			? ` Next run ${formatSchedulerTime(refreshed.overview.nextRun, new Date(refreshed.generatedAt))}.`
+			: "";
+		return `Scheduled runs resumed.${next}`;
 	}
-	if (action === "logs") {
-		try {
-			const logs = await runCliJson(dependencies, ["logs", job.id, "--lines", "200"]);
-			const result = logs.result ?? {};
-			const body = `${sanitizeDisplay(result.logPath)}\n\n${boundedDisplay(result.content || "No log output.")}${result.truncated ? "\n\nEarlier output was truncated by the CLI." : ""}`;
-			await showText(ctx, `Recent output · ${sanitizeDisplay(job.id)}`, body);
-		} catch (error) {
-			ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
-		}
-		return;
-	}
-	let confirmation: string;
-	try {
-		confirmation = confirmationText(job, action);
-	} catch (error) {
-		ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
-		return;
-	}
-	if (!await ctx.ui.confirm(`${ACTION_LABELS[action]}?`, confirmation)) return;
-	try {
-		await runCliJson(dependencies, operationArguments(job, action));
-		ctx.ui.notify(successMessage(job, action), "info");
-	} catch (error) {
-		const failure = error instanceof SchedulerCommandError ? error : new SchedulerCommandError(String(error));
-		if (failure.code === "STALE_STATE" || failure.code === "STALE_CANDIDATE") {
-			ctx.ui.notify("Scheduler state changed before the operation; the dashboard was refreshed. Review it before trying again.", "warning");
-		} else ctx.ui.notify(boundedDisplay(failure.message), "error");
-	}
+	if (action === "disable") return "Scheduled runs paused.";
+	if (action === "remove") return "Installed schedule removed. The declaration remains a draft.";
+	return `${ACTION_LABELS[action]} completed for ${sanitizeDisplay(job.id)}.`;
 }
 
 export function createSchedulerCommandHandler(dependencies: SchedulerDependencies) {
@@ -609,82 +577,128 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 			ctx.ui.notify("/scheduler requires Pi's interactive TUI.", "error");
 			return;
 		}
-		for (;;) {
-			let data: SchedulerDashboardData;
-			try {
-				data = await loadDashboardData(ctx.cwd, dependencies);
-			} catch (error) {
-				ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
-				return;
-			}
-			const loadSelectedTask = async (id: string, signal?: AbortSignal) => {
-				const current = await loadDashboardData(ctx.cwd, dependencies, { signal });
-				const overview = current.jobs.find((job) => job.id === id);
-				if (!overview) return undefined;
-				const job = await loadJob(overview, dependencies, signal);
-				return { overview, job, generatedAt: current.generatedAt, dashboard: current };
-			};
-			const loadDetail = async (id: string, signal: AbortSignal): Promise<SchedulerDetailSnapshot> => {
-				const loaded = await loadSelectedTask(id, signal);
-				if (!loaded) throw new SchedulerCommandError("The selected scheduler task changed or disappeared.", "STALE_STATE");
-				return {
-					job: loaded.overview,
-					definition: inspectionText(loaded.job),
-					generatedAt: loaded.generatedAt,
-					dashboard: loaded.dashboard,
-				};
-			};
-			const selected = await showDashboard(
-				ctx,
-				data,
-				(signal) => loadDashboardData(ctx.cwd, dependencies, { signal }),
-				loadDetail,
-			);
-			if (selected.kind === "close") return;
-			if (selected.kind === "refresh") continue;
-			if (selected.kind === "run") {
-				await showRunOutput(ctx, dependencies, selected.id, selected.runId);
-				continue;
-			}
-			if (selected.kind === "diagnose") {
-				const latest = await loadSelectedTask(selected.id);
-				if (!latest) {
-					ctx.ui.notify("The selected scheduler task changed or disappeared; select its current state before diagnosing.", "warning");
-					continue;
-				}
-				ctx.ui.setEditorText(schedulerDiagnosticPrompt(latest.overview, latest.job));
-				ctx.ui.notify("Diagnostic request is ready. Review it, then press Enter to send it to the open agent.", "info");
-				return;
-			}
-			if (selected.kind === "actions") {
-				const latest = await loadSelectedTask(selected.id);
-				if (!latest) ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
-				else await chooseAction(ctx, latest.job, dependencies);
-				continue;
-			}
-
-			// Legacy direct dashboard result retained for compatibility with older scripted callers.
-			const loaded = await loadSelectedTask(selected.id);
-			if (!loaded) {
-				ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
-				continue;
-			}
-			const detail = await showDetails(ctx, loaded.overview, loaded.job, (signal) => loadDetail(selected.id, signal));
-			if (detail.kind === "run") await showRunOutput(ctx, dependencies, detail.id, detail.runId);
-			else if (detail.kind === "diagnose") {
-				const latest = await loadSelectedTask(selected.id);
-				if (!latest) ctx.ui.notify("The selected scheduler task changed or disappeared; select its current state before diagnosing.", "warning");
-				else {
-					ctx.ui.setEditorText(schedulerDiagnosticPrompt(latest.overview, latest.job));
-					ctx.ui.notify("Diagnostic request is ready. Review it, then press Enter to send it to the open agent.", "info");
-					return;
-				}
-			} else if (detail.kind === "actions") {
-				const latest = await loadSelectedTask(selected.id);
-				if (!latest) ctx.ui.notify("The selected scheduler task changed or disappeared; the dashboard was refreshed.", "warning");
-				else await chooseAction(ctx, latest.job, dependencies);
-			}
+		let data: SchedulerDashboardData;
+		try {
+			data = await loadDashboardData(ctx.cwd, dependencies);
+		} catch (error) {
+			ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
+			return;
 		}
+		const loadSelectedTask = async (id: string, signal?: AbortSignal) => {
+			const current = await loadDashboardData(ctx.cwd, dependencies, { signal });
+			const overview = current.jobs.find((job) => job.id === id);
+			if (!overview) return undefined;
+			const job = await loadJob(overview, dependencies, signal);
+			return { overview, job, generatedAt: current.generatedAt, dashboard: current };
+		};
+		const detailSnapshot = (loaded: Awaited<ReturnType<typeof loadSelectedTask>>): SchedulerDetailSnapshot | undefined => loaded ? ({
+			job: loaded.overview,
+			definition: inspectionText(loaded.job),
+			generatedAt: loaded.generatedAt,
+			dashboard: loaded.dashboard,
+		}) : undefined;
+		const loadDetail = async (id: string, signal: AbortSignal): Promise<SchedulerDetailSnapshot> => {
+			const snapshot = detailSnapshot(await loadSelectedTask(id, signal));
+			if (!snapshot) throw new SchedulerCommandError("The selected scheduler task changed or disappeared.", "STALE_STATE");
+			return snapshot;
+		};
+		const prepareActions = async (id: string, signal: AbortSignal): Promise<SchedulerActionSession> => {
+			const loaded = await loadSelectedTask(id, signal);
+			if (!loaded) throw new SchedulerCommandError("The selected scheduler task changed or disappeared.", "STALE_STATE");
+			const prepared = applicableActions(loaded.job).map((action): SchedulerPreparedAction => ({
+				id: action,
+				label: ACTION_LABELS[action],
+				description: ACTION_DESCRIPTIONS[action],
+				danger: action === "remove",
+				open: async () => {
+					if (action === "inspect") {
+						return {
+							kind: "text" as const,
+							load: async () => ({
+								title: `Definition · ${sanitizeDisplay(loaded.job.id)}`,
+								text: inspectionText(loaded.job),
+								complete: true,
+							}),
+						};
+					}
+					if (action === "logs") {
+						return {
+							kind: "text" as const,
+							load: async (loadSignal: AbortSignal) => {
+								const logs = await runCliJson(dependencies, ["logs", loaded.job.id, "--lines", "200"], { signal: loadSignal });
+								const result = logs.result ?? {};
+								return {
+									title: `Recent output · ${sanitizeDisplay(loaded.job.id)}`,
+									text: `${sanitizeDisplay(result.logPath)}\n\n${boundedDisplay(result.content || "No log output.")}${result.truncated ? "\n\nEarlier output was truncated by the CLI." : ""}`,
+									complete: true,
+								};
+							},
+						};
+					}
+					const review = actionReviewText(loaded.job, action);
+					const args = operationArguments(loaded.job, action);
+					const cancelled: SchedulerActionOutcome = {
+						status: "error",
+						message: "Cancellation requested. Scheduler state may have changed; press r to refresh before another action.",
+						dashboard: loaded.dashboard,
+						detail: detailSnapshot(loaded),
+					};
+					return {
+						kind: "mutation" as const,
+						review,
+						presentation: actionPresentation(loaded.job, action),
+						cancelled,
+						apply: async (applySignal: AbortSignal): Promise<SchedulerActionOutcome> => {
+							let status: SchedulerActionOutcome["status"] = "success";
+							let message = successMessage(loaded.job, action);
+							try {
+								await runCliJson(dependencies, args, { signal: applySignal });
+							} catch (error) {
+								if (applySignal.aborted) return cancelled;
+								status = "error";
+								const failure = error instanceof SchedulerCommandError ? error : new SchedulerCommandError(String(error));
+								message = failure.code === "STALE_STATE" || failure.code === "STALE_CANDIDATE"
+									? "Scheduler state changed. Review the refreshed task before trying again."
+									: failure.message;
+							}
+							try {
+								if (applySignal.aborted) return cancelled;
+								const refreshed = await loadSelectedTask(id, applySignal);
+								if (applySignal.aborted) return cancelled;
+								const refreshedDashboard = refreshed?.dashboard ?? await loadDashboardData(ctx.cwd, dependencies, { signal: applySignal });
+								if (applySignal.aborted) return cancelled;
+								if (status === "success") message = successMessage(loaded.job, action, refreshed);
+								return {
+									status,
+									message: boundedDisplay(message),
+									dashboard: refreshedDashboard,
+									detail: detailSnapshot(refreshed),
+								};
+							} catch (error) {
+								if (applySignal.aborted) return cancelled;
+								throw error;
+							}
+						},
+					};
+				},
+			}));
+			return { id: loaded.job.id, key: sanitizeDisplay(loaded.job.key), job: loaded.overview, actions: prepared };
+		};
+		const controller: SchedulerWorkspaceController = {
+			reloadDashboard: (signal) => loadDashboardData(ctx.cwd, dependencies, { signal }),
+			loadDetail,
+			prepareActions,
+			loadRunOutput: (id, runId, signal) => loadRunOutput(dependencies, id, runId, signal),
+		};
+		const selected = await showDashboard(ctx, data, controller);
+		if (selected.kind !== "diagnose") return;
+		const latest = await loadSelectedTask(selected.id);
+		if (!latest) {
+			ctx.ui.notify("The selected scheduler task changed or disappeared; reopen /scheduler to inspect its current state.", "warning");
+			return;
+		}
+		ctx.ui.setEditorText(schedulerDiagnosticPrompt(latest.overview, latest.job));
+		ctx.ui.notify("Diagnostic request is ready. Review it, then press Enter to send it to the open agent.", "info");
 	};
 }
 
