@@ -110,7 +110,7 @@ export function describeLatestActivity(
 		: child.latestActivity.summary;
 }
 
-function stateIcon(
+export function stateIcon(
 	state: DelegatedChild["state"],
 	theme: Theme,
 	animated = true,
