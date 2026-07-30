@@ -130,15 +130,19 @@ test("renders a width-safe tasks dashboard with next run, history, and source er
   const component = new SchedulerDashboardComponent(data, view.tui, theme, () => {}, now);
   const wide = component.render(100);
   assert.match(wide.join("\n"), /Scheduler/);
-  assert.match(wide.join("\n"), /daily-report:work · global · Active · Weekdays at 17:30 local time · next Today 17:30/);
+  assert.match(wide.join("\n"), /daily-report:work · global · Active/);
+  assert.match(wide.join("\n"), /Weekdays at 17:30 local time · next Today 17:30/);
   assert.match(wide.join("\n"), /! Project tasks · jobs\.bad contains unknown field/);
   assert.match(wide.join("\n"), /Active/);
   assert.equal(wide.length, 20);
   assert.equal(wide.every((line) => visibleWidth(line) <= 100), true);
 
   const narrow = component.render(54);
+  assert.match(narrow.join("\n"), /Scheduler · \[Tasks\]  Runs/);
+  assert.match(narrow.join("\n"), /1 task · 1 active · 1 needs attention/);
   assert.match(narrow.join("\n"), /daily-report:work/);
-  assert.match(narrow.join("\n"), /global/);
+  assert.match(narrow.join("\n"), /global · Active/);
+  assert.match(narrow.join("\n"), /Weekdays at 17:30 local time/);
   assert.equal(narrow.every((line) => visibleWidth(line) <= 54), true);
 });
 
