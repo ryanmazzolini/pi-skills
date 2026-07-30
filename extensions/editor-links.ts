@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { accessSync, constants, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import {
@@ -19,21 +19,78 @@ import type { Component } from "@earendil-works/pi-tui";
 import type { TSchema } from "typebox";
 
 // Ghostty only opens http(s) OSC8 links, so links point at a loopback
-// bridge that runs `open zed://...` instead of using zed:// directly.
+// bridge that launches Zed instead of using zed:// directly.
 // ponytail: fixed port; whichever pi session is running serves all scrollback links
 const BRIDGE_PORT = 48291;
+const ZED_CLI = "/Applications/Zed.app/Contents/MacOS/cli";
+const ZED_FILE_PREFIX = "zed://file";
+
+type ExecuteFile = (file: string, args: readonly string[]) => void;
+
+const executeFile: ExecuteFile = (file, args) => {
+	execFile(file, args);
+};
 
 // ponytail: zed hardcoded, swap this template if another editor ever matters
 const urlFor = (absolutePath: string, position: string) =>
-	`http://127.0.0.1:${BRIDGE_PORT}/open?url=${encodeURIComponent(`zed://file${pathToFileURL(absolutePath).pathname}${position}`)}`;
+	`http://127.0.0.1:${BRIDGE_PORT}/open?url=${encodeURIComponent(`${ZED_FILE_PREFIX}${pathToFileURL(absolutePath).pathname}${position}`)}`;
 
-export function startBridge(port = BRIDGE_PORT, openCmd = "open") {
+function parseZedFileTarget(target: string): { path: string; position: string } | undefined {
+	if (!target.startsWith(`${ZED_FILE_PREFIX}/`)) return undefined;
+	const position = target.match(/:\d+(?::\d+)?$/)?.[0] ?? "";
+	const encodedPath = target.slice(ZED_FILE_PREFIX.length, position ? -position.length : undefined);
+	try {
+		const path = fileURLToPath(`file://${encodedPath}`);
+		return isAbsolute(path) ? { path, position } : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function nearestGitRoot(path: string): string | undefined {
+	let directory: string;
+	try {
+		directory = statSync(path).isDirectory() ? path : dirname(path);
+	} catch {
+		directory = dirname(path);
+	}
+
+	while (true) {
+		if (existsSync(join(directory, ".git"))) return directory;
+		const parent = dirname(directory);
+		if (parent === directory) return undefined;
+		directory = parent;
+	}
+}
+
+function isExecutable(path: string): boolean {
+	try {
+		accessSync(path, constants.X_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export function startBridge(
+	port = BRIDGE_PORT,
+	openCmd = "open",
+	zedCli = ZED_CLI,
+	runFile: ExecuteFile = executeFile,
+) {
 	const server = createServer((req, res) => {
 		const target = new URL(req.url ?? "/", "http://127.0.0.1").searchParams.get("url") ?? "";
-		const ok = target.startsWith("zed://file/");
-		if (ok) execFile(openCmd, [target]);
-		res.writeHead(ok ? 200 : 400, { "content-type": "text/html" });
-		res.end(ok ? "<script>window.close()</script>Opened in Zed — close this tab." : "Bad link");
+		const fileTarget = parseZedFileTarget(target);
+		if (fileTarget) {
+			const gitRoot = nearestGitRoot(fileTarget.path);
+			if (gitRoot && isExecutable(zedCli)) {
+				runFile(zedCli, [gitRoot, `${fileTarget.path}${fileTarget.position}`]);
+			} else {
+				runFile(openCmd, [target]);
+			}
+		}
+		res.writeHead(fileTarget ? 200 : 400, { "content-type": "text/html" });
+		res.end(fileTarget ? "<script>window.close()</script>Opened in Zed — close this tab." : "Bad link");
 	});
 	server.unref();
 	server.on("error", () => {}); // EADDRINUSE: another session's bridge is serving
