@@ -13,6 +13,7 @@ import { createParentDelivery, type DeliveryMetadata } from "./delivery.ts";
 import { createFileRunRepository } from "./persistence.ts";
 import {
 	DelegateRuntime,
+	deriveRunStatus,
 	projectRun,
 	runNeedsControl,
 	type DelegateHandle,
@@ -22,7 +23,7 @@ import {
 	type ResolvedChildConfig,
 	type RunView,
 } from "./runtime.ts";
-import { createDelegateUi, type AgentDeskTarget, type DelegateUi } from "./ui.ts";
+import { createDelegateUi, stateIcon, type AgentDeskTarget, type DelegateUi } from "./ui.ts";
 import { createGitWorkspaceManager } from "./workspace.ts";
 
 const TaskParams = Type.Object({
@@ -61,11 +62,22 @@ interface DelegateControlDetails {
 	view: RunView;
 }
 
-interface HeldEntry {
+interface HeldAgentSummary {
+	childId: string;
+	label: string;
+	state: DelegatedChild["state"];
+}
+
+export interface HeldEntry {
 	runId: string;
 	reason: "user_intervened" | "session_changed";
 	recordRef: string;
 	kind: DeliveryMetadata["kind"];
+	childId?: string;
+	agentCount?: number;
+	agents?: HeldAgentSummary[];
+	status?: RunView["status"];
+	outcome?: DelegatedChild["state"];
 }
 
 interface RenderedRunView extends RunView {
@@ -128,6 +140,87 @@ export function currentDelegationRun(runs: DelegationRun[]): DelegationRun | und
 export function currentHeldRun(runs: DelegationRun[]): DelegationRun | undefined {
 	return newestFirst(runs).find((run) => run.delivery.state === "held"
 		|| run.children.some((child) => child.attention?.notification.state === "held"));
+}
+
+function heldAgentLabel(label: string): string {
+	const sanitized = label.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();
+	return taskLabel(sanitized || "Delegated task");
+}
+
+function heldOutcome(agents: HeldAgentSummary[]): DelegatedChild["state"] | undefined {
+	if (agents.some((agent) => agent.state === "failed")) return "failed";
+	if (agents.some((agent) => agent.state === "interrupted")) return "interrupted";
+	if (agents.some((agent) => agent.state === "needs_attention")) return "needs_attention";
+	if (agents.length > 0 && agents.every((agent) => agent.state === "completed")) return "completed";
+	if (agents.some((agent) => agent.state === "cancelled")) return "cancelled";
+	return agents[0]?.state;
+}
+
+export function heldEntryData(
+	run: DelegationRun,
+	reason: HeldEntry["reason"],
+	metadata: DeliveryMetadata,
+): HeldEntry {
+	const allAgents = run.children.map((child) => ({
+		childId: child.id,
+		label: heldAgentLabel(child.label),
+		state: child.state,
+	}));
+	const attentionAgent = metadata.childId
+		? allAgents.find((agent) => agent.childId === metadata.childId)
+		: undefined;
+	return {
+		runId: run.id,
+		reason,
+		recordRef: run.recordRef,
+		kind: metadata.kind,
+		...(metadata.childId ? { childId: metadata.childId } : {}),
+		agentCount: allAgents.length,
+		agents: metadata.kind === "attention"
+			? (attentionAgent ? [attentionAgent] : [])
+			: allAgents.slice(0, 3),
+		status: deriveRunStatus(run),
+		outcome: metadata.kind === "attention" ? "needs_attention" : heldOutcome(allAgents),
+	};
+}
+
+function heldBatchTitle(status: HeldEntry["status"], agentCount: number): string {
+	if (status === "completed") return `${agentCount} agents finished`;
+	if (status === "partial") return `${agentCount}-agent run finished with mixed results`;
+	if (status === "failed") return `${agentCount}-agent run failed`;
+	if (status === "cancelled") return `${agentCount}-agent run was cancelled`;
+	if (status === "interrupted") return `${agentCount}-agent run was interrupted`;
+	return `${agentCount}-agent run finished`;
+}
+
+export function heldEntryTitle(data: HeldEntry): string {
+	const agents = data.agents ?? [];
+	if (data.kind === "attention") {
+		const agent = agents.find((candidate) => candidate.childId === data.childId)
+			?? (agents.length === 1 ? agents[0] : undefined);
+		return agent ? `${agent.label} needs attention` : "agent attention ready";
+	}
+	const agentCount = data.agentCount ?? agents.length;
+	if (agentCount === 1 && agents[0]) {
+		const agent = agents[0];
+		if (agent.state === "completed") return `${agent.label} finished`;
+		if (agent.state === "failed") return `${agent.label} failed`;
+		if (agent.state === "cancelled") return `${agent.label} was cancelled`;
+		if (agent.state === "interrupted") return `${agent.label} was interrupted`;
+		return `${agent.label} result ready`;
+	}
+	if (agentCount > 1) {
+		const outcome = heldBatchTitle(data.status, agentCount);
+		const shown = agents.map((agent) => agent.label).join(", ");
+		const remaining = Math.max(0, agentCount - agents.length);
+		return shown ? `${outcome}: ${shown}${remaining > 0 ? ` + ${remaining} more` : ""}` : outcome;
+	}
+	return "agent result ready";
+}
+
+export function heldEntryState(data: HeldEntry): DelegatedChild["state"] | undefined {
+	if (data.kind === "attention") return "needs_attention";
+	return data.outcome ?? heldOutcome(data.agents ?? []);
 }
 
 export function agentDeskTarget(runId?: string, childId?: string): AgentDeskTarget {
@@ -519,12 +612,16 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 	pi.registerEntryRenderer<HeldEntry>("delegate-held", (entry, options, theme) => {
 		const data = entry.data;
 		if (!data) return new Text(theme.fg("warning", "Agent update is ready"), 0, 0);
-		const reason = data.reason === "user_intervened"
-			? "The conversation moved on before it finished, so it was not added automatically."
-			: "The parent session changed before it finished, so it was not added automatically.";
-		let text = `${theme.fg("warning", "■")} ${theme.bold(`agent ${data.kind} ready`)}\n`;
-		text += `${theme.fg("dim", reason)}\n`;
-		text += `Inspect: ${theme.fg("accent", "/agents")} · Add here: ${theme.fg("accent", "/agents use")}`;
+		const restoredAgents = data.agents ?? runtime?.get(data.runId)?.children.map((child) => ({
+			childId: child.id,
+			label: child.label,
+			state: child.state,
+		}));
+		const displayData = { ...data, ...(restoredAgents ? { agents: restoredAgents } : {}) };
+		const title = heldEntryTitle(displayData);
+		const state = heldEntryState(displayData);
+		const icon = state ? stateIcon(state, theme, false) : theme.fg("muted", "○");
+		let text = `${icon} ${theme.bold(title)} ${theme.fg("dim", "· open ")}${theme.fg("accent", "/agents")}`;
 		if (options.expanded) text += `\n${theme.fg("dim", data.recordRef)}`;
 		return new Text(text, 0, 0);
 	});
@@ -677,8 +774,11 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 				);
 			},
 			onHeld(run, reason, metadata) {
-				pi.appendEntry("delegate-held", { runId: run.id, reason, recordRef: run.recordRef, kind: metadata.kind });
-				currentContext?.ui.notify("Agent update ready. Open /agents or run /agents use.", "info");
+				const data = heldEntryData(run, reason, metadata);
+				pi.appendEntry("delegate-held", data);
+				if (currentContext && currentContext.mode !== "tui") {
+					currentContext.ui.notify(`${heldEntryTitle(data)}. Open /agents.`, "info");
+				}
 			},
 		});
 		runtime = new DelegateRuntime({
