@@ -7,6 +7,12 @@ description: "Godot 4.7 gameplay implementation and review. Use when changing ga
 
 Close a feedback loop: define the player-visible change, give it a clear Godot owner, run it, and observe what happened.
 
+## Choose experiment or production
+
+Before production implementation, decide whether the player-visible behavior is settled through evidence. When input, game feel, pacing, camera, feedback, or interaction flow remains materially uncertain, stop the production workflow and use one disposable experiment to settle one question.
+
+Read [Prototyping](references/prototyping.md) for the experiment defaults. Return to the production workflow only when the verdict settles the intended behavior and identifies a representative scenario that can prove it.
+
 ## Workflow
 
 1. **Define the change.** Inspect the relevant scenes, scripts, Resources, autoloads, and project commands. Identify the player-visible behavior, its owner, and a representative scene or scenario that can prove it works. During review, question whether the current architecture should exist before recommending ways to harden it.
