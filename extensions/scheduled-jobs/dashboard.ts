@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, TUI } from "@earendil-works/pi-tui";
+import type { Component, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
 import { Box, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 export interface SchedulerFailureView {
@@ -91,9 +91,67 @@ export interface SchedulerDetailSnapshot {
 	dashboard: SchedulerDashboardData;
 }
 
-type TuiView = Pick<TUI, "requestRender"> & { terminal?: { rows: number } };
+export interface SchedulerTextSnapshot {
+	title: string;
+	text: string;
+	complete: boolean;
+}
+
+export interface SchedulerActionOutcome {
+	status: "success" | "error";
+	message: string;
+	dashboard: SchedulerDashboardData;
+	detail?: SchedulerDetailSnapshot;
+}
+
+export interface SchedulerActionPresentation {
+	fromStatus: string;
+	toStatus: string;
+	schedule: string;
+	adapter: string;
+	nextRun?: string;
+	note?: string;
+}
+
+export type SchedulerActionTarget =
+	| { kind: "text"; load: (signal: AbortSignal) => Promise<SchedulerTextSnapshot> }
+	| {
+		kind: "mutation";
+		review: string;
+		presentation?: SchedulerActionPresentation;
+		cancelled: SchedulerActionOutcome;
+		apply: (signal: AbortSignal) => Promise<SchedulerActionOutcome>;
+	};
+
+export interface SchedulerPreparedAction extends SchedulerActionOption {
+	open: (signal: AbortSignal) => Promise<SchedulerActionTarget>;
+}
+
+export interface SchedulerActionSession {
+	id: string;
+	key: string;
+	job: SchedulerJobOverview;
+	actions: SchedulerPreparedAction[];
+}
+
+export interface SchedulerWorkspaceController {
+	reloadDashboard(signal: AbortSignal): Promise<SchedulerDashboardData>;
+	loadDetail(id: string, signal: AbortSignal): Promise<SchedulerDetailSnapshot>;
+	prepareActions(id: string, signal: AbortSignal): Promise<SchedulerActionSession>;
+	loadRunOutput(id: string, runId: string, signal?: AbortSignal): Promise<SchedulerTextSnapshot>;
+}
+
+type TuiView = Pick<TUI, "requestRender"> & {
+	terminal?: { rows: number };
+	showOverlay?: (component: Component, options?: OverlayOptions) => OverlayHandle;
+};
 type DashboardTab = "tasks" | "runs";
 type DetailTab = "overview" | "runs" | "definition";
+
+const ACTION_MODAL_OPTIONS: OverlayOptions = { anchor: "center", width: 64, maxHeight: "100%", margin: 0 };
+const DECISION_MODAL_OPTIONS: OverlayOptions = { anchor: "center", width: 68, maxHeight: "100%", margin: 0 };
+const DOCUMENT_MODAL_OPTIONS: OverlayOptions = { anchor: "center", width: "80%", maxHeight: "100%", margin: 0 };
+const BUSY_MODAL_OPTIONS: OverlayOptions = { anchor: "center", width: 52, maxHeight: 8, margin: 0 };
 
 function schedulerPanelLines(tui: TuiView): number {
 	return Math.max(1, Math.floor((tui.terminal?.rows ?? 24) * 0.85));
@@ -142,6 +200,21 @@ function sizedPanel(lines: string[], width: number, height: number, theme: Theme
 	const innerHeight = safeHeight - 2;
 	const visible = lines.slice(0, innerHeight);
 	return framed([...visible, ...Array.from({ length: innerHeight - visible.length }, () => "")], safeWidth, theme);
+}
+
+function compactDialog(title: string, lines: string[], width: number, theme: Theme): string[] {
+	const safeWidth = Math.max(1, width);
+	if (safeWidth < 6) return opaque(lines.map((line) => truncateToWidth(line, safeWidth, "")), safeWidth, theme);
+	const innerWidth = safeWidth - 2;
+	const contentWidth = Math.max(1, innerWidth - 2);
+	const safeTitle = truncateToWidth(title, Math.max(1, innerWidth - 4), "");
+	const titleBar = `─ ${safeTitle} `;
+	const border = (value: string) => theme.fg("borderMuted", value);
+	return opaque([
+		border(`╭${titleBar}${"─".repeat(Math.max(0, innerWidth - visibleWidth(titleBar)))}╮`),
+		...lines.flatMap((line) => wrapTextWithAnsi(line || " ", contentWidth)).map((line) => `${border("│")} ${padAnsi(line, contentWidth)} ${border("│")}`),
+		border(`╰${"─".repeat(innerWidth)}╯`),
+	], safeWidth, theme);
 }
 
 interface SchedulerHotkeyHint {
@@ -227,6 +300,7 @@ export function formatSchedulerTime(value: string | null, now = new Date()): str
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function weekdayLabel(field: string): string | undefined {
 	if (field === "*") return "Daily";
@@ -241,13 +315,39 @@ function weekdayLabel(field: string): string | undefined {
 	return undefined;
 }
 
+function humanScheduleTime(hour: string, minute: string): string | undefined {
+	if (!/^\d+$/.test(hour) || !/^\d+$/.test(minute)) return undefined;
+	if (hour === "0" && minute === "0") return "midnight";
+	if (hour === "12" && minute === "0") return "noon";
+	return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
+}
+
 export function humanizeSchedule(schedule: string): string {
-	const [minute, hour, dayOfMonth, month, dayOfWeek] = schedule.trim().split(/\s+/);
-	const days = dayOfMonth === "*" && month === "*" && dayOfWeek ? weekdayLabel(dayOfWeek) : undefined;
-	if (days && /^\d+$/.test(minute ?? "") && /^\d+$/.test(hour ?? "")) {
-		return `${days} at ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} local time`;
+	const [minute = "", hour = "", dayOfMonth = "", month = "", dayOfWeek = ""] = schedule.trim().split(/\s+/);
+	const time = humanScheduleTime(hour, minute);
+	if (time && dayOfMonth === "*" && month === "*") {
+		const days = weekdayLabel(dayOfWeek);
+		if (days) return `${days} at ${time} local time`;
+	}
+	if (time && /^\d+$/.test(dayOfMonth) && /^\d+$/.test(month) && dayOfWeek === "*") {
+		const monthLabel = MONTHS[Number(month) - 1];
+		if (monthLabel) return `Every ${monthLabel} ${Number(dayOfMonth)} at ${time} local time`;
+	}
+	if (time && /^\d+$/.test(dayOfMonth) && month === "*" && dayOfWeek === "*") {
+		return `Monthly on day ${Number(dayOfMonth)} at ${time} local time`;
+	}
+	if (/^\*\/\d+$/.test(minute) && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+		return `Every ${Number(minute.slice(2))} minutes`;
 	}
 	return `${schedule} · local time`;
+}
+
+function formatSchedulerDateTime(value: string): string {
+	const date = new Date(value);
+	if (!Number.isFinite(date.getTime())) return "Unknown";
+	const month = MONTHS[date.getMonth()] ?? "Unknown";
+	const time = humanScheduleTime(String(date.getHours()), String(date.getMinutes())) ?? clockTime(date);
+	return `${month} ${date.getDate()}, ${date.getFullYear()} at ${time}`;
 }
 
 function effectiveSchedule(job: SchedulerJobOverview): string {
@@ -349,6 +449,7 @@ export class SchedulerDashboardComponent implements Component {
 	private refreshAbort?: AbortController;
 	private refreshing = false;
 	private refreshFailure: string | undefined;
+	private workspaceStatus: { message: string; color: "success" | "error" } | undefined;
 	private suspended = false;
 	private disposed = false;
 
@@ -382,6 +483,11 @@ export class SchedulerDashboardComponent implements Component {
 		if (data === "r" || data === "R") {
 			if (this.reload) void this.refreshData();
 			else this.done({ kind: "refresh" });
+			return;
+		}
+		if ((data === "a" || data === "A") && this.tab === "tasks") {
+			const job = orderedTasks(this.data)[this.selectedTask];
+			if (job) this.done({ kind: "actions", id: job.id });
 			return;
 		}
 		const count = this.tab === "tasks" ? orderedTasks(this.data).length : allRuns(this.data).length;
@@ -426,6 +532,7 @@ export class SchedulerDashboardComponent implements Component {
 		].join(" · ");
 		const refreshState = this.refreshing ? ` ${this.theme.fg("warning", "↻ refreshing")}` : "";
 		const chrome = [this.theme.fg("borderMuted", "─".repeat(Math.max(1, width - 2)))];
+		if (this.workspaceStatus) chrome.push(this.theme.fg(this.workspaceStatus.color, this.workspaceStatus.message));
 		if (this.refreshFailure) {
 			chrome.push(`${this.theme.fg("error", "!")} Refresh failed · ${this.theme.fg("error", this.refreshFailure)}`);
 			chrome.push(`  Press ${this.theme.fg("accent", "r")} to retry; the previous snapshot is still shown.`);
@@ -447,6 +554,7 @@ export class SchedulerDashboardComponent implements Component {
 				{ key: "↑/↓ j/k", label: "select", priority: 3 },
 				{ key: "Enter", label: this.tab === "tasks" ? "details" : "output", priority: 1 },
 				{ key: "Tab", label: this.tab === "tasks" ? "runs" : "tasks", priority: 2 },
+				...(this.tab === "tasks" ? [{ key: "a", label: "actions", priority: 1 }] : []),
 				{ key: "r", label: "refresh", priority: 4 },
 				{ key: "q/Esc", label: "close", priority: 0 },
 			],
@@ -469,6 +577,19 @@ export class SchedulerDashboardComponent implements Component {
 		if (data) this.applyData(data);
 		this.suspended = false;
 		this.syncPolling();
+		this.tui.requestRender();
+	}
+
+	update(data: SchedulerDashboardData, status?: { message: string; color: "success" | "error" }): void {
+		if (this.disposed) return;
+		this.applyData(data);
+		this.workspaceStatus = status;
+		this.tui.requestRender();
+	}
+
+	setStatus(message: string, color: "success" | "error" = "error"): void {
+		if (this.disposed) return;
+		this.workspaceStatus = { message, color };
 		this.tui.requestRender();
 	}
 
@@ -601,24 +722,26 @@ export interface SchedulerActionOption {
 
 export class SchedulerActionComponent implements Component {
 	private selected = 0;
-	private readonly jobKey: string;
+	private readonly job: SchedulerJobOverview;
 	private readonly options: SchedulerActionOption[];
 	private readonly tui: TuiView;
 	private readonly theme: Theme;
 	private readonly done: (action: string | undefined) => void;
 
 	constructor(
-		jobKey: string,
+		job: SchedulerJobOverview,
 		options: SchedulerActionOption[],
 		tui: TuiView,
 		theme: Theme,
 		done: (action: string | undefined) => void,
+		initialActionId?: string,
 	) {
-		this.jobKey = jobKey;
+		this.job = job;
 		this.options = options;
 		this.tui = tui;
 		this.theme = theme;
 		this.done = done;
+		this.selected = Math.max(0, options.findIndex((option) => option.id === initialActionId));
 	}
 
 	handleInput(data: string): void {
@@ -636,7 +759,9 @@ export class SchedulerActionComponent implements Component {
 	}
 
 	render(width: number): string[] {
-		const display = (bodyWidth: number) => this.options.map((option, index) => {
+		const state = schedulerJobState(this.job);
+		const footer = `${this.theme.fg("accent", "↑/↓")} ${this.theme.fg("dim", "Choose")} ${this.theme.fg("dim", "·")} ${this.theme.fg("accent", "Enter")} ${this.theme.fg("dim", "Select")} ${this.theme.fg("dim", "·")} ${this.theme.fg("accent", "Esc")} ${this.theme.fg("dim", "Close")}`;
+		const optionLines = this.options.map((option, index) => {
 			const selected = index === this.selected;
 			const marker = selected ? this.theme.fg("accent", "›") : " ";
 			const label = selected
@@ -644,26 +769,18 @@ export class SchedulerActionComponent implements Component {
 				: option.danger
 					? this.theme.fg("error", option.label)
 					: option.label;
-			return truncateToWidth(`${marker} ${label} ${this.theme.fg("dim", `· ${option.description}`)}`, bodyWidth, "");
+			return `${marker} ${label}`;
 		});
-		return renderSchedulerPanel(width, this.tui, this.theme, {
-			header: `${this.theme.bold(`Scheduler / ${this.jobKey}`)} ${this.theme.fg("dim", "· Actions")}`,
-			chrome: [
-				this.theme.fg("borderMuted", "─".repeat(Math.max(1, width - 2))),
-				this.theme.bold("AVAILABLE ACTIONS"),
-			],
-			body: (bodyWidth, bodyHeight) => {
-				const lines = display(bodyWidth);
-				const start = Math.min(Math.max(0, this.selected - Math.floor(bodyHeight / 2)), Math.max(0, lines.length - bodyHeight));
-				return lines.slice(start, start + bodyHeight);
-			},
-			compactBody: (bodyWidth) => [display(bodyWidth)[this.selected] ?? "No actions available."],
-			hints: [
-				{ key: "↑/↓ j/k", label: "select", priority: 2 },
-				{ key: "Enter", label: "review", priority: 1 },
-				{ key: "q/Esc", label: "back", priority: 0 },
-			],
-		});
+		const lines = (this.tui.terminal?.rows ?? 24) < 10
+			? [optionLines[this.selected] ?? "No actions available.", footer]
+			: [
+				`${this.theme.fg(state.color, state.label)} ${this.theme.fg("dim", `· ${humanizeSchedule(effectiveSchedule(this.job))}`)}`,
+				"",
+				...optionLines,
+				"",
+				footer,
+			];
+		return compactDialog(`Actions for ${this.job.key}`, lines, width, this.theme);
 	}
 
 	invalidate(): void {}
@@ -788,6 +905,21 @@ export class SchedulerJobDetailComponent implements Component {
 
 	invalidate(): void {}
 
+	update(snapshot: SchedulerDetailSnapshot, status?: { message: string; color: "success" | "warning" | "error" }): void {
+		if (this.disposed) return;
+		this.job = snapshot.job;
+		this.definition = snapshot.definition;
+		this.now = new Date(snapshot.generatedAt);
+		this.refreshStatus = status;
+		this.tui.requestRender();
+	}
+
+	setStatus(status: { message: string; color: "success" | "warning" | "error" }): void {
+		if (this.disposed) return;
+		this.refreshStatus = status;
+		this.tui.requestRender();
+	}
+
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
@@ -886,18 +1018,173 @@ export class SchedulerJobDetailComponent implements Component {
 	}
 }
 
+class SchedulerActionReviewComponent implements Component {
+	private scroll = 0;
+	private confirmSelected: boolean;
+	private readonly jobKey: string;
+	private readonly action: SchedulerPreparedAction;
+	private readonly review: string;
+	private readonly presentation?: SchedulerActionPresentation;
+	private readonly tui: TuiView;
+	private readonly theme: Theme;
+	private readonly done: (confirmed: boolean) => void;
+
+	constructor(
+		jobKey: string,
+		action: SchedulerPreparedAction,
+		review: string,
+		presentation: SchedulerActionPresentation | undefined,
+		tui: TuiView,
+		theme: Theme,
+		done: (confirmed: boolean) => void,
+	) {
+		this.jobKey = jobKey;
+		this.action = action;
+		this.review = review;
+		this.presentation = presentation;
+		this.confirmSelected = !action.danger;
+		this.tui = tui;
+		this.theme = theme;
+		this.done = done;
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || data === "q") {
+			this.done(false);
+			return;
+		}
+		if (this.presentation && (matchesKey(data, "left") || matchesKey(data, "right") || matchesKey(data, "tab") || data === "\t")) {
+			this.confirmSelected = !this.confirmSelected;
+			this.tui.requestRender();
+			return;
+		}
+		if (matchesKey(data, "return")) {
+			this.done(this.presentation ? this.confirmSelected : true);
+			return;
+		}
+		if (!this.presentation && matchesKey(data, "right")) {
+			this.done(true);
+			return;
+		}
+		if (matchesKey(data, "down") || data === "j") this.scroll++;
+		else if (matchesKey(data, "up") || data === "k") this.scroll = Math.max(0, this.scroll - 1);
+		else if (matchesKey(data, "pageDown") || matchesKey(data, "ctrl+d")) this.scroll += 8;
+		else if (matchesKey(data, "pageUp") || matchesKey(data, "ctrl+u")) this.scroll = Math.max(0, this.scroll - 8);
+		else if (matchesKey(data, "home")) this.scroll = 0;
+		this.tui.requestRender();
+	}
+
+	render(width: number): string[] {
+		if (this.presentation) return this.renderDecision(width);
+		return renderSchedulerPanel(width, this.tui, this.theme, {
+			header: `${this.theme.bold(`Scheduler / ${this.jobKey}`)} ${this.theme.fg("dim", `· ${this.action.label}`)}`,
+			chrome: [this.theme.fg("borderMuted", "─".repeat(Math.max(1, width - 2)))],
+			body: (bodyWidth, bodyHeight) => {
+				const content = this.review.split("\n").flatMap((line) => wrapTextWithAnsi(line || " ", bodyWidth));
+				const start = Math.min(this.scroll, Math.max(0, content.length - bodyHeight));
+				return content.slice(start, start + bodyHeight);
+			},
+			compactBody: (bodyWidth) => wrapTextWithAnsi(this.review, bodyWidth),
+			hints: [
+				{ key: "Enter", label: this.action.danger ? "confirm removal" : "confirm", priority: 1, keyColor: this.action.danger ? "error" : "accent" },
+				{ key: "↑/↓ j/k", label: "scroll", priority: 3 },
+				{ key: "q/Esc", label: "back", priority: 0 },
+			],
+		});
+	}
+
+	invalidate(): void {}
+
+	private renderDecision(width: number): string[] {
+		const presentation = this.presentation;
+		if (!presentation) return [];
+		const confirmColor = this.action.danger ? "error" : "accent";
+		const confirmLabel = this.action.id === "enable"
+			? "Resume schedule"
+			: this.action.id === "disable"
+				? "Pause schedule"
+				: "Remove schedule";
+		const button = (label: string, selected: boolean, color: "accent" | "error") => selected
+			? `${this.theme.fg(color, "›")} ${this.theme.fg(color, `[ ${label} ]`)}`
+			: `  ${this.theme.fg("dim", `[ ${label} ]`)}`;
+		const fromColor = presentation.fromStatus === "Active" ? "success" : "muted";
+		const stateLine = `Status       ${this.theme.fg(fromColor, presentation.fromStatus)}  →  ${this.theme.fg(presentation.toStatus === "Active" ? "success" : "muted", presentation.toStatus)}`;
+		const buttons = `${button(confirmLabel, this.confirmSelected, confirmColor)}   ${button("Cancel", !this.confirmSelected, "accent")}`;
+		const footer = `${this.theme.fg("accent", "←/→")} ${this.theme.fg("dim", "Choose")} ${this.theme.fg("dim", "·")} ${this.theme.fg("accent", "Enter")} ${this.theme.fg("dim", "Select")} ${this.theme.fg("dim", "·")} ${this.theme.fg("accent", "Esc")} ${this.theme.fg("dim", "Cancel")}`;
+		const compact = (this.tui.terminal?.rows ?? 24) < 14;
+		const compactWidth = Math.max(1, width - 4);
+		const lines = compact
+			? [
+				stateLine,
+				truncateToWidth(`${humanizeSchedule(presentation.schedule)} · ${presentation.schedule} · ${presentation.adapter}`, compactWidth, ""),
+				...(presentation.note ? [truncateToWidth(`${this.theme.fg("warning", "Note:")} ${presentation.note}`, compactWidth, "")] : []),
+				buttons,
+				footer,
+			]
+			: [
+				"",
+				stateLine,
+				`Schedule     ${humanizeSchedule(presentation.schedule)}`,
+				`             ${this.theme.fg("dim", `${presentation.schedule} · ${presentation.adapter}`)}`,
+				...(presentation.nextRun ? [`Next run     ${formatSchedulerDateTime(presentation.nextRun)}`] : []),
+				...(presentation.note ? ["", `${this.theme.fg("warning", "Note:")} ${presentation.note}`] : []),
+				"",
+				buttons,
+				footer,
+			];
+		const verb = this.action.id === "enable" ? "Resume" : this.action.id === "disable" ? "Pause" : "Remove";
+		return compactDialog(`${verb} ${this.jobKey}?`, lines, width, this.theme);
+	}
+}
+
+class SchedulerBusyComponent implements Component {
+	private label: string;
+	private readonly tui: TuiView;
+	private readonly theme: Theme;
+	private readonly cancel: () => void;
+
+	constructor(label: string, tui: TuiView, theme: Theme, cancel: () => void) {
+		this.label = label;
+		this.tui = tui;
+		this.theme = theme;
+		this.cancel = cancel;
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || data === "q") this.cancel();
+	}
+
+	render(width: number): string[] {
+		return compactDialog(this.label, [
+			this.theme.fg("warning", "↻ Working…"),
+			"",
+			`${this.theme.fg("accent", "Esc")} ${this.theme.fg("dim", "Stop waiting")}`,
+		], width, this.theme);
+	}
+
+	invalidate(): void {}
+}
+
 export class SchedulerWorkspaceComponent implements Component {
 	private readonly tui: TuiView;
 	private readonly theme: Theme;
 	private readonly done: (result: SchedulerDashboardResult) => void;
-	private readonly loadDetail: (id: string, signal: AbortSignal) => Promise<SchedulerDetailSnapshot>;
-	private readonly onError: (error: unknown) => void;
+	private readonly controller: SchedulerWorkspaceController;
 	private readonly dashboard: SchedulerDashboardComponent;
 	private detail?: SchedulerJobDetailComponent;
 	private detailId?: string;
 	private detailDashboard?: SchedulerDashboardData;
-	private opening = false;
-	private openAbort?: AbortController;
+	private actions?: SchedulerActionComponent;
+	private actionSession?: SchedulerActionSession;
+	private selectedActionId?: string;
+	private review?: SchedulerActionReviewComponent;
+	private text?: SchedulerTextComponent;
+	private busy?: SchedulerBusyComponent;
+	private modalComponent?: Component;
+	private modalHandle?: OverlayHandle;
+	private returnToDetail = false;
+	private textReturnsToActions = false;
+	private operationAbort?: AbortController;
 	private disposed = false;
 
 	constructor(
@@ -905,59 +1192,65 @@ export class SchedulerWorkspaceComponent implements Component {
 		tui: TuiView,
 		theme: Theme,
 		done: (result: SchedulerDashboardResult) => void,
-		reload: (signal: AbortSignal) => Promise<SchedulerDashboardData>,
-		loadDetail: (id: string, signal: AbortSignal) => Promise<SchedulerDetailSnapshot>,
-		onError: (error: unknown) => void,
+		controller: SchedulerWorkspaceController,
 	) {
 		this.tui = tui;
 		this.theme = theme;
 		this.done = done;
-		this.loadDetail = loadDetail;
-		this.onError = onError;
+		this.controller = controller;
 		this.dashboard = new SchedulerDashboardComponent(
 			data,
 			tui,
 			theme,
 			(result) => this.handleDashboardResult(result),
 			new Date(data.generatedAt),
-			reload,
+			(signal) => controller.reloadDashboard(signal),
 		);
 	}
 
 	handleInput(data: string): void {
-		if (this.opening) {
-			if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || data === "q") {
-				this.openAbort?.abort();
-				this.openAbort = undefined;
-				this.opening = false;
-				this.dashboard.resume();
-			}
-			return;
-		}
-		(this.detail ?? this.dashboard).handleInput(data);
+		this.activeComponent().handleInput?.(data);
 	}
 
 	render(width: number): string[] {
-		return (this.detail ?? this.dashboard).render(width);
+		return this.activeComponent().render(width);
 	}
 
 	invalidate(): void {
-		(this.detail ?? this.dashboard).invalidate();
+		this.activeComponent().invalidate();
 	}
 
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		this.openAbort?.abort();
-		this.openAbort = undefined;
+		this.operationAbort?.abort();
+		this.operationAbort = undefined;
 		this.dashboard.dispose();
 		this.detail?.dispose();
+		this.text?.dispose();
+		this.closeModal();
 		this.detail = undefined;
+		this.text = undefined;
+		this.actions = undefined;
+		this.review = undefined;
+		this.busy = undefined;
+	}
+
+	private activeComponent(): Component {
+		return this.modalHandle ? this.text ?? this.detail ?? this.dashboard : this.modalComponent ?? this.text ?? this.detail ?? this.dashboard;
 	}
 
 	private handleDashboardResult(result: SchedulerDashboardResult): void {
 		if (result.kind === "job") {
 			void this.openDetail(result.id);
+			return;
+		}
+		if (result.kind === "actions") {
+			void this.openActions(result.id, false);
+			return;
+		}
+		if (result.kind === "run") {
+			void this.openRunOutput(result.id, result.runId, false);
 			return;
 		}
 		this.done(result);
@@ -968,27 +1261,31 @@ export class SchedulerWorkspaceComponent implements Component {
 			this.detail?.dispose();
 			this.detail = undefined;
 			this.detailId = undefined;
+			this.returnToDetail = false;
 			this.dashboard.resume(this.detailDashboard);
 			this.detailDashboard = undefined;
 			return;
 		}
 		const id = this.detailId;
 		if (!id) return;
-		if (result.kind === "diagnose" || result.kind === "actions") {
-			this.done({ kind: result.kind, id });
+		if (result.kind === "diagnose") {
+			this.done({ kind: "diagnose", id });
 			return;
 		}
-		this.done(result);
+		if (result.kind === "actions") {
+			void this.openActions(id, true);
+			return;
+		}
+		void this.openRunOutput(result.id, result.runId, true);
 	}
 
 	private async openDetail(id: string): Promise<void> {
-		if (this.opening || this.disposed) return;
+		if (this.operationAbort || this.disposed) return;
+		this.returnToDetail = false;
 		this.dashboard.suspend();
-		this.opening = true;
-		const abort = new AbortController();
-		this.openAbort = abort;
+		const abort = this.beginBusy("Loading task details…", () => this.restoreOrigin());
 		try {
-			const snapshot = await this.loadDetail(id, abort.signal);
+			const snapshot = await this.controller.loadDetail(id, abort.signal);
 			if (this.disposed || abort.signal.aborted) return;
 			this.detailId = id;
 			this.detailDashboard = snapshot.dashboard;
@@ -1000,7 +1297,7 @@ export class SchedulerWorkspaceComponent implements Component {
 				(result) => this.handleDetailResult(result),
 				new Date(snapshot.generatedAt),
 				async (signal) => {
-					const refreshed = await this.loadDetail(id, signal);
+					const refreshed = await this.controller.loadDetail(id, signal);
 					this.detailDashboard = refreshed.dashboard;
 					return refreshed;
 				},
@@ -1008,21 +1305,242 @@ export class SchedulerWorkspaceComponent implements Component {
 		} catch (error) {
 			if (!this.disposed && !abort.signal.aborted) {
 				this.dashboard.resume();
-				this.onError(error);
+				this.dashboard.setStatus(this.errorMessage(error));
 			}
 		} finally {
-			if (this.openAbort === abort) this.openAbort = undefined;
-			this.opening = false;
-			if (!this.disposed) this.tui.requestRender();
+			this.finishBusy(abort);
 		}
+	}
+
+	private async openActions(id: string, fromDetail: boolean): Promise<void> {
+		if (this.operationAbort || this.disposed) return;
+		this.returnToDetail = fromDetail;
+		if (!fromDetail) this.dashboard.suspend();
+		const abort = this.beginBusy("Loading current actions…", () => this.restoreOrigin());
+		try {
+			const session = await this.controller.prepareActions(id, abort.signal);
+			if (this.disposed || abort.signal.aborted) return;
+			this.actionSession = session;
+			this.selectedActionId = undefined;
+			this.showActions();
+		} catch (error) {
+			if (!this.disposed && !abort.signal.aborted) {
+				this.restoreOrigin();
+				this.setOriginStatus(this.errorMessage(error), "error");
+			}
+		} finally {
+			this.finishBusy(abort);
+		}
+	}
+
+	private async openAction(actionId: string): Promise<void> {
+		const session = this.actionSession;
+		const action = session?.actions.find((candidate) => candidate.id === actionId);
+		if (!session || !action || this.operationAbort || this.disposed) return;
+		const abort = this.beginBusy(`Preparing ${action.label.toLowerCase()}…`, () => this.showActions());
+		try {
+			const target = await action.open(abort.signal);
+			if (this.disposed || abort.signal.aborted) return;
+			if (target.kind === "mutation") {
+				this.review = new SchedulerActionReviewComponent(
+					session.key,
+					action,
+					target.review,
+					target.presentation,
+					this.tui,
+					this.theme,
+					(confirmed) => {
+						this.closeModal(this.review);
+						if (!confirmed) {
+							this.review = undefined;
+							this.showActions();
+						} else void this.applyAction(action, target);
+					},
+				);
+				this.showModal(this.review, target.presentation ? DECISION_MODAL_OPTIONS : DOCUMENT_MODAL_OPTIONS);
+				return;
+			}
+			const snapshot = await target.load(abort.signal);
+			if (this.disposed || abort.signal.aborted) return;
+			this.textReturnsToActions = true;
+			this.openText(snapshot, undefined);
+		} catch (error) {
+			if (!this.disposed && !abort.signal.aborted) {
+				this.restoreOrigin();
+				this.setOriginStatus(this.errorMessage(error), "error");
+			}
+		} finally {
+			this.finishBusy(abort);
+		}
+	}
+
+	private async applyAction(
+		action: SchedulerPreparedAction,
+		target: Extract<SchedulerActionTarget, { kind: "mutation" }>,
+	): Promise<void> {
+		if (this.operationAbort || this.disposed) return;
+		const abort = this.beginBusy(`${action.label}…`, () => this.restoreOrigin(target.cancelled));
+		try {
+			const outcome = await target.apply(abort.signal);
+			if (this.disposed || abort.signal.aborted) return;
+			this.restoreOrigin(outcome);
+		} catch (error) {
+			if (!this.disposed && !abort.signal.aborted) {
+				this.restoreOrigin();
+				this.setOriginStatus(`Scheduler state refresh failed: ${this.errorMessage(error)}`, "error");
+			}
+		} finally {
+			this.finishBusy(abort);
+		}
+	}
+
+	private async openRunOutput(id: string, runId: string, fromDetail: boolean): Promise<void> {
+		if (this.operationAbort || this.disposed) return;
+		this.returnToDetail = fromDetail;
+		this.textReturnsToActions = false;
+		if (!fromDetail) this.dashboard.suspend();
+		const abort = this.beginBusy("Loading run output…", () => this.restoreOrigin());
+		try {
+			const snapshot = await this.controller.loadRunOutput(id, runId, abort.signal);
+			if (this.disposed || abort.signal.aborted) return;
+			this.openText(
+				snapshot,
+				snapshot.complete ? undefined : (signal) => this.controller.loadRunOutput(id, runId, signal),
+			);
+		} catch (error) {
+			if (!this.disposed && !abort.signal.aborted) {
+				this.restoreOrigin();
+				this.setOriginStatus(this.errorMessage(error), "error");
+			}
+		} finally {
+			this.finishBusy(abort);
+		}
+	}
+
+	private openText(
+		snapshot: SchedulerTextSnapshot,
+		reload?: (signal: AbortSignal) => Promise<SchedulerTextSnapshot>,
+	): void {
+		this.text?.dispose();
+		this.text = new SchedulerTextComponent(
+			snapshot.title,
+			snapshot.text,
+			this.tui,
+			this.theme,
+			() => this.closeText(),
+			reload,
+		);
+		this.tui.requestRender();
+	}
+
+	private closeText(): void {
+		this.text?.dispose();
+		this.text = undefined;
+		if (!this.textReturnsToActions) this.restoreOrigin();
+		else this.showActions();
+		this.tui.requestRender();
+	}
+
+	private showActions(): void {
+		const session = this.actionSession;
+		this.review = undefined;
+		this.text?.dispose();
+		this.text = undefined;
+		if (session) {
+			this.actions = new SchedulerActionComponent(
+				session.job,
+				session.actions,
+				this.tui,
+				this.theme,
+				(action) => {
+					this.closeModal(this.actions);
+					if (!action) this.restoreOrigin();
+					else {
+						this.selectedActionId = action;
+						void this.openAction(action);
+					}
+				},
+				this.selectedActionId,
+			);
+			this.showModal(this.actions, ACTION_MODAL_OPTIONS);
+		}
+		this.tui.requestRender();
+	}
+
+	private restoreOrigin(outcome?: SchedulerActionOutcome): void {
+		this.closeModal();
+		this.operationAbort?.abort();
+		this.operationAbort = undefined;
+		this.busy = undefined;
+		this.text?.dispose();
+		this.text = undefined;
+		this.review = undefined;
+		this.actions = undefined;
+		this.actionSession = undefined;
+		this.selectedActionId = undefined;
+		if (outcome) {
+			const status = { message: outcome.message, color: outcome.status } as const;
+			this.detailDashboard = outcome.dashboard;
+			this.dashboard.update(outcome.dashboard, status);
+			if (this.returnToDetail && this.detail && outcome.detail) this.detail.update(outcome.detail, status);
+			else if (this.returnToDetail && !outcome.detail) {
+				this.detail?.dispose();
+				this.detail = undefined;
+				this.detailId = undefined;
+				this.returnToDetail = false;
+			}
+		}
+		if (!this.returnToDetail) this.dashboard.resume();
+		this.tui.requestRender();
+	}
+
+	private beginBusy(label: string, cancel: () => void): AbortController {
+		const abort = new AbortController();
+		this.operationAbort = abort;
+		this.busy = new SchedulerBusyComponent(label, this.tui, this.theme, () => {
+			abort.abort();
+			cancel();
+		});
+		this.showModal(this.busy, BUSY_MODAL_OPTIONS);
+		this.tui.requestRender();
+		return abort;
+	}
+
+	private finishBusy(abort: AbortController): void {
+		if (this.operationAbort === abort) {
+			this.operationAbort = undefined;
+			this.closeModal(this.busy);
+			this.busy = undefined;
+		}
+		if (!this.disposed) this.tui.requestRender();
+	}
+
+	private showModal(component: Component, options: OverlayOptions): void {
+		this.closeModal();
+		this.modalComponent = component;
+		this.modalHandle = this.tui.showOverlay?.(component, options);
+		this.tui.requestRender();
+	}
+
+	private closeModal(component?: Component): void {
+		if (component && this.modalComponent !== component) return;
+		const handle = this.modalHandle;
+		this.modalHandle = undefined;
+		this.modalComponent = undefined;
+		handle?.hide();
+	}
+
+	private setOriginStatus(message: string, color: "success" | "error"): void {
+		if (this.returnToDetail && this.detail) this.detail.setStatus({ message, color });
+		else this.dashboard.setStatus(message, color);
+		this.tui.requestRender();
+	}
+
+	private errorMessage(error: unknown): string {
+		return error instanceof Error ? error.message : String(error);
 	}
 }
 
-export interface SchedulerTextSnapshot {
-	title: string;
-	text: string;
-	complete: boolean;
-}
 
 export class SchedulerTextComponent implements Component {
 	private scroll = 0;

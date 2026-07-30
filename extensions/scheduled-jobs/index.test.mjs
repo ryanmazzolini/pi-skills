@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { run as runCli } from "../../bin/scheduled-jobs.mjs";
 import scheduledJobsExtension, {
+  actionReviewText,
   applicableActions,
   createSchedulerCommandHandler,
   discoverManifestPaths,
@@ -68,6 +69,40 @@ function uiHarness(selectors = [], confirmations = [], customs = []) {
         editorTexts.push(text);
       },
     },
+  };
+}
+
+const componentTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
+
+async function waitForRender(component, pattern, attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const rendered = component.render(120).join("\n");
+    if (pattern.test(rendered)) return rendered;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.match(component.render(120).join("\n"), pattern);
+}
+
+async function openAction(component, index) {
+  component.handleInput("a");
+  await waitForRender(component, /Actions for /);
+  for (let step = 0; step < index; step++) component.handleInput("j");
+  component.handleInput("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+function driveScheduler(interaction) {
+  return async (factory) => {
+    let outcome;
+    const component = factory(
+      { terminal: { rows: 24 }, requestRender() {} },
+      componentTheme,
+      {},
+      (value) => { outcome = value; },
+    );
+    await interaction(component);
+    component.dispose();
+    return outcome;
   };
 }
 
@@ -165,7 +200,7 @@ function scriptedDependencies({ inspect = inspection(), operation } = {}) {
     dependencies: {
       env: { HOME: "/tmp/home", XDG_CONFIG_HOME: "/tmp/config" },
       exists: (filePath) => filePath === "/tmp/config/pi-scheduler/jobs.json",
-      async exec(command, args) {
+      async exec(command, args, options) {
         calls.push({ command, args });
         if (command === "git") return commandResult("", 1);
         const cliArgs = args;
@@ -176,7 +211,7 @@ function scriptedDependencies({ inspect = inspection(), operation } = {}) {
           });
         }
         if (cliArgs[0] === "inspect") return cliSuccess({ command: "inspect", ...inspect });
-        if (operation) return operation(cliArgs, calls);
+        if (operation) return operation(cliArgs, calls, options);
         return cliSuccess({ command: cliArgs[0], result: {} });
       },
     },
@@ -294,67 +329,129 @@ test("maps only applicable actions from health, drift, and enablement", () => {
   );
 });
 
-test("shows the exact reviewed contract and cancellation performs no mutation", async () => {
-  const scripted = scriptedDependencies();
-  const harness = uiHarness([], [false], [
-    { kind: "job", id: "global:test:job" },
-    { kind: "actions" },
-    "install",
-    { kind: "close" },
-  ]);
-  const handler = createSchedulerCommandHandler(scripted.dependencies);
-
-  await handler("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
-
-  assert.equal(scripted.calls.some((call) => call.args.includes("install")), false);
-  assert.equal(harness.confirms.length, 1);
-  assert.match(harness.confirms[0].message, /Scope: global:test:job/);
-  assert.match(harness.confirms[0].message, /Argv: \["\/usr\/local\/bin\/node","\/tmp\/job\.mjs"\]/);
-  assert.match(harness.confirms[0].message, /Adapter: launchd \(auto\)/);
-  assert.match(harness.confirms[0].message, /Digest: candidate-digest/);
-  assert.match(harness.confirms[0].message, /required node: \/usr\/local\/bin\/node/);
+test("shows the exact executable contract for install and run reviews", () => {
+  for (const [job, action] of [
+    [declaredJob(), "install"],
+    [declaredJob({ inspection: inspection({ installed: true }) }), "run"],
+  ]) {
+    const review = actionReviewText(job, action);
+    assert.match(review, /Scope: global:test:job/);
+    assert.match(review, /Argv: \["\/usr\/local\/bin\/node","\/tmp\/job\.mjs"\]/);
+    assert.match(review, /Adapter: launchd \(auto\)/);
+    assert.match(review, /required node: \/usr\/local\/bin\/node/);
+  }
 });
 
-test("refuses mutation when the exact contract cannot fit in the bounded confirmation", async () => {
+test("refuses a mutation review when the exact contract exceeds its bound", () => {
   const oversized = inspection();
   oversized.candidate.contract.argv = [
     "/usr/local/bin/node",
     ...Array.from({ length: 7 }, (_, index) => `${index}-${"x".repeat(4_000)}`),
   ];
-  const scripted = scriptedDependencies({ inspect: oversized });
-  const harness = uiHarness([], [], [
-    { kind: "job", id: "global:test:job" },
-    { kind: "actions" },
-    "install",
-    { kind: "close" },
-  ]);
-  const handler = createSchedulerCommandHandler(scripted.dependencies);
-
-  await handler("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
-
-  assert.equal(harness.confirms.length, 0);
-  assert.equal(scripted.calls.some((call) => call.args.includes("install")), false);
-  assert.equal(harness.notices.some((notice) => notice.level === "error" && /too large to display completely/.test(notice.message)), true);
+  assert.throws(
+    () => actionReviewText(declaredJob({ inspection: oversized }), "install"),
+    /too large to display completely/,
+  );
 });
 
-test("update confirmation shows installed and candidate identities and their changed fields", async () => {
-  const scripted = scriptedDependencies({ inspect: inspection({ installed: true, drift: true, revision: 4 }) });
-  const harness = uiHarness([], [false], [
-    { kind: "job", id: "global:test:job" },
-    { kind: "actions" },
+test("update review shows installed and candidate identities and their changed fields", () => {
+  const review = actionReviewText(
+    declaredJob({ inspection: inspection({ installed: true, drift: true, revision: 4 }) }),
     "update",
-    { kind: "close" },
-  ]);
-  const handler = createSchedulerCommandHandler(scripted.dependencies);
+  );
+  assert.match(review, /Lifecycle revision: 4/);
+  assert.match(review, /Installed digest: installed-digest/);
+  assert.match(review, /Candidate digest: candidate-digest/);
+  assert.match(review, /Changed fields: description/);
+});
 
-  await handler("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
+test("pause, resume, and removal use concise lifecycle reviews", () => {
+  const current = declaredJob({ inspection: inspection({ installed: true, revision: 4 }) });
+  for (const action of ["enable", "disable", "remove"]) {
+    const review = actionReviewText(current, action);
+    assert.equal(review.split("\n").length <= 3, true);
+    assert.doesNotMatch(review, /Task:|Source:|Installed snapshot:|Argv:|Working directory:|Resolved commands:|Timeout:/);
+  }
+});
 
-  assert.equal(harness.confirms.length, 1);
-  assert.match(harness.confirms[0].message, /Lifecycle revision: 4/);
-  assert.match(harness.confirms[0].message, /Installed digest: installed-digest/);
-  assert.match(harness.confirms[0].message, /Candidate digest: candidate-digest/);
-  assert.match(harness.confirms[0].message, /Changed fields: description/);
-  assert.equal(scripted.calls.some((call) => call.args.includes("update")), false);
+test("cancelling an in-place review performs no mutation or overlay replacement", async () => {
+  const scripted = scriptedDependencies();
+  const harness = uiHarness([], [], [driveScheduler(async (component) => {
+    await openAction(component, 1);
+    await waitForRender(component, /Scope: global:test:job/);
+    component.handleInput("q");
+    assert.match(component.render(120).join("\n"), /Actions for test:job/);
+    component.handleInput("q");
+    assert.match(component.render(120).join("\n"), /\[Tasks\]/);
+    component.handleInput("q");
+  })]);
+
+  await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
+
+  assert.equal(scripted.calls.some((call) => call.args.includes("install")), false);
+  assert.equal(harness.customCalls.length, 1);
+  assert.equal(harness.confirms.length, 0);
+});
+
+test("cancelling an applying mutation returns without waiting on a refresh", async () => {
+  const scripted = scriptedDependencies({
+    operation: (args, _calls, options) => args[0] === "install"
+      ? new Promise((resolve) => options.signal.addEventListener("abort", () => resolve(cliFailure("CLI_FAILURE", "cancelled")), { once: true }))
+      : cliSuccess({ command: args[0], result: {} }),
+  });
+  const harness = uiHarness([], [], [driveScheduler(async (component) => {
+    await openAction(component, 1);
+    await waitForRender(component, /Scope: global:test:job/);
+    component.handleInput("\r");
+    await waitForRender(component, /Install disabled…/);
+    component.handleInput("q");
+    await waitForRender(component, /Cancellation requested\. Scheduler state may have changed/);
+    component.handleInput("q");
+  })]);
+
+  await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
+
+  assert.equal(scripted.calls.filter((call) => call.args[0] === "overview").length, 2);
+  assert.equal(harness.customCalls.length, 1);
+});
+
+test("cancelling a mutation returns even when its refresh ignores abort and later resolves", async () => {
+  const scripted = scriptedDependencies({
+    operation: (args) => cliSuccess({ command: args[0], result: {} }),
+  });
+  let overviewCount = 0;
+  let resolveRefresh;
+  const originalExec = scripted.dependencies.exec;
+  scripted.dependencies.exec = async (command, args, options) => {
+    if (args[0] === "overview") {
+      overviewCount++;
+      if (overviewCount === 3) {
+        scripted.calls.push({ command, args });
+        return new Promise((resolve) => { resolveRefresh = resolve; });
+      }
+    }
+    return originalExec(command, args, options);
+  };
+  const harness = uiHarness([], [], [driveScheduler(async (component) => {
+    await openAction(component, 1);
+    await waitForRender(component, /Scope: global:test:job/);
+    component.handleInput("\r");
+    while (overviewCount < 3) await new Promise((resolve) => setImmediate(resolve));
+    component.handleInput("q");
+    await waitForRender(component, /Cancellation requested\. Scheduler state may have changed/);
+    resolveRefresh(cliSuccess({
+      command: "overview",
+      result: { generatedAt: "2026-07-25T09:00:01.000Z", jobs: [overviewJob()] },
+    }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(component.render(120).join("\n"), /Cancellation requested\. Scheduler state may have changed/);
+    component.handleInput("q");
+  })]);
+
+  await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
+
+  assert.equal(overviewCount, 3);
+  assert.equal(harness.customCalls.length, 1);
 });
 
 test("refuses the command without UI before discovery or CLI execution", async () => {
@@ -389,54 +486,52 @@ test("a stale mutation refreshes and redisplays the changed state", async () => 
     }
     return originalExec(command, args);
   };
-  const harness = uiHarness([], [true], [
-    { kind: "job", id: "global:test:job" },
-    { kind: "actions" },
-    "install",
-    { kind: "close" },
-  ]);
+  const harness = uiHarness([], [], [driveScheduler(async (component) => {
+    await openAction(component, 1);
+    assert.match(component.render(120).join("\n"), /Digest: old-digest/);
+    component.handleInput("\r");
+    await waitForRender(component, /Scheduler state changed\. Review the refreshed task/);
+    component.handleInput("q");
+  })]);
   const handler = createSchedulerCommandHandler(scripted.dependencies);
 
   await handler("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
   assert.equal(inspectCount, 2);
-  assert.equal(scripted.calls.filter((call) => call.args.includes("overview")).length, 4);
-  assert.equal(harness.notices.some((notice) => notice.level === "warning" && /refreshed/.test(notice.message)), true);
+  assert.equal(scripted.calls.filter((call) => call.args.includes("overview")).length, 3);
+  assert.equal(harness.customCalls.length, 1);
+  assert.equal(harness.confirms.length, 0);
 });
 
-test("refreshes the current task inside one detail component", async () => {
+test("refreshes the current task inside one workspace component", async () => {
   const scripted = scriptedDependencies();
-  const componentTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
-  const harness = uiHarness([], [], [
-    { kind: "job", id: "global:test:job" },
-    async (factory) => {
-      let outcome;
-      const component = factory({ terminal: { rows: 24 }, requestRender() {} }, componentTheme, {}, (value) => { outcome = value; });
-      await component.refreshData();
-      component.handleInput("q");
-      component.dispose();
-      return outcome;
-    },
-    { kind: "close" },
-  ]);
+  const harness = uiHarness([], [], [driveScheduler(async (component) => {
+    component.handleInput("\r");
+    await waitForRender(component, /Scheduler \/ test:job/);
+    component.handleInput("r");
+    await waitForRender(component, /Updated/);
+    component.handleInput("q");
+    component.handleInput("q");
+  })]);
 
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
-  assert.equal(scripted.calls.filter((call) => call.args[0] === "overview").length, 4);
+  assert.equal(scripted.calls.filter((call) => call.args[0] === "overview").length, 3);
   assert.equal(scripted.calls.filter((call) => call.args[0] === "inspect").length, 2);
-  assert.equal(harness.customCalls.length, 3);
-  assert.deepEqual(harness.customOptions, Array.from({ length: 3 }, () => ({
+  assert.equal(harness.customCalls.length, 1);
+  assert.deepEqual(harness.customOptions, [{
     overlay: true,
     overlayOptions: { anchor: "center", width: "90%", maxHeight: "85%", margin: 1 },
-  })));
+  }]);
 });
 
 test("prefills an evidence-based diagnostic request for the open agent", async () => {
-  const scripted = scriptedDependencies();
-  const harness = uiHarness([], [], [
-    { kind: "job", id: "global:test:job" },
-    { kind: "diagnose" },
-  ]);
+  const scripted = scriptedDependencies({ inspect: inspection({ installed: true, health: "unavailable" }) });
+  const harness = uiHarness([], [], [driveScheduler(async (component) => {
+    component.handleInput("\r");
+    await waitForRender(component, /Needs attention/);
+    component.handleInput("d");
+  })]);
 
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
@@ -465,6 +560,8 @@ test("diagnostic prompts preserve failures as bounded data", () => {
 test("does not hand a disappeared task to the agent", async () => {
   let overviewCount = 0;
   const scripted = scriptedDependencies();
+  const blocked = overviewJob();
+  blocked.candidateError = { code: "ENVIRONMENT", message: "missing command" };
   const originalExec = scripted.dependencies.exec;
   scripted.dependencies.exec = async (command, args) => {
     if (args[0] === "overview") {
@@ -472,16 +569,16 @@ test("does not hand a disappeared task to the agent", async () => {
       scripted.calls.push({ command, args });
       return cliSuccess({
         command: "overview",
-        result: { generatedAt: "2026-07-25T09:00:00.000Z", jobs: overviewCount < 3 ? [overviewJob()] : [] },
+        result: { generatedAt: "2026-07-25T09:00:00.000Z", jobs: overviewCount < 3 ? [blocked] : [] },
       });
     }
     return originalExec(command, args);
   };
-  const harness = uiHarness([], [], [
-    { kind: "job", id: "global:test:job" },
-    { kind: "diagnose" },
-    { kind: "close" },
-  ]);
+  const harness = uiHarness([], [], [driveScheduler(async (component) => {
+    component.handleInput("\r");
+    await waitForRender(component, /Needs attention/);
+    component.handleInput("d");
+  })]);
 
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
@@ -504,15 +601,16 @@ test("reloads the current task before opening details", async () => {
     }
     throw new Error("stale task should not be inspected");
   };
-  const harness = uiHarness([], [], [
-    { kind: "job", id: "global:test:job" },
-    { kind: "close" },
-  ]);
+  const harness = uiHarness([], [], [driveScheduler(async (component) => {
+    component.handleInput("\r");
+    await waitForRender(component, /selected scheduler task changed or disappeared/i);
+    component.handleInput("q");
+  })]);
 
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
-  assert.equal(overviewCount, 3);
-  assert.equal(harness.notices.some((notice) => notice.level === "warning" && /changed or disappeared/.test(notice.message)), true);
+  assert.equal(overviewCount, 2);
+  assert.equal(harness.notices.length, 0);
   assert.equal(scripted.calls.some((call) => call.args[0] === "inspect"), false);
 });
 
@@ -629,14 +727,21 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
       }
     },
   };
-  const harness = uiHarness([], [true, true, true, true, true], [
-    ...["install", "run", "enable", "disable", "remove"].flatMap((action) => [
-      { kind: "job", id: "global:test:job" },
-      { kind: "actions" },
-      action,
-    ]),
-    { kind: "close" },
-  ]);
+  const harness = uiHarness([], [], [driveScheduler(async (component) => {
+    const perform = async (index, reviewPattern, outcomePattern, selectDanger = false) => {
+      await openAction(component, index);
+      await waitForRender(component, reviewPattern);
+      if (selectDanger) component.handleInput("\x1b[D");
+      component.handleInput("\r");
+      await waitForRender(component, outcomePattern);
+    };
+    await perform(1, /Scope: global:test:job/, /Install disabled completed/);
+    await perform(2, /execute the installed code/, /Started global:test:job/);
+    await perform(3, /Paused\s+→\s+Active/, /Scheduled runs resumed\. Next run/);
+    await perform(3, /Active\s+→\s+Paused/, /Scheduled runs paused/);
+    await perform(4, /Paused\s+→\s+Draft/, /Installed schedule removed/, true);
+    component.handleInput("q");
+  })]);
   const handler = createSchedulerCommandHandler(dependencies);
 
   await handler("", { cwd: value.env.HOME, hasUI: true, mode: "tui", ui: harness.ui });
@@ -644,8 +749,8 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
   for (const command of ["install", "start", "enable", "disable", "remove"]) {
     assert.equal(cliCommands.includes(command), true, `missing ${command}`);
   }
-  assert.equal(harness.notices.filter((notice) => notice.level === "info" && /completed/i.test(notice.message)).length, 4);
-  assert.equal(harness.notices.some((notice) => notice.level === "info" && /Started/.test(notice.message)), true);
+  assert.equal(harness.customCalls.length, 1);
+  assert.equal(harness.confirms.length, 0);
   assert.equal(fs.existsSync(path.join(value.env.XDG_STATE_HOME, "pi-scheduler", "jobs")), true);
   const remaining = fs.readdirSync(path.join(value.env.XDG_STATE_HOME, "pi-scheduler", "jobs"));
   assert.deepEqual(remaining, []);
