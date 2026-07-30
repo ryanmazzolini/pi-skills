@@ -530,8 +530,15 @@ export class SchedulerDashboardComponent implements Component {
 			...(paused ? [`${paused} paused`] : []),
 			...(issues ? [`${issues} need${issues === 1 ? "s" : ""} attention`] : []),
 		].join(" · ");
-		const refreshState = this.refreshing ? ` ${this.theme.fg("warning", "↻ refreshing")}` : "";
-		const chrome = [this.theme.fg("borderMuted", "─".repeat(Math.max(1, width - 2)))];
+		const refreshState = this.refreshing ? this.theme.fg("warning", " · ↻ refreshing") : "";
+		const headerCore = `${this.theme.bold("Scheduler")} ${this.theme.fg("dim", "· ")}${tabs}`;
+		const headerMeta = `${this.theme.fg("dim", `· ${counts}`)}${refreshState}`;
+		const header = `${headerCore} ${headerMeta}`;
+		const wrapsHeader = visibleWidth(header) > Math.max(1, width - 2);
+		const chrome = [
+			...(wrapsHeader ? wrapTextWithAnsi(`${this.theme.fg("dim", counts)}${refreshState}`, Math.max(1, width - 2)) : []),
+			this.theme.fg("borderMuted", "─".repeat(Math.max(1, width - 2))),
+		];
 		if (this.workspaceStatus) chrome.push(this.theme.fg(this.workspaceStatus.color, this.workspaceStatus.message));
 		if (this.refreshFailure) {
 			chrome.push(`${this.theme.fg("error", "!")} Refresh failed · ${this.theme.fg("error", this.refreshFailure)}`);
@@ -546,7 +553,7 @@ export class SchedulerDashboardComponent implements Component {
 			if (this.data.jobs.length > 0) chrome.push("");
 		}
 		return renderSchedulerPanel(width, this.tui, this.theme, {
-			header: `${this.theme.bold("Scheduler")} ${this.theme.fg("dim", "· ")}${tabs} ${this.theme.fg("dim", `· ${counts}`)}${refreshState}`,
+			header: wrapsHeader ? headerCore : header,
 			chrome,
 			body: (bodyWidth, bodyHeight) => this.tab === "tasks" ? this.taskLines(bodyWidth, bodyHeight) : this.runLines(bodyWidth, bodyHeight),
 			compactBody: (bodyWidth) => this.tab === "tasks" ? this.taskLines(bodyWidth, 1) : this.runLines(bodyWidth, 1),
@@ -673,20 +680,37 @@ export class SchedulerDashboardComponent implements Component {
 			if (lines.length > 0) lines.push({ text: "" });
 			lines.push({ text: this.theme.bold(label) });
 			for (const { job, taskIndex } of jobs) {
-				lines.push({ text: this.taskLine(job, taskIndex === this.selectedTask, width), taskIndex });
+				lines.push(...this.taskRows(job, taskIndex === this.selectedTask, width).map((text) => ({ text, taskIndex })));
 			}
 		}
 		return lines;
 	}
 
-	private taskLine(job: SchedulerJobOverview, selected: boolean, width: number): string {
+	private taskRows(job: SchedulerJobOverview, selected: boolean, width: number): string[] {
 		const state = schedulerJobState(job);
 		const marker = selected ? this.theme.fg("accent", "›") : " ";
 		const label = selected ? this.theme.fg("accent", job.key) : job.key;
 		const next = job.nextRun ? `next ${formatSchedulerTime(job.nextRun, this.now)}` : state.label.startsWith("Paused") ? "schedule paused" : state.label === "Draft" ? "not installed" : "next run unavailable";
 		const latest = job.recentRuns[0];
 		const last = latest ? `last ${runState(latest).label.toLowerCase()} ${formatSchedulerTime(latest.startedAt, this.now)}` : "no recorded runs";
-		return truncateToWidth(`${marker} ${this.theme.fg(state.color, state.icon)} ${label} ${this.theme.fg("dim", `· ${job.scope.kind} ·`)} ${this.theme.fg(state.color, state.label)} · ${humanizeSchedule(effectiveSchedule(job))} ${this.theme.fg("dim", `· ${next} · ${last}`)}`, width, "");
+		const identity = `${marker} ${this.theme.fg(state.color, state.icon)} ${label}`;
+		const status = `${this.theme.fg("dim", `· ${job.scope.kind} ·`)} ${this.theme.fg(state.color, state.label)}`;
+		const schedule = humanizeSchedule(effectiveSchedule(job));
+		const history = this.theme.fg("dim", `· ${next} · ${last}`);
+		const singleLine = `${identity} ${status} · ${schedule} ${history}`;
+		if (visibleWidth(singleLine) <= width) return [singleLine];
+
+		const rows = visibleWidth(`${identity} ${status}`) <= width
+			? [`${identity} ${status}`]
+			: [truncateToWidth(identity, width, ""), ...this.indentedRows(status, width)];
+		rows.push(...this.indentedRows(`${schedule} ${history}`, width));
+		return rows;
+	}
+
+	private indentedRows(value: string, width: number): string[] {
+		const indent = "    ";
+		if (width <= indent.length) return [truncateToWidth(value, width, "")];
+		return wrapTextWithAnsi(value, width - indent.length).map((line) => `${indent}${line}`);
 	}
 
 	private runLines(width: number, height: number): string[] {
