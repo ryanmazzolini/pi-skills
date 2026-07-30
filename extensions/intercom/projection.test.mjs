@@ -383,7 +383,8 @@ test("inbound delivery independently bounds raw traffic, projected queue memory,
 		})), true);
 	}
 	await new Promise((resolve) => setTimeout(resolve, 10));
-	const delivered = batchCalls.find((call) => call[1].triggerTurn);
+	const delivered = batchCalls.find((call) => !call[0].details?.overflow);
+	assert.equal(delivered[1].triggerTurn, false);
 	assert.equal(delivered[0].details.count, 4);
 	assertBounded(delivered[0].content, "automatic inbound batch");
 	assertBounded(delivered[0].details, "automatic inbound batch details");

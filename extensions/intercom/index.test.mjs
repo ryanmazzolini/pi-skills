@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { initTheme, SessionManager } from "@earendil-works/pi-coding-agent";
 import { appendFile, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import net from "node:net";
 import test from "node:test";
@@ -19,6 +19,8 @@ import intercomExtension, {
 } from "./index.ts";
 import { FrameDecoder, encodeFrame } from "./client.ts";
 import { connectNew, isolatedIntercom, startOwnedBroker, stopChild, waitEvent, waitFor } from "../../tests/intercom/helpers.mjs";
+
+initTheme("dark");
 
 test("registers one compatible flat intercom tool and no deferred UI or bridge surface", () => {
 	const tools = [];
@@ -43,6 +45,9 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	assert.match(tools[0].description, /routed to the peer socket/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /exact replyTo/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /status for the current Pi session ID/);
+	assert.match(tools[0].promptGuidelines.join("\n"), /Prefer durable project or work-item updates/);
+	assert.match(tools[0].promptGuidelines.join("\n"), /use intercom tail with a small limit/);
+	assert.match(tools[0].promptGuidelines.join("\n"), /do not acknowledge routine updates or receipts/);
 	assert.equal(events.some((event) => event.name === "session_start"), true);
 	assert.equal(events.some((event) => event.name === "session_shutdown"), true);
 });
@@ -96,33 +101,68 @@ test("intercom message renderer uses native expansion for compact bubbles and me
 	intercomExtension({ registerTool() {}, registerMessageRenderer: (type, renderer) => renderers.set(type, renderer), on() {}, getSessionName: () => undefined });
 	const renderer = renderers.get("intercom_message");
 	const theme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
-	const message = { content: "**📨 Intercom message**\nPi session ID: peer-1\n\n---\n\nFirst body", details: { count: 2, entries: [
+	const message = { content: "**📨 Intercom message**\nPi session ID: peer-1\n\n---\n\nFirst body", details: { count: 4, entries: [
 		{ fromSessionId: "peer-1", messageId: "ask-1", expectsReply: true, replyable: true },
 		{ fromSessionId: "peer-2", messageId: "ask-2", expectsReply: false, replyable: false },
+		{ fromSessionId: "peer-3", messageId: "ask-3", expectsReply: false, replyable: false },
+		{ fromSessionId: "peer-4", messageId: "ask-4", expectsReply: false, replyable: false },
 	], views: [
 		{ fromName: "worker", preview: "First body", previewTruncated: false },
 		{ preview: "Second body", previewTruncated: false },
+		{ preview: "Third body", previewTruncated: false },
+		{ preview: "Fourth body", previewTruncated: false },
 	] } };
-	const collapsed = renderer(message, { expanded: false }, theme).render(120).join("\n");
-	assert.match(collapsed, /2 messages/);
+	const collapsed = renderer(message, { expanded: false, outputPad: 1 }, theme).render(120).join("\n");
+	assert.match(collapsed, /4 messages/);
+	assert.match(collapsed, /… 2 more/);
+	assert.doesNotMatch(collapsed, /Third body/);
 	assert.doesNotMatch(collapsed, /Pi session ID/);
-	const expanded = renderer(message, { expanded: true }, theme).render(120).join("\n");
+	const expanded = renderer(message, { expanded: true, outputPad: 1 }, theme).render(120).join("\n");
 	assert.match(expanded, /Pi session ID: peer-1/);
 	assert.match(expanded, /First body/);
 	assert.equal(message.content.includes("First body"), true);
 
 	const single = { content: "**📨 Intercom message**\nPi session ID: peer-1\n\n---\n\nSafe preview plus hidden raw body and attachment", details: { entries: [{ fromSessionId: "peer-1", messageId: "message-1", expectsReply: false, replyable: false, attachmentCount: 1, truncated: false }], views: [{ fromName: "worker", preview: "Safe preview", previewTruncated: true }] } };
-	const singleCollapsed = renderer(single, { expanded: false }, theme).render(120).join("\n");
+	const singleCollapsed = renderer(single, { expanded: false, outputPad: 1 }, theme).render(120).join("\n");
 	assert.match(singleCollapsed, /Safe preview/);
-	assert.match(singleCollapsed, /Ctrl\+O to expand/);
+	assert.match(singleCollapsed, /to expand/);
 	assert.doesNotMatch(singleCollapsed, /hidden raw body/);
-	assert.match(renderer(single, { expanded: true }, theme).render(120).join("\n"), /hidden raw body/);
+	assert.match(renderer(single, { expanded: true, outputPad: 1 }, theme).render(120).join("\n"), /hidden raw body/);
 
 	const operationRenderer = renderers.get("intercom_operation");
-	const failure = operationRenderer({ content: "full failure", details: { operationId: "op", sequence: 1, kind: "send", state: "failed", acceptedAt: 1, targetSessionId: "peer-1", reason: "not connected" } }, { expanded: false }, theme).render(120).join("\n");
+	const failure = operationRenderer({ content: "**Intercom operation op**\n\nsend failed\n\nMessage preview:\nThe useful update", details: { operationId: "op", sequence: 1, kind: "send", state: "failed", acceptedAt: 1, targetSessionId: "peer-1", reason: "not connected" } }, { expanded: false, outputPad: 1 }, theme).render(120).join("\n");
 	assert.match(failure, /send failed/);
-	assert.match(failure, /peer-1/);
+	assert.match(failure, /message: The useful update/);
+	assert.doesNotMatch(failure, /peer-1/);
 	assert.match(failure, /not connected/);
+	assert.match(failure, /to expand/);
+	assert.match(operationRenderer({ content: "full failure with peer-1", details: { operationId: "op", sequence: 1, kind: "send", state: "failed", acceptedAt: 1, targetSessionId: "peer-1", reason: "not connected" } }, { expanded: true, outputPad: 1 }, theme).render(120).join("\n"), /peer-1/);
+});
+
+test("intercom tool rows keep messages visible while collapsing long results", () => {
+	const tools = [];
+	intercomExtension({ registerTool: (tool) => tools.push(tool), registerMessageRenderer() {}, on() {}, getSessionName: () => undefined });
+	const tool = tools[0];
+	const theme = { fg: (_color, text) => text, bold: (text) => text };
+	const args = { action: "send", to: "peer", message: "A visible update", attachments: [{ type: "context", name: "context\nforged", language: "text\u001b", content: "hidden attachment" }] };
+	const collapsedCall = tool.renderCall(args, theme, { expanded: false }).render(120).join("\n");
+	assert.match(collapsedCall, /A visible update/);
+	assert.doesNotMatch(collapsedCall, /hidden attachment/);
+	assert.match(collapsedCall, /to expand/);
+	const expandedCall = tool.renderCall(args, theme, { expanded: true }).render(120).join("\n");
+	assert.match(expandedCall, /hidden attachment/);
+	assert.match(expandedCall, /context forged/);
+	assert.doesNotMatch(expandedCall, /context\nforged|\u001b/);
+	const compactedCall = tool.renderCall({ action: "send", to: "peer", message: "first line\nsecond line" }, theme, { expanded: false }).render(120).join("\n");
+	assert.match(compactedCall, /first line second line/);
+	assert.match(compactedCall, /to expand/);
+
+	const result = { content: [{ type: "text", text: "summary line\nhidden result detail" }], details: {} };
+	const collapsedResult = tool.renderResult(result, { expanded: false, isPartial: false }, theme, { isError: false }).render(120).join("\n");
+	assert.match(collapsedResult, /summary line/);
+	assert.doesNotMatch(collapsedResult, /hidden result detail/);
+	assert.match(collapsedResult, /to expand/);
+	assert.match(tool.renderResult(result, { expanded: true, isPartial: false }, theme, { isError: false }).render(120).join("\n"), /hidden result detail/);
 });
 
 test("renders stable Pi session IDs and sanitizes self-declared identity metadata", () => {
@@ -239,20 +279,21 @@ test("bounds and coalesces inbound Pi delivery per sender and globally", async (
 	assert.equal(delivery.record(entry("peer-b", "three")), true);
 	assert.equal(delivery.record(entry("peer-c", "global-overflow")), false);
 	await new Promise((resolve) => setTimeout(resolve, 10));
-	assert.equal(calls.filter((call) => call[1].triggerTurn).length, 1);
+	assert.equal(calls.filter((call) => call[1].triggerTurn).length, 0);
 	assert.equal(calls.filter((call) => call[0].details?.overflow).length, 1);
-	assert.match(calls.find((call) => call[1].triggerTurn)[0].content, /one/);
-	assert.match(calls.find((call) => call[1].triggerTurn)[0].content, /three/);
+	const passive = calls.find((call) => !call[0].details?.overflow);
+	assert.match(passive[0].content, /one/);
+	assert.match(passive[0].content, /three/);
 	for (let index = 0; index < 100; index++) delivery.record(entry("peer-a", `flood-${index}`));
 	assert.equal(calls.length, 2);
 	delivery.settled();
 	await new Promise((resolve) => setTimeout(resolve, 10));
 	assert.ok(calls.length <= 3);
-	assert.equal(calls.filter((call) => call[1].triggerTurn).length, 1);
+	assert.equal(calls.filter((call) => call[1].triggerTurn).length, 0);
 	delivery.dispose();
 });
 
-test("replyable asks steer active work while ordinary updates remain follow-ups", async () => {
+test("replyable asks steer active work while ordinary updates wait for idle", async () => {
 	const calls = [];
 	const delivery = new InboundDelivery(
 		{ sendMessage: (...args) => calls.push(args) },
@@ -260,6 +301,7 @@ test("replyable asks steer active work while ordinary updates remain follow-ups"
 		{ ...INBOUND_DELIVERY_LIMITS, flushDelayMs: 0 },
 	);
 	const from = { id: "peer", name: "peer", cwd: "/repo", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
+	delivery.started();
 	delivery.record({
 		from,
 		message: { id: "update", timestamp: 1, content: { text: "ordinary update" } },
@@ -267,9 +309,12 @@ test("replyable asks steer active work while ordinary updates remain follow-ups"
 		replyable: false,
 	});
 	await new Promise((resolve) => setTimeout(resolve, 10));
-	assert.deepEqual(calls[0][1], { deliverAs: "followUp", triggerTurn: true });
-
+	assert.equal(calls.length, 0);
 	delivery.settled();
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	assert.deepEqual(calls[0][1], { deliverAs: "followUp", triggerTurn: false });
+
+	delivery.started();
 	delivery.record({
 		from,
 		message: { id: "question", timestamp: 2, expectsReply: true, content: { text: "question" } },
@@ -346,9 +391,9 @@ test("automatic inbound turns remain globally bounded across attacker-controlled
 		delivery.settled();
 	}
 	await new Promise((resolve) => setTimeout(resolve, 5));
-	assert.equal(calls.filter((call) => call[1].triggerTurn).length, 2);
+	assert.equal(calls.filter((call) => call[1].triggerTurn).length, 0);
 	assert.equal(calls.filter((call) => call[0].details?.overflow).length, 1);
-	assert.ok(calls.length <= 4);
+	assert.ok(calls.length <= INBOUND_DELIVERY_LIMITS.passiveBatches + 1);
 	delivery.dispose();
 });
 
@@ -746,9 +791,11 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 		sendMessage: (...args) => delivered.push(args),
 	};
 	intercomExtension(pi);
+	let idle = true;
 	const ctx = {
 		cwd: "/repo",
 		model: { id: "fixture-model" },
+		isIdle: () => idle,
 		sessionManager: { getSessionId: () => "full-pi-session-id", getSessionFile: () => undefined, getLeafId: () => null, getBranch: () => [] },
 	};
 	await handlers.get("session_start")({}, ctx);
@@ -847,6 +894,8 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.equal(windowedTail.details.truncated, true);
 	assert.equal(targetMessages, 0);
 
+	idle = false;
+	handlers.get("agent_start")({}, ctx);
 	const incoming = waitEvent(peer, "message", (_from, message) => message.content.text === "compact-outgoing-secret");
 	const sent = await execute({ action: "send", to: peerSessionId, message: "compact-outgoing-secret" });
 	await incoming;
@@ -857,6 +906,14 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.equal(sentAudit.data.targetSessionId, peerSessionId);
 	assert.equal(sentAudit.data.payloadStored, false);
 	assert.equal(JSON.stringify(sentAudit).includes("compact-outgoing-secret"), false);
+	assert.equal(delivered.some((call) => call[0].details?.operationId === sent.details.operationId), false);
+	idle = true;
+	handlers.get("agent_settled")({}, ctx);
+	const sentCompletion = await waitFor(() => delivered.find((call) =>
+		call[0].customType === "intercom_operation"
+		&& call[0].details?.operationId === sent.details.operationId), 2_000);
+	assert.match(sentCompletion[0].content, /Message preview:\ncompact-outgoing-secret/);
+	assert.deepEqual(sentCompletion[1], { deliverAs: "followUp", triggerTurn: false });
 	const operationList = await execute({ action: "operations", limit: 32 });
 	assert.ok(Buffer.byteLength(JSON.stringify(operationList.details), "utf8") <= INTERCOM_PROJECTION_MAX_BYTES);
 	assert.equal(JSON.stringify(operationList.details).includes("compact-outgoing-secret"), false);
@@ -881,6 +938,7 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	const completion = await waitFor(() => delivered.find((call) => call[0].customType === "intercom_operation" && /ask reply received/.test(call[0].content)), 2_000);
 	assert.match(completion[0].content, /答/);
 	assert.equal(JSON.stringify(completion[0].details).includes("答"), false);
+	assert.deepEqual(completion[1], { deliverAs: "followUp", triggerTurn: true });
 	const receivedAudit = audits.find((audit) => audit.type === "intercom_received");
 	assert.equal(receivedAudit.data.fromSessionId, peerSessionId);
 	assert.equal(receivedAudit.data.payloadStored, false);

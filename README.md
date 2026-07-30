@@ -108,7 +108,7 @@ Triage inspects sessions idle for at least 24 hours first. When none are confirm
 
 First Mate can sanity-check an owning session's current request and automatically authorize very-low-risk preparation such as a feature-branch commit, ordinary feature push, or draft PR. It bundles reversible decisions that still need judgment for one human response and keeps consequential choices individual. First Mate relays authority through Intercom; it does not change project files, commit work, deploy, close sessions, or perform cleanup itself.
 
-A Pi session keeps the same Intercom identity across reloads and reconnects, while its First Mate role remains runtime-scoped. First Mate is available only in Pi, not the Claude marketplace. If another session can no longer find it after restarting or reconnecting Pi, run `/skill:first-mate` again.
+A Pi session keeps the same Intercom identity across reloads and reconnects, while its First Mate role remains runtime-scoped. Intercom keeps notices and send/reply outcomes passive so they do not start acknowledgment loops; explicit asks still start a turn. Message bubbles show compact previews and use Pi's configured tool-expansion shortcut for full content. First Mate is available only in Pi, not the Claude marketplace. If another session can no longer find it after restarting or reconnecting Pi, run `/skill:first-mate` again.
 
 ## Optional tooling
 
