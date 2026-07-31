@@ -65,6 +65,7 @@ export interface RuntimeTriageResult {
 	selectedSweep: RuntimeTriageSweep;
 	tails: RuntimeTriageTail[];
 	activePeersSkipped: number;
+	firstMatePeersSkipped: number;
 	pendingPeersSkipped: number;
 	unidentifiedPeers: number;
 	ambiguousPeers: number;
@@ -247,8 +248,13 @@ export class IntercomRuntime extends EventEmitter {
 		const pendingTransportIds = new Set(pending.map((entry) => entry.from.id));
 		const peerSessions = sessions.filter((session) => session.id !== callerPeerId);
 		const sessionsByStableId = new Map<string, SessionInfo[]>();
+		let firstMatePeersSkipped = 0;
 		let unidentifiedPeers = 0;
 		for (const session of peerSessions) {
+			if (session.role === "first-mate") {
+				firstMatePeersSkipped++;
+				continue;
+			}
 			const sessionId = piSessionIdOf(session);
 			if (!sessionId) {
 				unidentifiedPeers++;
@@ -266,6 +272,7 @@ export class IntercomRuntime extends EventEmitter {
 		let pendingPeersSkipped = 0;
 		const candidates: SessionInfo[] = [];
 		for (const session of peerSessions) {
+			if (session.role === "first-mate") continue;
 			const sessionId = piSessionIdOf(session);
 			if (!sessionId) continue;
 			if (ambiguousIds.has(sessionId)) {
@@ -339,6 +346,7 @@ export class IntercomRuntime extends EventEmitter {
 			snapshotTimestamp,
 			idleThresholdMs: FIRST_MATE_TRIAGE_LIMITS.idleThresholdMs,
 			activePeersSkipped,
+			firstMatePeersSkipped,
 			unidentifiedPeers,
 			ambiguousPeers,
 		};
@@ -356,7 +364,7 @@ export class IntercomRuntime extends EventEmitter {
 						throw new Error("Target session advertisement changed before triage return");
 					}
 					const currentPresence = this.requireUniquePiSession(current, latest);
-					if (!this.samePiSession(tail.target.piSession, currentPresence) || current.status !== "idle") {
+					if (!this.samePiSession(tail.target.piSession, currentPresence) || current.status !== "idle" || current.role === "first-mate") {
 						throw new Error("Target session advertisement changed before triage return");
 					}
 				} catch (error) {
@@ -614,7 +622,7 @@ export class IntercomRuntime extends EventEmitter {
 					throw new Error("Target session advertisement changed during triage sweep");
 				}
 				const currentPresence = this.requireUniquePiSession(current, after);
-				if (!this.samePiSession(tail.target.piSession, currentPresence) || current.status !== "idle") {
+				if (!this.samePiSession(tail.target.piSession, currentPresence) || current.status !== "idle" || current.role === "first-mate") {
 					throw new Error("Target session advertisement changed during triage sweep");
 				}
 			} catch (error) {
@@ -646,7 +654,7 @@ export class IntercomRuntime extends EventEmitter {
 					throw new Error("Target session advertisement changed before triage inspection");
 				}
 				const presence = this.requireUniquePiSession(current, expectedSessions);
-				if (!result.target.piSession || presence.sessionId !== result.targetSessionId || !this.samePiSession(result.target.piSession, presence)) {
+				if (current.role === "first-mate" || !result.target.piSession || presence.sessionId !== result.targetSessionId || !this.samePiSession(result.target.piSession, presence)) {
 					throw new Error("Target session advertisement changed before triage inspection");
 				}
 				result.presence = presence;
@@ -701,7 +709,7 @@ export class IntercomRuntime extends EventEmitter {
 						throw new Error("Target session advertisement changed during triage inspection");
 					}
 					const currentPresence = this.requireUniquePiSession(current, after);
-					if (!this.samePiSession(result.presence, currentPresence)) {
+					if (!this.samePiSession(result.presence, currentPresence) || current.role === "first-mate") {
 						throw new Error("Target session advertisement changed during triage inspection");
 					}
 					if (current.status !== "idle") throw new Error("Target session became active during triage inspection");

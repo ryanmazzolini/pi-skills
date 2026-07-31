@@ -224,8 +224,9 @@ test("triage uses a strict one-hour first sweep and deterministically falls back
 	const exactHour = persistedPeer("exact", "exact", now - 60 * 60 * 1_000);
 	const unknown = persistedPeer("unknown", "unknown", null);
 	const active = persistedPeer("active", "active", now - 3 * 60 * 60 * 1_000, { status: "thinking" });
+	const otherFirstMate = persistedPeer("first-mate", "first-mate", now - 5 * 60 * 60 * 1_000, { role: "first-mate" });
 	const pending = persistedPeer("pending", "pending", now - 4 * 60 * 60 * 1_000);
-	const client = new FakeClient([{ ...peer("self", "caller"), status: "idle" }, old, exactHour, unknown, active, pending]);
+	const client = new FakeClient([{ ...peer("self", "caller"), status: "idle" }, old, exactHour, unknown, active, otherFirstMate, pending]);
 	const opened = [];
 	let verified = 0;
 	let reverified = 0;
@@ -260,6 +261,7 @@ test("triage uses a strict one-hour first sweep and deterministically falls back
 	assert.match(result.tails[0].error, /changed during fallback/);
 	assert.equal(result.pendingPeersSkipped, 1);
 	assert.equal(result.activePeersSkipped, 1);
+	assert.equal(result.firstMatePeersSkipped, 1);
 	assert.equal(result.pending.length, 1);
 	assert.equal(client.listCalls, 3);
 	assert.equal(verified, 3);

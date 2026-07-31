@@ -251,6 +251,7 @@ export interface FirstMateTriageProjectionInput {
 		error?: string;
 	}[];
 	activePeersSkipped: number;
+	firstMatePeersSkipped: number;
 	pendingPeersSkipped: number;
 	unidentifiedPeers: number;
 	ambiguousPeers: number;
@@ -297,7 +298,7 @@ export function projectFirstMateTriage(input: FirstMateTriageProjectionInput): T
 		? `incomplete (${input.omittedSessionIds} stable IDs omitted)`
 		: "complete";
 	let fixed = `**First Mate triage evidence**\nPi session ID: ${JSON.stringify(input.currentSessionId)}\nInventory: ${inventoryState}\nSnapshot: ${new Date(input.snapshotTimestamp).toISOString()}\nFirst Mate: ${firstMateState}\nFirst sweep: strictly more than ${thresholdMinutes} minutes idle\nSelected sweep: ${input.selectedSweep}`;
-	fixed += `\nSkipped: ${input.activePeersSkipped} active, ${input.pendingPeersSkipped} with pending asks, ${input.unidentifiedPeers} unidentified, ${input.ambiguousPeers} ambiguous`;
+	fixed += `\nSkipped: ${input.activePeersSkipped} active, ${input.firstMatePeersSkipped} other First Mate, ${input.pendingPeersSkipped} with pending asks, ${input.unidentifiedPeers} unidentified, ${input.ambiguousPeers} ambiguous`;
 	if (input.pending.length === 0) {
 		fixed += "\n\nNo unresolved inbound asks.";
 	} else {
