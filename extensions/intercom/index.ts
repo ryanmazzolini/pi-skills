@@ -463,6 +463,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	let bashPresenceWatcher: FSWatcher | undefined;
 	let generation = 0;
 	let roleLifecycleGeneration = 0;
+	let triageInFlight = false;
 	let piSessionId: string | undefined;
 	let model = "unknown";
 	let startedAt = 0;
@@ -636,10 +637,16 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		],
 		parameters: IntercomParams,
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
-			let triageRoleRuntime: IntercomRuntime | undefined;
-			let triageRoleLifecycleGeneration: number | undefined;
+			let introducedTriageRoleRuntime: IntercomRuntime | undefined;
+			let introducedTriageRoleLifecycleGeneration: number | undefined;
+			let ownsTriageExecution = false;
 			try {
 				validateIntercomAction(params);
+				if (params.action === "triage") {
+					if (triageInFlight) throw new Error("Intercom triage is already in progress");
+					triageInFlight = true;
+					ownsTriageExecution = true;
+				}
 				if (params.action === "status" && !runtime) {
 					const status: IntercomStatus = {
 						connected: false,
@@ -682,10 +689,12 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						const lifecycleGeneration = roleLifecycleGeneration;
 						await active.ensureConnected();
 						const roleCapability = active.client.supportsCapability(INTERCOM_ROLE_CAPABILITY);
+						const roleSessionId = active.client.sessionId;
+						const existingRole = active.client.currentRole();
 						const published = roleCapability ? await active.setRole("first-mate") : undefined;
-						if (published) {
-							triageRoleRuntime = active;
-							triageRoleLifecycleGeneration = lifecycleGeneration;
+						if (published && (active.client.sessionId !== roleSessionId || existingRole !== "first-mate")) {
+							introducedTriageRoleRuntime = active;
+							introducedTriageRoleLifecycleGeneration = lifecycleGeneration;
 						}
 						if (lifecycleGeneration !== roleLifecycleGeneration || runtime !== active) {
 							active.invalidateRoleSession("Intercom triage was superseded by a session lifecycle change");
@@ -896,16 +905,16 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 			} catch (error) {
 				const cause = error instanceof Error ? error : new Error(String(error));
 				let roleCleanupError: unknown;
-				if (params.action === "triage" && triageRoleRuntime) {
-					if (runtime === triageRoleRuntime && roleLifecycleGeneration === triageRoleLifecycleGeneration) {
+				if (params.action === "triage" && introducedTriageRoleRuntime) {
+					if (runtime === introducedTriageRoleRuntime && roleLifecycleGeneration === introducedTriageRoleLifecycleGeneration) {
 						try {
-							await triageRoleRuntime.setRole(null);
+							await introducedTriageRoleRuntime.setRole(null);
 						} catch (cleanupError) {
 							roleCleanupError = cleanupError;
-							triageRoleRuntime.invalidateRoleSession("Intercom triage failed and its First Mate role could not be cleared");
+							introducedTriageRoleRuntime.invalidateRoleSession("Intercom triage failed and its First Mate role could not be cleared");
 						}
 					} else {
-						triageRoleRuntime.invalidateRoleSession("Intercom triage failed after its session lifecycle changed");
+						introducedTriageRoleRuntime.invalidateRoleSession("Intercom triage failed after its session lifecycle changed");
 					}
 				}
 				if (params.action === "status") {
@@ -926,6 +935,8 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 					? `; First Mate role clear failed and the Intercom session was invalidated: ${errorMessage(roleCleanupError)}`
 					: "";
 				throw new Error(`Intercom ${params.action} failed: ${errorMessage(cause)}${cleanupSuffix}`, { cause });
+			} finally {
+				if (ownsTriageExecution) triageInFlight = false;
 			}
 		},
 		renderCall(args, theme, renderContext) {

@@ -879,6 +879,19 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.ok(Buffer.byteLength(triaged.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
 	assert.ok(Buffer.byteLength(JSON.stringify(triaged.details)) <= INTERCOM_PROJECTION_MAX_BYTES);
 
+	const cancelledRefreshTriage = new AbortController();
+	cancelledRefreshTriage.abort();
+	await assert.rejects(execute({ action: "triage" }, cancelledRefreshTriage.signal), /cancelled/);
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === "first-mate");
+	assert.equal((await execute({ action: "status" })).details.advertisingFirstMate, true);
+
+	await execute({ action: "role" });
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
+	const firstConcurrentTriage = execute({ action: "triage" });
+	await assert.rejects(execute({ action: "triage" }), /already in progress/);
+	await firstConcurrentTriage;
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === "first-mate");
+
 	await execute({ action: "role" });
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
 	const cancelledTriage = new AbortController();
