@@ -561,10 +561,12 @@ function selectedThreadComments(
 		if (selected.size >= MAX_THREAD_COMMENTS) break;
 		selected.set(comment.id, comment);
 	}
-	const ordered = comments.filter((comment) => selected.has(comment.id)).slice(-MAX_THREAD_COMMENTS);
-	if (root && !ordered.some((comment) => comment.id === root.id)) ordered.unshift(root);
+	const replyLimit = root ? MAX_THREAD_COMMENTS - 1 : MAX_THREAD_COMMENTS;
+	const orderedReplies = comments
+		.filter((comment) => comment.id !== root?.id && selected.has(comment.id))
+		.slice(-replyLimit);
 	return {
-		comments: ordered.slice(0, MAX_THREAD_COMMENTS),
+		comments: root ? [root, ...orderedReplies] : orderedReplies,
 		omitted: comments.length - Math.min(comments.length, MAX_THREAD_COMMENTS),
 	};
 }
