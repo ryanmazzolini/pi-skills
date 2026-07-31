@@ -15,9 +15,9 @@ Before creating files, inspect breadth-first and propose:
 - in-scope uncertainty that is not precise enough to become a decision
 - explicit boundaries
 
-Keep fog visible instead of inventing premature milestones. A question is sharp when it can be stated precisely, even if it cannot yet be answered. Route sharp questions to inspection, research, Align, or Prototype as appropriate.
+Keep fog visible instead of inventing premature milestones. A question is sharp when it can be stated precisely, even if it cannot yet be answered. Route sharp questions to inspection, research, Align, or Prototype as appropriate. Keep any pending research and retained result linked from the sharp question it blocks. When bounded prerequisite work must make a decision possible, route it through Align and link the sharp question to Align's pending checklist and retained result. Prerequisite work does not deliver the destination.
 
-Ask for one semantic confirmation of the roadmap, milestone boundaries, and dependency graph. That confirmation authorizes the corresponding workflow files. It does not authorize tickets, workspace movement, branches, worktrees, implementation dispatch, commits, pushes, pull requests, releases, or deployments.
+Ask for one semantic confirmation of the roadmap, milestone boundaries, and dependency graph. That confirmation authorizes the corresponding workflow files. It does not authorize prerequisite work, tickets, workspace movement, branches, worktrees, implementation dispatch, commits, pushes, pull requests, releases, or deployments.
 
 ## Keep the parent low resolution
 
@@ -56,6 +56,8 @@ A milestone may use several PR worktrees without becoming several milestones whe
 Graduating a milestone records its durable `Result` in its own index. The parent derives completion from that result and may add a one-line outcome gist with the link; the milestone remains the detailed authority. Recompute the ready set and recommend the next useful benefit.
 
 When a parent decision or dependency changes, identify affected milestone descendants. Do not rewrite their alignments or plans from the parent. Route each affected milestone through its own Ship state, returning to Align when human judgment is needed.
+
+After any decision, research result, prototype verdict, or prerequisite that affects roadmap fog, revisit only that parent fog. Remove any patch that has become specifiable, add the resulting sharp question, and propose any newly justified milestone or boundary change under the confirmation rule below. Keep milestone detail in its milestone work item.
 
 Get confirmation before materially changing the graph or boundaries: adding, reparenting, merging, abandoning, or rescoping a milestone; changing a dependency that changes the route; or invalidating approved milestone behavior. Mechanical link repair and derived completion refresh after approved delivery do not need another confirmation.
 
