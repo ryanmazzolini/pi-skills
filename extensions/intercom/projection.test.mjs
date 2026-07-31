@@ -262,6 +262,7 @@ test("First Mate triage projection fairly bounds a multi-peer evidence sweep", (
 		pending: [],
 		tails,
 		activePeersSkipped: 2,
+		firstMatePeersSkipped: 1,
 		pendingPeersSkipped: 1,
 		unidentifiedPeers: 0,
 		ambiguousPeers: 0,
@@ -270,6 +271,7 @@ test("First Mate triage projection fairly bounds a multi-peer evidence sweep", (
 	assert.equal(projected.bytes, Buffer.byteLength(projected.text, "utf8"));
 	assert.equal(projected.truncated, true);
 	assert.match(projected.text, /Inventory: complete/);
+	assert.match(projected.text, /1 other First Mate/);
 	for (let index = 0; index < tails.length; index++) {
 		assert.match(projected.text, new RegExp(`pi-triage-${index}`));
 		assert.match(projected.text, new RegExp(`latest-${index}`));

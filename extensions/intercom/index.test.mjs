@@ -861,9 +861,18 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "tail-r", revision: 1 },
 	});
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 1);
+	const coordinatorTriage = await execute({ action: "triage" });
+	assert.equal(coordinatorTriage.details.advertisingFirstMate, true);
+	assert.equal(coordinatorTriage.details.selectedSweep, "none");
+	assert.equal(coordinatorTriage.details.firstMatePeersSkipped, 1);
+	assert.equal(coordinatorTriage.details.tails.length, 0);
+
+	assert.equal(await peer.setRole(null), undefined);
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.role === undefined);
 	const triaged = await execute({ action: "triage" });
 	assert.equal(triaged.details.advertisingFirstMate, true);
 	assert.equal(triaged.details.selectedSweep, "older");
+	assert.equal(triaged.details.firstMatePeersSkipped, 0);
 	assert.equal(triaged.details.tails.length, 1);
 	assert.equal(triaged.details.tails[0].targetSessionId, peerSessionId);
 	assert.match(triaged.content[0].text, /tail question/);
