@@ -810,7 +810,7 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	t.after(() => handlers.get("session_shutdown")());
 	// Pi creates a fresh ExtensionContext for each tool execution; exercising that contract
 	// prevents a tool call from poisoning later asynchronous inbound delivery.
-	const execute = (params) => tools[0].execute("call", params, undefined, undefined, { ...ctx });
+	const execute = (params, signal) => tools[0].execute("call", params, signal, undefined, { ...ctx });
 	const connectedStatus = await execute({ action: "status" });
 	assert.equal(connectedStatus.details.connected, true);
 	assert.equal(connectedStatus.details.tailCapability, true);
@@ -878,6 +878,15 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.match(triaged.content[0].text, /tail question/);
 	assert.ok(Buffer.byteLength(triaged.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
 	assert.ok(Buffer.byteLength(JSON.stringify(triaged.details)) <= INTERCOM_PROJECTION_MAX_BYTES);
+
+	await execute({ action: "role" });
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
+	const cancelledTriage = new AbortController();
+	cancelledTriage.abort();
+	await assert.rejects(execute({ action: "triage" }, cancelledTriage.signal), /cancelled/);
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
+	assert.equal((await execute({ action: "status" })).details.advertisingFirstMate, false);
+
 	const beforeTail = await readFile(sessionPath);
 	const tailed = await execute({
 		action: "tail",
