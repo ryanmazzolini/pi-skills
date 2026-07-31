@@ -1,6 +1,6 @@
 # Peer inspection and contact
 
-Read this when the human explicitly asks to inspect, tail, send, ask, or reply to one connected peer. A direction to send triage's fixed status request to its displayed candidate list routes to [confirmed stale-session recon](recon.md); do not reinterpret that direction as one-peer inspection.
+Read this when the human explicitly asks to inspect, tail, send, ask, or reply to one connected peer. Handle automatic Resume and status actions only through current [connected-session triage](triage.md) evidence.
 
 ## Select and revalidate the peer
 
@@ -28,15 +28,21 @@ Return the useful finding and next choice. Mention that project files were not c
 
 ## Contact explicitly
 
-Ordinary contact requires the human to request the operation and supply the content or question. Two bounded exceptions use retained triage evidence: [decision handling](decision-handling.md) may auto-authorize a qualifying very-low-risk action or relay the human's response to a displayed decision bundle, and [confirmed stale-session recon](recon.md) may send its fixed status request after confirmation. Neither exception authorizes different content, new peers, or another operation.
+Ordinary contact requires the human to request the operation and supply the content or question. Current triage evidence permits only three exceptions:
+
+- [Decision handling](decision-handling.md) may authorize qualifying very-low-risk work or relay an exact human decision.
+- [Connected-session triage](triage.md) may send its fixed Resume instruction.
+- [Automatic stale-session recon](recon.md) may ask its fixed status question.
+
+These exceptions authorize only their fixed content and validated peers.
 
 Before asking for status or context that may already exist, tail the selected peer with `limit: 4` and `tailProjectionBytes: 4096`, omitting a local scan override so the streaming reader can reach recent conversation behind large records. Follow an explicit durable project pointer when one is available. If either source answers the question, return that evidence without contacting the peer. An exact human-requested notice or reply may proceed directly after identity revalidation.
 
 Use:
 
 - `tail` for read-only recent context
-- `send` for a notice that needs no answer
-- `ask` for a question where a reply is useful but not immediately blocking
+- `send` for a one-way message the recipient should process; it starts the recipient turn but does not await a response
+- `ask` for a question where a correlated reply is useful; it starts the recipient turn and awaits that reply asynchronously
 - `reply` for one exact inbound ask; use its exact ask ID, and call `pending` without extra fields when disambiguation is needed
 
 An accepted `send`, `ask`, or `reply` receipt means queued. Report the terminal outcome as routed or failed, and call peer handling unconfirmed until later evidence shows otherwise. Continue independent work after a background operation when possible; wait once only when its answer blocks the current request. Do not send an acknowledgment for a notice, progress update, or routing receipt.

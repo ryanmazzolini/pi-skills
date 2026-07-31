@@ -44,13 +44,14 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 
 	const attachment = { type: "snippet", name: "answer.ts", content: "export const answer = 42", language: "typescript" };
 	const received = waitEvent(bob, "message", (_from, message) => message.id === "attachment-1");
-	assert.deepEqual(await alice.send(bob.sessionId, { messageId: "attachment-1", text: "review", attachments: [attachment] }, undefined, undefined, bob.currentPiSessionId()), {
+	assert.deepEqual(await alice.send(bob.sessionId, { messageId: "attachment-1", text: "review", attachments: [attachment], triggerTurn: true }, undefined, undefined, bob.currentPiSessionId()), {
 		id: "attachment-1",
 		delivered: true,
 	});
 	const [from, message] = await received;
 	assert.equal(from.id, alice.sessionId);
 	assert.equal(from.piSessionId, alice.currentPiSessionId());
+	assert.equal(message.triggerTurn, true);
 	assert.deepEqual(message.content.attachments, [attachment]);
 	const failed = await alice.send("missing-peer", { text: "lost" });
 	assert.equal(failed.delivered, false);

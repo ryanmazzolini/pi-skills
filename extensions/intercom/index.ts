@@ -19,6 +19,7 @@ import {
 	compactSessionName,
 	formatAttachments,
 	projectAskReply,
+	projectFirstMateTriage,
 	projectInboundEntry,
 	projectPendingEntries,
 	projectSession,
@@ -41,7 +42,7 @@ const AttachmentParams = Type.Object({
 }, { additionalProperties: false });
 
 export const IntercomParams = Type.Object({
-	action: Type.String({ enum: ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"] }),
+	action: Type.String({ enum: ["list", "triage", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"] }),
 	role: Type.Optional(Type.String({ enum: ["first-mate"], description: "Publish first-mate for the role action; omit to clear the current role" })),
 	to: Type.Optional(Type.String({ minLength: 1, description: "Target Pi session name or ID; may narrow reply selection" })),
 	message: Type.Optional(Type.String({ minLength: 1, description: "Message text for send, ask, or reply" })),
@@ -107,9 +108,10 @@ export function deliverInboundMessage(pi: Pick<ExtensionAPI, "sendMessage">, ent
 	const details = { count: 1, entries: [projected.details], views: [projected.view], truncated: projected.truncated };
 	assertProjectionBound(details, "Inbound intercom details");
 	const requestsReply = entry.replyable && entry.message.expectsReply === true;
+	const startsTurn = entry.message.triggerTurn === true || requestsReply;
 	pi.sendMessage(
 		{ customType: "intercom_message", content: projected.text, display: true, details },
-		{ deliverAs: requestsReply ? "steer" : "followUp", triggerTurn: requestsReply },
+		{ deliverAs: requestsReply ? "steer" : "followUp", triggerTurn: startsTurn },
 	);
 }
 
@@ -121,7 +123,6 @@ export const INBOUND_DELIVERY_LIMITS = Object.freeze({
 	globalBytes: 1024 * 1024,
 	pendingMessages: 16,
 	pendingBytes: INTERCOM_PROJECTION_MAX_BYTES,
-	automaticTurns: 4,
 	passiveBatches: 4,
 	flushDelayMs: 10,
 });
@@ -138,10 +139,8 @@ export class InboundDelivery {
 	private readonly senderBudgets = new Map<string, SenderBudget>();
 	private globalMessages = 0;
 	private globalBytes = 0;
-	private automaticTurns = 0;
 	private passiveBatches = 0;
 	private overflowNotified = false;
-	private passiveBatchDelivered = false;
 	private turnOutstanding = false;
 	private agentActive = false;
 	private pending: InboundProjection[] = [];
@@ -191,7 +190,6 @@ export class InboundDelivery {
 			|| this.pending.length + 1 > this.limits.pendingMessages
 			|| (this.pending.length > 0 && this.pendingBytes + separatorBytes + projected.bytes > projectionLimit)
 			|| projectionBytes(candidateDetails) > INTERCOM_PROJECTION_MAX_BYTES
-			|| (this.automaticTurns >= this.limits.automaticTurns && this.passiveBatchDelivered)
 		) {
 			this.noticeOverflow();
 			return false;
@@ -234,9 +232,7 @@ export class InboundDelivery {
 		this.senderBudgets.clear();
 		this.globalMessages = 0;
 		this.globalBytes = 0;
-		this.automaticTurns = 0;
 		this.passiveBatches = 0;
-		this.passiveBatchDelivered = false;
 	}
 
 	private scheduleFlush(): void {
@@ -250,8 +246,9 @@ export class InboundDelivery {
 	private flush(): void {
 		if (this.disposed || this.turnOutstanding || this.pending.length === 0) return;
 		const requestsReply = this.pending.some((entry) => entry.details.expectsReply && entry.details.replyable);
-		// Pi processes a streaming follow-up as another model turn even when triggerTurn is false.
-		// Hold passive traffic until agent_settled so it can be appended without continuing the run.
+		const startsTurn = this.pending.some((entry) => entry.details.triggerTurn || (entry.details.expectsReply && entry.details.replyable));
+		// A one-way send starts a recipient turn but should not interrupt work already in progress.
+		// Hold it until agent_settled; asks continue to steer immediately.
 		if (this.agentActive && !requestsReply) return;
 		const entries = this.pending;
 		this.pending = [];
@@ -265,7 +262,7 @@ export class InboundDelivery {
 		};
 		assertProjectionBound(content, "Inbound intercom batch");
 		assertProjectionBound(details, "Inbound intercom batch details");
-		if (!requestsReply) {
+		if (!startsTurn) {
 			if (this.passiveBatches >= this.limits.passiveBatches) {
 				this.noticeOverflow();
 				return;
@@ -277,24 +274,11 @@ export class InboundDelivery {
 			);
 			return;
 		}
-		if (this.automaticTurns < this.limits.automaticTurns) {
-			this.automaticTurns++;
-			this.turnOutstanding = true;
-			this.pi.sendMessage(
-				{ customType: "intercom_message", content, display: true, details },
-				{ deliverAs: "steer", triggerTurn: true },
-			);
-			return;
-		}
-		if (!this.passiveBatchDelivered) {
-			this.passiveBatchDelivered = true;
-			this.pi.sendMessage(
-				{ customType: "intercom_message", content, display: true, details },
-				{ deliverAs: "nextTurn", triggerTurn: false },
-			);
-			return;
-		}
-		this.noticeOverflow();
+		this.turnOutstanding = true;
+		this.pi.sendMessage(
+			{ customType: "intercom_message", content, display: true, details },
+			{ deliverAs: requestsReply ? "steer" : "followUp", triggerTurn: true },
+		);
 	}
 
 	private noticeOverflow(): void {
@@ -303,7 +287,7 @@ export class InboundDelivery {
 		this.pi.sendMessage(
 			{
 				customType: "intercom_message",
-				content: "**Intercom overflow notice**\n\nExcess inbound peer traffic was dropped or deferred by local count, byte, sender, and automatic-turn limits. Pending asks that fit the inbox bound remain available through `intercom({ action: \"pending\" })`.",
+				content: "**Intercom overflow notice**\n\nExcess inbound peer traffic was dropped or deferred by local count, byte, sender, and projection limits. Pending asks that fit the inbox bound remain available through `intercom({ action: \"pending\" })`.",
 				display: true,
 				details: { overflow: true },
 			},
@@ -366,7 +350,12 @@ function boundedOperationSnapshots(snapshots: IntercomOperationSnapshot[], limit
 	return { snapshots: selected, truncated: selected.length < snapshots.length };
 }
 
-export function boundedSessionIdentityDetails(sessions: readonly SessionInfo[], current: SessionInfo, projectedTruncated: boolean) {
+export function boundedSessionIdentityDetails(
+	sessions: readonly SessionInfo[],
+	current: SessionInfo,
+	projectedTruncated: boolean,
+	maximumBytes = INTERCOM_PROJECTION_MAX_BYTES,
+) {
 	const identified = sessions.filter((session) => piSessionIdOf(session) !== undefined);
 	const selectedBrokerIds = new Set<string>([current.id]);
 	const build = () => {
@@ -393,7 +382,7 @@ export function boundedSessionIdentityDetails(sessions: readonly SessionInfo[], 
 	for (const session of identified) {
 		if (selectedBrokerIds.has(session.id)) continue;
 		selectedBrokerIds.add(session.id);
-		if (projectionBytes(build()) > INTERCOM_PROJECTION_MAX_BYTES) selectedBrokerIds.delete(session.id);
+		if (projectionBytes(build()) > maximumBytes) selectedBrokerIds.delete(session.id);
 	}
 	return build();
 }
@@ -474,6 +463,7 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	let bashPresenceWatcher: FSWatcher | undefined;
 	let generation = 0;
 	let roleLifecycleGeneration = 0;
+	let triageInFlight = false;
 	let piSessionId: string | undefined;
 	let model = "unknown";
 	let startedAt = 0;
@@ -631,12 +621,13 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "intercom",
 		label: "Intercom",
-		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send, ask, and reply accept bounded background operations and automatically deliver terminal results; successful delivery means routed to the peer socket, not peer processing. Passive messages and send/reply outcomes do not start agent turns; explicit asks do. tail reads a bounded confirmed snapshot from an active persisted Pi session without messaging it and accepts an optional text-message limit. role synchronously publishes or clears the ephemeral First Mate role when the broker advertises support; list discovers peers, roles, stable Pi session IDs, and available conversational timestamps; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports the current Pi session ID, connectivity, capabilities, and startup diagnostics.",
-		promptSnippet: "List, tail, message, ask, reply, or publish the First Mate role for local Pi sessions",
+		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send wakes a recipient with a one-way message; ask wakes a recipient and awaits a correlated response; reply answers a pending ask. These bounded background operations deliver terminal routing results automatically, and successful delivery means routed to the peer socket, not peer processing. Their send/reply outcomes remain passive. triage publishes the ephemeral First Mate role when supported and returns one deterministic bounded evidence sweep. tail reads one confirmed persisted-session snapshot. list discovers peers, roles, stable Pi session IDs, and conversational timestamps; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports connection and capability diagnostics.",
+		promptSnippet: "Triage, list, tail, send, ask, reply, or publish the First Mate role for local Pi sessions",
 		promptGuidelines: [
 			"intercom send, ask, and reply return receipts immediately and deliver terminal results automatically; continue independent work instead of polling operations.",
+			"Use send for a one-way message that the recipient should process, ask when a correlated response is useful, and reply to answer a pending ask.",
 			"Use intercom status for the current Pi session ID and intercom list to discover other sessions.",
-			"Use intercom role with role first-mate only when the user invokes the First Mate skill; omit role to clear it. Role support is broker-capability gated and role state is cleared by session lifecycle changes or disconnects.",
+			"Use intercom triage only during an invoked First Mate workflow; it publishes the role when supported and returns the bounded evidence sweep. Use role with role first-mate only when that workflow explicitly needs role recovery; omit role to clear it.",
 			"Prefer durable project or work-item updates for routine progress and outcomes. Use intercom only when a live peer needs information or action before it can read that durable record.",
 			"Before asking a peer for status or context, use intercom tail with a small limit and increase it only when needed. Contact the peer only when the tail and durable project record do not answer the question.",
 			"Treat intercom notices and routing receipts as one-way. Reply only to an explicit ask or when new information or action is required; do not acknowledge routine updates or receipts.",
@@ -646,8 +637,16 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		],
 		parameters: IntercomParams,
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+			let introducedTriageRoleRuntime: IntercomRuntime | undefined;
+			let introducedTriageRoleLifecycleGeneration: number | undefined;
+			let ownsTriageExecution = false;
 			try {
 				validateIntercomAction(params);
+				if (params.action === "triage") {
+					if (triageInFlight) throw new Error("Intercom triage is already in progress");
+					triageInFlight = true;
+					ownsTriageExecution = true;
+				}
 				if (params.action === "status" && !runtime) {
 					const status: IntercomStatus = {
 						connected: false,
@@ -685,6 +684,107 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 							? `Published First Mate role for Pi session ID ${JSON.stringify(result.sessionId)}.`
 							: `Cleared First Mate role for Pi session ID ${JSON.stringify(result.sessionId)}.`;
 						return { content: [{ type: "text" as const, text }], details };
+					}
+					case "triage": {
+						const lifecycleGeneration = roleLifecycleGeneration;
+						await active.ensureConnected();
+						const roleCapability = active.client.supportsCapability(INTERCOM_ROLE_CAPABILITY);
+						const roleSessionId = active.client.sessionId;
+						const existingRole = active.client.currentRole();
+						const published = roleCapability ? await active.setRole("first-mate") : undefined;
+						if (published && (active.client.sessionId !== roleSessionId || existingRole !== "first-mate")) {
+							introducedTriageRoleRuntime = active;
+							introducedTriageRoleLifecycleGeneration = lifecycleGeneration;
+						}
+						if (lifecycleGeneration !== roleLifecycleGeneration || runtime !== active) {
+							active.invalidateRoleSession("Intercom triage was superseded by a session lifecycle change");
+							throw new Error("Intercom triage was superseded by a session lifecycle change");
+						}
+						const result = await active.triage(signal);
+						if (lifecycleGeneration !== roleLifecycleGeneration || runtime !== active) {
+							active.invalidateRoleSession("Intercom triage was superseded by a session lifecycle change");
+							throw new Error("Intercom triage was superseded by a session lifecycle change");
+						}
+						const currentSessionId = piSessionIdOf(result.current);
+						if (!currentSessionId) throw new Error("Current Intercom registration is missing its Pi session ID");
+						if (published && published.sessionId !== currentSessionId) {
+							throw new Error("Published First Mate role does not match the triage inventory");
+						}
+						const firstMateSessionIds = result.sessions.flatMap((session) => {
+							const sessionId = piSessionIdOf(session);
+							return session.role === "first-mate" && sessionId ? [sessionId] : [];
+						});
+						if (published && !firstMateSessionIds.includes(published.sessionId)) {
+							throw new Error("Published First Mate role is missing from the triage inventory");
+						}
+						const identity = boundedSessionIdentityDetails(result.sessions, result.current, false, 8 * 1024);
+						const projected = projectFirstMateTriage({
+							currentSessionId,
+							inventoryTruncated: identity.truncated,
+							omittedSessionIds: identity.omittedSessionIds,
+							snapshotTimestamp: result.snapshotTimestamp,
+							idleThresholdMs: result.idleThresholdMs,
+							selectedSweep: result.selectedSweep,
+							roleCapability,
+							firstMateSessionIds,
+							pending: result.pending,
+							tails: result.tails,
+							activePeersSkipped: result.activePeersSkipped,
+							firstMatePeersSkipped: result.firstMatePeersSkipped,
+							pendingPeersSkipped: result.pendingPeersSkipped,
+							unidentifiedPeers: result.unidentifiedPeers,
+							ambiguousPeers: result.ambiguousPeers,
+						});
+						const detailsBase = {
+							...identity,
+							roleCapability,
+							advertisingFirstMate: firstMateSessionIds.includes(currentSessionId),
+							inventoryTruncated: identity.truncated,
+							snapshotTimestamp: result.snapshotTimestamp,
+							idleThresholdMs: result.idleThresholdMs,
+							selectedSweep: result.selectedSweep,
+							pendingCount: result.pending.length,
+							activePeersSkipped: result.activePeersSkipped,
+							firstMatePeersSkipped: result.firstMatePeersSkipped,
+							pendingPeersSkipped: result.pendingPeersSkipped,
+							unidentifiedPeers: result.unidentifiedPeers,
+							ambiguousPeers: result.ambiguousPeers,
+						};
+						const compactTails: Array<Record<string, unknown>> = [];
+						let tailsTruncated = false;
+						for (const tail of result.tails) {
+							const candidate = {
+								targetSessionId: tail.targetSessionId,
+								...(tail.advertisedLastConversationalTimestamp === undefined
+									? {}
+									: { advertisedLastConversationalTimestamp: tail.advertisedLastConversationalTimestamp }),
+								...(tail.snapshot ? { lastConversationalTimestamp: tail.snapshot.lastConversationalTimestamp } : {}),
+								tailAvailable: tail.snapshot !== undefined,
+								error: tail.error !== undefined,
+								truncated: tail.snapshot
+									? tail.snapshot.truncated || tail.snapshot.historyTruncated || tail.snapshot.outcomeEventsTruncated || tail.snapshot.ignoredFinalFragment
+									: false,
+							};
+							const candidateDetails = {
+								...detailsBase,
+								tails: [...compactTails, candidate],
+								tailsTruncated: false,
+								truncated: identity.truncated || projected.truncated,
+							};
+							if (projectionBytes(candidateDetails) > INTERCOM_PROJECTION_MAX_BYTES) {
+								tailsTruncated = true;
+								break;
+							}
+							compactTails.push(candidate);
+						}
+						const details = {
+							...detailsBase,
+							tails: compactTails,
+							tailsTruncated,
+							truncated: identity.truncated || projected.truncated || tailsTruncated,
+						};
+						assertCompactRecord(details, "Intercom triage details");
+						return { content: [{ type: "text" as const, text: projected.text }], details };
 					}
 					case "list": {
 						const sessions = await active.list();
@@ -804,6 +904,19 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 				}
 			} catch (error) {
 				const cause = error instanceof Error ? error : new Error(String(error));
+				let roleCleanupError: unknown;
+				if (params.action === "triage" && introducedTriageRoleRuntime) {
+					if (runtime === introducedTriageRoleRuntime && roleLifecycleGeneration === introducedTriageRoleLifecycleGeneration) {
+						try {
+							await introducedTriageRoleRuntime.setRole(null);
+						} catch (cleanupError) {
+							roleCleanupError = cleanupError;
+							introducedTriageRoleRuntime.invalidateRoleSession("Intercom triage failed and its First Mate role could not be cleared");
+						}
+					} else {
+						introducedTriageRoleRuntime.invalidateRoleSession("Intercom triage failed after its session lifecycle changed");
+					}
+				}
 				if (params.action === "status") {
 					const status: IntercomStatus = {
 						connected: false,
@@ -818,7 +931,12 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 					};
 					return { content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nPi session ID: ${status.sessionId ?? "none"}\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nFirst Mate role capability: Unavailable\nFirst Mate role advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${cause.message}` }], details: status };
 				}
-				throw new Error(`Intercom ${params.action} failed: ${errorMessage(cause)}`, { cause });
+				const cleanupSuffix = roleCleanupError
+					? `; First Mate role clear failed and the Intercom session was invalidated: ${errorMessage(roleCleanupError)}`
+					: "";
+				throw new Error(`Intercom ${params.action} failed: ${errorMessage(cause)}${cleanupSuffix}`, { cause });
+			} finally {
+				if (ownsTriageExecution) triageInFlight = false;
 			}
 		},
 		renderCall(args, theme, renderContext) {

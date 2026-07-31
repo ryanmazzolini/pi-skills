@@ -31,6 +31,7 @@ export interface CompactInboundDetails {
 	timestamp: number;
 	receivedAt: number;
 	expectsReply: boolean;
+	triggerTurn: boolean;
 	replyable: boolean;
 	attachmentCount: number;
 	truncated: boolean;
@@ -158,6 +159,7 @@ export function compactInboundDetails(entry: InboxEntry, truncated: boolean): Co
 		timestamp: entry.message.timestamp,
 		receivedAt: entry.receivedAt,
 		expectsReply: entry.message.expectsReply === true,
+		triggerTurn: entry.message.triggerTurn === true,
 		replyable: entry.replyable,
 		attachmentCount: entry.message.content.attachments?.length ?? 0,
 		truncated,
@@ -229,6 +231,118 @@ export function projectSessionTail(
 	}
 	const text = prefix + selected.join("") + INTERCOM_TAIL_TRUNCATION_NOTICE;
 	return { text, bytes: byteLength(text), truncated: true };
+}
+
+export interface FirstMateTriageProjectionInput {
+	currentSessionId: string;
+	inventoryTruncated: boolean;
+	omittedSessionIds: number;
+	snapshotTimestamp: number;
+	idleThresholdMs: number;
+	selectedSweep: "older" | "fallback" | "none";
+	roleCapability: boolean;
+	firstMateSessionIds: readonly string[];
+	pending: readonly InboxEntry[];
+	tails: readonly {
+		target: SessionInfo;
+		targetSessionId: string;
+		advertisedLastConversationalTimestamp?: number | null;
+		snapshot?: SessionTailSnapshot;
+		error?: string;
+	}[];
+	activePeersSkipped: number;
+	firstMatePeersSkipped: number;
+	pendingPeersSkipped: number;
+	unidentifiedPeers: number;
+	ambiguousPeers: number;
+}
+
+function projectedTriageEvents(snapshot: SessionTailSnapshot, maximumBytes: number): TextProjection {
+	const sourceTruncated = snapshot.truncated || snapshot.historyTruncated || snapshot.outcomeEventsTruncated || snapshot.ignoredFinalFragment;
+	if (maximumBytes <= 0) return { text: "", bytes: 0, truncated: sourceTruncated || snapshot.events.length > 0 };
+	const parts = snapshot.events.map((event) => {
+		if (event.kind === "user") return `\n\n**User**\n${sanitizeTailText(event.text)}`;
+		if (event.kind === "assistant") return `\n\n**Assistant**\n${sanitizeTailText(event.text)}`;
+		if (event.kind === "tool") return `\n\nTool ${JSON.stringify(truncateUtf8(sanitizeSelfDeclaredMetadata(event.name), 256))}: ${event.outcome}`;
+		return `\n\nUser Bash: ${event.outcome}`;
+	});
+	const complete = parts.join("");
+	if (byteLength(complete) <= maximumBytes) {
+		return { text: complete, bytes: byteLength(complete), truncated: sourceTruncated };
+	}
+	const fullNotice = "\n\n[Triage tail text truncated to the shared projection ceiling.]";
+	const notice = truncateUtf8(fullNotice, maximumBytes);
+	let remaining = Math.max(0, maximumBytes - byteLength(notice));
+	const selected: string[] = [];
+	for (let index = parts.length - 1; index >= 0; index--) {
+		const part = parts[index]!;
+		if (byteLength(part) > remaining) {
+			if (selected.length === 0 && remaining > 0) selected.unshift(truncateUtf8(part, remaining));
+			break;
+		}
+		selected.unshift(part);
+		remaining -= byteLength(part);
+	}
+	const text = `${selected.join("")}${notice}`;
+	return { text, bytes: byteLength(text), truncated: true };
+}
+
+export function projectFirstMateTriage(input: FirstMateTriageProjectionInput): TextProjection {
+	const thresholdMinutes = input.idleThresholdMs / 60_000;
+	const firstMateState = !input.roleCapability
+		? "role capability unavailable"
+		: input.firstMateSessionIds.length === 1 && input.firstMateSessionIds[0] === input.currentSessionId
+			? "unique role verified"
+			: `${input.firstMateSessionIds.length} advertised First Mate roles`;
+	const inventoryState = input.inventoryTruncated || input.omittedSessionIds > 0
+		? `incomplete (${input.omittedSessionIds} stable IDs omitted)`
+		: "complete";
+	let fixed = `**First Mate triage evidence**\nPi session ID: ${JSON.stringify(input.currentSessionId)}\nInventory: ${inventoryState}\nSnapshot: ${new Date(input.snapshotTimestamp).toISOString()}\nFirst Mate: ${firstMateState}\nFirst sweep: strictly more than ${thresholdMinutes} minutes idle\nSelected sweep: ${input.selectedSweep}`;
+	fixed += `\nSkipped: ${input.activePeersSkipped} active, ${input.firstMatePeersSkipped} other First Mate, ${input.pendingPeersSkipped} with pending asks, ${input.unidentifiedPeers} unidentified, ${input.ambiguousPeers} ambiguous`;
+	if (input.pending.length === 0) {
+		fixed += "\n\nNo unresolved inbound asks.";
+	} else {
+		fixed += "\n\n**Pending asks:**";
+		for (const entry of input.pending) {
+			const sessionId = piSessionIdOf(entry.from);
+			const preview = truncateUtf8(sanitizeSelfDeclaredMetadata(entry.message.content.text), 128);
+			fixed += `\n- Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable"} · message ${JSON.stringify(entry.message.id)} · ${preview}`;
+		}
+	}
+
+	const bases = input.tails.map((tail) => {
+		const advertised = tail.advertisedLastConversationalTimestamp == null
+			? "unavailable"
+			: new Date(tail.advertisedLastConversationalTimestamp).toISOString();
+		const confirmed = tail.snapshot?.lastConversationalTimestamp == null
+			? "unavailable"
+			: new Date(tail.snapshot.lastConversationalTimestamp).toISOString();
+		const sourceFacts = tail.snapshot
+			? `${tail.snapshot.truncated ? "; earlier eligible text omitted" : ""}${tail.snapshot.historyTruncated ? "; earlier branch history unscanned" : ""}${tail.snapshot.outcomeEventsTruncated ? "; older outcomes omitted" : ""}${tail.snapshot.ignoredFinalFragment ? "; incomplete final entry omitted" : ""}`
+			: "";
+		const error = tail.error ? `\nInspection error: ${truncateUtf8(sanitizeSelfDeclaredMetadata(tail.error), 256)}` : "";
+		return `\n\n**Peer tail**\nPi session ID: ${JSON.stringify(tail.targetSessionId)}\nSelf-declared name: ${declared(compactSessionName(tail.target.name).value)}\nAdvertised conversational timestamp: ${advertised}\nConfirmed conversational timestamp: ${confirmed}${sourceFacts}${error}`;
+	});
+	const required = fixed + bases.join("");
+	if (byteLength(required) > INTERCOM_PROJECTION_MAX_BYTES) {
+		const notice = `\n\n[Triage peer metadata exceeded the projection ceiling; ${input.tails.length} selected tails could not be shown safely.]`;
+		const text = truncateUtf8(fixed, INTERCOM_PROJECTION_MAX_BYTES - byteLength(notice)) + notice;
+		return { text, bytes: byteLength(text), truncated: true };
+	}
+
+	const snapshots = input.tails.filter((tail) => tail.snapshot !== undefined).length;
+	const remaining = INTERCOM_PROJECTION_MAX_BYTES - byteLength(required);
+	const perTailBytes = snapshots === 0 ? 0 : Math.min(INTERCOM_TAIL_PROJECTION_MIN_BYTES, Math.floor(remaining / snapshots));
+	let truncated = false;
+	let text = fixed;
+	for (const [index, tail] of input.tails.entries()) {
+		text += bases[index]!;
+		if (!tail.snapshot) continue;
+		const events = projectedTriageEvents(tail.snapshot, perTailBytes);
+		text += events.text;
+		truncated ||= events.truncated;
+	}
+	return { text, bytes: byteLength(text), truncated };
 }
 
 function sessionSegments(session: SessionInfo, current: SessionInfo, prefix = "", optionalIdentity = false): ProjectionSegment[] {

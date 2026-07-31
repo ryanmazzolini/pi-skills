@@ -99,6 +99,7 @@ function isMessage(value) {
 		&& finiteNumber(value.timestamp)
 		&& (value.replyTo === undefined || boundedString(value.replyTo, LIMITS.id, true))
 		&& (value.expectsReply === undefined || typeof value.expectsReply === "boolean")
+		&& (value.triggerTurn === undefined || typeof value.triggerTurn === "boolean")
 		&& value.content && typeof value.content === "object" && !Array.isArray(value.content)
 		&& boundedString(value.content.text, LIMITS.messageText, true)
 		&& (value.content.attachments === undefined || areAttachments(value.content.attachments));
