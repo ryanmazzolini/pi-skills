@@ -31,10 +31,12 @@ test("message and attachment envelopes are bounded without changing valid legacy
 		timestamp: Date.now(),
 		replyTo: "request-1",
 		expectsReply: true,
+		triggerTurn: true,
 		content: { text: "hello", attachments: [{ type: "file", name: "a.txt", content: "body" }] },
 	};
 	assert.equal(isMessage(valid), true);
 	assert.equal(isMessage({ ...valid, id: "", replyTo: "", content: { text: "", attachments: [{ type: "file", name: "", content: "" }] } }), true);
+	assert.equal(isMessage({ ...valid, triggerTurn: "yes" }), false);
 	assert.equal(isMessage({ ...valid, content: { text: "x".repeat(INTERCOM_LIMITS.maxMessageTextBytes + 1) } }), false);
 	assert.equal(isMessage({ ...valid, content: { text: "ok", attachments: Array.from({ length: INTERCOM_LIMITS.maxAttachments + 1 }, () => ({ type: "file", name: "a", content: "b" })) } }), false);
 	assert.equal(isMessage({ ...valid, content: { text: "ok", attachments: [{ type: "url", name: "a", content: "b" }] } }), false);

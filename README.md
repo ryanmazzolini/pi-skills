@@ -102,13 +102,15 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 ## First Mate
 
-Start First Mate with `/skill:first-mate` when you want a compact view of your open Pi sessions. It reports how many peers it can see and stays idle until you ask it to triage, inspect a session, contact one, or help with a focused blocker.
+Start First Mate with `/skill:first-mate` to triage your open Pi sessions immediately. One deterministic Intercom action publishes the role, inventories peers and pending asks, and gathers the bounded session tails needed for the current sweep.
 
-Triage inspects sessions idle for at least 24 hours first. When none are confirmed, it falls back to newer sessions. It processes bounded pages automatically, collapses sessions that need no interaction, and returns clear next steps only for sessions worth your attention.
+Triage inspects sessions idle for more than one hour first. When none are confirmed, it falls back to newer and unknown-age idle sessions. It resumes clearly unfinished work, requests read-only status from qualifying stale sessions, collapses sessions that need no interaction, and returns only useful outcomes and human-owned choices.
 
 First Mate can sanity-check an owning session's current request and automatically authorize very-low-risk preparation such as a feature-branch commit, ordinary feature push, or draft PR. It bundles reversible decisions that still need judgment for one human response and keeps consequential choices individual. First Mate relays authority through Intercom; it does not change project files, commit work, deploy, close sessions, or perform cleanup itself.
 
-A Pi session keeps the same Intercom identity across reloads and reconnects, while its First Mate role remains runtime-scoped. Intercom keeps notices and send/reply outcomes passive so they do not start acknowledgment loops; explicit asks still start a turn. Message bubbles show compact previews and use Pi's configured tool-expansion shortcut for full content. First Mate is available only in Pi, not the Claude marketplace. If another session can no longer find it after restarting or reconnecting Pi, run `/skill:first-mate` again.
+A Pi session keeps the same Intercom identity across reloads and reconnects, while its First Mate role remains runtime-scoped. When another First Mate is already active, a new invocation stops before contacting peers and asks whether to take over in the current session.
+
+An explicit Intercom `send` starts the recipient turn without awaiting a response; `ask` starts a turn and awaits a correlated reply. Routing receipts and send/reply outcomes remain passive so they do not create acknowledgment loops. Message bubbles show compact previews and use Pi's configured tool-expansion shortcut for full content. First Mate is available only in Pi, not the Claude marketplace. If another session can no longer find it after restarting or reconnecting Pi, run `/skill:first-mate` again.
 
 ## Optional tooling
 
