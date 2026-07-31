@@ -636,6 +636,8 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 		],
 		parameters: IntercomParams,
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+			let triageRoleRuntime: IntercomRuntime | undefined;
+			let triageRoleLifecycleGeneration: number | undefined;
 			try {
 				validateIntercomAction(params);
 				if (params.action === "status" && !runtime) {
@@ -681,6 +683,10 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 						await active.ensureConnected();
 						const roleCapability = active.client.supportsCapability(INTERCOM_ROLE_CAPABILITY);
 						const published = roleCapability ? await active.setRole("first-mate") : undefined;
+						if (published) {
+							triageRoleRuntime = active;
+							triageRoleLifecycleGeneration = lifecycleGeneration;
+						}
 						if (lifecycleGeneration !== roleLifecycleGeneration || runtime !== active) {
 							active.invalidateRoleSession("Intercom triage was superseded by a session lifecycle change");
 							throw new Error("Intercom triage was superseded by a session lifecycle change");
@@ -889,6 +895,19 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 				}
 			} catch (error) {
 				const cause = error instanceof Error ? error : new Error(String(error));
+				let roleCleanupError: unknown;
+				if (params.action === "triage" && triageRoleRuntime) {
+					if (runtime === triageRoleRuntime && roleLifecycleGeneration === triageRoleLifecycleGeneration) {
+						try {
+							await triageRoleRuntime.setRole(null);
+						} catch (cleanupError) {
+							roleCleanupError = cleanupError;
+							triageRoleRuntime.invalidateRoleSession("Intercom triage failed and its First Mate role could not be cleared");
+						}
+					} else {
+						triageRoleRuntime.invalidateRoleSession("Intercom triage failed after its session lifecycle changed");
+					}
+				}
 				if (params.action === "status") {
 					const status: IntercomStatus = {
 						connected: false,
@@ -903,7 +922,10 @@ export default function intercomExtension(pi: ExtensionAPI): void {
 					};
 					return { content: [{ type: "text" as const, text: `**Intercom Status:**\nConnected: No\nPi session ID: ${status.sessionId ?? "none"}\nActive sessions: unknown\nTail capability: Unavailable\nPersisted session advertised: No\nFirst Mate role capability: Unavailable\nFirst Mate role advertised: No\nPending outgoing asks: 0\nPending inbound asks: 0\nError: ${cause.message}` }], details: status };
 				}
-				throw new Error(`Intercom ${params.action} failed: ${errorMessage(cause)}`, { cause });
+				const cleanupSuffix = roleCleanupError
+					? `; First Mate role clear failed and the Intercom session was invalidated: ${errorMessage(roleCleanupError)}`
+					: "";
+				throw new Error(`Intercom ${params.action} failed: ${errorMessage(cause)}${cleanupSuffix}`, { cause });
 			}
 		},
 		renderCall(args, theme, renderContext) {
