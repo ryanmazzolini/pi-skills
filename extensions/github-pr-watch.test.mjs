@@ -74,6 +74,12 @@ function latestActiveTimer(fixture, delayMs) {
   return timer;
 }
 
+async function abandonLeaseSocket(lease, lockPath) {
+  const [entry] = await fs.readdir(lockPath);
+  await new Promise((resolve) => lease.server.close(resolve));
+  return entry;
+}
+
 function fakeLease() {
   return {
     acquisitions: [],
@@ -801,12 +807,111 @@ test("file lease release preserves a path replaced after acquisition", async (t)
   await lease.acquire(parsePullRequestUrl(PR_URL), "session-1");
   const [fileName] = await fs.readdir(directory);
   const lockPath = path.join(directory, fileName);
-  await fs.rm(lockPath);
-  await fs.writeFile(lockPath, JSON.stringify({ sessionId: "session-1", pid: process.pid, createdAt: new Date().toISOString() }));
+  await fs.rm(lockPath, { recursive: true });
+  await fs.mkdir(lockPath);
+  await fs.writeFile(path.join(lockPath, "replacement"), "not this lease");
 
   await lease.release();
 
-  assert.equal(await fs.readFile(lockPath, "utf8").then(() => true, () => false), true);
+  assert.equal(await fs.stat(lockPath).then((entry) => entry.isDirectory(), () => false), true);
+});
+
+test("file leases reject same-session reacquisition until the current owner releases", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-watch-lease-same-session-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const pr = parsePullRequestUrl(PR_URL);
+  const first = new FileWatchLease(directory);
+  const second = new FileWatchLease(directory);
+
+  await first.acquire(pr, "session-1");
+  await assert.rejects(() => second.acquire(pr, "session-1"), /already watched/);
+  await first.release();
+  await second.acquire(pr, "session-1");
+  await second.release();
+});
+
+test("file leases hold fresh malformed files and recover them after the writer grace period", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-watch-lease-malformed-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const pr = parsePullRequestUrl(PR_URL);
+  const initial = new FileWatchLease(directory);
+  await initial.acquire(pr, "session-1");
+  const [fileName] = await fs.readdir(directory);
+  const lockPath = path.join(directory, fileName);
+  const [ownerFile] = await fs.readdir(lockPath);
+  await fs.rm(path.join(lockPath, ownerFile));
+  const now = Date.now();
+
+  const fresh = new FileWatchLease(directory, () => now, () => false);
+  await assert.rejects(() => fresh.acquire(pr, "session-2"), /already watched/);
+
+  const staleTime = new Date(now - 60_000);
+  await fs.utimes(lockPath, staleTime, staleTime);
+  const recovered = new FileWatchLease(directory, () => now, () => false);
+  await recovered.acquire(pr, "session-2");
+  await recovered.release();
+  await initial.release();
+});
+
+test("concurrent stale lease recovery leaves exactly one owner", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-watch-lease-concurrent-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const pr = parsePullRequestUrl(PR_URL);
+  const initial = new FileWatchLease(directory);
+  await initial.acquire(pr, "session-dead");
+  const [fileName] = await fs.readdir(directory);
+  const lockPath = path.join(directory, fileName);
+  await abandonLeaseSocket(initial, lockPath);
+  const pidAlive = (pid) => pid === process.pid;
+  const first = new FileWatchLease(directory, Date.now, pidAlive);
+  const second = new FileWatchLease(directory, Date.now, pidAlive);
+
+  const results = await Promise.allSettled([
+    first.acquire(pr, "session-1"),
+    second.acquire(pr, "session-2"),
+  ]);
+
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+  await first.release();
+  await second.release();
+  await initial.release();
+});
+
+test("file leases recover an abandoned owner socket even when its recorded PID exists", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-watch-lease-abandoned-socket-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const pr = parsePullRequestUrl(PR_URL);
+  const initial = new FileWatchLease(directory);
+  await initial.acquire(pr, "session-old");
+  const [fileName] = await fs.readdir(directory);
+  const lockPath = path.join(directory, fileName);
+  await abandonLeaseSocket(initial, lockPath);
+  const replacement = new FileWatchLease(directory, Date.now, () => true);
+
+  await replacement.acquire(pr, "session-new");
+
+  await replacement.release();
+  await initial.release();
+});
+
+test("file leases recover an aged partial file from the pre-directory implementation", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-watch-lease-legacy-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const pr = parsePullRequestUrl(PR_URL);
+  const initial = new FileWatchLease(directory);
+  await initial.acquire(pr, "session-1");
+  const [fileName] = await fs.readdir(directory);
+  const lockPath = path.join(directory, fileName);
+  await initial.release();
+  await fs.writeFile(lockPath, "{partial");
+  const now = Date.now();
+  const staleTime = new Date(now - 60_000);
+  await fs.utimes(lockPath, staleTime, staleTime);
+
+  const recovered = new FileWatchLease(directory, () => now, () => false);
+  await recovered.acquire(pr, "session-2");
+  await recovered.release();
 });
 
 test("file leases reject live competing sessions and recover a dead owner", async (t) => {
@@ -819,6 +924,8 @@ test("file leases reject live competing sessions and recover a dead owner", asyn
   await first.acquire(pr, "session-1");
   await assert.rejects(() => competing.acquire(pr, "session-2"), /already watched/);
 
+  const [fileName] = await fs.readdir(directory);
+  await abandonLeaseSocket(first, path.join(directory, fileName));
   const staleRecovery = new FileWatchLease(directory, () => 3, () => false);
   await staleRecovery.acquire(pr, "session-2");
   await staleRecovery.release();

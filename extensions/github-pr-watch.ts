@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readFile, rm } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, mkdir, open, readFile, readdir, rm, rmdir, unlink } from "node:fs/promises";
+import { createConnection, createServer, type Server } from "node:net";
 import { join } from "node:path";
 import {
 	getAgentDir,
@@ -25,6 +26,8 @@ const MAX_THREAD_BODY_BYTES = 4 * 1024;
 const MAX_DIFF_BYTES = 4 * 1024;
 const MAX_THREAD_COMMENTS = 10;
 const MAX_SEEN_FINGERPRINTS = 2_000;
+const MALFORMED_LEASE_GRACE_MS = 30_000;
+const LEASE_SOCKET_PROBE_TIMEOUT_MS = 250;
 const AUTOMATIC_TURN_WINDOW_MS = 60 * 60_000;
 const MAX_AUTOMATIC_TURNS_PER_WINDOW = 16;
 
@@ -387,9 +390,11 @@ interface PendingDelivery {
 }
 
 interface LeaseOwner {
+	token: string;
 	sessionId: string;
 	pid: number;
 	createdAt: string;
+	port: number;
 }
 
 interface LeaseIdentity {
@@ -816,80 +821,128 @@ function latestPersistedState(ctx: ExtensionContext): PersistedWatchState | unde
 	return { ...latest, seen: normalizeFingerprints(seen) };
 }
 
-function processExists(pid: number): boolean {
-	if (!Number.isInteger(pid) || pid < 1) return false;
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return (error as NodeJS.ErrnoException).code !== "ESRCH";
-	}
+function listenLeaseServer(token: string): Promise<{ server: Server; port: number }> {
+	return new Promise((resolve, reject) => {
+		const server = createServer((socket) => socket.end(token));
+		const onError = (error: Error) => reject(error);
+		server.once("error", onError);
+		server.listen({ host: "127.0.0.1", port: 0, exclusive: true }, () => {
+			server.off("error", onError);
+			server.on("error", () => undefined);
+			const address = server.address();
+			if (!address || typeof address === "string") {
+				void closeLeaseServer(server);
+				reject(new Error("Could not determine the watch lease server port"));
+				return;
+			}
+			server.unref();
+			resolve({ server, port: address.port });
+		});
+	});
+}
+
+function closeLeaseServer(server: Server): Promise<void> {
+	if (!server.listening) return Promise.resolve();
+	return new Promise((resolve) => server.close(() => resolve()));
+}
+
+function leaseServerIsListening(owner: LeaseOwner): Promise<boolean> {
+	return new Promise((resolve) => {
+		const socket = createConnection({ host: "127.0.0.1", port: owner.port });
+		let settled = false;
+		let response = "";
+		const finish = (live: boolean) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			socket.destroy();
+			resolve(live);
+		};
+		const timer = setTimeout(() => finish(true), LEASE_SOCKET_PROBE_TIMEOUT_MS);
+		timer.unref();
+		socket.setEncoding("utf8");
+		socket.on("data", (chunk: string) => {
+			response += chunk;
+			if (!owner.token.startsWith(response) || response.length > owner.token.length) finish(false);
+		});
+		socket.once("end", () => finish(response === owner.token));
+		socket.once("error", (error: NodeJS.ErrnoException) => {
+			finish(error.code !== "ECONNREFUSED");
+		});
+	});
+}
+
+const LEASE_ENTRY_PATTERN = /^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([1-9][0-9]{0,9})\.([0-9]{1,16})\.([1-9][0-9]{0,4})$/i;
+
+type DirectoryLeaseOwner = { entry: string; owner: LeaseOwner };
+type InspectedLease =
+	| { kind: "directory"; identity: LeaseIdentity; mtimeMs: number; owners: DirectoryLeaseOwner[]; invalidEntries: number }
+	| { kind: "legacy_file"; identity: LeaseIdentity; mtimeMs: number; owner?: LeaseOwner };
+
+function sameIdentity(file: { dev: number; ino: number }, identity: LeaseIdentity): boolean {
+	return file.dev === identity.device && file.ino === identity.inode;
+}
+
+function leaseEntryName(owner: LeaseOwner): string {
+	return `${owner.token}.${owner.pid}.${Date.parse(owner.createdAt)}.${owner.port}`;
+}
+
+function parseLeaseEntry(entry: string): LeaseOwner | undefined {
+	const match = LEASE_ENTRY_PATTERN.exec(entry);
+	if (!match) return undefined;
+	const pid = Number(match[2]);
+	const createdAtMs = Number(match[3]);
+	const port = Number(match[4]);
+	if (!Number.isSafeInteger(pid) || pid < 1 || !Number.isSafeInteger(createdAtMs) || createdAtMs < 0
+		|| !Number.isInteger(port) || port < 1 || port > 65_535) return undefined;
+	return { token: match[1], sessionId: "", pid, createdAt: new Date(createdAtMs).toISOString(), port };
 }
 
 export class FileWatchLease implements WatchLease {
 	private path: string | undefined;
 	private owner: LeaseOwner | undefined;
 	private identity: LeaseIdentity | undefined;
+	private server: Server | undefined;
 	private readonly directory: string;
 	private readonly now: () => number;
-	private readonly pidAlive: (pid: number) => boolean;
 
-	constructor(
-		directory: string,
-		now: () => number = Date.now,
-		pidAlive: (pid: number) => boolean = processExists,
-	) {
+	constructor(directory: string, now: () => number = Date.now) {
 		this.directory = directory;
 		this.now = now;
-		this.pidAlive = pidAlive;
 	}
 
 	async acquire(pr: PullRequestIdentity, sessionId: string): Promise<void> {
 		const digest = createHash("sha256").update(`${pr.owner.toLowerCase()}/${pr.repo.toLowerCase()}#${pr.number}`).digest("hex");
 		const path = join(this.directory, `${digest}.lock`);
-		const owner = { sessionId, pid: process.pid, createdAt: new Date(this.now()).toISOString() };
 		await mkdir(this.directory, { recursive: true, mode: 0o700 });
 		for (let attempt = 0; attempt < 2; attempt++) {
 			try {
-				const handle = await open(path, "wx", 0o600);
-				let identity: LeaseIdentity;
-				try {
-					await handle.writeFile(JSON.stringify(owner), "utf8");
-					const file = await handle.stat();
-					identity = { device: file.dev, inode: file.ino };
-				} finally {
-					await handle.close();
-				}
-				this.path = path;
-				this.owner = owner;
-				this.identity = identity;
+				await mkdir(path, { mode: 0o700 });
+				await this.publishOwner(path, sessionId);
 				return;
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-				let current: LeaseOwner | undefined;
-				let currentIdentity: LeaseIdentity | undefined;
-				try {
-					const file = await lstat(path);
-					if (!file.isFile() || file.isSymbolicLink()) throw new Error("Watch lease path is not a regular file");
-					currentIdentity = { device: file.dev, inode: file.ino };
-					const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<LeaseOwner>;
-					if (typeof parsed.sessionId === "string" && typeof parsed.pid === "number" && typeof parsed.createdAt === "string") current = parsed as LeaseOwner;
-				} catch {
-					// A concurrent owner may still be writing. Treat it as live rather than deleting it.
-				}
-				if (current?.sessionId === sessionId && current.pid === process.pid && currentIdentity) {
-					this.path = path;
-					this.owner = current;
-					this.identity = currentIdentity;
-					return;
-				}
-				if (current && currentIdentity && !this.pidAlive(current.pid)) {
-					const latest = await lstat(path).catch(() => undefined);
-					if (latest && latest.dev === currentIdentity.device && latest.ino === currentIdentity.inode) await rm(path, { force: true });
+				const inspected = await this.inspect(path);
+				if (!inspected) throw new Error(`${pr.owner}/${pr.repo}#${pr.number} is already watched by another Pi process`);
+				if (inspected.kind === "legacy_file") {
+					if (this.now() - inspected.mtimeMs < MALFORMED_LEASE_GRACE_MS) {
+						const ownerDescription = inspected.owner ? `Pi process ${inspected.owner.pid}` : "another Pi process";
+						throw new Error(`${pr.owner}/${pr.repo}#${pr.number} is already watched by ${ownerDescription}`);
+					}
+					await this.removeLegacy(path, inspected);
 					continue;
 				}
-				const ownerDescription = current ? `Pi session ${JSON.stringify(current.sessionId)}` : "another Pi process";
-				throw new Error(`${pr.owner}/${pr.repo}#${pr.number} is already watched by ${ownerDescription}`);
+				const liveness = await Promise.all(inspected.owners.map(async ({ owner }) => ({
+					owner,
+					live: await leaseServerIsListening(owner),
+				})));
+				const live = liveness.find((candidate) => candidate.live);
+				if (live) throw new Error(`${pr.owner}/${pr.repo}#${pr.number} is already watched by Pi process ${live.owner.pid}`);
+				const recoverable = inspected.invalidEntries === 0
+					&& (inspected.owners.length > 0 || this.now() - inspected.mtimeMs >= MALFORMED_LEASE_GRACE_MS);
+				if (!recoverable) throw new Error(`${pr.owner}/${pr.repo}#${pr.number} is already watched by another Pi process`);
+				await this.removeDirectory(path, inspected);
+				continue;
 			}
 		}
 		throw new Error(`Could not acquire the watch lease for ${pr.owner}/${pr.repo}#${pr.number}`);
@@ -899,19 +952,109 @@ export class FileWatchLease implements WatchLease {
 		const path = this.path;
 		const owner = this.owner;
 		const identity = this.identity;
+		const server = this.server;
 		this.path = undefined;
 		this.owner = undefined;
 		this.identity = undefined;
+		this.server = undefined;
 		if (!path || !owner || !identity) return;
+		if (server) await closeLeaseServer(server);
 		try {
-			const file = await lstat(path);
-			const current = JSON.parse(await readFile(path, "utf8")) as Partial<LeaseOwner>;
-			if (file.isFile() && !file.isSymbolicLink() && file.dev === identity.device && file.ino === identity.inode && current.sessionId === owner.sessionId && current.pid === owner.pid) {
-				await rm(path, { force: true });
-			}
+			const directory = await lstat(path);
+			if (!directory.isDirectory() || directory.isSymbolicLink() || !sameIdentity(directory, identity)) return;
+			await rm(join(path, leaseEntryName(owner)), { force: true });
+			const latest = await lstat(path).catch(() => undefined);
+			if (latest && latest.isDirectory() && !latest.isSymbolicLink() && sameIdentity(latest, identity)) await rmdir(path).catch(() => undefined);
 		} catch {
 			// Missing or replaced leases are not ours to remove.
 		}
+	}
+
+	private async publishOwner(path: string, sessionId: string): Promise<void> {
+		const directory = await lstat(path);
+		if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error("Watch lease path is not a directory");
+		const identity = { device: directory.dev, inode: directory.ino };
+		const owner: LeaseOwner = {
+			token: randomUUID(),
+			sessionId,
+			pid: process.pid,
+			createdAt: new Date(this.now()).toISOString(),
+			port: 0,
+		};
+		let server: Server | undefined;
+		let ownerPath: string | undefined;
+		try {
+			const listening = await listenLeaseServer(owner.token);
+			server = listening.server;
+			owner.port = listening.port;
+			const entry = leaseEntryName(owner);
+			ownerPath = join(path, entry);
+			const handle = await open(ownerPath, "wx", 0o600);
+			await handle.close();
+			const [latestDirectory, ownerFile, entries] = await Promise.all([lstat(path), lstat(ownerPath), readdir(path)]);
+			if (!latestDirectory.isDirectory() || latestDirectory.isSymbolicLink() || !sameIdentity(latestDirectory, identity)
+				|| !ownerFile.isFile() || ownerFile.isSymbolicLink() || entries.length !== 1 || entries[0] !== leaseEntryName(owner)) {
+				throw new Error("Watch lease changed while it was being published");
+			}
+			this.path = path;
+			this.owner = owner;
+			this.identity = identity;
+			this.server = server;
+		} catch (error) {
+			if (server) await closeLeaseServer(server);
+			if (ownerPath) await rm(ownerPath, { force: true }).catch(() => undefined);
+			const latest = await lstat(path).catch(() => undefined);
+			if (latest?.isDirectory() && !latest.isSymbolicLink() && sameIdentity(latest, identity)) await rmdir(path).catch(() => undefined);
+			throw error;
+		}
+	}
+
+	private async inspect(path: string): Promise<InspectedLease | undefined> {
+		try {
+			const file = await lstat(path);
+			const identity = { device: file.dev, inode: file.ino };
+			if (file.isFile() && !file.isSymbolicLink()) {
+				let owner: LeaseOwner | undefined;
+				try {
+					const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<LeaseOwner>;
+					if (typeof parsed.sessionId === "string" && typeof parsed.pid === "number" && typeof parsed.createdAt === "string") {
+						owner = { token: "legacy", sessionId: parsed.sessionId, pid: parsed.pid, createdAt: parsed.createdAt, port: 0 };
+					}
+				} catch {
+					// A pre-directory implementation may have stopped before completing its JSON.
+				}
+				return { kind: "legacy_file", identity, mtimeMs: file.mtimeMs, ...(owner ? { owner } : {}) };
+			}
+			if (!file.isDirectory() || file.isSymbolicLink()) return undefined;
+			const entries = await readdir(path, { withFileTypes: true });
+			const owners: DirectoryLeaseOwner[] = [];
+			let invalidEntries = 0;
+			for (const entry of entries) {
+				const owner = entry.isFile() ? parseLeaseEntry(entry.name) : undefined;
+				if (owner) owners.push({ entry: entry.name, owner });
+				else invalidEntries++;
+			}
+			return { kind: "directory", identity, mtimeMs: file.mtimeMs, owners, invalidEntries };
+		} catch {
+			return undefined;
+		}
+	}
+
+	private async removeLegacy(path: string, inspected: Extract<InspectedLease, { kind: "legacy_file" }>): Promise<void> {
+		const latest = await lstat(path).catch(() => undefined);
+		if (!latest || !latest.isFile() || latest.isSymbolicLink() || !sameIdentity(latest, inspected.identity)) return;
+		await unlink(path).catch((error: NodeJS.ErrnoException) => {
+			if (error.code !== "ENOENT" && error.code !== "EISDIR" && error.code !== "EPERM") throw error;
+		});
+	}
+
+	private async removeDirectory(path: string, inspected: Extract<InspectedLease, { kind: "directory" }>): Promise<void> {
+		const latest = await lstat(path).catch(() => undefined);
+		if (!latest || !latest.isDirectory() || latest.isSymbolicLink() || !sameIdentity(latest, inspected.identity)) return;
+		for (const { entry } of inspected.owners) await rm(join(path, entry), { force: true });
+		await rmdir(path).catch((error: NodeJS.ErrnoException) => {
+			if (error.code !== "ENOENT" && error.code !== "ENOTEMPTY") throw error;
+		});
 	}
 }
 
