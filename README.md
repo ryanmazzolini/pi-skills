@@ -114,7 +114,7 @@ A Pi session keeps the same Intercom identity across reloads and reconnects, whi
 
 [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and Node.js 24 or newer are the package-wide requirements. The `node` executable must be available on `PATH`; it runs package scripts, the `intercom` broker, and installed scheduled-job snapshots. `daily-report` also needs Git, configured repositories, and a writable vault. Everything else is à la carte:
 
-- [GitHub CLI](https://cli.github.com/) adds GitHub evidence to `daily-report`.
+- [GitHub CLI](https://cli.github.com/) adds GitHub evidence to `daily-report` and powers `github_pr_watch` feedback polling.
 - [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) powers `shortcut` and can add Shortcut evidence to `daily-report`.
 - [Obsidian CLI](https://obsidian.md/help/cli) powers vault-aware note workflows and must be enabled in Obsidian desktop.
 - Notion CLI (`ntn`) powers `notion-cli`.
@@ -130,6 +130,7 @@ Pi gets a few extras that are not skills:
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
 - `intercom` provides local peer messaging, capability-gated bounded read-only tails, and an ephemeral First Mate presence role.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
+- `github_pr_watch` explicitly registers a PR just created by the current Pi session, polls its review feedback, and wakes the agent with a bounded review-context packet. It never discovers PRs from viewing or checking them out.
 - `scheduled-jobs` adds the human-only `/scheduler` interface.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.
 
