@@ -27,10 +27,10 @@ Read only the references that match the task:
 
 ## Validation
 
-Before final response, report which of these were run or why they were not applicable:
+Before final response, report which of these were run or why they were not applicable. For a pull-request stack, follow [Ship's review gate](../../ship/ship/references/review-gate.md): treat the cumulative trunk-to-top result as the final regression target, reuse current integrated evidence for content-preserving splits, and use focused checks on intermediate layers rather than repeating this list for every PR:
 
 - `bundle exec rubocop -P -a` or `bin/rubocop -P -a`
 - Sorbet typecheck and Tapioca generation/verification for Sorbet projects
 - Rails migrations/schema regeneration for migrations (`bundle exec rails db:migrate`, schema dump if needed)
 - GraphQL federation/schema dump for GraphQL projects
-- Full relevant test suites (`bundle exec rspec`, `bin/rspec`, `npm test`, or project wrapper); do not substitute targeted checks for final regression validation.
+- Full relevant test suites (`bundle exec rspec`, `bin/rspec`, `npm test`, or project wrapper); targeted checks do not replace final regression validation of the standalone or integrated stack target.
