@@ -46,14 +46,15 @@ Afterward, keep the verdict and its effect on alignment, discard the prototype b
 Continuously reduce the unresolved queue:
 
 - Resolve facts through quick inspection.
-- For longer fact-finding, use a bounded read-only agent when available and continue with an unblocked decision. In Pi, load `agent-coordination` before `delegate`.
+- For longer fact-finding, use a bounded read-only agent when available. Record which open decision waits on the result, retain the decision-relevant result or a bounded no-material-finding note under the [work-item research guidance](../ship/references/durable-context.md), and keep its pointer with that decision. Continue with an unblocked decision. In Pi, load `agent-coordination` before `delegate`.
+- When a decision needs bounded prerequisite work—such as provisioning access or preparing representative data—record the blocked decision and exact completion signal. Complete it within existing authority or give the human a precise checklist, then record its completion and resulting facts. Work performed solely to make a decision possible is not delivery; if it itself delivers approved behavior, return it to Ship's normal delivery route.
 - Leave local mechanisms and choices that do not distinguish the outcome to implementation.
 - Convert well-supported, low-impact, easily reversed defaults to assumptions.
 - Defer related benefits that do not belong to the target outcome.
 - Return to Ship for a roadmap only when several benefits need durable coordination or recovery; independence alone does not justify one for a low-complexity change.
 - When detailed questions depend on one outcome-boundary decision, keep the parent decision and defer its branches. If questions multiply, narrow the target instead of interrogating the tree.
 
-When fact-finding returns, record the result as fact, assumption, or deferral. Reopen only an affected decision that still needs human judgment. Do not poll or pause unrelated questioning.
+When fact-finding or prerequisite work returns, record the result as fact, assumption, or deferral. Update only the decision that depended on it, clear the completed prerequisite from the unresolved queue, and keep material evidence linked. Reopen that decision only when it still needs human judgment. Do not poll or pause unrelated questioning.
 
 Rank remaining human decisions by **impact × uncertainty**. Impact measures how much plausible answers change the benefit, walkthrough, important constraint, observable behavior, or solution direction, including reversal cost. Uncertainty measures how evenly plausible answers fit the evidence. Ask the highest-ranked unblocked decision only the user can settle.
 
