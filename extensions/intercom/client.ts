@@ -53,6 +53,7 @@ export interface Message {
 	timestamp: number;
 	replyTo?: string;
 	expectsReply?: boolean;
+	triggerTurn?: boolean;
 	content: {
 		text: string;
 		attachments?: Attachment[];
@@ -64,6 +65,7 @@ export interface SendOptions {
 	attachments?: Attachment[];
 	replyTo?: string;
 	expectsReply?: boolean;
+	triggerTurn?: boolean;
 	messageId?: string;
 }
 
@@ -150,6 +152,7 @@ export function isMessage(value: unknown): value is Message {
 	if (!boundedString(message.id, INTERCOM_LIMITS.maxIdBytes, true) || !finiteNumber(message.timestamp)) return false;
 	if (message.replyTo !== undefined && !boundedString(message.replyTo, INTERCOM_LIMITS.maxIdBytes, true)) return false;
 	if (message.expectsReply !== undefined && typeof message.expectsReply !== "boolean") return false;
+	if (message.triggerTurn !== undefined && typeof message.triggerTurn !== "boolean") return false;
 	if (!message.content || typeof message.content !== "object" || Array.isArray(message.content)) return false;
 	const content = message.content as Record<string, unknown>;
 	return boundedString(content.text, INTERCOM_LIMITS.maxMessageTextBytes, true)
@@ -233,6 +236,7 @@ function validateSendOptions(to: string, options: SendOptions, expectedPiSession
 		timestamp: Date.now(),
 		...(options.replyTo === undefined ? {} : { replyTo: options.replyTo }),
 		...(options.expectsReply === undefined ? {} : { expectsReply: options.expectsReply }),
+		...(options.triggerTurn === undefined ? {} : { triggerTurn: options.triggerTurn }),
 		content: {
 			text: options.text,
 			...(options.attachments === undefined ? {} : { attachments: options.attachments }),
@@ -895,6 +899,7 @@ export class IntercomClient extends EventEmitter {
 			timestamp: Date.now(),
 			...(options.replyTo === undefined ? {} : { replyTo: options.replyTo }),
 			...(options.expectsReply === undefined ? {} : { expectsReply: options.expectsReply }),
+			...(options.triggerTurn === undefined ? {} : { triggerTurn: options.triggerTurn }),
 			content: {
 				text: options.text,
 				...(options.attachments === undefined ? {} : { attachments: options.attachments }),
@@ -928,7 +933,7 @@ export class IntercomClient extends EventEmitter {
 
 	ask(
 		to: string,
-		options: Omit<SendOptions, "expectsReply">,
+		options: Omit<SendOptions, "expectsReply" | "triggerTurn">,
 		signal?: AbortSignal,
 		onRouted?: (result: SendResult) => void,
 		onQueued?: () => void,
@@ -938,7 +943,7 @@ export class IntercomClient extends EventEmitter {
 		expectedTransportId?: string,
 	): Promise<ReceivedMessage> {
 		this.requireActiveSocket();
-		validateSendOptions(to, { ...options, expectsReply: true }, expectedPiSessionId, expectedTargetSelector, expectedTransportId);
+		validateSendOptions(to, { ...options, expectsReply: true, triggerTurn: true }, expectedPiSessionId, expectedTargetSelector, expectedTransportId);
 		if (signal?.aborted) return Promise.reject(new Error("Intercom ask cancelled"));
 		const messageId = options.messageId ?? randomUUID();
 		if (this.askWaiters.has(messageId)) return Promise.reject(new Error(`Duplicate intercom ask ID: ${messageId}`));
@@ -965,7 +970,7 @@ export class IntercomClient extends EventEmitter {
 				if (signal?.aborted) throw new Error("Intercom ask cancelled");
 				const routed = await this.sendInternal(
 					to,
-					{ ...options, messageId, expectsReply: true },
+					{ ...options, messageId, expectsReply: true, triggerTurn: true },
 					signal,
 					(error) => this.failAsk(messageId, error),
 					onQueued,

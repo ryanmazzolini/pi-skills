@@ -14,13 +14,14 @@ import {
 	type SendResult,
 	type SessionInfo,
 } from "./client.ts";
-import { openSessionTail, type SessionTailSnapshot } from "./session-tail.ts";
+import { openSessionTail, type SessionTailHandle, type SessionTailSnapshot } from "./session-tail.ts";
 import { IntercomInbox, type InboxEntry } from "./inbox.ts";
 
 export interface IntercomRuntimeOptions {
 	client: IntercomClient;
 	inbox?: IntercomInbox;
 	openTail?: typeof openSessionTail;
+	now?: () => number;
 }
 
 export interface RuntimeSendResult extends SendResult {
@@ -38,9 +39,50 @@ export interface RuntimeTailResult {
 	snapshot: SessionTailSnapshot;
 }
 
+export const FIRST_MATE_TRIAGE_LIMITS = Object.freeze({
+	idleThresholdMs: 60 * 60 * 1_000,
+	tailMessages: 8,
+	tailConcurrency: 2,
+	tailPageSize: 8,
+});
+
+export type RuntimeTriageSweep = "older" | "fallback" | "none";
+
+export interface RuntimeTriageTail {
+	target: SessionInfo;
+	targetSessionId: string;
+	advertisedLastConversationalTimestamp?: number | null;
+	snapshot?: SessionTailSnapshot;
+	error?: string;
+}
+
+export interface RuntimeTriageResult {
+	current: SessionInfo;
+	sessions: SessionInfo[];
+	pending: InboxEntry[];
+	snapshotTimestamp: number;
+	idleThresholdMs: number;
+	selectedSweep: RuntimeTriageSweep;
+	tails: RuntimeTriageTail[];
+	activePeersSkipped: number;
+	firstMatePeersSkipped: number;
+	pendingPeersSkipped: number;
+	unidentifiedPeers: number;
+	ambiguousPeers: number;
+}
+
 export interface RuntimeRoleResult {
 	sessionId: string;
 	role?: IntercomRole;
+}
+
+interface TriageSweepTail extends RuntimeTriageTail {
+	finalVerify?: () => void;
+}
+
+interface OpenedTriageTail extends TriageSweepTail {
+	presence?: PiSessionPresence;
+	handle?: SessionTailHandle;
 }
 
 export interface IntercomStatus {
@@ -62,12 +104,17 @@ function throwIfAborted(signal?: AbortSignal): void {
 	if (signal?.aborted) throw new Error("Intercom operation cancelled");
 }
 
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 export class IntercomRuntime extends EventEmitter {
 	readonly client: IntercomClient;
 	readonly inbox: IntercomInbox;
 	private disposed = false;
 	private initialConnectionError: Error | null = null;
 	private readonly openTail: typeof openSessionTail;
+	private readonly now: () => number;
 
 	private readonly onMessage = (from: SessionInfo, message: Message) => {
 		const entry = this.inbox.record(from, message);
@@ -89,6 +136,7 @@ export class IntercomRuntime extends EventEmitter {
 		this.client = options.client;
 		this.inbox = options.inbox ?? new IntercomInbox();
 		this.openTail = options.openTail ?? openSessionTail;
+		this.now = options.now ?? Date.now;
 		this.client.on("message", this.onMessage);
 		this.client.on("session_left", this.onSessionLeft);
 		this.client.on("disconnected", this.onDisconnected);
@@ -176,6 +224,188 @@ export class IntercomRuntime extends EventEmitter {
 		}
 	}
 
+	async triage(signal?: AbortSignal): Promise<RuntimeTriageResult> {
+		throwIfAborted(signal);
+		await this.ensureConnected();
+		const callerPeerId = this.client.sessionId;
+		if (!callerPeerId) throw new Error("Intercom client is not registered");
+		const listed = await this.client.listSessions(signal);
+		const currentPiSessionId = this.client.currentPiSessionId();
+		const sessions = listed.map((session) => session.id === callerPeerId && currentPiSessionId && !session.piSessionId
+			? { ...session, piSessionId: currentPiSessionId }
+			: session);
+		if (this.client.sessionId !== callerPeerId) throw new Error("Intercom transport connection changed during triage inventory");
+		const current = sessions.find((session) => session.id === callerPeerId);
+		if (!current || !piSessionIdOf(current)) throw new Error("Current session is missing from intercom triage inventory");
+		this.assertUniquePiSessionTarget(current, sessions);
+
+		const snapshotTimestamp = this.now();
+		const pending = this.inbox.list();
+		const pendingSessionIds = new Set(pending.flatMap((entry) => {
+			const sessionId = piSessionIdOf(entry.from);
+			return sessionId ? [sessionId] : [];
+		}));
+		const pendingTransportIds = new Set(pending.map((entry) => entry.from.id));
+		const peerSessions = sessions.filter((session) => session.id !== callerPeerId);
+		const sessionsByStableId = new Map<string, SessionInfo[]>();
+		let firstMatePeersSkipped = 0;
+		let unidentifiedPeers = 0;
+		for (const session of peerSessions) {
+			if (session.role === "first-mate") {
+				firstMatePeersSkipped++;
+				continue;
+			}
+			const sessionId = piSessionIdOf(session);
+			if (!sessionId) {
+				unidentifiedPeers++;
+				continue;
+			}
+			const matches = sessionsByStableId.get(sessionId) ?? [];
+			matches.push(session);
+			sessionsByStableId.set(sessionId, matches);
+		}
+		const ambiguousIds = new Set([...sessionsByStableId]
+			.filter(([, matches]) => matches.length !== 1)
+			.map(([sessionId]) => sessionId));
+		let ambiguousPeers = 0;
+		let activePeersSkipped = 0;
+		let pendingPeersSkipped = 0;
+		const candidates: SessionInfo[] = [];
+		for (const session of peerSessions) {
+			if (session.role === "first-mate") continue;
+			const sessionId = piSessionIdOf(session);
+			if (!sessionId) continue;
+			if (ambiguousIds.has(sessionId)) {
+				ambiguousPeers++;
+				continue;
+			}
+			try {
+				if (this.resolveTargetFromSessions(sessionId, sessions).id !== session.id) throw new Error("Triage target is ambiguous");
+			} catch {
+				ambiguousPeers++;
+				continue;
+			}
+			if (pendingSessionIds.has(sessionId) || pendingTransportIds.has(session.id)) {
+				pendingPeersSkipped++;
+				continue;
+			}
+			if (session.status !== "idle") {
+				activePeersSkipped++;
+				continue;
+			}
+			candidates.push(session);
+		}
+
+		const cutoff = snapshotTimestamp - FIRST_MATE_TRIAGE_LIMITS.idleThresholdMs;
+		const timestampOf = (session: SessionInfo): number | null | undefined => session.lastConversationalTimestamp;
+		const byAgeThenId = (left: SessionInfo, right: SessionInfo): number => {
+			const leftTimestamp = timestampOf(left);
+			const rightTimestamp = timestampOf(right);
+			if (typeof leftTimestamp === "number" && typeof rightTimestamp === "number" && leftTimestamp !== rightTimestamp) {
+				return leftTimestamp - rightTimestamp;
+			}
+			if (typeof leftTimestamp === "number") return -1;
+			if (typeof rightTimestamp === "number") return 1;
+			return piSessionIdOf(left)!.localeCompare(piSessionIdOf(right)!);
+		};
+		const older = candidates
+			.filter((session) => typeof timestampOf(session) === "number" && timestampOf(session)! < cutoff)
+			.sort(byAgeThenId);
+		const fallback = candidates
+			.filter((session) => !(typeof timestampOf(session) === "number" && timestampOf(session)! < cutoff))
+			.sort(byAgeThenId);
+
+		const inventoryIdentity = (latest: readonly SessionInfo[]) => {
+			const currentSessionId = this.client.currentPiSessionId();
+			const mapped = latest.map((session) => session.id === callerPeerId && currentSessionId && !session.piSessionId
+				? { ...session, piSessionId: currentSessionId }
+				: session);
+			const latestCurrent = mapped.find((session) => session.id === callerPeerId);
+			if (!latestCurrent || !piSessionIdOf(latestCurrent)) throw new Error("Current session is missing from final triage inventory");
+			return { current: latestCurrent, sessions: mapped };
+		};
+		const latePendingPeers = new Set<string>();
+		const reconcilePending = (tails: RuntimeTriageTail[]): InboxEntry[] => {
+			const currentPending = this.inbox.list();
+			const currentPendingSessionIds = new Set(currentPending.flatMap((entry) => {
+				const sessionId = piSessionIdOf(entry.from);
+				return sessionId ? [sessionId] : [];
+			}));
+			const currentPendingTransportIds = new Set(currentPending.map((entry) => entry.from.id));
+			for (const tail of tails) {
+				if (!tail.snapshot) continue;
+				if (currentPendingSessionIds.has(tail.targetSessionId) || currentPendingTransportIds.has(tail.target.id)) {
+					tail.snapshot = undefined;
+					tail.error = "Peer sent a pending ask during triage inspection";
+					latePendingPeers.add(tail.targetSessionId);
+				}
+			}
+			return currentPending;
+		};
+		const base = {
+			snapshotTimestamp,
+			idleThresholdMs: FIRST_MATE_TRIAGE_LIMITS.idleThresholdMs,
+			activePeersSkipped,
+			firstMatePeersSkipped,
+			unidentifiedPeers,
+			ambiguousPeers,
+		};
+		const finish = (
+			latest: readonly SessionInfo[],
+			selectedSweep: RuntimeTriageSweep,
+			tails: TriageSweepTail[],
+		): RuntimeTriageResult => {
+			for (const tail of tails) {
+				if (!tail.snapshot) continue;
+				try {
+					tail.finalVerify?.();
+					const current = latest.find((session) => session.id === tail.target.id);
+					if (!current || !tail.target.piSession || this.resolveTargetFromSessions(tail.targetSessionId, latest).id !== current.id) {
+						throw new Error("Target session advertisement changed before triage return");
+					}
+					const currentPresence = this.requireUniquePiSession(current, latest);
+					if (!this.samePiSession(tail.target.piSession, currentPresence) || current.status !== "idle" || current.role === "first-mate") {
+						throw new Error("Target session advertisement changed before triage return");
+					}
+				} catch (error) {
+					tail.snapshot = undefined;
+					tail.error = errorMessage(error);
+				}
+			}
+			const currentPending = reconcilePending(tails);
+			return {
+				...base,
+				pending: currentPending,
+				pendingPeersSkipped: pendingPeersSkipped + latePendingPeers.size,
+				...inventoryIdentity(latest),
+				selectedSweep,
+				tails: tails.map(({ finalVerify: _finalVerify, ...tail }) => tail),
+			};
+		};
+		if (!this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
+			return finish(sessions, "none", []);
+		}
+
+		let inventory = sessions;
+		let tails: TriageSweepTail[] = [];
+		if (older.length > 0) {
+			const first = await this.openTriageSweep(older, inventory, callerPeerId, signal);
+			inventory = first.after;
+			tails = first.tails;
+			reconcilePending(tails);
+			const confirmedOlder = first.tails.some((tail) =>
+				tail.snapshot && tail.snapshot.lastConversationalTimestamp !== null && tail.snapshot.lastConversationalTimestamp < cutoff);
+			if (confirmedOlder) return finish(inventory, "older", tails);
+		}
+		if (fallback.length > 0) {
+			const second = await this.openTriageSweep(fallback, inventory, callerPeerId, signal);
+			inventory = second.after;
+			tails = [...tails, ...second.tails];
+			return finish(inventory, "fallback", tails);
+		}
+		return finish(inventory, tails.length > 0 ? "older" : "none", tails);
+	}
+
 	async send(
 		to: string,
 		text: string,
@@ -191,7 +421,7 @@ export class IntercomRuntime extends EventEmitter {
 		this.assertNotSelf(target.id);
 		const routed = await this.client.send(
 			target.id,
-			{ text, attachments, replyTo },
+			{ text, attachments, replyTo, triggerTurn: true },
 			signal,
 			onRouting,
 			this.expectedPiSessionId(target),
@@ -363,6 +593,140 @@ export class IntercomRuntime extends EventEmitter {
 
 	private async resolveTarget(value: string, signal?: AbortSignal): Promise<SessionInfo> {
 		return this.resolveTargetFromSessions(value, await this.client.listSessions(signal));
+	}
+
+	private async openTriageSweep(
+		targets: readonly SessionInfo[],
+		expectedSessions: readonly SessionInfo[],
+		callerPeerId: string,
+		signal?: AbortSignal,
+	): Promise<{ tails: TriageSweepTail[]; after: SessionInfo[] }> {
+		let after = [...expectedSessions];
+		const tails: TriageSweepTail[] = [];
+		for (let index = 0; index < targets.length; index += FIRST_MATE_TRIAGE_LIMITS.tailPageSize) {
+			const page = await this.openTriageBatch(
+				targets.slice(index, index + FIRST_MATE_TRIAGE_LIMITS.tailPageSize),
+				after,
+				callerPeerId,
+				signal,
+			);
+			tails.push(...page.tails);
+			after = page.after;
+		}
+		for (const tail of tails) {
+			if (!tail.snapshot) continue;
+			try {
+				tail.finalVerify?.();
+				const current = after.find((session) => session.id === tail.target.id);
+				if (!current || !tail.target.piSession || this.resolveTargetFromSessions(tail.targetSessionId, after).id !== current.id) {
+					throw new Error("Target session advertisement changed during triage sweep");
+				}
+				const currentPresence = this.requireUniquePiSession(current, after);
+				if (!this.samePiSession(tail.target.piSession, currentPresence) || current.status !== "idle" || current.role === "first-mate") {
+					throw new Error("Target session advertisement changed during triage sweep");
+				}
+			} catch (error) {
+				tail.snapshot = undefined;
+				tail.error = errorMessage(error);
+			}
+		}
+		return { tails, after };
+	}
+
+	private async openTriageBatch(
+		targets: readonly SessionInfo[],
+		expectedSessions: readonly SessionInfo[],
+		callerPeerId: string,
+		signal?: AbortSignal,
+	): Promise<{ tails: TriageSweepTail[]; after: SessionInfo[] }> {
+		const opened: OpenedTriageTail[] = targets.map((target) => ({
+			target,
+			targetSessionId: piSessionIdOf(target)!,
+			...(target.lastConversationalTimestamp === undefined
+				? {}
+				: { advertisedLastConversationalTimestamp: target.lastConversationalTimestamp }),
+		}));
+		const openable: number[] = [];
+		for (const [index, result] of opened.entries()) {
+			try {
+				const current = expectedSessions.find((session) => session.id === result.target.id);
+				if (!current || this.resolveTargetFromSessions(result.targetSessionId, expectedSessions).id !== current.id) {
+					throw new Error("Target session advertisement changed before triage inspection");
+				}
+				const presence = this.requireUniquePiSession(current, expectedSessions);
+				if (current.role === "first-mate" || !result.target.piSession || presence.sessionId !== result.targetSessionId || !this.samePiSession(result.target.piSession, presence)) {
+					throw new Error("Target session advertisement changed before triage inspection");
+				}
+				result.presence = presence;
+				openable.push(index);
+			} catch (error) {
+				result.error = errorMessage(error);
+			}
+		}
+
+		let next = 0;
+		const workers = Array.from(
+			{ length: Math.min(FIRST_MATE_TRIAGE_LIMITS.tailConcurrency, openable.length) },
+			async () => {
+				while (next < openable.length) {
+					const index = openable[next++]!;
+					const result = opened[index]!;
+					try {
+						throwIfAborted(signal);
+						const presence = result.presence!;
+						const handle = await this.openTail({
+							piSessionId: presence.sessionId,
+							fileLocator: presence.fileLocator,
+							activeLeafId: presence.activeLeafId,
+							limit: FIRST_MATE_TRIAGE_LIMITS.tailMessages,
+							...(signal === undefined ? {} : { signal }),
+						});
+						result.handle = handle;
+						result.snapshot = handle.snapshot;
+					} catch (error) {
+						result.error = errorMessage(error);
+					}
+				}
+			},
+		);
+		await Promise.all(workers);
+
+		try {
+			throwIfAborted(signal);
+			const after = await this.client.listSessions(signal);
+			if (this.client.sessionId !== callerPeerId) throw new Error("Intercom transport connection changed during triage inspection");
+			const expectedCaller = expectedSessions.find((session) => session.id === callerPeerId);
+			const currentCaller = after.find((session) => session.id === callerPeerId);
+			if (!expectedCaller || !currentCaller || piSessionIdOf(expectedCaller) !== piSessionIdOf(currentCaller)) {
+				throw new Error("Current Pi session identity changed during triage inspection");
+			}
+			this.assertUniquePiSessionTarget(currentCaller, after);
+			for (const result of opened) {
+				if (!result.handle || !result.presence) continue;
+				try {
+					const current = after.find((session) => session.id === result.target.id);
+					if (!current || this.resolveTargetFromSessions(result.targetSessionId, after).id !== current.id) {
+						throw new Error("Target session advertisement changed during triage inspection");
+					}
+					const currentPresence = this.requireUniquePiSession(current, after);
+					if (!this.samePiSession(result.presence, currentPresence) || current.role === "first-mate") {
+						throw new Error("Target session advertisement changed during triage inspection");
+					}
+					if (current.status !== "idle") throw new Error("Target session became active during triage inspection");
+					result.handle.verifyStable();
+					result.finalVerify = () => result.handle!.verifyReopenedStable();
+				} catch (error) {
+					result.snapshot = undefined;
+					result.error = errorMessage(error);
+				}
+			}
+			return {
+				tails: opened.map(({ presence: _presence, handle: _handle, ...result }) => result),
+				after,
+			};
+		} finally {
+			for (const result of opened) result.handle?.close();
+		}
 	}
 
 	private samePeerIdentity(left: SessionInfo, right: SessionInfo): boolean {

@@ -8,7 +8,15 @@ Choose the safest supported lane from current conversational evidence. Treat a p
 
 ## Revalidate before any authorization
 
-Apply this rule before every policy authorization or relayed human decision:
+Use an immediately returned deterministic `triage` result directly for an Auto-advance candidate when all of these conditions hold:
+
+- The inventory is complete and this session is the sole advertised First Mate.
+- The selected peer has one successfully validated, untruncated tail.
+- The complete relevant request remains visible.
+
+Do not repeat `status`, `list`, or `tail`; the exact-ID message re-resolves the recipient before routing. When triage evidence is insufficient, report `Inspect` or the evidence limitation instead of starting a deeper pass.
+
+For a correlated ask or a later human decision outside the current triage pass, apply this rule before authorization:
 
 1. Take one fresh coherent `status` and `list` snapshot for the delivery batch. Require the same current session ID, complete inventory, and exactly one advertised First Mate ID equal to this session's full ID. Also require exactly one live advertisement for each retained peer ID. A lost or ambiguous First Mate role disables authorization but not factual coordination.
 2. Tail each selected peer by full ID with `limit: 8`, `tailScanBytes: 2097152`, and `tailProjectionBytes: 4096`. Require the complete relevant request and current evidence to remain visible and unchanged; a truncated or missing request is insufficient.

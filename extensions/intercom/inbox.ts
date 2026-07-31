@@ -29,6 +29,7 @@ function retainedProjectionBytes(entry: InboxEntry): number {
 		timestamp: entry.message.timestamp,
 		receivedAt: entry.receivedAt,
 		expectsReply: entry.message.expectsReply === true,
+		triggerTurn: entry.message.triggerTurn === true,
 		replyable: true,
 		attachmentCount: entry.message.content.attachments?.length ?? 0,
 		truncated: true,

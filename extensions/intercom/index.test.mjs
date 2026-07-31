@@ -37,7 +37,7 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	};
 	intercomExtension(pi);
 	assert.deepEqual(tools.map((tool) => tool.name), ["intercom"]);
-	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"]);
+	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "triage", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"]);
 	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "operationId", "limit", "tailScanBytes", "tailProjectionBytes"]);
 	assert.deepEqual(commands, []);
 	assert.deepEqual(shortcuts, []);
@@ -55,6 +55,8 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 test("validates action-specific fields while preserving attachment and reply selection inputs", () => {
 	assert.doesNotThrow(() => validateIntercomAction({ action: "list" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "list", limit: 1 }));
+	assert.doesNotThrow(() => validateIntercomAction({ action: "triage" }));
+	assert.throws(() => validateIntercomAction({ action: "triage", limit: 1 }), /limit is not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "first-mate" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role" }));
 	assert.throws(() => validateIntercomAction({ action: "role", role: "supervisor" }), /Invalid intercom role/);
@@ -78,7 +80,7 @@ test("uses the legacy unnamed alias and preserves attachment bodies", () => {
 	assert.match(formatAttachments([{ type: "snippet", name: "a.ts", language: "ts", content: "const a = 1" }]), /const a = 1/);
 });
 
-test("delivers inbound peer messages through normal persistent Pi message behavior", () => {
+test("delivers asks and explicit one-way sends as recipient turns", () => {
 	const calls = [];
 	const entry = {
 		from: { id: "broker-connection-id", piSessionId: "peer-full-session-id", name: "worker", cwd: "/repo", model: "test", pid: 1, startedAt: 1, lastActivity: 1 },
@@ -94,6 +96,13 @@ test("delivers inbound peer messages through normal persistent Pi message behavi
 	assert.match(calls[0][0].content, /replyTo: \"ask-1\"/);
 	assert.match(calls[0][0].content, /context body/);
 	assert.deepEqual(calls[0][1], { deliverAs: "steer", triggerTurn: true });
+
+	deliverInboundMessage({ sendMessage: (...args) => calls.push(args) }, {
+		...entry,
+		message: { id: "send-1", timestamp: 2, triggerTurn: true, content: { text: "Continue the approved work" } },
+		replyable: false,
+	});
+	assert.deepEqual(calls[1][1], { deliverAs: "followUp", triggerTurn: true });
 });
 
 test("intercom message renderer uses native expansion for compact bubbles and metadata", () => {
@@ -263,7 +272,6 @@ test("bounds and coalesces inbound Pi delivery per sender and globally", async (
 		globalBytes: 20_000,
 		pendingMessages: 3,
 		pendingBytes: 20_000,
-		automaticTurns: 1,
 		flushDelayMs: 0,
 	};
 	const delivery = new InboundDelivery(pi, () => 1, limits);
@@ -293,7 +301,7 @@ test("bounds and coalesces inbound Pi delivery per sender and globally", async (
 	delivery.dispose();
 });
 
-test("replyable asks steer active work while ordinary updates wait for idle", async () => {
+test("replyable asks steer active work while one-way sends wait for idle and then start a turn", async () => {
 	const calls = [];
 	const delivery = new InboundDelivery(
 		{ sendMessage: (...args) => calls.push(args) },
@@ -304,7 +312,7 @@ test("replyable asks steer active work while ordinary updates wait for idle", as
 	delivery.started();
 	delivery.record({
 		from,
-		message: { id: "update", timestamp: 1, content: { text: "ordinary update" } },
+		message: { id: "update", timestamp: 1, triggerTurn: true, content: { text: "ordinary update" } },
 		receivedAt: 1,
 		replyable: false,
 	});
@@ -312,12 +320,13 @@ test("replyable asks steer active work while ordinary updates wait for idle", as
 	assert.equal(calls.length, 0);
 	delivery.settled();
 	await new Promise((resolve) => setTimeout(resolve, 10));
-	assert.deepEqual(calls[0][1], { deliverAs: "followUp", triggerTurn: false });
+	assert.deepEqual(calls[0][1], { deliverAs: "followUp", triggerTurn: true });
+	delivery.settled();
 
 	delivery.started();
 	delivery.record({
 		from,
-		message: { id: "question", timestamp: 2, expectsReply: true, content: { text: "question" } },
+		message: { id: "question", timestamp: 2, expectsReply: true, triggerTurn: true, content: { text: "question" } },
 		receivedAt: 2,
 		replyable: true,
 	});
@@ -365,23 +374,22 @@ test("a mixed ordinary-and-ask batch steers once", async () => {
 	delivery.dispose();
 });
 
-test("automatic inbound turns remain globally bounded across attacker-controlled batches", async () => {
+test("recipient turns remain bounded by inbound message budgets", async () => {
 	const calls = [];
 	const limits = {
 		...INBOUND_DELIVERY_LIMITS,
 		perSenderMessages: 100,
 		perSenderBytes: 100_000,
-		globalMessages: 100,
+		globalMessages: 2,
 		globalBytes: 100_000,
 		pendingMessages: 10,
 		pendingBytes: 100_000,
-		automaticTurns: 2,
 		flushDelayMs: 0,
 	};
 	const delivery = new InboundDelivery({ sendMessage: (...args) => calls.push(args) }, () => 1, limits);
 	const entry = (id) => ({
 		from: { id: "attacker", name: "attacker", cwd: "/repo", model: "test", pid: 1, startedAt: 1, lastActivity: 1 },
-		message: { id, timestamp: 1, content: { text: id } },
+		message: { id, timestamp: 1, triggerTurn: true, content: { text: id } },
 		receivedAt: 1,
 		replyable: false,
 	});
@@ -391,9 +399,9 @@ test("automatic inbound turns remain globally bounded across attacker-controlled
 		delivery.settled();
 	}
 	await new Promise((resolve) => setTimeout(resolve, 5));
-	assert.equal(calls.filter((call) => call[1].triggerTurn).length, 0);
+	assert.equal(calls.filter((call) => call[1].triggerTurn).length, limits.globalMessages);
 	assert.equal(calls.filter((call) => call[0].details?.overflow).length, 1);
-	assert.ok(calls.length <= INBOUND_DELIVERY_LIMITS.passiveBatches + 1);
+	assert.equal(calls.length, limits.globalMessages + 1);
 	delivery.dispose();
 });
 
@@ -802,7 +810,7 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	t.after(() => handlers.get("session_shutdown")());
 	// Pi creates a fresh ExtensionContext for each tool execution; exercising that contract
 	// prevents a tool call from poisoning later asynchronous inbound delivery.
-	const execute = (params) => tools[0].execute("call", params, undefined, undefined, { ...ctx });
+	const execute = (params, signal) => tools[0].execute("call", params, signal, undefined, { ...ctx });
 	const connectedStatus = await execute({ action: "status" });
 	assert.equal(connectedStatus.details.connected, true);
 	assert.equal(connectedStatus.details.tailCapability, true);
@@ -847,8 +855,51 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	await writeFile(sessionPath, `${sessionRecords.map((record) => JSON.stringify(record)).join("\n")}\n`);
 	let targetMessages = 0;
 	peer.on("message", () => { targetMessages++; });
-	peer.updatePresence({ piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "tail-r", revision: 1 } });
+	peer.updatePresence({
+		status: "idle",
+		lastConversationalTimestamp: Date.now() - 2 * 60 * 60 * 1_000,
+		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "tail-r", revision: 1 },
+	});
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 1);
+	const coordinatorTriage = await execute({ action: "triage" });
+	assert.equal(coordinatorTriage.details.advertisingFirstMate, true);
+	assert.equal(coordinatorTriage.details.selectedSweep, "none");
+	assert.equal(coordinatorTriage.details.firstMatePeersSkipped, 1);
+	assert.equal(coordinatorTriage.details.tails.length, 0);
+
+	assert.equal(await peer.setRole(null), undefined);
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.role === undefined);
+	const triaged = await execute({ action: "triage" });
+	assert.equal(triaged.details.advertisingFirstMate, true);
+	assert.equal(triaged.details.selectedSweep, "older");
+	assert.equal(triaged.details.firstMatePeersSkipped, 0);
+	assert.equal(triaged.details.tails.length, 1);
+	assert.equal(triaged.details.tails[0].targetSessionId, peerSessionId);
+	assert.match(triaged.content[0].text, /tail question/);
+	assert.ok(Buffer.byteLength(triaged.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
+	assert.ok(Buffer.byteLength(JSON.stringify(triaged.details)) <= INTERCOM_PROJECTION_MAX_BYTES);
+
+	const cancelledRefreshTriage = new AbortController();
+	cancelledRefreshTriage.abort();
+	await assert.rejects(execute({ action: "triage" }, cancelledRefreshTriage.signal), /cancelled/);
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === "first-mate");
+	assert.equal((await execute({ action: "status" })).details.advertisingFirstMate, true);
+
+	await execute({ action: "role" });
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
+	const firstConcurrentTriage = execute({ action: "triage" });
+	await assert.rejects(execute({ action: "triage" }), /already in progress/);
+	await firstConcurrentTriage;
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === "first-mate");
+
+	await execute({ action: "role" });
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
+	const cancelledTriage = new AbortController();
+	cancelledTriage.abort();
+	await assert.rejects(execute({ action: "triage" }, cancelledTriage.signal), /cancelled/);
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
+	assert.equal((await execute({ action: "status" })).details.advertisingFirstMate, false);
+
 	const beforeTail = await readFile(sessionPath);
 	const tailed = await execute({
 		action: "tail",

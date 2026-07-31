@@ -8,6 +8,7 @@ import {
 	INTERCOM_TAIL_PROJECTION_MIN_BYTES,
 	INTERCOM_TRUNCATION_NOTICE,
 	projectAskReply,
+	projectFirstMateTriage,
 	projectInboundEntry,
 	projectPendingEntries,
 	projectSessionList,
@@ -47,6 +48,7 @@ test("multibyte inbound projection is UTF-8 bounded, actionable, quoted, and com
 		timestamp: 7,
 		receivedAt: 1,
 		expectsReply: true,
+		triggerTurn: false,
 		replyable: true,
 		attachmentCount: 0,
 		truncated: true,
@@ -222,6 +224,61 @@ test("session tail projection is bounded, locator-free, and preserves newest mul
 	assert.doesNotMatch(projectSessionList([target], target).text, /private\/session\/path/);
 });
 
+test("First Mate triage projection fairly bounds a multi-peer evidence sweep", () => {
+	const snapshotTimestamp = Date.parse("2026-07-31T12:00:00.000Z");
+	const tails = Array.from({ length: 12 }, (_, index) => {
+		const target = session(`triage-${index}`, {
+			piSessionId: `pi-triage-${index}`,
+			name: `worker-${index}`,
+			piSession: { sessionId: `pi-triage-${index}`, fileLocator: `/private/${index}.jsonl`, activeLeafId: `leaf-${index}`, revision: 1 },
+		});
+		return {
+			target,
+			targetSessionId: target.piSessionId,
+			advertisedLastConversationalTimestamp: snapshotTimestamp - (index + 2) * 60 * 60 * 1_000,
+			snapshot: {
+				events: [
+					{ kind: "user", text: `request-${index}-${"界".repeat(2_000)}` },
+					{ kind: "assistant", text: `latest-${index}-${"🙂".repeat(2_000)}` },
+				],
+				counts: { scannedEntries: 2, branchEntries: 2, eligibleTextEvents: 2, returnedTextEvents: 2, toolEvents: 0, bashEvents: 0 },
+				lastConversationalTimestamp: snapshotTimestamp - (index + 2) * 60 * 60 * 1_000,
+				truncated: false,
+				historyTruncated: false,
+				outcomeEventsTruncated: false,
+				ignoredFinalFragment: false,
+			},
+		};
+	});
+	const projected = projectFirstMateTriage({
+		currentSessionId: "pi-current",
+		inventoryTruncated: false,
+		omittedSessionIds: 0,
+		snapshotTimestamp,
+		idleThresholdMs: 60 * 60 * 1_000,
+		selectedSweep: "older",
+		roleCapability: true,
+		firstMateSessionIds: ["pi-current"],
+		pending: [],
+		tails,
+		activePeersSkipped: 2,
+		firstMatePeersSkipped: 1,
+		pendingPeersSkipped: 1,
+		unidentifiedPeers: 0,
+		ambiguousPeers: 0,
+	});
+	assertBounded(projected.text, "First Mate triage evidence");
+	assert.equal(projected.bytes, Buffer.byteLength(projected.text, "utf8"));
+	assert.equal(projected.truncated, true);
+	assert.match(projected.text, /Inventory: complete/);
+	assert.match(projected.text, /1 other First Mate/);
+	for (let index = 0; index < tails.length; index++) {
+		assert.match(projected.text, new RegExp(`pi-triage-${index}`));
+		assert.match(projected.text, new RegExp(`latest-${index}`));
+	}
+	assert.doesNotMatch(projected.text, /\/private\//);
+});
+
 test("tail projection reports omitted outcome events as truncated source context", () => {
 	const snapshot = {
 		events: [{ kind: "assistant", text: "latest conclusion" }],
@@ -350,7 +407,6 @@ test("inbound delivery independently bounds raw traffic, projected queue memory,
 		globalBytes: 1_024,
 		pendingMessages: 10,
 		pendingBytes: INTERCOM_PROJECTION_MAX_BYTES,
-		automaticTurns: 2,
 		flushDelayMs: 0,
 	};
 	const delivery = new InboundDelivery({ sendMessage: (...args) => calls.push(args) }, () => 1, limits);
@@ -364,8 +420,8 @@ test("inbound delivery independently bounds raw traffic, projected queue memory,
 	assert.deepEqual(Object.keys(delivery.pending[0]).sort(), ["bytes", "details", "text", "truncated", "view"]);
 	assert.equal("message" in delivery.pending[0], false);
 	await new Promise((resolve) => setTimeout(resolve, 10));
-	assertBounded(calls[0][0].content, "first automatic message");
-	assertBounded(calls[0][0].details, "first automatic details");
+	assertBounded(calls[0][0].content, "first delivered message");
+	assertBounded(calls[0][0].details, "first delivered details");
 	assert.equal(JSON.stringify(calls[0][0].details).includes("unique-raw-tail"), false);
 	delivery.dispose();
 
