@@ -25,14 +25,16 @@ Plan only when a dependency map or explicit delivery boundary would help executi
 
 ## Build delivery changes
 
-A **delivery change** is a coherent PR-shaped implementation unit inside one approved benefit. It crosses every project layer needed for one narrow observable improvement and can be reviewed on its own. When the plan deliberately uses several PRs, each change should remain mergeable independently or state the exact stack dependency that prevents it.
+A **delivery change** is a coherent PR-shaped implementation unit inside one approved benefit. It crosses every project layer needed for one narrow observable improvement, and its diff can be understood on its own. When the plan deliberately uses several PRs, each change should remain mergeable independently or state the exact stack dependency that prevents it.
+
+When several delivery changes form one pull-request stack, designate the cumulative trunk-to-top result as their integrated validation and review target under [the review gate](../ship/references/review-gate.md). Give each layer focused verification for its boundary and reuse the integrated evidence across the stack; a separate PR does not make each layer another exhaustive validation or broad-review target.
 
 Each delivery change must:
 
 - fit in one fresh session
 - trace to the target benefit and applicable walkthrough
 - name implementation details only in concrete leaf tasks
-- include its own verification evidence
+- include focused verification evidence appropriate to its boundary and reference shared integrated evidence when applicable
 - preserve a working repository state or state a necessary integration exception
 
 Build the thinnest useful end-to-end change first. Do not plan horizontal sequences such as data → backend → UI or schema → producer → consumer. Put internal machinery in the first benefit step that needs it. Add a discovery change only when its result could stop or reshape delivery; state its bound and fallback.
@@ -61,7 +63,7 @@ When a mechanical change cannot stay working because it breaks callers across th
 2. Migrate callers in independently verifiable batches.
 3. Remove the old form only after every migration dependency completes.
 
-Keep each change working and its checks passing when possible. If only final integration can pass, state why and add a dependent integration verification change.
+Keep each change working and its focused checks passing when possible. If only final integration can pass, state why and add a dependent integration verification change.
 
 ## Write the plan
 
@@ -88,7 +90,7 @@ Tasks:
 - [project surface]: [concrete leaf task]
 
 Delivery: [direct branch or PR worktree, base, and merge condition when relevant]
-Verification: [automated, manual, visual, playtest, or review evidence]
+Verification: [focused layer checks plus the integrated target or shared evidence when applicable]
 Covers: [target benefit and experience steps]
 ```
 

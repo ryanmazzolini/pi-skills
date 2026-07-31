@@ -17,6 +17,7 @@ Add a worktree only when work on that PR is ready to begin and the user has conf
 
 - Name a single-PR worktree after its repo: `api/`.
 - Give each PR in a same-repo stack its own worktree. Name later worktrees `<repo>-<pr-slug>`, such as `api-graphql/`. Base each new branch on the preceding PR branch, not the default branch. After amending an earlier PR, rebase every later worktree in order.
+- Treat a branch chain checked out across separate worktrees as externally managed for GitHub stacks. Use `gh stack link` to create or update the remote stack without local tracking; do not also adopt those branches into local `gh stack` tracking, whose navigation and cascading rebase operations expect to check out the stack branches.
 - Give each repo in a multi-repo change its own worktree or stack inside the same ticket folder.
 - Choose the workspace root explicitly. Roots may include `~/git`, `~/personal`, or a project-specific directory; do not assume `~/git`.
 
