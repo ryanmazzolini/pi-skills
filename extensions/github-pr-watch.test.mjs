@@ -532,16 +532,59 @@ test("sanitizes and bounds hostile feedback before it enters model context", () 
   assert.equal(formatted.details.views[0].author, "attacker forged");
 });
 
-test("restores delivered feedback fingerprints from custom messages after an interrupted state append", async () => {
-  const comment = {
-    id: "IC_crash",
-    author: { login: "reviewer" },
-    body: "Already delivered before the process stopped.",
+test("reports every omitted event even when compact packet entries no longer fit", () => {
+  const events = Array.from({ length: 1_000 }, (_, index) => ({
+    key: `conversation-comment:IC_${index}`,
+    fingerprints: [`conversation-comment:IC_${index}:fingerprint-${index}`],
+    kind: "conversation_comment",
+    id: `IC_${index}`,
+    url: `${PR_URL}#issuecomment-${index}`,
+    preview: `Feedback ${index} ${"p".repeat(120)}`,
+    author: "reviewer",
+    authorAssociation: "MEMBER",
     createdAt: "2026-07-31T12:00:30Z",
     updatedAt: "2026-07-31T12:00:30Z",
-    url: `${PR_URL}#issuecomment-crash`,
+    body: `Full feedback ${index} ${"b".repeat(1_000)}`,
+    truncated: false,
+  }));
+  const pr = {
+    owner: "acme",
+    repo: "widgets",
+    number: 42,
+    url: PR_URL,
+    title: "Keep widgets correct",
+    state: "OPEN",
+    baseRefName: "main",
+    headRepository: "acme/widgets",
+    headRefName: "feat/widget-watch",
+    headRefOid: HEAD_SHA,
+    createdAt: "2026-07-31T12:00:00Z",
   };
-  const pullRequest = graphPullRequest({ comments: { totalCount: 1, nodes: [comment] } });
+
+  const formatted = formatFeedbackMessage(pr, events, "2026-07-31T12:01:00Z");
+  const json = formatted.content.slice(
+    "BEGIN GITHUB PR FEEDBACK PACKET\n".length,
+    -"\nEND GITHUB PR FEEDBACK PACKET".length,
+  );
+  const packet = JSON.parse(json);
+
+  assert.ok(Buffer.byteLength(formatted.content, "utf8") <= 48 * 1024);
+  assert.equal(packet.packetTruncated, true);
+  assert.equal(packet.omittedFeedbackCount, events.length - packet.feedback.length);
+  assert.ok(packet.omittedFeedback.length < packet.omittedFeedbackCount, "some compact entries must be excluded by the packet bound");
+  assert.equal(formatted.details.truncated, true);
+});
+
+test("restores every delivered fingerprint from a large custom message after an interrupted state append", async () => {
+  const comments = Array.from({ length: 513 }, (_, index) => ({
+    id: `IC_crash_${index}`,
+    author: { login: "reviewer" },
+    body: `Already delivered feedback ${index}.`,
+    createdAt: "2026-07-31T12:00:30Z",
+    updatedAt: "2026-07-31T12:00:30Z",
+    url: `${PR_URL}#issuecomment-crash-${index}`,
+  }));
+  const pullRequest = graphPullRequest({ comments: { totalCount: comments.length, nodes: comments } });
   const collected = collectFeedbackEvents(pullRequest, new Set());
   const pr = {
     owner: "acme",
@@ -557,6 +600,7 @@ test("restores delivered feedback fingerprints from custom messages after an int
     createdAt: "2026-07-31T12:00:00Z",
   };
   const delivered = formatFeedbackMessage(pr, collected.events, "2026-07-31T12:01:00Z");
+  assert.equal(delivered.details.fingerprints.length, comments.length);
   const fixture = extensionFixture({ pullRequest });
   fixture.entries.push({ type: "custom", customType: "github-pr-watch-state", data: {
     version: 1,

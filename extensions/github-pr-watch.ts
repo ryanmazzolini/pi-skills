@@ -719,31 +719,46 @@ export function formatFeedbackMessage(pr: WatchedPullRequest, events: FeedbackEv
 	};
 	const selected: Array<Record<string, unknown>> = [];
 	const omitted: Array<Record<string, unknown>> = [];
+	const sourceTruncated = events.some((event) => event.truncated);
+	let omittedCount = 0;
 	const render = () => [
 		"BEGIN GITHUB PR FEEDBACK PACKET",
-		JSON.stringify({ ...packetBase, feedback: selected, omittedFeedback: omitted }, null, 2),
+		JSON.stringify({
+			...packetBase,
+			feedback: selected,
+			omittedFeedback: omitted,
+			omittedFeedbackCount: omittedCount,
+			packetTruncated: sourceTruncated || omittedCount > 0,
+		}, null, 2),
 		"END GITHUB PR FEEDBACK PACKET",
 	].join("\n");
+	const fitsWithMetadataHeadroom = () => Buffer.byteLength(render(), "utf8") <= MAX_MESSAGE_BYTES - 128;
 	for (const event of events) {
 		const visible = publicEvent(event);
 		selected.push(visible);
-		if (Buffer.byteLength(render(), "utf8") <= MAX_MESSAGE_BYTES) continue;
+		if (fitsWithMetadataHeadroom()) continue;
 		selected.pop();
+		omittedCount++;
 		const compact = compactPublicEvent(event);
 		omitted.push(compact);
-		if (Buffer.byteLength(render(), "utf8") > MAX_MESSAGE_BYTES) omitted.pop();
+		if (!fitsWithMetadataHeadroom()) omitted.pop();
 	}
 	let content = render();
 	if (Buffer.byteLength(content, "utf8") > MAX_MESSAGE_BYTES) {
 		content = [
 			"BEGIN GITHUB PR FEEDBACK PACKET",
-			JSON.stringify({ ...packetBase, feedback: [], omittedFeedback: events.map(compactPublicEvent), packetTruncated: true }, null, 2),
+			JSON.stringify({
+				...packetBase,
+				feedback: [],
+				omittedFeedback: [],
+				omittedFeedbackCount: events.length,
+				packetTruncated: true,
+			}, null, 2),
 			"END GITHUB PR FEEDBACK PACKET",
 		].join("\n");
 		content = truncateUtf8(content, MAX_MESSAGE_BYTES).value;
 	}
-	const truncated = omitted.length > 0 || events.some((event) => event.kind === "review_thread" && event.truncated)
-		|| events.some((event) => event.kind !== "review_thread" && event.truncated);
+	const truncated = sourceTruncated || omittedCount > 0;
 	return {
 		content,
 		details: {
@@ -754,7 +769,7 @@ export function formatFeedbackMessage(pr: WatchedPullRequest, events: FeedbackEv
 			url: pr.url,
 			count: events.length,
 			truncated,
-			fingerprints: events.flatMap((event) => event.fingerprints).slice(-512),
+			fingerprints: normalizeFingerprints(events.flatMap((event) => event.fingerprints)),
 			views: events.slice(0, 4).map((event) => ({
 				kind: event.kind,
 				...(event.kind === "review_thread" ? { path: event.path } : { author: event.author }),
@@ -796,7 +811,7 @@ function latestPersistedState(ctx: ExtensionContext): PersistedWatchState | unde
 		if (entry.type !== "custom_message" || entry.customType !== MESSAGE_TYPE || !entry.details || typeof entry.details !== "object") continue;
 		const details = entry.details as MessageDetails;
 		if (details.owner !== latest.pr.owner || details.repo !== latest.pr.repo || details.number !== latest.pr.number || !Array.isArray(details.fingerprints)) continue;
-		seen.push(...details.fingerprints.filter((fingerprint): fingerprint is string => typeof fingerprint === "string"));
+		seen.push(...details.fingerprints.slice(-MAX_SEEN_FINGERPRINTS).filter((fingerprint): fingerprint is string => typeof fingerprint === "string"));
 	}
 	return { ...latest, seen: normalizeFingerprints(seen) };
 }
