@@ -28,7 +28,11 @@ Report a finding only when all of these are clear:
 - The consequence matters to a caller, user, operator, or maintainer.
 - The author can take a specific next step within the change's scope.
 
-Confirm suspected findings against the implementation and existing tests. Use an available test, current CI, or a focused reproduction to prove or disprove them. Report deterministic check failures under validation rather than duplicating them as findings. Report the underlying defect only when it independently meets the finding bar. Omit pre-existing problems, speculative risks without a trigger, generic requests for tests or documentation, and low-value style preferences.
+Confirm suspected findings against the implementation and existing tests. When available, use a test, CI for the reviewed revision, or a focused reproduction.
+
+Put deterministic check failures under validation instead of repeating them as findings. Report the underlying defect only when it independently meets the finding bar.
+
+Omit problems the change neither introduces nor makes worse, unsupported risks, generic requests for tests or documentation, and low-value style preferences.
 
 Use a severity taxonomy only when the caller or host expects one. Reserve a blocker for a concrete reason the change should not proceed in its current form. Keep any severity label separate from the plain-language title.
 
