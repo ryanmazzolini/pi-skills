@@ -26,11 +26,13 @@
     "url": "https://github.com/ryanmazzolini/pi-skills/issues"
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.83.0",
     "@earendil-works/pi-coding-agent": ">=0.83.0",
     "@earendil-works/pi-tui": ">=0.83.0",
     "typebox": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "0.83.0",
     "@earendil-works/pi-coding-agent": "0.83.0",
     "@earendil-works/pi-tui": "0.83.0",
     "@types/node": "^24.0.0",

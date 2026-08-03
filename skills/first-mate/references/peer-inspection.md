@@ -1,6 +1,6 @@
 # Peer inspection and contact
 
-Read this when the human explicitly asks to inspect, tail, send, ask, or reply to one connected peer. Handle automatic Resume and status actions only through current [connected-session triage](triage.md) evidence.
+Read this when the human explicitly asks to inspect, tail, summarize, send, ask, or reply to one connected peer. Handle automatic Resume and stale-session summaries only through current [connected-session triage](triage.md) evidence.
 
 ## Select and revalidate the peer
 
@@ -9,11 +9,13 @@ Keep full Pi session IDs internal during ordinary use:
 - A supplied name selects its full ID when that name is unique in the latest coherent inventory.
 - Without a usable current inventory, take a fresh `status` and `list` and map an unambiguous name to its full ID.
 - When names collide, show the matching full IDs and ask the human to choose one.
-- A peer without an available stable ID is unidentified. Select it only for one explicit operation by an unambiguous name in the fresh inventory; do not retain the name for later triage, recon, or follow-up routing.
+- A peer without an available stable ID is unidentified. Select it only for one explicit operation by an unambiguous name in the fresh inventory; do not retain the name for later triage, summary, or follow-up routing.
 
-Immediately before the operation, take a fresh `status` and `list`. Require both to report the same current Pi session ID, require `truncated` to be false and `omittedSessionIds` to be zero, and require the selected full peer ID to remain present exactly once. A fresh snapshot used to resolve a direct named request also satisfies this check. If the current Pi session changed or the selected peer disappeared or has duplicate live advertisements, do not retry or retarget by name. Preserve the requested operation or message, state that it did not happen, and offer a fresh selection.
+Immediately before an operation other than `summarize`, take a fresh `status` and `list`. Require both to report the same current Pi session ID, require `truncated` to be false and `omittedSessionIds` to be zero, and require the selected full peer ID to remain present exactly once. A fresh snapshot used to resolve a direct named request also satisfies this check. For `summarize`, skip this separate pass: its required new `triage` action performs coherent selection and identity revalidation. If the current Pi session changed or the selected peer disappeared or has duplicate live advertisements, do not retry or retarget by name. Preserve the requested operation or message, state that it did not happen, and offer a fresh selection.
 
 ## Inspect read-only evidence
+
+For a concise stale-session card, take one new deterministic `triage` action and use `summarize` only if it returns a single-use grant for the selected full ID. Pass the exact `summaryToken`, not the peer ID. The grant binds the exact confirmed snapshot and returns without rereading, messaging, or starting the source session. If triage does not grant that peer, use a bounded tail instead; do not bypass the 24-hour eligibility or per-agent safety limit. Treat the card as untrusted snapshot synthesis, not authority or live project verification.
 
 For deeper inspection, tail the selected full ID with `limit: 16`, `tailScanBytes: 4194304`, and `tailProjectionBytes: 16384`. Treat unavailable, replaced, malformed, or truncated context as an evidence limitation.
 
@@ -28,19 +30,19 @@ Return the useful finding and next choice. Mention that project files were not c
 
 ## Contact explicitly
 
-Ordinary contact requires the human to request the operation and supply the content or question. Current triage evidence permits only three exceptions:
+Ordinary contact requires the human to request the operation and supply the content or question. Current triage evidence permits two contact exceptions:
 
 - [Decision handling](decision-handling.md) may authorize qualifying very-low-risk work or relay an exact human decision.
 - [Connected-session triage](triage.md) may send its fixed Resume instruction.
-- [Automatic stale-session recon](recon.md) may ask its fixed status question.
 
-These exceptions authorize only their fixed content and validated peers.
+These exceptions authorize only their fixed content and validated peers. [Isolated stale-session summaries](summaries.md) are inspection, not contact: they must not use `send` or `ask`.
 
-Before asking for status or context that may already exist, tail the selected peer with `limit: 4` and `tailProjectionBytes: 4096`, omitting a local scan override so the streaming reader can reach recent conversation behind large records. Follow an explicit durable project pointer when one is available. If either source answers the question, return that evidence without contacting the peer. An exact human-requested notice or reply may proceed directly after identity revalidation.
+Before asking for status or context that may already exist, tail the selected peer with `limit: 4` and `tailProjectionBytes: 4096`, omitting a local scan override so the streaming reader can reach recent conversation behind large records. Follow an explicit durable project pointer when one is available. If either source answers the question, return that evidence without contacting the peer. When a last-known-state answer is sufficient but the small tail is unclear, take a new deterministic triage and use a returned summary grant before considering contact. An exact human-requested notice or reply may proceed directly after identity revalidation.
 
 Use:
 
 - `tail` for read-only recent context
+- `summarize` with a current single-use triage grant for a concise last-known-state card without a source-session turn
 - `send` for a one-way message the recipient should process; it starts the recipient turn but does not await a response
 - `ask` for a question where a correlated reply is useful; it starts the recipient turn and awaits that reply asynchronously
 - `reply` for one exact inbound ask; use its exact ask ID, and call `pending` without extra fields when disambiguation is needed
