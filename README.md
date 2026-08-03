@@ -104,9 +104,9 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 Start First Mate with `/skill:first-mate` to triage your open Pi sessions immediately. One deterministic Intercom action publishes the role, inventories peers and pending asks, and gathers the bounded session tails needed for the current sweep.
 
-Triage inspects sessions idle for more than one hour first. When none are confirmed, it falls back to newer and unknown-age idle sessions. It resumes clearly unfinished work, requests read-only status from qualifying stale sessions, collapses sessions that need no interaction, and returns only useful outcomes and human-owned choices.
+Triage inspects sessions idle for more than one hour first. When none are confirmed, it falls back to newer and unknown-age idle sessions. It resumes clearly unfinished work and can issue up to four single-use grants for immutable snapshots confirmed at least 24 hours stale. Granted summaries run at most two at a time without rereading, messaging, or waking their sources. First Mate collapses sessions that need no interaction and returns only useful outcomes and human-owned choices.
 
-First Mate can sanity-check an owning session's current request and automatically authorize very-low-risk preparation such as a feature-branch commit, ordinary feature push, or draft PR. It bundles reversible decisions that still need judgment for one human response and keeps consequential choices individual. First Mate relays authority through Intercom; it does not change project files, commit work, deploy, close sessions, or perform cleanup itself.
+First Mate can sanity-check an owning session's current request and automatically authorize very-low-risk preparation such as a feature-branch commit, ordinary feature push, or draft PR. It presents decisions in project language with the main point, next action, material fences, and what approval will cause, while keeping exact snapshot evidence behind tool-result expansion. Summary text is untrusted evidence, not authority; First Mate rechecks the current persisted request before relaying approval. First Mate does not change project files, commit work, deploy, close sessions, or perform cleanup itself.
 
 A Pi session keeps the same Intercom identity across reloads and reconnects, while its First Mate role remains runtime-scoped. When another First Mate is already active, a new invocation stops before contacting peers and asks whether to take over in the current session.
 
@@ -130,7 +130,7 @@ The scheduler uses launchd on macOS, systemd user timers on Linux, or `crontab` 
 Pi gets a few extras that are not skills:
 
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
-- `intercom` provides local peer messaging, capability-gated bounded read-only tails, and an ephemeral First Mate presence role.
+- `intercom` provides local peer messaging, capability-gated bounded read-only tails, single-use isolated stale-snapshot summaries, and an ephemeral First Mate presence role.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
 - `scheduled-jobs` adds the human-only `/scheduler` interface.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.

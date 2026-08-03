@@ -185,6 +185,31 @@ test("runtime resolves a stable presence identity without messaging the target",
 	await runtime.dispose();
 });
 
+test("isolated summary capture rejects active peers and pending asks before reading", async () => {
+	const presence = { sessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", revision: 1 };
+	let opens = 0;
+	let starts = 0;
+	const constraints = { requireIdle: true, requireNoPending: true, onCaptureStart: () => { starts++; } };
+	const opener = () => {
+		opens++;
+		return { snapshot: { events: [] }, verifyStable() {}, close() {} };
+	};
+	const activeTarget = { ...peer("target", "worker"), status: "thinking", piSession: presence };
+	const activeRuntime = new IntercomRuntime({ client: new FakeClient([peer("self", "caller"), activeTarget]), openTail: opener });
+	await assert.rejects(activeRuntime.tail("pi-target", 32, undefined, undefined, constraints), /not idle/);
+	assert.equal(opens, 0);
+	assert.equal(starts, 0);
+	await activeRuntime.dispose();
+
+	const idleTarget = { ...activeTarget, status: "idle" };
+	const pendingRuntime = new IntercomRuntime({ client: new FakeClient([peer("self", "caller"), idleTarget]), openTail: opener });
+	pendingRuntime.inbox.record(idleTarget, { id: "ask-1", timestamp: 1, expectsReply: true, content: { text: "decision?" } });
+	await assert.rejects(pendingRuntime.tail("pi-target", 32, undefined, undefined, constraints), /pending ask/);
+	assert.equal(opens, 0);
+	assert.equal(starts, 0);
+	await pendingRuntime.dispose();
+});
+
 test("runtime rejects unavailable, duplicate, and changed tail advertisements", async () => {
 	const presence = { sessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", revision: 1 };
 	const target = { ...peer("target", "worker"), piSession: presence };

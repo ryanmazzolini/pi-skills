@@ -15,6 +15,7 @@ import intercomExtension, {
 	incomingContent,
 	presenceName,
 	sanitizeSelfDeclaredMetadata,
+	selectSessionSummaryCandidates,
 	validateIntercomAction,
 } from "./index.ts";
 import { FrameDecoder, encodeFrame } from "./client.ts";
@@ -37,8 +38,8 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	};
 	intercomExtension(pi);
 	assert.deepEqual(tools.map((tool) => tool.name), ["intercom"]);
-	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "triage", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"]);
-	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "operationId", "limit", "tailScanBytes", "tailProjectionBytes"]);
+	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "triage", "tail", "summarize", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"]);
+	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "summaryToken", "operationId", "limit", "tailScanBytes", "tailProjectionBytes"]);
 	assert.deepEqual(commands, []);
 	assert.deepEqual(shortcuts, []);
 	assert.equal(tools.some((tool) => tool.name === "contact_supervisor"), false);
@@ -47,6 +48,7 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	assert.match(tools[0].promptGuidelines.join("\n"), /status for the current Pi session ID/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /Prefer durable project or work-item updates/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /use intercom tail with a small limit/);
+	assert.match(tools[0].promptGuidelines.join("\n"), /single-use summaryToken/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /do not acknowledge routine updates or receipts/);
 	assert.equal(events.some((event) => event.name === "session_start"), true);
 	assert.equal(events.some((event) => event.name === "session_shutdown"), true);
@@ -64,6 +66,11 @@ test("validates action-specific fields while preserving attachment and reply sel
 	assert.doesNotThrow(() => validateIntercomAction({ action: "send", to: "worker", message: "update", attachments: [] }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "tail", to: "worker", limit: 8, tailScanBytes: 1_024, tailProjectionBytes: 4_096 }));
 	assert.throws(() => validateIntercomAction({ action: "tail" }), /requires to/);
+	assert.doesNotThrow(() => validateIntercomAction({ action: "summarize", summaryToken: "grant" }));
+	assert.throws(() => validateIntercomAction({ action: "summarize" }), /requires summaryToken/);
+	assert.throws(() => validateIntercomAction({ action: "summarize", summaryToken: "grant", to: "worker" }), /to is not valid/);
+	assert.throws(() => validateIntercomAction({ action: "summarize", summaryToken: "grant", limit: 8 }), /limit is not valid/);
+	assert.throws(() => validateIntercomAction({ action: "list", summaryToken: "grant" }), /summaryToken is not valid/);
 	assert.throws(() => validateIntercomAction({ action: "list", tailScanBytes: 1_024 }), /tailScanBytes is not valid/);
 	assert.throws(() => validateIntercomAction({ action: "send", to: "worker", message: "update", tailProjectionBytes: 4_096 }), /tailProjectionBytes is not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "reply", message: "answer", replyTo: "ask-1" }));
@@ -72,6 +79,35 @@ test("validates action-specific fields while preserving attachment and reply sel
 	assert.throws(() => validateIntercomAction({ action: "status", replyTo: "extra" }), /not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "operations", limit: 1 }));
 	assert.throws(() => validateIntercomAction({ action: "cancel" }), /requires operationId/);
+});
+
+test("selects at most four oldest confirmed 24-hour snapshots for isolated synthesis", () => {
+	const now = Date.parse("2026-07-31T12:00:00.000Z");
+	const makeTail = (id, ageHours, withEvidence = true) => ({
+		target: {},
+		targetSessionId: id,
+		snapshot: {
+			events: withEvidence ? [{ kind: "assistant", text: id }] : [],
+			lastConversationalTimestamp: now - ageHours * 60 * 60 * 1_000,
+		},
+	});
+	const result = {
+		snapshotTimestamp: now,
+		tails: [
+			makeTail("25-hours", 25),
+			makeTail("30-hours", 30),
+			makeTail("29-hours", 29),
+			makeTail("28-hours", 28),
+			makeTail("27-hours", 27),
+			makeTail("23-hours", 23),
+			makeTail("empty", 40, false),
+		],
+	};
+	const selected = selectSessionSummaryCandidates(result, 4);
+	assert.deepEqual(selected.selected.map((tail) => tail.targetSessionId), ["30-hours", "29-hours", "28-hours", "27-hours"]);
+	assert.equal(selected.omitted, 1);
+	assert.deepEqual(selectSessionSummaryCandidates(result, 0), { selected: [], omitted: 5 });
+	assert.throws(() => selectSessionSummaryCandidates(result, 5), /limit is invalid/);
 });
 
 test("uses the legacy unnamed alias and preserves attachment bodies", () => {
@@ -172,6 +208,16 @@ test("intercom tool rows keep messages visible while collapsing long results", (
 	assert.doesNotMatch(collapsedResult, /hidden result detail/);
 	assert.match(collapsedResult, /to expand/);
 	assert.match(tool.renderResult(result, { expanded: true, isPartial: false }, theme, { isError: false }).render(120).join("\n"), /hidden result detail/);
+
+	const summaryResult = {
+		content: [{ type: "text", text: "## Compact summary" }],
+		details: { kind: "session_summary", evidence: [{ id: "E1", kind: "assistant", text: "exact persisted evidence" }] },
+	};
+	const collapsedSummary = tool.renderResult(summaryResult, { expanded: false, isPartial: false }, theme, { isError: false }).render(120).join("\n");
+	assert.doesNotMatch(collapsedSummary, /exact persisted evidence/);
+	const expandedSummary = tool.renderResult(summaryResult, { expanded: true, isPartial: false }, theme, { isError: false }).render(120).join("\n");
+	assert.match(expandedSummary, /Exact immutable snapshot evidence/);
+	assert.match(expandedSummary, /\[E1 · assistant\]\s*\nexact persisted evidence/);
 });
 
 test("renders stable Pi session IDs and sanitizes self-declared identity metadata", () => {
@@ -798,11 +844,43 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 		appendEntry: (type, data) => audits.push({ type, data }),
 		sendMessage: (...args) => delivered.push(args),
 	};
-	intercomExtension(pi);
 	let idle = true;
+	const summaryModelCalls = [];
+	const summaryUsage = {
+		input: 10,
+		output: 5,
+		cacheRead: 2,
+		cacheWrite: 1,
+		reasoning: 3,
+		totalTokens: 18,
+		cost: { input: 0.01, output: 0.02, cacheRead: 0.003, cacheWrite: 0.004, total: 0.037 },
+	};
+	intercomExtension(pi, {
+		summaryModel: {
+			async complete(systemPrompt, prompt, timestamp, signal) {
+				summaryModelCalls.push({ systemPrompt, prompt, timestamp, signal });
+				return {
+					text: JSON.stringify({
+						title: "Tail decision",
+						state: "awaiting_decision",
+						mainPoint: "The persisted answer leaves one bounded decision.",
+						safeToClose: "no",
+						decision: {
+							action: "Approve the exact follow-up.",
+							fences: ["Preserve unrelated work"],
+						},
+						limitations: ["Persisted evidence is not live verification."],
+						evidenceIds: ["E1", "E2"],
+					}),
+					usage: summaryUsage,
+				};
+			},
+		},
+	});
 	const ctx = {
 		cwd: "/repo",
 		model: { id: "fixture-model" },
+		modelRegistry: {},
 		isIdle: () => idle,
 		sessionManager: { getSessionId: () => "full-pi-session-id", getSessionFile: () => undefined, getLeafId: () => null, getBranch: () => [] },
 	};
@@ -875,6 +953,12 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.equal(triaged.details.firstMatePeersSkipped, 0);
 	assert.equal(triaged.details.tails.length, 1);
 	assert.equal(triaged.details.tails[0].targetSessionId, peerSessionId);
+	assert.equal(triaged.details.summaryCandidateCount, 1);
+	assert.equal(triaged.details.summaryCandidatesDeferred, 0);
+	assert.equal(triaged.details.summaryCandidatesUnavailable, 0);
+	let summaryToken = triaged.content[0].text.match(/summaryToken "([^"]+)"/)?.[1];
+	assert.ok(summaryToken);
+	assert.match(triaged.content[0].text, /confirmed at least 24 hours stale/);
 	assert.match(triaged.content[0].text, /tail question/);
 	assert.ok(Buffer.byteLength(triaged.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
 	assert.ok(Buffer.byteLength(JSON.stringify(triaged.details)) <= INTERCOM_PROJECTION_MAX_BYTES);
@@ -884,12 +968,23 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	await assert.rejects(execute({ action: "triage" }, cancelledRefreshTriage.signal), /cancelled/);
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === "first-mate");
 	assert.equal((await execute({ action: "status" })).details.advertisingFirstMate, true);
+	const survivedFailedTriage = await execute({ action: "summarize", summaryToken });
+	assert.match(survivedFailedTriage.content[0].text, /## Tail decision/);
+	assert.equal(summaryModelCalls.length, 1);
+	const preRefreshTriage = await execute({ action: "triage" });
+	summaryToken = preRefreshTriage.content[0].text.match(/summaryToken "([^"]+)"/)?.[1];
+	assert.ok(summaryToken);
 
 	await execute({ action: "role" });
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
+	const previousSummaryToken = summaryToken;
 	const firstConcurrentTriage = execute({ action: "triage" });
 	await assert.rejects(execute({ action: "triage" }), /already in progress/);
-	await firstConcurrentTriage;
+	const refreshedTriage = await firstConcurrentTriage;
+	summaryToken = refreshedTriage.content[0].text.match(/summaryToken "([^"]+)"/)?.[1];
+	assert.ok(summaryToken);
+	assert.notEqual(summaryToken, previousSummaryToken);
+	await assert.rejects(execute({ action: "summarize", summaryToken: previousSummaryToken }), /invalid, expired, or already used/);
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === "first-mate");
 
 	await execute({ action: "role" });
@@ -925,6 +1020,48 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.deepEqual(afterTail, beforeTail);
 	assert.equal(targetMessages, 0);
 
+	const activeAfterGrant = "ACTIVE_AFTER_SUMMARY_GRANT";
+	await appendFile(sessionPath, `${JSON.stringify({ type: "message", id: "after-grant", parentId: "tail-r", timestamp: "2026-01-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: activeAfterGrant }], stopReason: "stop", timestamp: 4 } })}\n`);
+	peer.updatePresence({
+		status: "thinking",
+		lastConversationalTimestamp: Date.now(),
+		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "after-grant", revision: 2 },
+	});
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 2);
+	const beforeSummary = await readFile(sessionPath);
+	const summarized = await execute({ action: "summarize", summaryToken });
+	const afterSummary = await readFile(sessionPath);
+	assert.match(summarized.content[0].text, /## Tail decision/);
+	assert.match(summarized.content[0].text, /\*\*Needs a decision\.\*\*/);
+	assert.match(summarized.content[0].text, /\*\*Next:\*\* Inspect the owning session's current persisted request/);
+	assert.match(summarized.content[0].text, /\*\*Proposed:\*\* Approve the exact follow-up\./);
+	assert.match(summarized.content[0].text, /\*\*Keep:\*\* Preserve unrelated work\./);
+	assert.match(summarized.content[0].text, /\*\*Then:\*\* First Mate rechecks/);
+	assert.match(summarized.content[0].text, /source session not messaged/);
+	assert.equal(summarized.details.kind, "session_summary");
+	assert.equal(summarized.details.targetSessionId, peerSessionId);
+	assert.equal(summarized.details.model, "openai-codex/gpt-5.6-luna");
+	assert.equal(summarized.details.reasoning, "xhigh");
+	assert.equal(summarized.details.sourceMessaged, false);
+	assert.equal(summarized.details.attempts, 1);
+	assert.deepEqual(summarized.usage, summaryUsage);
+	assert.equal(summaryModelCalls.length, 2);
+	const latestSummaryModelCall = summaryModelCalls.at(-1);
+	assert.equal(latestSummaryModelCall.prompt.includes(privateSentinel), false);
+	assert.equal(latestSummaryModelCall.prompt.includes(activeAfterGrant), false);
+	assert.match(latestSummaryModelCall.prompt, /tail question/);
+	assert.match(latestSummaryModelCall.prompt, /tail answer/);
+	assert.deepEqual(summarized.details.evidence.map(({ id, kind, text }) => ({ id, kind, text })), [
+		{ id: "E1", kind: "user", text: "tail question" },
+		{ id: "E2", kind: "assistant", text: "tail answer" },
+		{ id: "E3", kind: "outcome", text: 'Tool "read": succeeded' },
+	]);
+	assert.equal(JSON.stringify(summarized).includes(privateSentinel), false);
+	assert.ok(Buffer.byteLength(JSON.stringify(summarized.details)) <= INTERCOM_PROJECTION_MAX_BYTES);
+	assert.deepEqual(afterSummary, beforeSummary);
+	assert.equal(targetMessages, 0);
+	await assert.rejects(execute({ action: "summarize", summaryToken }), /invalid, expired, or already used/);
+
 	const windowedRecords = [
 		sessionRecords[0],
 		{ type: "custom", id: "old-padding", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", customType: "padding", data: privateSentinel.repeat(1_024) },
@@ -932,8 +1069,8 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 		{ type: "message", id: "recent-a", parentId: "recent-u", timestamp: "2026-01-01T00:00:05.000Z", message: { role: "assistant", content: [{ type: "text", text: "recent window answer" }], stopReason: "stop", timestamp: 5 } },
 	];
 	await writeFile(sessionPath, `${windowedRecords.map((record) => JSON.stringify(record)).join("\n")}\n`);
-	peer.updatePresence({ piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "recent-a", revision: 2 } });
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 2);
+	peer.updatePresence({ status: "idle", lastConversationalTimestamp: Date.now() - 2 * 60 * 60 * 1_000, piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "recent-a", revision: 3 } });
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 3);
 	const windowedTail = await execute({ action: "tail", to: peerSessionId, limit: 2, tailScanBytes: 8_192 });
 	assert.match(windowedTail.content[0].text, /recent window question/);
 	assert.match(windowedTail.content[0].text, /recent window answer/);

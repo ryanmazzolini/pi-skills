@@ -255,6 +255,9 @@ export interface FirstMateTriageProjectionInput {
 	pendingPeersSkipped: number;
 	unidentifiedPeers: number;
 	ambiguousPeers: number;
+	summaryCandidates?: readonly { targetSessionId: string; token: string }[];
+	summaryCandidatesDeferred?: number;
+	summaryCandidatesUnavailable?: number;
 }
 
 function projectedTriageEvents(snapshot: SessionTailSnapshot, maximumBytes: number): TextProjection {
@@ -308,6 +311,18 @@ export function projectFirstMateTriage(input: FirstMateTriageProjectionInput): T
 			const preview = truncateUtf8(sanitizeSelfDeclaredMetadata(entry.message.content.text), 128);
 			fixed += `\n- Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable"} · message ${JSON.stringify(entry.message.id)} · ${preview}`;
 		}
+	}
+	if ((input.summaryCandidates?.length ?? 0) > 0) {
+		fixed += "\n\n**Single-use isolated summary grants (confirmed at least 24 hours stale):**";
+		for (const candidate of input.summaryCandidates ?? []) {
+			fixed += `\n- Pi session ID ${JSON.stringify(candidate.targetSessionId)} · summaryToken ${JSON.stringify(candidate.token)}`;
+		}
+	}
+	if ((input.summaryCandidatesDeferred ?? 0) > 0) {
+		fixed += `\n${input.summaryCandidatesDeferred} additional eligible summaries deferred by the per-agent safety limit.`;
+	}
+	if ((input.summaryCandidatesUnavailable ?? 0) > 0) {
+		fixed += `\n${input.summaryCandidatesUnavailable} eligible expanded snapshot(s) became unavailable during grant capture.`;
 	}
 
 	const bases = input.tails.map((tail) => {
