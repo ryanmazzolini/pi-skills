@@ -26,4 +26,4 @@ Do not imitate generated output by hand to bypass a failing generator.
 
 ## Validate the result
 
-Targeted checks can speed iteration, but they do not replace the repository's required final validation of the standalone or integrated delivery target. For a pull-request stack, follow [Ship's review gate](../../../ship/ship/references/review-gate.md): run or reuse the applicable repository-level generation, typecheck, test, and build evidence once for the cumulative trunk-to-top result, and use focused checks on intermediate layers. Distinguish a pass from an introduced failure or a reproduced baseline failure in the final report.
+Targeted checks can speed iteration, but they do not replace the repository's required final validation. Follow [Ship's review gate](../../../ship/ship/references/review-gate.md): run or reuse the applicable repository-level generation, typecheck, test, and build evidence once for its integrated target, and use focused checks for intermediate delivery changes. Distinguish a pass from an introduced failure or a reproduced baseline failure in the final report.

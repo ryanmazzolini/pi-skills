@@ -27,7 +27,9 @@ Plan only when a dependency map or explicit delivery boundary would help executi
 
 A **delivery change** is a coherent PR-shaped implementation unit inside one approved benefit. It crosses every project layer needed for one narrow observable improvement, and its diff can be understood on its own. When the plan deliberately uses several PRs, each change should remain mergeable independently or state the exact stack dependency that prevents it.
 
-When several delivery changes form one pull-request stack, designate the cumulative trunk-to-top result as their integrated validation and review target under [the review gate](../ship/references/review-gate.md). Give each layer focused verification for its boundary and reuse the integrated evidence across the stack; a separate PR does not make each layer another exhaustive validation or broad-review target.
+Several PRs do not imply a stack. Keep independent changes independent. Choose a stack only when a later PR must depend on an unmerged lower layer and continuing or reviewing that later work before the lower layer merges is useful.
+
+When approved delivery changes form a stack, designate the cumulative trunk-to-top result as their integrated validation and review target under [the review gate](../ship/references/review-gate.md). Give each layer focused verification for its boundary and reuse the integrated evidence across the stack; a separate PR does not make each layer another exhaustive validation or broad-review target.
 
 Each delivery change must:
 
