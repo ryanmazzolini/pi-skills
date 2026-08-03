@@ -1,45 +1,45 @@
 ---
 name: "research"
-description: "Investigate technical questions, uncertain framing, assumptions, evidence, and solution landscapes. Use when the user asks for research, a comparison, or a technical spike, or when investigation could reframe a Ship decision."
+description: "Investigate uncertainty before a technical decision. Use when the user asks for research, a comparison, or a technical spike, or when Ship needs evidence to test material framing, assumptions, or possible approaches."
 ---
 
 # Research
 
-Make the situation trustworthy enough to choose a next action. A useful result may answer, reframe, or reject the starting question.
+Make the situation trustworthy enough to choose a next action. The result may answer, reframe, or reject the starting question.
 
 ## Frame the investigation
 
-For a narrow fact or exact-document lookup, go directly to the named or authoritative original source, verify it, answer, and stop. It does not require a broad local survey.
+For a narrow fact or exact-document lookup, go directly to the original source and verify it. Skip the broader research loop, then deliver the answer through the requested destination or return it to the workflow checkpoint that requested it.
 
-Otherwise read the relevant local code, documentation, tests, history, and existing workflow first. Separate observed facts from assumptions. State the provisional question, the decision or understanding it could affect, constraints, what evidence could change the answer or framing, and where the result should go.
+Otherwise inspect the relevant code, documentation, tests, history, workflow, and observed behavior. Separate observations from assumptions. State the provisional question, the decision or understanding it could affect, constraints, what evidence could change the answer or framing, and where the result should go.
 
 When the request names a GitHub issue such as `gh#123` or `#123`, look it up with `gh issue view` when available. Otherwise work from the stated topic and local context.
 
-Ask only when an answer would materially change the investigation or its destination. Begin when the provisional question and useful boundaries are clear. The question does not need to be treated as correct.
+Ask only when a missing answer would change the evidence paths, experiment authority, or destination. Otherwise record the gap as an assumption and begin with the provisional question; do not assume the question is correct.
 
-When the framing, assumptions, or candidate space remain materially unresolved in a way that could change the answer or next action, read [`exploration.md`](../ship/references/exploration.md) and use its bounded loop.
+## Phase 1 — Fan out
 
-## Gather decision-relevant evidence
+Use this phase when the framing, assumptions, or candidate approaches remain materially uncertain. Read [Phase 1 in `exploration.md`](../ship/references/exploration.md#phase-1--fan-out). Map distinct explanations, approaches, terminology, evidence sources, and challenge paths without recommending a direction yet.
 
-Start with the live system when one exists. Use external sources when local evidence cannot settle the question. Treat model summaries, search rankings, citation counts, and famous authors as leads rather than evidence; verify important claims in original artifacts.
+Treat model summaries, search rankings, citation counts, and prominent authors as leads. Verify that candidate artifacts, authors, links, and attributions exist, but defer decision-relevant claim checking and selection to Phase 2.
 
-Consider options that satisfy the stated constraints, but use contradictory evidence to test whether those constraints or the starting model are incomplete. Keep candidate discovery separate from accepted evidence.
+Stop expanding at the reference's checkpoint. A known question whose candidate set already satisfies that checkpoint may proceed directly to Phase 2.
 
-For a technical spike, state the assumption under test, the smallest experiment, the observation that would settle it, and the cleanup boundary before changing code or infrastructure. Use `prototype` instead when the uncertainty requires human use or observation rather than a technical result.
+## Phase 2 — Verify and reduce
 
-Stop when the situation supports a next action, material contradictions and gaps are explicit, and another pass is unlikely to change the framing or recommendation. If investigation leaves a consequential preference or trade-off that evidence cannot settle, return to [`align`](../align/SKILL.md) for that decision; otherwise return to the exact Ship checkpoint the investigation interrupted. Do not reopen a settled direction unless new evidence reveals a material conflict or blocker.
+Read [Phase 2 in `exploration.md`](../ship/references/exploration.md#phase-2--verify-and-reduce). Check the claims that affect the decision against original artifacts, the live system, or bounded experiments. Test assumptions, compare viable candidates, look for falsifying evidence, and remove directions that the evidence does not support.
 
-## Explain the result
+For a technical spike, state the assumption under test, the smallest experiment, the observation that would settle it, and the cleanup boundary before changing code or infrastructure. Use `prototype` instead when the uncertainty requires human use or observation.
 
-Put the result and its practical effect first. State whether the starting question was answered, reframed, or rejected. Then give the evidence that matters, important trade-offs or unknowns, and any viable alternative a reasonable reader might choose. Cite the local or primary sources behind important claims.
-
-Choose the form that serves the result: prose for reasoning, bullets for choices or actions, and a table only when it makes comparison clearer. Omit raw search logs, source inventories, and rejected paths unless they are needed for reproducibility or continuation.
-
-Finish when the reader can act without reading the sources, can distinguish evidence from assumptions, and can see every uncertainty that still matters.
+Stop when the evidence supports a next action, material contradictions and gaps are explicit, and more checking is unlikely to change the result. For workflow-linked research, return the result to the exact checkpoint it informs. Send consequential preferences or trade-offs that evidence cannot settle to [`align`](../align/SKILL.md); otherwise resume the interrupted workflow. Standalone research needs no workflow return.
 
 ## Deliver the result
 
-- For inline output, put the result in the conversation.
-- For a file, write to the agreed path.
-- For active Ship work, retain only decision-relevant synthesis or a bounded no-material-finding result under the work item's `working/research/`, and link it from the decision or question it informs.
-- Before posting to a GitHub issue or any other public destination, show the destination and proposed body. Confirm publication and ask whether AI attribution is wanted.
+Lead with the result and its practical effect. State whether the starting question was answered, reframed, or rejected. Give the evidence that matters, material counterevidence or unknowns, and any viable alternative a reasonable reader might choose. Cite the original sources behind important claims.
+
+Use prose for connected reasoning, bullets for separate choices or actions, and a table only when it makes comparison clearer. Omit raw search logs, source inventories, and rejected paths unless they are needed for reproducibility or continuation.
+
+- When no destination was requested, put the result in the conversation.
+- For a requested file, write to the agreed path.
+- For active Ship work with a durable work item, follow the [work-item research guidance](../ship/references/durable-context.md) and link retained synthesis from the decision it informs.
+- Before posting publicly, show the destination and proposed body. Confirm publication and whether AI attribution is wanted.

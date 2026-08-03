@@ -11,9 +11,9 @@ Move work to its next useful human checkpoint. Use the least process that keeps 
 
 Inspect the request, relevant project evidence, live repository, and any existing workflow before choosing:
 
-- **Investigation detour:** the framing, assumptions, evidence, or solution landscape are not trustworthy enough to choose an outcome, route, or direction. Use [`research`](../research/SKILL.md), then resume Ship with its answer, reframed question, or rejected premise. Routine local inspection does not need this detour.
+- **Investigation detour:** material uncertainty about the framing, assumptions, evidence, or available approaches prevents a trustworthy route, and investigation can reduce it. Use [`research`](../research/SKILL.md), then resume Ship with its result. Routine local inspection does not need this detour.
 - **Direct change:** the requested benefit, completion signal, and implementation boundary are clear; no consequential human decision or coordination graph remains. Proceed without alignment or a plan.
-- **Aligned change:** a requirements, UX/DX, scope, or solution-direction decision could materially change the outcome. Use `align`, then return here.
+- **Aligned change:** a consequential goal, priority, scope, experience, or trade-off that evidence cannot settle could materially change the outcome. Use `align`, then return here.
 - **Planned delivery:** one approved benefit needs dependent delivery changes, several PRs, migration sequencing, or worthwhile parallel work. Use `delivery-plan`.
 - **Roadmap:** several independently useful benefits need durable coordination or recovery under one shared destination. Read [references/roadmaps.md](references/roadmaps.md).
 

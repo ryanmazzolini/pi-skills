@@ -19,7 +19,7 @@ Read:
 4. The parent roadmap and milestone work-item index or current continuation when this work is one milestone.
 5. Relevant `CONTEXT-MAP.md`, `CONTEXT.md`, ADRs, project documentation, code, tests, and history.
 
-Extract the target benefit, observable completion, included and deferred outcomes, constraints, assumptions, open blockers, and confirmed UX/DX walkthrough when applicable. Resolve narrow factual assumptions through inspection. Return to Ship for `research` when uncertain framing, assumptions, evidence, or the solution landscape could stop or reshape delivery. Return to `align` when a consequential human decision remains or project evidence conflicts with the approved outcome.
+Extract the target benefit, observable completion, included and deferred outcomes, constraints, assumptions, open blockers, and confirmed UX/DX walkthrough when applicable. Resolve narrow factual assumptions through inspection. Return to Ship for `research` when investigation could reduce material uncertainty about the framing, assumptions, evidence, or available approaches and thereby stop or reshape delivery. Return to `align` when a consequential choice remains or project evidence conflicts with the approved outcome.
 
 Plan only when a dependency map or explicit delivery boundary would help execution. Common reasons are several PRs, migration sequencing, expand-migrate-contract work, independent branches, or a change too wide for one fresh session. Duration or production editing alone is not enough.
 
