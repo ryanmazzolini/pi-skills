@@ -20,9 +20,9 @@ Read the alignment and the relevant product surface. State:
 
 Resolve these through inspection or a short proposal when possible. If uncertainty still blocks the experiment, explain it. Ask one short question, then stop. Return to `align` when several independent decisions remain. Treat an explicit invocation or approval already given in the conversation or alignment as approval to prototype. Otherwise recommend the experiment and wait for approval before writing code.
 
-When the framing or candidate experience space remains open, read [`exploration.md`](../ship/references/exploration.md) before choosing the artifact. Survey only enough of the live experience, relevant patterns, constraints, and materially different experience hypotheses to avoid polishing a favorite prematurely.
+When the framing or candidate experience space remains open, use [Phase 1 of `exploration.md`](../ship/references/exploration.md#phase-1--fan-out) before choosing the artifact. Stop at that phase's checkpoint, using a relevant pattern or observation for each experience hypothesis and an alternative that challenges the apparent favorite.
 
-Choose the smallest useful form. When comparison itself will answer an appearance, hierarchy, interaction, behavior, or state question, name two or three structurally different hypotheses and build them in parallel with the same surrounding context, representative data, and fidelity. Delay critique and serial refinement until the alternatives can be compared. A narrow question does not need extra variants.
+Choose the smallest useful form. When comparison itself will answer an appearance, hierarchy, interaction, behavior, or state question, name two or three structurally different hypotheses and build them as a set with the same surrounding context, representative data, and fidelity. Complete the bounded set before critiquing or refining one. A narrow question does not need extra variants.
 
 - For appearance or information hierarchy, create the smallest UI that can be judged in its real surrounding context.
 - For interaction, behavior, or state, create a tiny interactive application with representative in-memory data and make the relevant state visible after each action.
@@ -35,9 +35,9 @@ Keep only what answers the question. Omit production hardening, tests, persisten
 
 ## Hand over recoverably
 
-Before user evaluation, record an open prototype in the active alignment file: its question, location, run command or URL, what to judge, prototype-owned paths or edits, pre-existing work to preserve, and remaining cleanup. For a comparison, include every variant entry point, shared scaffold, and discarded alternative in the prototype-owned inventory. Verify that it runs, then give the user the run command or URL and the exact question to judge.
+Before user evaluation, record an open prototype in the active alignment file: its question, location, run command or URL, what to judge, prototype-owned paths or edits, pre-existing work to preserve, and remaining cleanup. For a comparison, include every path or edit created for any variant—including one discarded before evaluation—and shared scaffolding in the prototype-owned inventory. Verify that it runs, then give the user the run command or URL and the exact question to judge.
 
-Iterate only while changes remain cheap and continue to answer that same question. When comparison selects a direction, refine only that direction. Stop when the question is answered or the prototype no longer stays disposable.
+Iterate only while changes remain cheap and continue to answer that same question. After comparison, refine the selected direction only if the original question remains unanswered; otherwise stop iterating and proceed to the verdict and cleanup below. Stop when the question is answered or the prototype no longer stays disposable.
 
 When the user settles the question, add the verdict to the open prototype without removing its recovery details, then stop prototype processes. Remove only the recorded prototype-owned paths and edits by default. When the user asks to preserve the prototype, instead move or retain it outside the production path and record its location.
 

@@ -41,7 +41,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`ship`](./skills/ship/ship/SKILL.md) | Route direct changes, alignment, delivery plans, and milestone roadmaps |
 | [`ship-coach`](./skills/ship/ship-coach/SKILL.md) | Ship real work through guided practice and feedback |
 | [`align`](./skills/ship/align/SKILL.md) | Settle consequential human decisions for one target outcome |
-| [`research`](./skills/ship/research/SKILL.md) | Investigate uncertain framing, assumptions, evidence, and technical directions |
+| [`research`](./skills/ship/research/SKILL.md) | Fan out, verify, and reduce uncertainty before a technical decision |
 | [`prototype`](./skills/ship/prototype/SKILL.md) | Build a throwaway artifact to answer one experiential design question |
 | [`delivery-plan`](./skills/ship/delivery-plan/SKILL.md) | Plan dependent delivery changes for one approved benefit |
 | [`ticket-workspace`](./skills/ticket-workspace/ticket-workspace/SKILL.md) | Create or reuse workspaces with one git worktree per PR |

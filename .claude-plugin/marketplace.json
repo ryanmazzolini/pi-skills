@@ -8,7 +8,7 @@
     {
       "name": "ship",
       "source": "./skills/ship",
-      "description": "Investigate uncertain work and route direct changes, alignment, prototypes, delivery plans, and milestone roadmaps",
+      "description": "Route research, direct changes, alignment, prototypes, delivery plans, and milestone roadmaps",
       "strict": false,
       "skills": [
         "./ship",
