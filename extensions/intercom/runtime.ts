@@ -186,7 +186,13 @@ export class IntercomRuntime extends EventEmitter {
 		this.client.invalidateRoleSession(reason);
 	}
 
-	async tail(to: string, limit: number, signal?: AbortSignal, scanBytes?: number): Promise<RuntimeTailResult> {
+	async tail(
+		to: string,
+		limit: number,
+		signal?: AbortSignal,
+		scanBytes?: number,
+		constraints: { requireIdle?: boolean; requireNoPending?: boolean; onCaptureStart?: () => void } = {},
+	): Promise<RuntimeTailResult> {
 		throwIfAborted(signal);
 		await this.ensureConnected();
 		if (!this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
@@ -197,8 +203,15 @@ export class IntercomRuntime extends EventEmitter {
 		const before = await this.client.listSessions(signal);
 		const target = this.resolveTargetFromSessions(to, before);
 		this.assertNotSelf(target.id);
+		if (constraints.requireIdle && (target.status !== "idle" || target.role === "first-mate")) {
+			throw new Error("Target session is not idle for isolated summary capture");
+		}
+		if (constraints.requireNoPending && this.inbox.list().some((entry) => this.samePeerIdentity(entry.from, target))) {
+			throw new Error("Target session has a pending ask and cannot be summarized automatically");
+		}
 		const presence = this.requireUniquePiSession(target, before);
 		throwIfAborted(signal);
+		constraints.onCaptureStart?.();
 		const opened = await this.openTail({
 			piSessionId: presence.sessionId,
 			fileLocator: presence.fileLocator,
@@ -216,6 +229,12 @@ export class IntercomRuntime extends EventEmitter {
 			const currentPresence = this.requireUniquePiSession(current, after);
 			if (!this.samePiSession(presence, currentPresence)) {
 				throw new Error("Target session advertisement changed during tail inspection");
+			}
+			if (constraints.requireIdle && (current.status !== "idle" || current.role === "first-mate")) {
+				throw new Error("Target session became active during isolated summary capture");
+			}
+			if (constraints.requireNoPending && this.inbox.list().some((entry) => this.samePeerIdentity(entry.from, current))) {
+				throw new Error("Target session sent a pending ask during isolated summary capture");
 			}
 			opened.verifyStable();
 			return { target, targetSessionId: presence.sessionId, snapshot: opened.snapshot };
