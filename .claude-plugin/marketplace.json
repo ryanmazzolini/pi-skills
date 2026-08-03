@@ -8,12 +8,13 @@
     {
       "name": "ship",
       "source": "./skills/ship",
-      "description": "Route direct changes, alignment, delivery plans, and milestone roadmaps to completion",
+      "description": "Investigate uncertain work and route direct changes, alignment, prototypes, delivery plans, and milestone roadmaps",
       "strict": false,
       "skills": [
         "./ship",
         "./ship-coach",
         "./align",
+        "./research",
         "./prototype",
         "./delivery-plan"
       ]
@@ -26,15 +27,6 @@
       "skills": [
         "./commit-pr",
         "./commit-simple"
-      ]
-    },
-    {
-      "name": "research",
-      "source": "./skills/research",
-      "description": "Technical research and spike documentation",
-      "strict": false,
-      "skills": [
-        "./research"
       ]
     },
     {

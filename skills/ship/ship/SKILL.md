@@ -11,6 +11,7 @@ Move work to its next useful human checkpoint. Use the least process that keeps 
 
 Inspect the request, relevant project evidence, live repository, and any existing workflow before choosing:
 
+- **Investigation detour:** the framing, assumptions, evidence, or solution landscape are not trustworthy enough to choose an outcome, route, or direction. Use [`research`](../research/SKILL.md), then resume Ship with its answer, reframed question, or rejected premise. Routine local inspection does not need this detour.
 - **Direct change:** the requested benefit, completion signal, and implementation boundary are clear; no consequential human decision or coordination graph remains. Proceed without alignment or a plan.
 - **Aligned change:** a requirements, UX/DX, scope, or solution-direction decision could materially change the outcome. Use `align`, then return here.
 - **Planned delivery:** one approved benefit needs dependent delivery changes, several PRs, migration sequencing, or worthwhile parallel work. Use `delivery-plan`.
@@ -60,6 +61,7 @@ The live project and canonical work-item files decide current state. Conversatio
 
 - A final code-bearing delivery lacks required independent review: apply [references/review-gate.md](references/review-gate.md).
 - Completed work has passed its required review gate and awaits approval: when the request is exact and may be routine enough for a discoverable First Mate, use [references/first-mate-escalation.md](references/first-mate-escalation.md); otherwise present the checkpoint and wait.
+- A decision-linked investigation remains: use `research`, then resume the checkpoint its result informs.
 - A consequential human decision remains: use `align`.
 - An approved outcome has a useful delivery plan: recommend a ready delivery change.
 - An approved roadmap has an unfinished ready milestone: recommend that milestone.

@@ -46,7 +46,7 @@ Afterward, keep the verdict and its effect on alignment, discard the prototype b
 Continuously reduce the unresolved queue:
 
 - Resolve facts through quick inspection.
-- For longer fact-finding, use a bounded read-only agent when available. Record which open decision waits on the result, retain the decision-relevant result or a bounded no-material-finding note under the [work-item research guidance](../ship/references/durable-context.md), and keep its pointer with that decision. Continue with an unblocked decision. In Pi, load `agent-coordination` before `delegate`.
+- When uncertain framing, assumptions, evidence, or the solution landscape need more than quick inspection, use [`research`](../research/SKILL.md). Record which open decision waits on the result, retain the decision-relevant result or a bounded no-material-finding note under the [work-item research guidance](../ship/references/durable-context.md), and keep its pointer with that decision. Continue with an unblocked decision. Use a bounded read-only agent when useful; in Pi, load `agent-coordination` before `delegate`.
 - When a decision needs bounded prerequisite work—such as provisioning access or preparing representative data—record the blocked decision and exact completion signal. Complete it within existing authority or give the human a precise checklist, then record its completion and resulting facts. Work performed solely to make a decision possible is not delivery; if it itself delivers approved behavior, return it to Ship's normal delivery route.
 - Leave local mechanisms and choices that do not distinguish the outcome to implementation.
 - Convert well-supported, low-impact, easily reversed defaults to assumptions.
