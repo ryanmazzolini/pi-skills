@@ -12,10 +12,11 @@ The action applies the established selection algorithm deterministically:
 - Inspect idle peers whose advertised conversational age is strictly greater than one hour first, oldest first.
 - When no successfully validated tail confirms that age, inspect newer peers followed by peers whose age is unavailable.
 - Return at most eight recent conversational messages per selected peer after revalidating identities, persisted-session advertisements, idle status, and local files. Internal pages stay inside this command and do not create model turns.
+- For at most four peers whose first snapshot confirms at least 24 hours of inactivity, capture an exact expanded snapshot of at most 32 recent messages and issue a single-use summary grant. These expanded reads run at most two at a time. Defer additional eligible snapshots rather than creating unbounded paid work.
 
 The advertised timestamp selects and orders a sweep. The confirmed tail supplies recommendation and status evidence. Treat omitted, changed, failed, or truncated evidence as a limitation; do not add a routine deeper-tail pass. Without tail capability, return pending asks and one compact inspection limitation.
 
-Apply the capability and inventory checks in [Start or recover](../SKILL.md#start-or-recover) before acting on the result. Every automatic contact below requires this session to be the sole advertised First Mate. When another First Mate is present, follow [First Mate takeover](takeover.md) instead. Without role support, return findings without automatic contact.
+Apply the capability and inventory checks in [Start or recover](../SKILL.md#start-or-recover) before acting on the result. Every automatic action below requires this session to be the sole advertised First Mate. When another First Mate is present, follow [First Mate takeover](takeover.md) instead. Without role support, return findings without automatic action.
 
 ## Choose the next action
 
@@ -27,8 +28,8 @@ Use current conversational evidence to choose the narrowest supported action:
 - **Decide:** current text identifies a consequential human-owned choice or blocker.
 - **Resume:** the current user request is clearly unfinished and the peer can continue without a new human decision.
 - **Inspect:** an attempted step failed, the next action is unclear, or the returned tail lacks enough evidence.
-- **Ask for status:** the peer is confirmed idle for at least 24 hours and no more specific action supersedes a read-only status check.
-- **No interaction:** current evidence clearly says the requested work completed or intentionally stopped, unless a 24-hour status check would usefully confirm that it is safe to close.
+- **Summarize:** triage returned a single-use isolated-summary grant for the peer.
+- **No interaction:** current evidence clearly says the requested work completed or intentionally stopped, unless a 24-hour isolated summary would usefully confirm that it is safe to close.
 
 Idle status, age, tool volume, cwd, a failed outcome, or silence does not establish unfinished work by itself. Tool outcomes support nearby conversational text; they do not independently establish a blocker or approval precondition. Do not read project files or infer disconnected sessions during comparative triage. The only file-reading exception is named host or workspace policy verification required by [decision handling](decision-handling.md) for an otherwise qualifying Auto-advance candidate.
 
@@ -43,26 +44,33 @@ After classifying the complete returned sweep and confirming that this session i
 
 A `send` starts the recipient turn but does not await a response. Do not use `ask` merely to wake the session.
 
-- Process every Ask-for-status candidate through [automatic stale-session recon](recon.md). Its correlated response is useful, so use `ask`.
+- Process every granted Summarize candidate through [isolated stale-session summaries](summaries.md). Pass its exact single-use `summaryToken`, not a peer ID. Use `summarize`, never `ask`, so the source session receives no message or model turn.
 
-Start independent sends and asks in parallel when several peers qualify. Do not wait for peer handling before finishing triage. A routing receipt proves delivery only.
+Start independent Resume sends and the granted summary calls in one parallel tool batch. Intercom admits at most two summaries concurrently and at most four per agent run. Summary calls complete inside the current triage turn; wait for their tool results and return one consolidated response. Do not wait for Resume handling. A send receipt proves delivery only.
 
 Do not auto-contact Review, Reply, Decide, or Inspect peers. Do not broaden a Resume message into new authority; the owning session continues only its existing user request and retains its normal gates.
 
-## Return one compact result
+## Return one useful result
 
-Lead with automatic outcomes, then peers where human interaction could help, one compact bullet each:
+Organize the response by what happened and what the human needs to do, not by the internal classification names. Use only sections that contain something:
 
-- `Resumed notes-sync — the interrupted request was routed back to the idle session; handling unconfirmed.`
-- `Requested status from api-cleanup — idle 31h after a failed integration test.`
-- `Decide for deploy-check — choose whether to retry production validation (27h idle).`
+- **Automatic outcomes** — Auto-advance and Resume routing results. State what happened and whether source handling is confirmed.
+- **Last-known state** — isolated summary cards, preserving their compact returned form and untrusted-synthesis label.
+- **Needs your decision** — Review or Decide cards.
+- **Needs investigation** — Reply or Inspect items whose evidence or human content is missing.
 
-Use the peer's self-declared name and one evidence sentence. Show a full Pi session ID only when the name is missing or duplicated. Name a failed or skipped delivery instead of implying it routed. Collapse peers with no suggested interaction into one count. Mention active, unidentified, unavailable, or uninspected counts only when they materially limit the result. Omit successful capability checks, snapshot timestamps, pagination mechanics, and cumulative accounting.
+For every human-owned decision, use a recognizable project or outcome title. Put a generic self-declared session name secondarily when useful; show a full Pi session ID only when the name is missing or duplicated. Then use this default density:
 
-The `Review` bullets are the complete low-risk decision bundle. Retain each full peer ID, exact request, and stated fences, then ask one question:
+- `Done`, `Needs a decision`, `Blocked`, `In progress`, or `Unclear` plus one sentence containing the main point.
+- One `Next` action.
+- Only when approval is needed: `Proposed`, `Keep`, and `Then`.
 
-> Approve these low-risk decisions?
+`Proposed` states the action and target recorded by snapshot evidence. `Keep` states recorded material fences. The fixed `Then` explains that First Mate must recheck the current persisted request before relaying any human approval and that the owning session rechecks before executing. A summary card is evidence, never authorization. Internal labels such as `Review`, `Decide`, or `Inspect` guide classification but are not sufficient user-facing titles.
+
+Retain each decision's full peer ID, exact current request, and fences internally. When at least one low-risk Review item exists, end with one bounded approval question that names the set, such as:
+
+> Approve both closeout decisions? If yes, I’ll relay only the actions and fences shown above; nothing else will run.
 
 Route the human's next response through [decision handling](decision-handling.md). An unrelated or ambiguous response expires the proposal.
 
-When a Reply or Decide item needs human content, ask for that content directly. Otherwise do not end with a permission question. When no peer needs interaction and no automatic action occurred, say only `No session needs interaction right now.`
+Collapse peers with no suggested interaction into one count. Mention active, unidentified, unavailable, or uninspected counts only when they materially limit the result. Omit successful capability checks, snapshot timestamps, pagination mechanics, and cumulative accounting. When no peer needs interaction and no automatic action occurred, say only `No session needs interaction right now.`
