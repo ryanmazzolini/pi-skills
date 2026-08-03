@@ -65,6 +65,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 | Skill | What it helps with |
 |---|---|
+| [`code-review`](./skills/review/code-review/SKILL.md) | Find concrete defects in code changes and explain them in plain language |
 | [`diagnosing-bugs`](./skills/debugging/diagnosing-bugs/SKILL.md) | Diagnose hard, flaky, environment-specific, or performance bugs |
 | [`security-review`](./skills/security/security-review/SKILL.md) | Find proven, exploitable security problems in code and delivery paths |
 | [`explain-code`](./skills/explain/explain-code/SKILL.md) | Explain code with diagrams and analogies |
