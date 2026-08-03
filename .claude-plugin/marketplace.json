@@ -38,6 +38,15 @@
       ]
     },
     {
+      "name": "review",
+      "source": "./skills/review",
+      "description": "High-signal code review with plain-language findings",
+      "strict": false,
+      "skills": [
+        "./code-review"
+      ]
+    },
+    {
       "name": "productivity",
       "source": "./skills/productivity",
       "description": "Durable learning and personal productivity workflows",
