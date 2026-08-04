@@ -20,7 +20,7 @@ Read the alignment and the relevant product surface. State:
 
 Resolve these through inspection or a short proposal when possible. If uncertainty still blocks the experiment, explain it. Ask one short question, then stop. Return to `align` when several independent decisions remain. Treat an explicit invocation or approval already given in the conversation or alignment as approval to prototype. Otherwise recommend the experiment and wait for approval before writing code.
 
-When the framing or candidate experience space remains open, use [Phase 1 of `exploration.md`](../ship/references/exploration.md#phase-1--fan-out) before choosing the artifact. Stop at that phase's checkpoint, using a relevant pattern or observation for each experience hypothesis and an alternative that challenges the apparent favorite.
+When the framing or candidate experience space remains open, read [Orient](../ship/references/exploration.md#orient) and [Phase 1 of `exploration.md`](../ship/references/exploration.md#phase-1--fan-out) before choosing the artifact. Treat candidate families as experience hypotheses and evidence paths as relevant patterns or observations. Include an alternative that challenges the apparent favorite, then stop at the reference's checkpoint.
 
 Choose the smallest useful form. When comparison itself will answer an appearance, hierarchy, interaction, behavior, or state question, name two or three structurally different hypotheses and build them as a set with the same surrounding context, representative data, and fidelity. Complete the bounded set before critiquing or refining one. A narrow question does not need extra variants.
 
