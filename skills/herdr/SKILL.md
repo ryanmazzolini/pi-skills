@@ -35,4 +35,4 @@ Treat focus and closure as separate decisions. Before closing anything, inspect 
 
 ## Hand off Pi work
 
-When continuing the current work in another Herdr workspace, read [references/pi-session-transfer.md](references/pi-session-transfer.md). Start a fresh Pi session with a concise continuation brief; inherit the full source session only when the human explicitly requests a fork. The default handoff preserves the source pane and human focus. Focusing the destination or closing the source requires the distinct approval described there.
+When continuing the current work in another Herdr workspace, read [references/pi-session-transfer.md](references/pi-session-transfer.md). Start a fresh Pi session with a concise continuation brief. The default handoff preserves the source pane and human focus. Focusing the destination or closing the source requires the distinct approval described there.

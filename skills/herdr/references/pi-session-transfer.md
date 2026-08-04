@@ -27,10 +27,11 @@ Treat a general “yes” as approval only for the background handoff. Focusing 
    - completed work and live branch or worktree state;
    - canonical work-item or evidence paths to read, when they exist;
    - the next approved action and unresolved human decisions; and
-   - source pane and session path as fallback evidence.
+   - the source pane ID for any later approved cleanup.
 
    Direct the destination to verify its own identity and live state without changing focus, report that it is ready, and wait for the user. It must not mutate the project or topology in its startup turn. Prefer pointers to canonical durable records over copying long context.
-6. Derive a separate Herdr agent name matching `[a-z][a-z0-9_-]{0,31}` from the label and destination pane ID. Confirm with `herdr agent get <agent-name>` that no live agent already uses it. Collapse the initial message's whitespace to one line because `herdr agent start` rejects multiline agent arguments, then shell-escape the Pi session label and message. Start Pi without `--fork`, `--session`, or `--continue`:
+6. Create a bounded agent name as `pi_` plus the first 28 lowercase hexadecimal characters of the destination pane ID's SHA-256 hash. For example, `w10:p1` becomes `pi_d152398ef54bbb3aa1ac11ed8f95`. Treat the exact `agent_not_found` result from `herdr agent get <agent-name>` as available. If it returns a live agent, leave the destination workspace and panes open, do not start Pi, and stop with their IDs. Stop and report any other lookup error.
+7. Collapse the initial message's whitespace to one line because `herdr agent start` rejects multiline agent arguments, then shell-escape the Pi session label and message. Start Pi without inherited session flags:
 
    ```bash
    herdr agent start <agent-name> --kind pi --pane <destination-pane> -- \
@@ -38,14 +39,14 @@ Treat a general “yes” as approval only for the background handoff. Focusing 
    herdr agent wait <destination-pane> --timeout 120000
    ```
 
-   The default wait accepts `idle`, `done`, or `blocked`.
-7. Verify with `herdr pane get <destination-pane>` that:
+   Read the returned status. Continue only for `idle` or `done`.
+8. Verify with `herdr pane get <destination-pane>` that:
    - the agent is `pi`;
    - cwd matches the approved destination;
    - its session path exists and differs from the source; and
    - the source pane still exists.
 
-Do not call a focus command during creation or verification. If the human changes focus while this runs, leave it where they put it. On timeout or a failed check, leave both panes open and report the destination IDs.
+Do not call a focus command during creation or verification. If the human changes focus while this runs, leave it where they put it. For `blocked`, timeout, or any failed check, inspect `herdr agent get` and `herdr agent read` when available, report that the destination is not ready, and leave both panes unchanged.
 
 Stop after reporting the verified destination and that the source remains open. The background handoff is complete.
 
@@ -57,7 +58,3 @@ A verified handoff grants no permission to focus or close anything. Handle eithe
 - **Close source:** The destination Pi must perform this action. If the request reaches the source Pi, submit the exact approval and source pane ID to the verified destination with `herdr agent prompt`, then make no further topology mutations. The destination rechecks both panes and closes only the named source pane. It does not change focus unless the human separately asks.
 
 Do not bundle either action into the initial handoff confirmation or pre-authorize it in the destination's startup message.
-
-## Full-history exception
-
-Use `pi --fork` only when the human explicitly asks to clone the complete transcript. A fork created while the source is working can inherit its unfinished turn and act as the source. Defer that fork until Herdr reports the source idle, and give the fork the same explicit destination-identity message used above.
