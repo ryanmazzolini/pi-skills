@@ -8,7 +8,7 @@ description: Prepare commits and push work, creating branches when needed. Use w
 ## Workflow
 
 1. Inspect the current branch, repository default branch, expected base, working tree, staged changes, and diff.
-2. On the default branch, keep only trivial bug fixes and chores in place. For other work, propose a feature branch; use `ticket-workspace` when the work is durable or the current workspace is shared or dirty. Respect an explicit user choice to remain on the default branch.
+2. On the default branch, propose a feature branch. Commit to the default branch only with explicit user approval. Use `ticket-workspace` when the work is durable or the current workspace is shared or dirty.
 3. Decide whether the changes belong in one commit or several. Choose any needed branch and draft each Conventional Commit message.
 4. Present the branch, commit split, `Subject:`, `Body:`, and validation status. A trivial change may omit the body. Confirm the split when changes belong in separate commits.
 5. Ask for explicit approval before each commit. After approval, create the agreed branch if needed and create the commit with the approved message.
