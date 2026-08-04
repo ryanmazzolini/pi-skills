@@ -47,7 +47,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`ticket-workspace-cleanup`](./skills/ticket-workspace/ticket-workspace-cleanup/SKILL.md) | Stop confirmed workspace-local processes and safely remove completed ticket workspaces |
 | [`handoff`](./skills/handoff/SKILL.md) | Write a Markdown handoff for another agent or fresh session |
 | [`commit-simple`](./skills/commit/commit-simple/SKILL.md) | Prepare branches, commits, and pushes |
-| [`commit-pr`](./skills/commit/commit-pr/SKILL.md) | Create or update a draft pull request |
+| [`commit-pr`](./skills/commit/commit-pr/SKILL.md) | Create or update a pull request |
 
 ### Architecture and decisions
 
