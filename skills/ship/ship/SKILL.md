@@ -31,7 +31,7 @@ Honor the user's original implementation request without asking for alignment or
 - known sibling work
 - validation that exercises the real behavior and an important failure path
 
-Ask only about a gap that could change the result. Keep only trivial fixes and chores on the default branch. Before other work, propose a feature branch; use `ticket-workspace` when the work is durable or the current workspace is shared or dirty. Respect an explicit choice to remain on the default branch.
+Ask only about a gap that could change the result. On the default branch, propose a feature branch. Commit to the default branch only with explicit user approval. Use `ticket-workspace` when the work is durable or the current workspace is shared or dirty.
 
 Make ordinary repo-native interface, data, and structure choices directly. Use `shape-first` only when the user asks to shape the change or a consequential local design choice warrants its explicit checkpoints. Apply `simplest-sufficient-change` before code. Return to `align` only if implementation changes the approved benefit, experience, scope, or high-level solution direction.
 
