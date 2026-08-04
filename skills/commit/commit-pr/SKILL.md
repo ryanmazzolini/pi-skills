@@ -23,6 +23,6 @@ Treat the PR body as an interface for a reviewer who has not followed the discus
 - `Details` — include only the behavior and non-obvious technical detail needed to review correctness. Use ordered steps for flows and bullets for separate facts. Prefer important decisions and invariants over decision history, exhaustive alternatives, or file-by-file narration.
 - `Testing` — report validation from the current branch, relevant full-suite checks, boundary or migration exercises, and any omissions. Include screenshots or video for UI changes.
 
-Keep simple changes short. Link supporting history or design records when useful instead of reproducing them in the body.
+Keep simple changes short. Use only reviewer-accessible URLs for supporting history or design records—for example, tickets, PRs, commits, GitHub files, or shared design documents. A local filesystem path, editor link, or vault note is not a PR reference; summarize the necessary context when no shared URL exists.
 
 Before presenting, account internally for every changed commit and file. Stop when a reviewer with limited context can explain the concrete problem, resulting behavior, and the non-obvious details that matter to correctness.
