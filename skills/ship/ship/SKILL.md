@@ -5,43 +5,63 @@ description: Route coding work through the lightest useful path. Use for direct 
 
 # Ship
 
-Move work to its next useful human checkpoint. Use the least process that keeps the outcome clear and the work recoverable. **Direct implementation is the default.** Alignment, delivery planning, and roadmaps are conditional tools, not required stages.
+Move work to its next useful human checkpoint. Use the least process that keeps the outcome clear and the work recoverable. First determine what is settled. Then choose the delivery shape. Alignment and delivery planning answer different questions. Neither is a required stage.
 
-## Choose the lightest route
+## Determine what is settled
 
-Inspect the request, relevant project evidence, live repository, and any existing workflow before choosing:
+Inspect the current request, live repository, authoritative project evidence, and any existing workflow.
 
-- **Investigation detour:** material uncertainty about the framing, assumptions, evidence, or available approaches prevents a trustworthy route, and investigation can reduce it. Use [`research`](../research/SKILL.md), then resume Ship with its result. Routine local inspection does not need this detour.
-- **Direct change:** the requested benefit, completion signal, and implementation boundary are clear; no consequential human decision or coordination graph remains. Proceed without alignment or a plan.
-- **Aligned change:** a consequential goal, priority, scope, experience, or trade-off that evidence cannot settle could materially change the outcome. Use `align`, then return here.
-- **Planned delivery:** one approved benefit needs dependent delivery changes, several PRs, migration sequencing, or worthwhile parallel work. Use `delivery-plan`.
-- **Roadmap:** several independently useful benefits need durable coordination or recovery under one shared destination. Read [references/roadmaps.md](references/roadmaps.md).
+- **Facts:** use the live system, code, tests, automation, and documentation to establish current behavior, constraints, and existing decisions. [`research`](../research/SKILL.md) helps when material uncertainty prevents a trustworthy route. Routine local inspection is usually enough otherwise.
+- **Intent:** use the request and authoritative project evidence to establish the target value, observable behavior, and included or deferred outcomes. An exact bounded request authorizes the change it names. Keep that authority unless relevant evidence conflicts. Do not ask the user to restate the rationale without a material gap.
 
-Size, production editing, session count, a feature branch, worktree, or pull request does not by itself move a direct change into another route. Several related improvements may stay direct when coordinating them separately would add no value. Reassess only when consequential uncertainty or coordination actually appears.
+Pause direct implementation when sources of intent conflict or leave a consequential choice. A choice is consequential when plausible answers could change the goal, priority, value, experience, scope, risk, or high-level solution direction. `align` is the default way to resolve it. Prefer inspection or `research` for questions evidence can answer.
+
+For example, a small retry button needs alignment when its placement, retry behavior, and feedback are unspecified. It can proceed directly when an authoritative UI specification and contract tests settle all three.
+
+Small, local, or reversible work does not settle a missing choice. Reuse settled intent instead of repeating alignment.
+
+## Choose the delivery shape
+
+After intent is settled, choose how to deliver it:
+
+- **Direct delivery fits** one settled outcome or exact bounded request that needs one coherent change. No useful dependency graph exists.
+- **Planned delivery helps** when one settled outcome needs several delivery changes. Reach for `delivery-plan` when explicit boundaries would improve execution or recovery. Signals include:
+  - one delivery change depends on another
+  - PRs or releases must land separately
+  - a migration or rollout needs sequencing
+  - parallel work is worthwhile
+- **A roadmap helps** when several independently useful outcomes need durable coordination or recovery. See [references/roadmaps.md](references/roadmaps.md).
+
+Choose the lightest delivery shape that preserves the settled intent and useful boundaries. Small work should pause when it exposes an unresolved consequential choice. Large work may remain direct when its intent is settled and delivery is coherent. Size and elapsed time do not decide the delivery shape. Neither do a branch, worktree, pull request, or session count.
 
 When existing workflow files, interruption, or context compaction make the state unclear, read [references/recovery.md](references/recovery.md) before choosing.
 
-## Complete a direct change
+## Complete a direct delivery
 
-Honor the user's original implementation request without asking for alignment or planning approval again. Before substantial edits, verify:
+Continue from the settled outcome or exact bounded request. Do not reopen it merely to repeat alignment or planning. Before substantial edits, verify:
 
-- the requested benefit and observable completion
+- the authoritative intent, observable completion, and outcome boundaries
+- the current and intended UX/DX walkthrough when an interface changes, or the behavior that must remain unchanged
 - the live repository, cwd, branch, and worktree
 - allowed scope and existing work to preserve
 - known sibling work
 - validation that exercises the real behavior and an important failure path
 
-Ask only about a gap that could change the result. On the default branch, propose a feature branch. Commit to the default branch only with explicit user approval. Use `ticket-workspace` when the work is durable or the current workspace is shared or dirty.
+A gap warrants a question when it could materially change the settled value, behavior, scope, or risk.
 
-Make ordinary repo-native interface, data, and structure choices directly. Use `shape-first` only when the user asks to shape the change or a consequential local design choice warrants its explicit checkpoints. Apply `simplest-sufficient-change` before code. Return to `align` only if implementation changes the approved benefit, experience, scope, or high-level solution direction.
+On the default branch, propose a feature branch. Commit to the default branch only with explicit user approval. Use `ticket-workspace` when the work is durable or the current workspace is shared or dirty.
 
-Do not create workflow files merely because a direct change lasts longer than expected. When it needs to survive a fresh session or context reset, read [references/durable-context.md](references/durable-context.md) and create only a minimal continuation record. Keep the direct route unless the work itself becomes uncertain or coordination-heavy.
+Once intent is settled, make ordinary repo-native interface, data, and structure choices directly within it. Use `shape-first` when the user asks for shaping or a consequential local design choice needs its checkpoints. Apply `simplest-sufficient-change` before code.
+
+Pause direct implementation if it exposes an unresolved consequential choice. Also pause if it would conflict with or reinterpret authoritative intent. Revisit `align` when human judgment remains necessary.
+
+Do not create workflow files merely because a direct delivery lasts longer than expected. When it must survive a fresh session or context reset, read [references/durable-context.md](references/durable-context.md). Create only a minimal continuation record. Keep direct delivery unless the settled intent or delivery coherence changes.
 
 ## Resume after alignment
 
-Alignment settles one consequential human decision at a time. Approval defines the target benefit and boundaries; it does not force a delivery plan. Return to direct implementation when one coherent change can deliver the result. Use `delivery-plan` only when its dependency map or delivery boundaries would help a fresh session execute safely.
+Alignment helps settle a human choice that evidence cannot. Approval does not force a delivery plan. Return here and choose the delivery shape. Stay direct when one coherent change can deliver the result. Reach for `delivery-plan` when dependency or delivery boundaries make slicing useful.
 
-For an experiential question that words cannot settle, Align may temporarily use [`prototype`](../prototype/SKILL.md). A prototype supplies evidence and returns to alignment; it does not authorize production implementation.
+For an experiential question that words cannot settle, Align may temporarily use [`prototype`](../prototype/SKILL.md). A prototype supplies evidence and returns to alignment. It does not authorize production implementation.
 
 ## Execute a delivery plan
 
