@@ -1,6 +1,6 @@
 ---
 name: "herdr"
-description: "Control Herdr when the user explicitly asks, or hand off an active Pi conversation to a Herdr workspace after ticket-workspace prepares it. Requires HERDR_ENV=1."
+description: "Control Herdr when the user explicitly asks, or hand off active Pi work to a fresh workspace session after ticket-workspace prepares it. Requires HERDR_ENV=1."
 ---
 
 # Herdr
@@ -17,23 +17,22 @@ test "${HERDR_ENV:-}" = 1
 
 If the check fails, explain that the current agent is outside Herdr and stop. Control only the Herdr session that injected the current pane IDs.
 
-Treat the installed binary as the command reference. Run `herdr --help`, then the relevant command group such as `herdr workspace`, `herdr pane`, or `herdr wait`. Reserve bare `herdr` for an explicit request to open or attach the TUI because it is not a discovery command.
+Treat the installed binary as the command reference. Run `herdr --help`, then the relevant command group such as `herdr workspace`, `herdr pane`, or `herdr agent`. Reserve bare `herdr` for an explicit request to open or attach the TUI because it is not a discovery command.
 
-Read opaque IDs and state from command JSON. Target the calling pane with `--current` or `$HERDR_PANE_ID`; target every other resource with an explicit returned ID.
+Read opaque IDs and state from command JSON. Target the calling pane with `--current` or `$HERDR_PANE_ID`; target every other resource with an explicit returned ID. `herdr pane current --current` identifies the calling pane, not the pane the human currently has focused.
 
 ## Control topology
 
 Before creating, moving, focusing, or closing terminal resources, state the intended topology when the user has not already approved those exact changes.
 
-Treat focus as user-owned state:
+Treat focus as live human input:
 
-- Read the currently focused pane and its workspace before each topology mutation; do not assume the calling pane is focused.
-- Inspect and control background resources by ID, passing `--no-focus` to `workspace create`, `pane split`, and `pane move`.
-- When closing a background workspace, tab, or pane, restore the previously focused pane immediately with `herdr agent focus <pane-id>` in the same shell operation if Herdr moves focus.
-- Focus a different resource only when the user explicitly requests it or at the final visible transition of an approved conversation handoff.
+- Run background operations by ID with `--no-focus` or an agent-aware command. Do not record and later restore focus.
+- Focus a resource only in direct response to a current, explicit human request. Issue that focus change once; do not reassert it if the human moves elsewhere.
+- The calling or source pane is not implicitly focused.
 
-Close only resources created during the current flow or resources the user explicitly named. Keep the Herdr server and unrelated panes running. After an operation, verify the approved topology and focus, then report the changes concisely.
+Treat focus and closure as separate decisions. Before closing anything, inspect current topology and stop if the approved target or surrounding state changed. Close only an exact pane, tab, or workspace the human explicitly approved closing. Creating or focusing a destination never authorizes closing its source. Keep the Herdr server and unrelated panes running. After an operation, verify the approved topology without changing focus, then report the result concisely.
 
-## Hand off a Pi conversation
+## Hand off Pi work
 
-When moving the current Pi conversation to another Herdr workspace, read [references/pi-session-transfer.md](references/pi-session-transfer.md) and follow its complete handoff, including its confirmation and completion criteria.
+When continuing the current work in another Herdr workspace, read [references/pi-session-transfer.md](references/pi-session-transfer.md). Start a fresh Pi session with a concise continuation brief; inherit the full source session only when the human explicitly requests a fork. The default handoff preserves the source pane and human focus. Focusing the destination or closing the source requires the distinct approval described there.

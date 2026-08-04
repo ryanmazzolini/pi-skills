@@ -73,13 +73,13 @@ After confirmation, create only the approved folder, branch, and worktree. Keep 
 
 ## Offer the Herdr handoff
 
-After the ticket folder and first PR worktree are ready, load the model-invoked `herdr` skill and follow its Pi conversation handoff only when all of these are true:
+After the ticket folder and first PR worktree are ready, load the model-invoked `herdr` skill and offer to hand off the active work only when all of these are true:
 
 - the current agent is Pi
 - `HERDR_ENV=1`
 - the Pi session is still rooted outside the ticket folder
 
-Propose the ticket folder as the Herdr cwd so the session can reach every repo worktree, and use the ticket slug as the workspace label. Let the `herdr` skill control its separate confirmation, transfer, verification, and source-pane cleanup.
+Propose the ticket folder as the Herdr cwd so the session can reach every repo worktree, and use the ticket slug as the workspace label. The default starts a fresh Pi session with a concise continuation brief, preserves human focus, and keeps the source pane open. Let the `herdr` skill control its separate confirmation and verification. Focusing the destination or closing the source requires the additional, distinct approval defined by that skill.
 
 ## Keep consent explicit
 
