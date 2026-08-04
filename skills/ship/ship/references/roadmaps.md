@@ -15,7 +15,7 @@ Before creating files, inspect breadth-first and propose:
 - in-scope uncertainty that is not precise enough to become a decision
 - explicit boundaries
 
-Keep fog visible instead of inventing premature milestones. A question is sharp when it can be stated precisely, even if it cannot yet be answered. Route sharp questions to inspection, research, Align, or Prototype as appropriate. Keep any pending research and retained result linked from the sharp question it blocks. When bounded prerequisite work must make a decision possible, route it through Align and link the sharp question to Align's pending checklist and retained result. Prerequisite work does not deliver the destination.
+Keep fog visible instead of inventing premature milestones. A question is sharp when it can be stated precisely, even if it cannot yet be answered. Route sharp questions to inspection, [`research`](../../research/SKILL.md), Align, or Prototype as appropriate. Keep any pending research and retained result linked from the sharp question it blocks. When bounded prerequisite work must make a decision possible, route it through Align and link the sharp question to Align's pending checklist and retained result. Prerequisite work does not deliver the destination.
 
 Ask for one semantic confirmation of the roadmap, milestone boundaries, and dependency graph. That confirmation authorizes the corresponding workflow files. It does not authorize prerequisite work, tickets, workspace movement, branches, worktrees, implementation dispatch, commits, pushes, pull requests, releases, or deployments.
 
