@@ -1,69 +1,60 @@
-# Pi Session Transfer
+# Fresh Pi Handoff
 
-Use this handoff to continue the active Pi conversation in a Herdr workspace rooted at its durable ticket folder. The source stays alive until the destination proves it can take over.
+Use this workflow to continue active work in a Herdr workspace rooted at its durable ticket folder. Success is a verified fresh Pi session with a concise continuation brief. The source stays open and human focus does not change.
 
-## Confirm the handoff
+## Confirm the destination
 
-Propose one checkpoint containing:
+State the destination label and cwd. Explain that the destination will be a fresh Pi session oriented by a continuation brief, while the source pane and current focus remain unchanged. Ask for approval to create that background handoff.
 
-- the destination Herdr label and cwd
-- that `pi --fork` preserves the conversation in a new Pi session
-- that the destination session will close the current Herdr pane after verification
+Treat a general “yes” as approval only for the background handoff. Focusing the destination and closing the source are separate future actions.
 
-Proceed only after the user approves all three. The handoff checkpoint is independent of earlier git worktree approval.
-
-## Record the source
+## Create the destination
 
 1. Verify the destination directory exists.
-2. Run `herdr pane current --current`.
-3. Read the source pane ID and `agent_session.value` from the JSON.
-4. Verify the pane agent is `pi` and the session value names an existing file.
-5. Record the source pane and session path before creating anything.
-
-Inspect `herdr workspace list` for the proposed label. If it already exists, ask for a distinct label or explicit approval to create another workspace with that label. The source is ready when its pane and session path are known and the destination label is unambiguous.
-
-## Start the destination
-
-Preserve whichever pane the user currently has focused throughout these background steps. Follow the skill's focus-preservation rule around every topology mutation.
-
-1. Create the approved workspace without stealing focus:
+2. Read the source pane and Pi session with `herdr pane current --current`. Verify the agent is `pi` and its session path exists. The source is not implicitly focused.
+3. Check `herdr workspace list` for the proposed label. When it matches an existing workspace, ask whether to reuse that exact workspace ID or choose another label. Reuse it only after verifying its cwd and an exact pane at an interactive shell prompt; otherwise stop and ask to create a distinct workspace.
+4. For a new workspace, create it without focus and read its workspace and root pane IDs:
 
    ```bash
    herdr workspace create --cwd <ticket-folder> --label <label> --no-focus
    ```
 
-2. Read the workspace and root pane IDs from the response.
-3. Shell-escape the source session path and label, then run interactive Pi in the returned pane:
+   For approved reuse, keep the verified workspace and shell-pane IDs instead of running `workspace create`.
+5. Build one concise initial user message for the destination. Begin with: “You are a fresh destination Pi session in Herdr, not the source session. The workspace already exists; do not recreate it or repeat the handoff.” Include:
+   - expected destination workspace, pane, and cwd;
+   - the user's current outcome and most recent request;
+   - approved scope and consequential decisions;
+   - completed work and live branch or worktree state;
+   - canonical work-item or evidence paths to read, when they exist;
+   - the next approved action and unresolved human decisions; and
+   - the source pane ID for any later approved cleanup.
+
+   Direct the destination to verify its own identity and live state without changing focus, report that it is ready, and wait for the user. It must not mutate the project or topology in its startup turn. Prefer pointers to canonical durable records over copying long context.
+6. Create a bounded agent name as `pi_` plus the first 28 lowercase hexadecimal characters of the destination pane ID's SHA-256 hash. For example, `w10:p1` becomes `pi_d152398ef54bbb3aa1ac11ed8f95`. Treat the exact `agent_not_found` result from `herdr agent get <agent-name>` as available. If it returns a live agent, leave the destination workspace and panes open, do not start Pi, and stop with their IDs. Stop and report any other lookup error.
+7. Collapse the initial message's whitespace to one line because `herdr agent start` rejects multiline agent arguments, then shell-escape the Pi session label and message. Start Pi without inherited session flags:
 
    ```bash
-   herdr pane run <destination-pane> "pi --fork <source-session> --name <label>"
+   herdr agent start <agent-name> --kind pi --pane <destination-pane> -- \
+     --name <label> <initial-message>
+   herdr agent wait <destination-pane> --timeout 120000
    ```
 
-4. Wait up to 30 seconds for the destination agent to become `idle`:
+   Read the returned status. Continue only for `idle` or `done`.
+8. Verify with `herdr pane get <destination-pane>` that:
+   - the agent is `pi`;
+   - cwd matches the approved destination;
+   - its session path exists and differs from the source; and
+   - the source pane still exists.
 
-   ```bash
-   herdr wait agent-status <destination-pane> --status idle --timeout 30000
-   ```
+Do not call a focus command during creation or verification. If the human changes focus while this runs, leave it where they put it. For `blocked`, timeout, or any failed check, inspect `herdr agent get` and `herdr agent read` when available, report that the destination is not ready, and leave both panes unchanged.
 
-   On timeout, inspect `herdr pane get` and `herdr pane read` before reporting failure.
-5. Inspect the destination pane and verify:
-   - its agent is `pi`
-   - its cwd matches the approved destination
-   - its session path exists and differs from the source session
+Stop after reporting the verified destination and that the source remains open. The background handoff is complete.
 
-The destination is ready only when all three checks pass. A failed check leaves the source pane open; report the returned destination IDs so the user can inspect or clean them up.
+## Handle later topology requests
 
-## Transfer ownership
+A verified handoff grants no permission to focus or close anything. Handle either action only as a fresh, explicit human request:
 
-Preserve the user's currently focused pane while submitting a takeover prompt to the destination Pi pane with `herdr pane run`. Include the destination workspace ID, expected cwd, source session path, and source pane ID. Direct the destination session to:
+- **Focus destination:** Confirm it still exists, focus it once, and keep the source open.
+- **Close source:** The destination Pi must perform this action. If the request reaches the source Pi, submit the exact approval and source pane ID to the verified destination with `herdr agent prompt`, then make no further topology mutations. The destination rechecks both panes and closes only the named source pane. It does not change focus unless the human separately asks.
 
-1. verify its own Herdr pane, workspace, cwd, and Pi session path without changing focus
-2. preserve the source pane and the user's current focus if any value is wrong
-3. only when every value matches, focus the destination pane with `herdr agent focus <destination-pane>` as the final visible handoff
-4. close the recorded source pane with `herdr pane close <source-pane>`
-5. verify the destination pane remains focused and immediately restore it if closing the source moved focus
-6. report takeover to the user and continue from the inherited conversation
-
-Do not focus the source or destination while launching, waiting, inspecting, or submitting the takeover prompt. After submitting that prompt, the source session makes no further mutations. The destination confirms takeover before the focus transition and source cleanup, so an interrupted launch fails safe with the source still running and the user's focus unchanged.
-
-The handoff is complete when the destination has verified the expected workspace, cwd, and a distinct Pi session path, closed the recorded source pane, verified its pane remains focused, and reported takeover to the user.
+Do not bundle either action into the initial handoff confirmation or pre-authorize it in the destination's startup message.
