@@ -117,7 +117,7 @@ An explicit Intercom `send` starts the recipient turn without awaiting a respons
 
 [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and Node.js 24 or newer are the package-wide requirements. The `node` executable must be available on `PATH`; it runs package scripts, the `intercom` broker, and installed scheduled-job snapshots. `daily-report` also needs Git, configured repositories, and a writable vault. Everything else is à la carte:
 
-- [GitHub CLI](https://cli.github.com/) adds GitHub evidence to `daily-report`.
+- [GitHub CLI](https://cli.github.com/) adds GitHub evidence to `daily-report` and powers explicit pull-request feedback watches.
 - [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) powers `shortcut` and can add Shortcut evidence to `daily-report`.
 - [Obsidian CLI](https://obsidian.md/help/cli) powers vault-aware note workflows and must be enabled in Obsidian desktop.
 - Notion CLI (`ntn`) powers `notion-cli`.
@@ -134,6 +134,7 @@ Pi gets a few extras that are not skills:
 - `intercom` provides local peer messaging, capability-gated bounded read-only tails, single-use isolated stale-snapshot summaries, and an ephemeral First Mate presence role.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
 - `scheduled-jobs` adds the human-only `/scheduler` interface.
+- `github_pr_watch({ url })` explicitly attaches one or more open GitHub pull requests to the current Pi session. It restores watches with that session, starts new sessions empty, lets forks inherit copied watch state, and polls conversation comments, reviews, and inline review comments without depending on the current checkout.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.
 
 ## Contributing
