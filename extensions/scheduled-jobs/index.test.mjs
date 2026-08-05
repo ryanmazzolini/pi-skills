@@ -4,10 +4,17 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { run as runCli } from "../../bin/scheduled-jobs.mjs";
+import {
+  readSchedulerStatusSnapshot,
+  schedulerStatusSnapshotPath,
+  writeSchedulerStatusSnapshot,
+  writeUnavailableSchedulerStatusSnapshot,
+} from "../../lib/scheduled-jobs/status-cache.mjs";
 import scheduledJobsExtension, {
   actionReviewText,
   applicableActions,
   createSchedulerCommandHandler,
+  createSchedulerStatusMonitor,
   discoverManifestPaths,
   loadDashboardData,
   globalManifestPath,
@@ -243,10 +250,12 @@ test("invokes the scheduler CLI directly instead of Pi's packaged runtime", asyn
   assert.equal(overview.args.at(-1), "--json");
 });
 
-test("registers only the human scheduler command and no LLM-callable tool", () => {
+test("registers only the human scheduler command and session-local status events", () => {
   const commands = [];
+  const events = [];
   let tools = 0;
   scheduledJobsExtension({
+    on: (name, handler) => events.push({ name, handler }),
     registerCommand: (name, options) => commands.push({ name, options }),
     registerTool: () => tools++,
     exec: async () => commandResult(),
@@ -254,7 +263,178 @@ test("registers only the human scheduler command and no LLM-callable tool", () =
 
   assert.equal(tools, 0);
   assert.deepEqual(commands.map((entry) => entry.name), ["scheduler"]);
+  assert.deepEqual(events.map((entry) => entry.name), ["session_start", "input", "session_shutdown"]);
   assert.match(commands[0].options.description, /reviewed/);
+});
+
+function statusWatchHarness() {
+  const watches = [];
+  const timers = [];
+  return {
+    watches,
+    timers,
+    options: {
+      watch(pathname, options, listener) {
+        const entry = { pathname, options, listener, closed: false, error: undefined };
+        const watcher = {
+          close() { entry.closed = true; },
+          on(event, callback) {
+            if (event === "error") entry.error = callback;
+            return watcher;
+          },
+        };
+        watches.push(entry);
+        return watcher;
+      },
+      setTimeout(callback, milliseconds) {
+        const timer = { callback, milliseconds, cleared: false, unrefed: false, unref() { timer.unrefed = true; } };
+        timers.push(timer);
+        return timer;
+      },
+      clearTimeout(timer) { timer.cleared = true; },
+    },
+    emit(filename) {
+      const current = watches.at(-1);
+      if (current && !current.closed) current.listener("rename", filename);
+    },
+    flush() {
+      for (const timer of timers.splice(0)) {
+        if (!timer.cleared) timer.callback();
+      }
+    },
+  };
+}
+
+test("ambient status loads once, follows shared cache events, and closes its watcher", async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-watch-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const manifestPath = path.join(base, "config", "pi-scheduler", "jobs.json");
+  const env = { HOME: base, XDG_CONFIG_HOME: path.join(base, "config"), XDG_STATE_HOME: path.join(base, "state") };
+  const current = overviewJob(inspection({ installed: false }));
+  current.candidateError = { code: "ENVIRONMENT", message: "missing command" };
+  let overviewCalls = 0;
+  let manifestExists = true;
+  const statuses = [];
+  const watches = statusWatchHarness();
+  const dependencies = {
+    env,
+    exists: (filePath) => manifestExists && filePath === manifestPath,
+    async exec(command, args) {
+      if (command === "git") return commandResult("", 1);
+      if (args[0] === "overview") {
+        overviewCalls++;
+        assert.equal(watches.watches.length, 1);
+        return cliSuccess({
+          command: "overview",
+          result: { generatedAt: "2026-07-25T09:00:00.000Z", jobs: [current] },
+        });
+      }
+      throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+    },
+  };
+  const monitor = createSchedulerStatusMonitor(dependencies, watches.options);
+  const ctx = {
+    cwd: "/work",
+    hasUI: true,
+    mode: "tui",
+    ui: {
+      theme: { fg: (_color, text) => text },
+      setStatus(id, value) { statuses.push({ id, value }); },
+    },
+  };
+
+  await monitor.start(ctx);
+  assert.equal(overviewCalls, 1);
+  assert.equal(watches.watches[0].options.persistent, false);
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+
+  writeUnavailableSchedulerStatusSnapshot(manifestPath, env);
+  const snapshotName = path.basename(schedulerStatusSnapshotPath(manifestPath, env));
+  watches.emit(`.${snapshotName}.123.atomic.tmp`);
+  watches.emit(`.${snapshotName}.123.atomic.tmp`);
+  assert.equal(watches.timers.length, 1);
+  assert.equal(watches.timers[0].unrefed, true);
+  watches.flush();
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
+  assert.equal(overviewCalls, 1);
+
+  writeSchedulerStatusSnapshot(manifestPath, {
+    generatedAt: new Date().toISOString(),
+    jobs: [current, { ...current, id: "global:test:other", key: "test:other" }],
+  }, env);
+  watches.emit(path.basename(schedulerStatusSnapshotPath(manifestPath, env)));
+  watches.flush();
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 2 stuck" });
+
+  writeUnavailableSchedulerStatusSnapshot(manifestPath, env);
+  watches.watches[0].error(new Error("watch failed"));
+  await monitor.updateContext(ctx);
+  assert.equal(watches.watches.length, 2);
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
+
+  writeSchedulerStatusSnapshot(manifestPath, { generatedAt: new Date().toISOString(), jobs: [current] }, env);
+  watches.emit(path.basename(schedulerStatusSnapshotPath(manifestPath, env)));
+  watches.flush();
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+  manifestExists = false;
+  await monitor.reconcile(ctx);
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
+
+  await monitor.stop();
+  assert.equal(watches.watches.every((entry) => entry.closed), true);
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
+});
+
+test("ambient status aggregates global and current-project snapshots", async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-scopes-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const globalManifest = path.join(base, "config", "pi-scheduler", "jobs.json");
+  const projectManifest = "/work/.pi/scheduler.json";
+  const env = { HOME: base, XDG_CONFIG_HOME: path.join(base, "config"), XDG_STATE_HOME: path.join(base, "state") };
+  const blocked = overviewJob(inspection({ installed: true, enabled: true, health: "unhealthy" }));
+  const draft = overviewJob(inspection({ installed: false }));
+  const statuses = [];
+  const watches = statusWatchHarness();
+  const dependencies = {
+    env,
+    exists: (filePath) => new Set([globalManifest, projectManifest]).has(filePath),
+    async exec(command, args) {
+      if (command === "git") return commandResult("/work\n");
+      if (args[0] === "overview") {
+        return cliSuccess({
+          command: "overview",
+          result: { generatedAt: "2026-07-25T09:00:00.000Z", jobs: [blocked] },
+        });
+      }
+      throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+    },
+  };
+  const monitor = createSchedulerStatusMonitor(dependencies, watches.options);
+  const ctx = {
+    cwd: "/work",
+    hasUI: true,
+    mode: "tui",
+    ui: {
+      theme: { fg: (_color, text) => text },
+      setStatus(id, value) { statuses.push({ id, value }); },
+    },
+  };
+
+  await monitor.start(ctx);
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 2 stuck" });
+
+  writeSchedulerStatusSnapshot(globalManifest, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
+  writeSchedulerStatusSnapshot(projectManifest, { generatedAt: new Date().toISOString(), jobs: [draft] }, env);
+  watches.emit(null);
+  watches.flush();
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+
+  writeUnavailableSchedulerStatusSnapshot(globalManifest, env);
+  writeUnavailableSchedulerStatusSnapshot(projectManifest, env);
+  watches.emit(null);
+  watches.flush();
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
+  await monitor.stop();
 });
 
 test("discovers the fixed global manifest and ignores project scope outside Git", async () => {
@@ -700,7 +880,7 @@ function lifecycleFixture(t) {
     throw new Error(`unexpected launchctl argv: ${argv.join(" ")}`);
   };
   const runtime = { env, platform: "darwin", adapterOptions: { commandRunner, uid: process.getuid() } };
-  return { env, manifestPath, runtime };
+  return { env, manifestPath, runtime, scriptPath };
 }
 
 test("drives install, run, enable, disable, and remove through the real CLI contract", async (t) => {
@@ -754,4 +934,66 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
   assert.equal(fs.existsSync(path.join(value.env.XDG_STATE_HOME, "pi-scheduler", "jobs")), true);
   const remaining = fs.readdirSync(path.join(value.env.XDG_STATE_HOME, "pi-scheduler", "jobs"));
   assert.deepEqual(remaining, []);
+  assert.equal(readSchedulerStatusSnapshot(value.manifestPath, value.env).attentionCount, 0);
+});
+
+test("a terminal installed run publishes shared attention without an open Pi session", async (t) => {
+  const value = lifecycleFixture(t);
+  const initial = JSON.parse((await runCli([
+    "overview",
+    "--manifest", value.manifestPath,
+    "--json",
+  ], value.runtime)).stdout);
+  const id = initial.result.jobs[0].id;
+  const candidateDigest = initial.result.jobs[0].candidate.digest;
+
+  await runCli([
+    "install", id,
+    "--manifest", value.manifestPath,
+    "--expected-candidate-digest", candidateDigest,
+    "--json",
+  ], value.runtime);
+  const installed = JSON.parse((await runCli([
+    "overview",
+    "--manifest", value.manifestPath,
+    "--json",
+  ], value.runtime)).stdout).result.jobs[0].installation;
+
+  fs.writeFileSync(value.scriptPath, "process.exit(7)\n");
+  const hiddenRuntime = {
+    ...value.runtime,
+    env: {
+      HOME: value.env.HOME,
+      USER: value.env.USER,
+      PATH: value.env.PATH,
+      LANG: "C",
+    },
+  };
+  await assert.rejects(
+    runCli([
+      "_run-installed", id,
+      "--state-root", fs.realpathSync(path.join(value.env.XDG_STATE_HOME, "pi-scheduler")),
+      "--expected-installed-digest", installed.digest,
+      "--expected-revision", String(installed.revision),
+      "--json",
+    ], hiddenRuntime),
+    /exited with code 7/,
+  );
+
+  assert.equal(readSchedulerStatusSnapshot(value.manifestPath, value.env).attentionCount, 1);
+});
+
+test("an unreadable manifest clears its shared attention snapshot", async (t) => {
+  const value = lifecycleFixture(t);
+  writeSchedulerStatusSnapshot(value.manifestPath, {
+    generatedAt: new Date().toISOString(),
+    jobs: [{ id: "global:test:job", candidateError: { code: "ENVIRONMENT", message: "blocked" }, installation: { installed: false }, recentRuns: [] }],
+  }, value.env);
+  fs.writeFileSync(value.manifestPath, JSON.stringify({ version: 1, jobs: { bad: { command: "removed" } } }));
+
+  await assert.rejects(
+    runCli(["overview", "--manifest", value.manifestPath, "--json"], value.runtime),
+    /invalid field|job key/i,
+  );
+  assert.equal(readSchedulerStatusSnapshot(value.manifestPath, value.env).attentionCount, 0);
 });

@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { resolveExecutable } from "../lib/scheduled-jobs/index.mjs";
 import { readRunHistory, readRunOutput } from "../lib/scheduled-jobs/runtime.mjs";
+import { readSchedulerStatusSnapshot } from "../lib/scheduled-jobs/status-cache.mjs";
 import { run } from "./scheduled-jobs.mjs";
 
 const DAILY_REPORT_CLI = fileURLToPath(new URL("../skills/notes/daily-report/scripts/daily-report.mjs", import.meta.url));
@@ -281,6 +282,10 @@ test("start returns a run receipt while the installed snapshot continues in the 
   );
   assert.equal(completed.status, "succeeded");
   assert.match(readRunOutput(id, receipt.runId, { env: value.env }).content, /background run complete/);
+  await waitFor(
+    () => readSchedulerStatusSnapshot(value.manifestPath, value.env)?.jobs.find((job) => job.id === id)?.runStatus === "succeeded",
+    "background run did not publish its terminal scheduler status",
+  );
 });
 
 test("CLI completes the disabled install, run, enable, disable, logs, and remove flow", async (t) => {
