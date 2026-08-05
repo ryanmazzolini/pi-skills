@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
 import { Box, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { schedulerJobStatus } from "../../lib/scheduled-jobs/job-status.mjs";
+import { schedulerEffectiveRun, schedulerJobStatus } from "../../lib/scheduled-jobs/job-status.mjs";
 
 export interface SchedulerFailureView {
 	code: string;
@@ -19,6 +19,7 @@ export interface SchedulerRunView {
 	exitCode: number | null;
 	signal: string | null;
 	timedOut: boolean;
+	outputTruncated: boolean;
 	reason: string | null;
 	digest: string;
 	revision: number;
@@ -56,6 +57,7 @@ export interface SchedulerJobOverview {
 	nextRun: string | null;
 	nextRunError: SchedulerFailureView | null;
 	recentRuns: SchedulerRunView[];
+	effectiveRun?: SchedulerRunView | null;
 	historyError: SchedulerFailureView | null;
 }
 
@@ -102,6 +104,7 @@ export interface SchedulerActionOutcome {
 	status: "success" | "error";
 	message: string;
 	dashboard: SchedulerDashboardData;
+	clearStatusOnRefresh?: boolean;
 	detail?: SchedulerDetailSnapshot;
 }
 
@@ -216,6 +219,23 @@ function compactDialog(title: string, lines: string[], width: number, theme: The
 		...lines.flatMap((line) => wrapTextWithAnsi(line || " ", contentWidth)).map((line) => `${border("│")} ${padAnsi(line, contentWidth)} ${border("│")}`),
 		border(`╰${"─".repeat(innerWidth)}╯`),
 	], safeWidth, theme);
+}
+
+function boundedCompactDialog(title: string, lines: string[], width: number, height: number, theme: Theme): string[] {
+	const safeWidth = Math.max(1, width);
+	const safeHeight = Math.max(1, height);
+	const contentWidth = safeWidth < 6 ? safeWidth : Math.max(1, safeWidth - 4);
+	const budget = safeWidth < 6 ? safeHeight : Math.max(0, safeHeight - 2);
+	const normalized = lines.map((line) => truncateToWidth(line || " ", contentWidth, ""));
+	const visible = budget < 1
+		? []
+		: normalized.length <= budget
+			? normalized
+			: budget <= 3
+				? normalized.slice(-budget)
+				: [normalized[0] ?? "", ...normalized.slice(-(budget - 1))];
+	if (safeWidth < 6 || safeHeight < 3) return opaque(visible.slice(0, safeHeight), safeWidth, theme);
+	return compactDialog(title, visible, safeWidth, theme);
 }
 
 interface SchedulerHotkeyHint {
@@ -389,8 +409,14 @@ function duration(value: number | null): string {
 	return `${Math.floor(value / 60_000)}m ${Math.round((value % 60_000) / 1_000)}s`;
 }
 
+function jobRuns(job: SchedulerJobOverview): SchedulerRunView[] {
+	const effective = schedulerEffectiveRun(job) as SchedulerRunView | undefined;
+	if (!effective || job.recentRuns.some((run) => run.runId === effective.runId)) return job.recentRuns;
+	return [...job.recentRuns, effective];
+}
+
 function allRuns(data: SchedulerDashboardData): Array<{ job: SchedulerJobOverview; run: SchedulerRunView }> {
-	return data.jobs.flatMap((job) => job.recentRuns.map((run) => ({ job, run }))).sort((left, right) => {
+	return data.jobs.flatMap((job) => jobRuns(job).map((run) => ({ job, run }))).sort((left, right) => {
 		const time = Date.parse(right.run.startedAt) - Date.parse(left.run.startedAt);
 		return time || right.run.runId.localeCompare(left.run.runId);
 	});
@@ -424,7 +450,7 @@ function orderedTasks(data: SchedulerDashboardData): SchedulerJobOverview[] {
 }
 
 function hasRunningRuns(data: SchedulerDashboardData): boolean {
-	return data.jobs.some((job) => job.recentRuns.some((run) => run.status === "running"));
+	return data.jobs.some((job) => jobRuns(job).some((run) => run.status === "running"));
 }
 
 export class SchedulerDashboardComponent implements Component {
@@ -442,6 +468,8 @@ export class SchedulerDashboardComponent implements Component {
 	private refreshing = false;
 	private refreshFailure: string | undefined;
 	private workspaceStatus: { message: string; color: "success" | "error" } | undefined;
+	private clearWorkspaceStatusOnRefresh = false;
+	private clearStatusAfterRefresh = false;
 	private suspended = false;
 	private disposed = false;
 
@@ -473,7 +501,7 @@ export class SchedulerDashboardComponent implements Component {
 			return;
 		}
 		if (data === "r" || data === "R") {
-			if (this.reload) void this.refreshData();
+			if (this.reload) void this.refreshData(true);
 			else this.done({ kind: "refresh" });
 			return;
 		}
@@ -579,16 +607,22 @@ export class SchedulerDashboardComponent implements Component {
 		this.tui.requestRender();
 	}
 
-	update(data: SchedulerDashboardData, status?: { message: string; color: "success" | "error" }): void {
+	update(
+		data: SchedulerDashboardData,
+		status?: { message: string; color: "success" | "error" },
+		clearStatusOnRefresh = false,
+	): void {
 		if (this.disposed) return;
 		this.applyData(data);
 		this.workspaceStatus = status;
+		this.clearWorkspaceStatusOnRefresh = Boolean(status) && clearStatusOnRefresh;
 		this.tui.requestRender();
 	}
 
-	setStatus(message: string, color: "success" | "error" = "error"): void {
+	setStatus(message: string, color: "success" | "error" = "error", clearOnRefresh = false): void {
 		if (this.disposed) return;
 		this.workspaceStatus = { message, color };
+		this.clearWorkspaceStatusOnRefresh = clearOnRefresh;
 		this.tui.requestRender();
 	}
 
@@ -601,7 +635,8 @@ export class SchedulerDashboardComponent implements Component {
 		this.refreshAbort = undefined;
 	}
 
-	async refreshData(): Promise<void> {
+	async refreshData(clearStatus = false): Promise<void> {
+		if (clearStatus) this.clearStatusAfterRefresh = true;
 		if (!this.reload || this.refreshing || this.suspended || this.disposed) return;
 		this.refreshing = true;
 		const abort = new AbortController();
@@ -611,6 +646,11 @@ export class SchedulerDashboardComponent implements Component {
 			const next = await this.reload(abort.signal);
 			if (this.disposed || this.suspended) return;
 			this.applyData(next);
+			if (this.clearStatusAfterRefresh && this.clearWorkspaceStatusOnRefresh) {
+				this.workspaceStatus = undefined;
+				this.clearWorkspaceStatusOnRefresh = false;
+			}
+			this.clearStatusAfterRefresh = false;
 		} catch (error) {
 			if (!this.disposed && !abort.signal.aborted) this.refreshFailure = error instanceof Error ? error.message : String(error);
 		} finally {
@@ -683,7 +723,7 @@ export class SchedulerDashboardComponent implements Component {
 		const marker = selected ? this.theme.fg("accent", "›") : " ";
 		const label = selected ? this.theme.fg("accent", job.key) : job.key;
 		const next = job.nextRun ? `next ${formatSchedulerTime(job.nextRun, this.now)}` : state.label.startsWith("Paused") ? "schedule paused" : state.label === "Draft" ? "not installed" : "next run unavailable";
-		const latest = job.recentRuns[0];
+		const latest = schedulerEffectiveRun(job) as SchedulerRunView | undefined;
 		const last = latest ? `last ${runState(latest).label.toLowerCase()} ${formatSchedulerTime(latest.startedAt, this.now)}` : "no recorded runs";
 		const identity = `${marker} ${this.theme.fg(state.color, state.icon)} ${label}`;
 		const status = `${this.theme.fg("dim", `· ${job.scope.kind} ·`)} ${this.theme.fg(state.color, state.label)}`;
@@ -860,10 +900,11 @@ export class SchedulerJobDetailComponent implements Component {
 			return;
 		}
 		if (this.tab === "runs") {
+			const runs = jobRuns(this.job);
 			if ((matchesKey(data, "up") || data === "k") && this.selectedRun > 0) this.selectedRun--;
-			else if ((matchesKey(data, "down") || data === "j") && this.selectedRun < this.job.recentRuns.length - 1) this.selectedRun++;
+			else if ((matchesKey(data, "down") || data === "j") && this.selectedRun < runs.length - 1) this.selectedRun++;
 			else if (matchesKey(data, "return") || matchesKey(data, "right")) {
-				const run = this.job.recentRuns[this.selectedRun];
+				const run = runs[this.selectedRun];
 				if (run) this.done({ kind: "run", id: this.job.id, runId: run.runId });
 				return;
 			}
@@ -973,7 +1014,7 @@ export class SchedulerJobDetailComponent implements Component {
 	}
 
 	private overviewLines(width: number): string[] {
-		const latest = this.job.recentRuns[0];
+		const latest = schedulerEffectiveRun(this.job) as SchedulerRunView | undefined;
 		return [
 			...wrapTextWithAnsi(this.job.description, width),
 			"",
@@ -1011,18 +1052,19 @@ export class SchedulerJobDetailComponent implements Component {
 			lines.push("", this.theme.fg("warning", "The host adapter differs from the reviewed installed state."));
 			lines.push(`Recovery: press ${this.theme.fg("accent", "a")} and review Pause or Resume to reconcile it, or Remove to clean known adapters.`);
 		}
-		const latest = this.job.recentRuns[0];
+		const latest = schedulerEffectiveRun(this.job) as SchedulerRunView | undefined;
 		if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
-			lines.push("", this.theme.fg("error", `Last run ${runState(latest).label.toLowerCase()}${latest.reason ? ` · ${latest.reason}` : ""}`));
+			lines.push("", this.theme.fg("error", `Latest execution ${runState(latest).label.toLowerCase()}${latest.reason ? ` · ${latest.reason}` : ""}`));
 			lines.push("Recovery: open Runs, select the failed run, and press Enter to inspect its retained output before running again.");
 		}
 		return lines;
 	}
 
 	private detailRunLines(width: number): string[] {
-		if (this.job.recentRuns.length === 0) return [this.theme.fg("dim", "No recorded runs for this task.")];
-		this.selectedRun = Math.min(this.selectedRun, this.job.recentRuns.length - 1);
-		return this.job.recentRuns.map((run, index) => {
+		const runs = jobRuns(this.job);
+		if (runs.length === 0) return [this.theme.fg("dim", "No recorded runs for this task.")];
+		this.selectedRun = Math.min(this.selectedRun, runs.length - 1);
+		return runs.map((run, index) => {
 			const state = runState(run);
 			const marker = index === this.selectedRun ? this.theme.fg("accent", "›") : " ";
 			return truncateToWidth(`${marker} ${this.theme.fg(state.color, state.icon)} ${padAnsi(state.label, 12)} ${formatSchedulerTime(run.startedAt, this.now)} · ${duration(run.durationMilliseconds)} · ${run.trigger}${run.reason ? ` · ${run.reason}` : ""}`, width, "");
@@ -1075,6 +1117,7 @@ class SchedulerActionReviewComponent implements Component {
 			return;
 		}
 		if (matchesKey(data, "return")) {
+			if (this.presentation && (this.tui.terminal?.rows ?? 24) < 4) return;
 			this.done(this.presentation ? this.confirmSelected : true);
 			return;
 		}
@@ -1125,17 +1168,27 @@ class SchedulerActionReviewComponent implements Component {
 			: `  ${this.theme.fg("dim", `[ ${label} ]`)}`;
 		const fromColor = presentation.fromStatus === "Active" ? "success" : "muted";
 		const stateLine = `Status       ${this.theme.fg(fromColor, presentation.fromStatus)}  →  ${this.theme.fg(presentation.toStatus === "Active" ? "success" : "muted", presentation.toStatus)}`;
-		const buttons = `${button(confirmLabel, this.confirmSelected, confirmColor)}   ${button("Cancel", !this.confirmSelected, "accent")}`;
+		const confirmButton = button(confirmLabel, this.confirmSelected, confirmColor);
+		const cancelButton = button("Cancel", !this.confirmSelected, "accent");
+		const buttons = `${confirmButton}   ${cancelButton}`;
 		const footer = `${this.theme.fg("accent", "←/→")} ${this.theme.fg("dim", "Choose")} ${this.theme.fg("dim", "·")} ${this.theme.fg("accent", "Enter")} ${this.theme.fg("dim", "Select")} ${this.theme.fg("dim", "·")} ${this.theme.fg("accent", "Esc")} ${this.theme.fg("dim", "Cancel")}`;
-		const compact = (this.tui.terminal?.rows ?? 24) < 14;
+		const terminalRows = this.tui.terminal?.rows ?? 24;
+		const compact = terminalRows < 14 || width < 40;
 		const compactWidth = Math.max(1, width - 4);
+		const splitButtons = visibleWidth(buttons) > compactWidth;
+		const compactConfirmLabel = this.action.id === "enable" ? "Resume" : this.action.id === "disable" ? "Pause" : "Remove";
+		const compactConfirm = button(compactConfirmLabel, this.confirmSelected, confirmColor);
+		const compactCancel = button("Cancel", !this.confirmSelected, "accent");
+		const compactFooter = compactWidth < visibleWidth(footer)
+			? `${this.theme.fg("accent", "←/→")} ${this.theme.fg("dim", "·")} ${this.theme.fg("accent", "Enter/Esc")}`
+			: footer;
 		const lines = compact
 			? [
-				stateLine,
+				width < 40 ? `${presentation.fromStatus} → ${presentation.toStatus}` : stateLine,
 				truncateToWidth(`${humanizeSchedule(presentation.schedule)} · ${presentation.schedule} · ${presentation.adapter}`, compactWidth, ""),
 				...(presentation.note ? [truncateToWidth(`${this.theme.fg("warning", "Note:")} ${presentation.note}`, compactWidth, "")] : []),
-				buttons,
-				footer,
+				...(splitButtons ? [compactConfirm, compactCancel] : [buttons]),
+				...(terminalRows < 5 ? [] : [compactFooter]),
 			]
 			: [
 				"",
@@ -1149,7 +1202,7 @@ class SchedulerActionReviewComponent implements Component {
 				footer,
 			];
 		const verb = this.action.id === "enable" ? "Resume" : this.action.id === "disable" ? "Pause" : "Remove";
-		return compactDialog(`${verb} ${this.jobKey}?`, lines, width, this.theme);
+		return boundedCompactDialog(`${verb} ${this.jobKey}?`, lines, width, terminalRows, this.theme);
 	}
 }
 
@@ -1497,7 +1550,7 @@ export class SchedulerWorkspaceComponent implements Component {
 		if (outcome) {
 			const status = { message: outcome.message, color: outcome.status } as const;
 			this.detailDashboard = outcome.dashboard;
-			this.dashboard.update(outcome.dashboard, status);
+			this.dashboard.update(outcome.dashboard, status, outcome.clearStatusOnRefresh === true);
 			if (this.returnToDetail && this.detail && outcome.detail) this.detail.update(outcome.detail, status);
 			else if (this.returnToDetail && !outcome.detail) {
 				this.detail?.dispose();
