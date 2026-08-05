@@ -17,7 +17,7 @@ export const SCHEDULER_JOB_STATUSES: Readonly<{
 	PAUSED_UPDATE: "paused-update";
 }>;
 
-export function schedulerJobStatus(job: {
+export interface SchedulerStatusJob {
 	candidateError?: unknown;
 	installationError?: unknown;
 	historyError?: unknown;
@@ -30,4 +30,8 @@ export function schedulerJobStatus(job: {
 		adapterDrift?: unknown;
 	};
 	recentRuns?: Array<{ status?: unknown }>;
-}): SchedulerJobStatus;
+	effectiveRun?: { status?: unknown } | null;
+}
+
+export function schedulerEffectiveRun(job: SchedulerStatusJob): { status?: unknown } | undefined;
+export function schedulerJobStatus(job: SchedulerStatusJob): SchedulerJobStatus;
