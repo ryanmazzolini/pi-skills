@@ -1,9 +1,16 @@
-import { existsSync } from "node:fs";
+import { existsSync, watch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { schedulerJobStatus } from "../../lib/scheduled-jobs/job-status.mjs";
 import { nextCronOccurrence } from "../../lib/scheduled-jobs/schedule.mjs";
+import {
+	ensureSchedulerStatusDirectory,
+	readSchedulerStatusSnapshot,
+	schedulerStatusDirectory,
+	schedulerStatusSnapshotPath,
+} from "../../lib/scheduled-jobs/status-cache.mjs";
 import {
 	formatSchedulerTime,
 	SchedulerWorkspaceComponent,
@@ -26,6 +33,8 @@ export const GLOBAL_MANIFEST_NAME = "jobs.json";
 
 const MODULE_CLI_PATH = fileURLToPath(new URL("../../bin/scheduled-jobs.mjs", import.meta.url));
 const DISPLAY_LIMIT = 24_000;
+const SCHEDULER_STATUS_ID = "scheduled-jobs";
+const SCHEDULER_STATUS_DEBOUNCE_MS = 50;
 const SCHEDULER_OVERLAY_OPTIONS = {
 	overlay: true,
 	overlayOptions: { anchor: "center", width: "90%", maxHeight: "85%", margin: 1 },
@@ -205,12 +214,11 @@ async function runCliJson(
 	}
 }
 
-export async function loadDashboardData(
-	cwd: string,
+async function loadDashboardManifests(
+	manifests: Array<{ scope: ScopeKind; manifestPath: string }>,
 	dependencies: SchedulerDependencies,
 	options: { signal?: AbortSignal } = {},
 ): Promise<SchedulerDashboardData> {
-	const manifests = await discoverManifestPaths(cwd, dependencies, options);
 	const jobs: SchedulerJobOverview[] = [];
 	const sourceErrors: SchedulerDashboardData["sourceErrors"] = [];
 	let generatedAt = new Date().toISOString();
@@ -243,6 +251,219 @@ export async function loadDashboardData(
 		}
 	}
 	return { jobs, sourceErrors, generatedAt };
+}
+
+export async function loadDashboardData(
+	cwd: string,
+	dependencies: SchedulerDependencies,
+	options: { signal?: AbortSignal } = {},
+): Promise<SchedulerDashboardData> {
+	const manifests = await discoverManifestPaths(cwd, dependencies, options);
+	return loadDashboardManifests(manifests, dependencies, options);
+}
+
+interface SchedulerStatusMonitorOptions {
+	debounceMs?: number;
+	watch?: (
+		path: string,
+		options: { persistent: boolean },
+		listener: (eventType: string, filename: string | Buffer | null) => void,
+	) => FSWatcher;
+	setTimeout?: (callback: () => void, milliseconds: number) => ReturnType<typeof setTimeout>;
+	clearTimeout?: (timer: ReturnType<typeof setTimeout>) => void;
+}
+
+export function createSchedulerStatusMonitor(
+	dependencies: SchedulerDependencies,
+	options: SchedulerStatusMonitorOptions = {},
+) {
+	const debounceMs = options.debounceMs ?? SCHEDULER_STATUS_DEBOUNCE_MS;
+	const watchDirectory = options.watch ?? watch;
+	const scheduleTimeout = options.setTimeout ?? setTimeout;
+	const clearScheduledTimeout = options.clearTimeout ?? clearTimeout;
+	let context: UiContext | undefined;
+	let watcher: FSWatcher | undefined;
+	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+	let manifests: Array<{ scope: ScopeKind; manifestPath: string }> = [];
+	let expectedSnapshotNames = new Set<string>();
+	let generation = 0;
+	let pendingSync = false;
+	let lastCount: number | undefined;
+	let activeLoad: { abort: AbortController; promise: Promise<void> } | undefined;
+
+	const renderCount = (target: UiContext, count: number, force = false) => {
+		if (!force && lastCount === count) return;
+		lastCount = count;
+		if (count < 1) {
+			target.ui.setStatus(SCHEDULER_STATUS_ID, undefined);
+			return;
+		}
+		const theme = target.ui.theme;
+		target.ui.setStatus(
+			SCHEDULER_STATUS_ID,
+			`${theme.fg("error", "!")} ${theme.fg("dim", `Scheduler · ${count} stuck`)}`,
+		);
+	};
+
+	const clearDebounce = () => {
+		if (debounceTimer) clearScheduledTimeout(debounceTimer);
+		debounceTimer = undefined;
+	};
+
+	const closeWatcher = () => {
+		const current = watcher;
+		watcher = undefined;
+		current?.close();
+	};
+
+	const setManifestSources = (sources: Array<{ scope: ScopeKind; manifestPath: string }>) => {
+		manifests = sources;
+		expectedSnapshotNames = new Set(sources.map((source) => basename(
+			schedulerStatusSnapshotPath(source.manifestPath, dependencies.env),
+		)));
+	};
+
+	const sync = () => {
+		const target = context;
+		if (!target || target.mode !== "tui") return;
+		let count = 0;
+		for (const source of manifests) {
+			try {
+				const snapshot = readSchedulerStatusSnapshot(source.manifestPath, dependencies.env);
+				if (!snapshot) return;
+				count += snapshot.attentionCount;
+			} catch {
+				return;
+			}
+		}
+		renderCount(target, count);
+	};
+
+	const scheduleSync = (watchGeneration: number) => {
+		if (activeLoad) {
+			pendingSync = true;
+			return;
+		}
+		if (debounceTimer) return;
+		debounceTimer = scheduleTimeout(() => {
+			debounceTimer = undefined;
+			if (generation === watchGeneration) sync();
+		}, debounceMs);
+		debounceTimer.unref?.();
+	};
+
+	const mountWatcher = (watchGeneration: number) => {
+		closeWatcher();
+		try {
+			ensureSchedulerStatusDirectory(dependencies.env);
+			const next = watchDirectory(
+				schedulerStatusDirectory(dependencies.env),
+				{ persistent: false },
+				(_eventType, filename) => {
+					const reported = filename ? basename(filename.toString()) : undefined;
+					if (
+						reported
+						&& !expectedSnapshotNames.has(reported)
+						&& ![...expectedSnapshotNames].some((name) => reported.startsWith(`.${name}.`))
+					) return;
+					scheduleSync(watchGeneration);
+				},
+			);
+			watcher = next;
+			next.on("error", () => {
+				if (watcher === next) closeWatcher();
+			});
+		} catch {
+			closeWatcher();
+		}
+	};
+
+	const stop = async () => {
+		generation++;
+		clearDebounce();
+		closeWatcher();
+		manifests = [];
+		expectedSnapshotNames.clear();
+		pendingSync = false;
+		if (context?.mode === "tui") context.ui.setStatus(SCHEDULER_STATUS_ID, undefined);
+		context = undefined;
+		lastCount = undefined;
+		const current = activeLoad;
+		current?.abort.abort();
+		if (current) await current.promise;
+	};
+
+	const start = async (nextContext: UiContext) => {
+		await stop();
+		if (nextContext.mode !== "tui") return;
+		context = nextContext;
+		renderCount(nextContext, 0, true);
+		const loadGeneration = ++generation;
+		const abort = new AbortController();
+		const run = (async () => {
+			try {
+				const discovered = await discoverManifestPaths(nextContext.cwd, dependencies, { signal: abort.signal });
+				if (abort.signal.aborted || generation !== loadGeneration || context?.cwd !== nextContext.cwd) return;
+				setManifestSources(discovered);
+				mountWatcher(loadGeneration);
+				const data = await loadDashboardManifests(discovered, dependencies, { signal: abort.signal });
+				if (abort.signal.aborted || generation !== loadGeneration || context?.cwd !== nextContext.cwd) return;
+				renderCount(nextContext, data.jobs.filter((job) => schedulerJobStatus(job) === "needs-attention").length);
+				sync();
+			} catch {
+				if (!abort.signal.aborted && generation === loadGeneration && context?.cwd === nextContext.cwd) {
+					renderCount(nextContext, 0);
+				}
+			}
+		})();
+		const promise = run.finally(() => {
+			if (activeLoad?.promise === promise) {
+				activeLoad = undefined;
+				if (pendingSync) {
+					pendingSync = false;
+					scheduleSync(loadGeneration);
+				}
+			}
+		});
+		activeLoad = { abort, promise };
+		await promise;
+	};
+
+	const updateContext = async (nextContext: UiContext) => {
+		if (nextContext.mode !== "tui") {
+			await stop();
+			return;
+		}
+		if (!context || context.cwd !== nextContext.cwd) {
+			await start(nextContext);
+			return;
+		}
+		context = nextContext;
+		const available = manifests.filter((source) => dependencies.exists(source.manifestPath));
+		if (available.length !== manifests.length) setManifestSources(available);
+		if (!watcher) mountWatcher(generation);
+		sync();
+	};
+
+	const reconcile = async (nextContext: UiContext) => {
+		if (!context || context.cwd !== nextContext.cwd || nextContext.mode !== "tui") {
+			await updateContext(nextContext);
+			return;
+		}
+		context = nextContext;
+		const reconcileGeneration = generation;
+		try {
+			const discovered = await discoverManifestPaths(nextContext.cwd, dependencies);
+			if (generation !== reconcileGeneration || context?.cwd !== nextContext.cwd) return;
+			setManifestSources(discovered);
+			if (!watcher) mountWatcher(generation);
+			sync();
+		} catch {
+			// The next session, cwd, or scheduler command reconciliation can retry discovery.
+		}
+	};
+
+	return { start, updateContext, reconcile, sync, stop };
 }
 
 async function loadJob(job: SchedulerJobOverview, dependencies: SchedulerDependencies, signal?: AbortSignal): Promise<JobView> {
@@ -703,13 +924,28 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 }
 
 export default function scheduledJobsExtension(pi: ExtensionAPI): void {
-	const handler = createSchedulerCommandHandler({
+	const dependencies: SchedulerDependencies = {
 		env: process.env,
 		exists: existsSync,
 		exec: (command, args, options) => pi.exec(command, args, options),
-	});
+	};
+	const handler = createSchedulerCommandHandler(dependencies);
+	const statusMonitor = createSchedulerStatusMonitor(dependencies);
+
+	pi.on("session_start", (_event, ctx) => statusMonitor.start(ctx as ExtensionCommandContext & UiContext));
+	pi.on("input", (_event, ctx) => statusMonitor.updateContext(ctx as ExtensionCommandContext & UiContext));
+	pi.on("session_shutdown", () => statusMonitor.stop());
+
 	pi.registerCommand("scheduler", {
 		description: "Inspect and operate reviewed global or current-project scheduled jobs",
-		handler: (args, ctx) => handler(args, ctx as ExtensionCommandContext & UiContext),
+		handler: async (args, ctx) => {
+			const target = ctx as ExtensionCommandContext & UiContext;
+			await statusMonitor.updateContext(target);
+			try {
+				await handler(args, target);
+			} finally {
+				await statusMonitor.reconcile(target);
+			}
+		},
 	});
 }

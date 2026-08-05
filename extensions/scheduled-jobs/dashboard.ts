@@ -1,6 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
 import { Box, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { schedulerJobStatus } from "../../lib/scheduled-jobs/job-status.mjs";
 
 export interface SchedulerFailureView {
 	code: string;
@@ -361,24 +362,15 @@ function effectiveWorkingDirectory(job: SchedulerJobOverview): string {
 }
 
 export function schedulerJobState(job: SchedulerJobOverview): { label: string; icon: string; color: "success" | "warning" | "error" | "muted" | "accent" } {
-	const latest = job.recentRuns[0];
-	if (latest?.status === "running") return { label: "Running", icon: "↻", color: "accent" };
-	if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
-		return { label: "Needs attention", icon: "!", color: "error" };
+	switch (schedulerJobStatus(job)) {
+		case "running": return { label: "Running", icon: "↻", color: "accent" };
+		case "needs-attention": return { label: "Needs attention", icon: "!", color: "error" };
+		case "draft": return { label: "Draft", icon: "◇", color: "muted" };
+		case "active-update": return { label: "Active · Update available", icon: "●", color: "warning" };
+		case "active": return { label: "Active", icon: "●", color: "success" };
+		case "paused-update": return { label: "Paused · Update available", icon: "○", color: "warning" };
+		case "paused": return { label: "Paused", icon: "○", color: "muted" };
 	}
-	if (
-		job.candidateError
-		|| job.installationError
-		|| job.historyError
-		|| job.nextRunError
-		|| job.installation.health !== "ok" && job.installation.installed
-		|| job.installation.adapterDrift
-	) return { label: "Needs attention", icon: "!", color: "error" };
-	if (!job.installation.installed) return { label: "Draft", icon: "◇", color: "muted" };
-	const changed = job.installation.definitionDrift ? " · Update available" : "";
-	return job.installation.enabled
-		? { label: `Active${changed}`, icon: "●", color: job.installation.definitionDrift ? "warning" : "success" }
-		: { label: `Paused${changed}`, icon: "○", color: job.installation.definitionDrift ? "warning" : "muted" };
 }
 
 function runState(run: SchedulerRunView): { label: string; icon: string; color: "success" | "warning" | "error" | "muted" | "accent" } {

@@ -4,9 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  CONFIG_DIRECTORY_NAME,
+  GLOBAL_MANIFEST_DIRECTORY,
+  GLOBAL_MANIFEST_NAME,
   SchedulerError,
   SchedulerUsageError,
   declarationSummary,
+  defaultConfigHome,
   loadDeclarations,
   resolveCandidate,
 } from "../lib/scheduled-jobs/index.mjs";
@@ -19,6 +23,12 @@ import {
   updateJob,
 } from "../lib/scheduled-jobs/lifecycle.mjs";
 import { manifestOverview } from "../lib/scheduled-jobs/overview.mjs";
+import {
+  updateSchedulerStatusRun,
+  withSchedulerStatusLock,
+  writeSchedulerStatusSnapshot,
+  writeUnavailableSchedulerStatusSnapshot,
+} from "../lib/scheduled-jobs/status-cache.mjs";
 import {
   MAX_RUN_HISTORY,
   executeInstalled,
@@ -131,20 +141,104 @@ function commandList(positionals, options, env) {
   return { command: "list", jobs: declarations.map(declarationSummary) };
 }
 
+function currentManifestOverview(manifestPath, runtime, env, historyLimit = 10) {
+  return manifestOverview({
+    manifestPath,
+    adapter: "auto",
+    env,
+    platform: runtime.platform,
+    runnerPath: fs.realpathSync(SCRIPT_PATH),
+    adapterOptions: runtime.adapterOptions,
+    historyLimit,
+  });
+}
+
+function publishStatusSnapshot(manifestPath, runtime, env) {
+  if (!manifestPath) return;
+  try {
+    withSchedulerStatusLock(manifestPath, env, () => {
+      try {
+        const current = currentManifestOverview(manifestPath, runtime, env);
+        writeSchedulerStatusSnapshot(manifestPath, current, env);
+      } catch {
+        try {
+          writeUnavailableSchedulerStatusSnapshot(manifestPath, env);
+        } catch {
+          // Status publication must never change the scheduler command result.
+        }
+      }
+    });
+  } catch {
+    // Status publication must never change the scheduler command result.
+  }
+}
+
+async function withStatusRefresh(manifestPath, runtime, env, operation) {
+  try {
+    return await operation();
+  } finally {
+    publishStatusSnapshot(manifestPath, runtime, env);
+  }
+}
+
+function publishRunStatus(manifestPath, id, env, runId) {
+  if (!manifestPath) return;
+  try {
+    const history = readRunHistory(id, { env, limit: MAX_RUN_HISTORY });
+    const current = runId
+      ? history.find((run) => run.runId === runId)
+      : history.find((run) => run.pid === process.pid);
+    if (current) updateSchedulerStatusRun(manifestPath, id, current, env);
+  } catch {
+    // Status publication must never change the scheduler command result.
+  }
+}
+
+async function withRunStatusRefresh(manifestPath, id, env, runId, operation) {
+  try {
+    return await operation();
+  } finally {
+    publishRunStatus(manifestPath, id, env, runId);
+  }
+}
+
 function commandOverview(positionals, options, runtime, env) {
   if (positionals.length !== 0) throw new SchedulerUsageError("overview does not accept a JOB_ID.");
-  return {
-    command: "overview",
-    result: manifestOverview({
-      manifestPath: options.manifestPath,
-      adapter: options.adapter,
-      env,
-      platform: runtime.platform,
-      runnerPath: fs.realpathSync(SCRIPT_PATH),
-      adapterOptions: runtime.adapterOptions,
-      historyLimit: options.historyLimit ?? 10,
-    }),
-  };
+  const compute = () => manifestOverview({
+    manifestPath: options.manifestPath,
+    adapter: options.adapter,
+    env,
+    platform: runtime.platform,
+    runnerPath: fs.realpathSync(SCRIPT_PATH),
+    adapterOptions: runtime.adapterOptions,
+    historyLimit: options.historyLimit ?? 10,
+  });
+  let overviewError;
+  try {
+    const result = withSchedulerStatusLock(options.manifestPath, env, () => {
+      try {
+        const current = compute();
+        try {
+          writeSchedulerStatusSnapshot(options.manifestPath, current, env);
+        } catch {
+          // A cache write cannot turn a successful overview into a failure.
+        }
+        return current;
+      } catch (error) {
+        overviewError = error;
+        try {
+          writeUnavailableSchedulerStatusSnapshot(options.manifestPath, env);
+        } catch {
+          // Preserve the authoritative overview error.
+        }
+        throw error;
+      }
+    });
+    return { command: "overview", result };
+  } catch (error) {
+    if (overviewError) throw overviewError;
+    return { command: "overview", result: compute() };
+  }
 }
 
 function commandRunLog(positionals, options, env) {
@@ -235,6 +329,24 @@ function lifecycleInput(id, options, runtime) {
   };
 }
 
+function installedSourcePath(id, env) {
+  const sourcePath = readInstalled(id, env)?.snapshot?.contract?.sourcePath;
+  return typeof sourcePath === "string" && path.isAbsolute(sourcePath) ? sourcePath : undefined;
+}
+
+function overviewSourcePath(id, env) {
+  if (id.startsWith("global:")) {
+    return path.join(defaultConfigHome(env), GLOBAL_MANIFEST_DIRECTORY, GLOBAL_MANIFEST_NAME);
+  }
+  const sourcePath = installedSourcePath(id, env);
+  if (
+    sourcePath
+    && path.basename(sourcePath) === "scheduler.json"
+    && path.basename(path.dirname(sourcePath)) === CONFIG_DIRECTORY_NAME
+  ) return sourcePath;
+  return undefined;
+}
+
 async function executeCommand(command, positionals, options, runtime) {
   const { platform, adapterOptions } = runtime;
   let env = runtime.env;
@@ -257,26 +369,36 @@ async function executeCommand(command, positionals, options, runtime) {
     throw new SchedulerUsageError("--run-id is reserved for the installed scheduler runtime.");
   }
   const operationRuntime = { ...runtime, env };
-  if (command === "install") return { command, result: installJob(lifecycleInput(id, options, operationRuntime)) };
-  if (command === "update") return { command, result: updateJob(lifecycleInput(id, options, operationRuntime)) };
-  if (command === "enable") return { command, result: enableJob(lifecycleInput(id, options, operationRuntime)) };
-  if (command === "disable") return { command, result: disableJob(lifecycleInput(id, options, operationRuntime)) };
-  if (command === "remove") return { command, result: removeJob(lifecycleInput(id, options, operationRuntime)) };
+  const sourcePath = options.manifestPath ?? overviewSourcePath(id, env);
+  const installedManifestPath = installedSourcePath(id, env);
+  const lifecycleOperation = {
+    install: installJob,
+    update: updateJob,
+    enable: enableJob,
+    disable: disableJob,
+    remove: removeJob,
+  }[command];
+  if (lifecycleOperation) {
+    return withStatusRefresh(sourcePath, operationRuntime, env, async () => ({
+      command,
+      result: lifecycleOperation(lifecycleInput(id, options, operationRuntime)),
+    }));
+  }
   if (command === "start") {
-    return {
+    return withStatusRefresh(sourcePath, operationRuntime, env, async () => ({
       command,
       result: await startInstalled(id, {
         env,
         expectedDigest: options.expectedInstalledDigest,
         expectedRevision: options.expectedRevision,
       }),
-    };
+    }));
   }
   if (command === "_run-manual-installed" && !options.runId) {
     throw new SchedulerUsageError("_run-manual-installed requires --run-id.");
   }
   if (command === "run" || command === "_run-installed" || command === "_run-manual-installed") {
-    return {
+    const operation = async () => ({
       command,
       result: await executeInstalled(id, {
         env,
@@ -285,7 +407,10 @@ async function executeCommand(command, positionals, options, runtime) {
         trigger: command === "_run-installed" ? "scheduled" : "manual",
         runId: options.runId,
       }),
-    };
+    });
+    return command === "run"
+      ? withStatusRefresh(sourcePath, operationRuntime, env, operation)
+      : withRunStatusRefresh(installedManifestPath, id, env, options.runId, operation);
   }
   if (command === "status") {
     return { command, result: requireAvailableInstallation(installedStatus(id, { env, adapterOptions })) };
