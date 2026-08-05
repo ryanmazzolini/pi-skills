@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   FileWatchLease,
+  FileWatchRegistrationStore,
   collectFeedbackEvents,
   createGithubPrWatchExtension,
   formatFeedbackMessage,
@@ -47,6 +48,37 @@ function graphPullRequest(overrides = {}) {
 
 function graphResponse(pullRequest = graphPullRequest()) {
   return { data: { repository: { pullRequest } } };
+}
+
+function watchRegistration({
+  sessionId = "session-1",
+  sessionFile = `/sessions/${sessionId}.jsonl`,
+  registrationId = `registration-${sessionId}`,
+  number = 42,
+  repo = "widgets",
+  seen = [],
+} = {}) {
+  return {
+    version: 1,
+    registrationId,
+    ownerSessionId: sessionId,
+    ownerSessionFile: sessionFile,
+    pr: {
+      owner: "acme",
+      repo,
+      number,
+      url: `https://github.com/acme/${repo}/pull/${number}`,
+      title: `Keep ${repo} correct`,
+      state: "OPEN",
+      baseRefName: "main",
+      headRepository: `acme/${repo}`,
+      headRefName: `feat/${repo}-watch`,
+      headRefOid: HEAD_SHA,
+      createdAt: "2026-07-31T12:00:00Z",
+    },
+    seen,
+    updatedAt: "2026-07-31T12:01:00Z",
+  };
 }
 
 function okJson(value) {
@@ -93,7 +125,30 @@ function fakeLease() {
   };
 }
 
-function extensionFixture({ sessionId = "session-1", branch = "feat/widget-watch", head = HEAD_SHA, pullRequest = graphPullRequest(), pr = prView() } = {}) {
+function fakeRegistrationStore(initial = []) {
+  const records = new Map(initial.map((registration) => [`${registration.pr.owner.toLowerCase()}/${registration.pr.repo.toLowerCase()}#${registration.pr.number}`, structuredClone(registration)]));
+  const key = (pr) => `${pr.owner.toLowerCase()}/${pr.repo.toLowerCase()}#${pr.number}`;
+  return {
+    records,
+    async list() { return [...records.values()].map((registration) => structuredClone(registration)); },
+    async read(pr) { const registration = records.get(key(pr)); return registration && structuredClone(registration); },
+    async write(registration) { records.set(key(registration.pr), structuredClone(registration)); },
+    async remove(pr) { records.delete(key(pr)); },
+  };
+}
+
+function extensionFixture({
+  sessionId = "session-1",
+  sessionFile = `/sessions/${sessionId}.jsonl`,
+  branch = "feat/widget-watch",
+  head = HEAD_SHA,
+  pullRequest = graphPullRequest(),
+  pr = prView(),
+  prResolver,
+  graphResolver,
+  registrationStore = fakeRegistrationStore(),
+  lease = fakeLease(),
+} = {}) {
   const tools = [];
   const handlers = new Map();
   const renderers = new Map();
@@ -103,20 +158,19 @@ function extensionFixture({ sessionId = "session-1", branch = "feat/widget-watch
   const notifications = [];
   const execCalls = [];
   const timer = fakeSchedule();
-  const lease = fakeLease();
   const pi = {
     registerTool(tool) { tools.push(tool); },
     registerMessageRenderer(type, renderer) { renderers.set(type, renderer); },
     on(name, handler) { handlers.set(name, handler); },
     appendEntry(customType, data) { entries.push({ type: "custom", customType, data }); },
     sendMessage(...args) { sent.push(args); },
-    async exec(command, args) {
-      execCalls.push({ command, args: [...args] });
-      if (command === "gh" && args[0] === "pr" && args[1] === "view") return okJson(pr);
+    async exec(command, args, options) {
+      execCalls.push({ command, args: [...args], options });
+      if (command === "gh" && args[0] === "pr" && args[1] === "view") return okJson(prResolver ? prResolver(args[2]) : pr);
       if (command === "gh" && args[0] === "repo" && args[1] === "view") return okJson({ nameWithOwner: "acme/widgets" });
       if (command === "git" && args[0] === "branch") return { code: 0, stdout: `${branch}\n`, stderr: "" };
       if (command === "git" && args[0] === "rev-parse") return { code: 0, stdout: `${head}\n`, stderr: "" };
-      if (command === "gh" && args[0] === "api" && args[1] === "graphql") return okJson(graphResponse(pullRequest));
+      if (command === "gh" && args[0] === "api" && args[1] === "graphql") return okJson(graphResponse(graphResolver ? graphResolver(args) : pullRequest));
       throw new Error(`Unexpected exec: ${command} ${args.join(" ")}`);
     },
   };
@@ -124,6 +178,7 @@ function extensionFixture({ sessionId = "session-1", branch = "feat/widget-watch
     cwd: "/repo",
     sessionManager: {
       getSessionId: () => sessionId,
+      getSessionFile: () => sessionFile,
       getBranch: () => entries,
     },
     ui: {
@@ -132,23 +187,24 @@ function extensionFixture({ sessionId = "session-1", branch = "feat/widget-watch
     },
   };
   const runtime = createGithubPrWatchExtension(pi, {
-    lease,
+    leaseFactory: () => lease,
+    registrationStore,
     schedule: timer.schedule,
     cancelSchedule: timer.cancelSchedule,
     now: () => Date.parse("2026-07-31T12:01:00Z"),
     pollIntervalMs: 60_000,
   });
-  return { tools, handlers, renderers, entries, sent, statuses, notifications, execCalls, timer, lease, pi, ctx, runtime };
+  return { tools, handlers, renderers, entries, sent, statuses, notifications, execCalls, timer, lease, registrationStore, pi, ctx, runtime };
 }
 
 async function settleAsyncWork() {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 
-function acknowledgeLastFeedback(fixture) {
+async function acknowledgeLastFeedback(fixture) {
   const message = fixture.sent.at(-1)?.[0];
   assert.ok(message);
-  fixture.handlers.get("message_end")({
+  await fixture.handlers.get("message_end")({
     message: {
       role: "custom",
       customType: message.customType,
@@ -193,7 +249,7 @@ test("remains dormant until github_pr_watch is called explicitly", async () => {
   assert.equal(fixture.execCalls.length, 0);
   assert.equal(fixture.timer.scheduled.length, 0);
   assert.deepEqual(fixture.tools.map((tool) => tool.name), ["github_pr_watch"]);
-  assert.match(fixture.tools[0].promptGuidelines.join("\n"), /not for PRs viewed, reviewed, checked out, or used as references/);
+  assert.match(fixture.tools[0].promptGuidelines.join("\n"), /Never infer watch intent/);
   assert.match(fixture.tools[0].promptGuidelines.join("\n"), /untrusted external data/);
 });
 
@@ -231,7 +287,7 @@ test("registers the exact created PR, queues initial feedback, and delivers one 
   assert.match(fixture.sent[0][0].content, /untrusted external GitHub reviewer content/);
   assert.deepEqual(fixture.sent[0][1], { deliverAs: "followUp", triggerTurn: true });
   assert.equal(fixture.sent[0][0].details.count, 1);
-  acknowledgeLastFeedback(fixture);
+  await acknowledgeLastFeedback(fixture);
   fixture.handlers.get("agent_start")({}, fixture.ctx);
   await fixture.handlers.get("agent_settled")({}, fixture.ctx);
 
@@ -331,43 +387,107 @@ test("paginates top-level feedback and every inline thread before delivery", asy
   assert.match(fixture.sent[0][0].content, /Thread reply from page two/);
 });
 
-test("treats repeated registration as idempotent and refuses a different active PR", async () => {
-  const fixture = extensionFixture();
+test("treats repeated registration as idempotent and watches multiple PRs", async () => {
+  const secondUrl = "https://github.com/acme/gadgets/pull/43";
+  const fixture = extensionFixture({
+    prResolver(url) {
+      return url === PR_URL ? prView() : prView({
+        number: 43,
+        url: secondUrl,
+        title: "Keep gadgets correct",
+        headRepository: { nameWithOwner: "acme/gadgets" },
+      });
+    },
+    graphResolver(args) {
+      const number = Number(args.find((value) => value.startsWith("number="))?.slice(7));
+      return number === 42 ? graphPullRequest() : graphPullRequest({ number: 43, url: secondUrl, title: "Keep gadgets correct" });
+    },
+  });
   await fixture.handlers.get("session_start")({}, fixture.ctx);
   const first = await fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
   const callsAfterFirst = fixture.execCalls.length;
 
   const repeated = await fixture.tools[0].execute("tool-2", { url: PR_URL }, undefined, undefined, fixture.ctx);
+  const second = await fixture.tools[0].execute("tool-3", { url: secondUrl }, undefined, undefined, fixture.ctx);
 
   assert.equal(repeated.content[0].text, first.content[0].text);
-  assert.equal(fixture.execCalls.length, callsAfterFirst);
+  assert.match(second.content[0].text, /acme\/gadgets#43/);
+  assert.equal(fixture.execCalls.slice(0, callsAfterFirst).length, callsAfterFirst);
+  assert.equal(fixture.lease.acquisitions.length, 2);
+  assert.equal(fixture.registrationStore.records.size, 2);
+  assert.equal(fixture.statuses.at(-1).value, "2 PRs watched");
+});
+
+test("multiple PRs share one automatic-turn delivery lock", async () => {
+  const secondUrl = "https://github.com/acme/gadgets/pull/43";
+  const comments = new Map([
+    [42, {
+      id: "IC_widgets",
+      author: { login: "reviewer" },
+      body: "Fix widgets.",
+      createdAt: "2026-07-31T12:00:10Z",
+      updatedAt: "2026-07-31T12:00:10Z",
+      url: `${PR_URL}#issuecomment-widgets`,
+    }],
+    [43, {
+      id: "IC_gadgets",
+      author: { login: "reviewer" },
+      body: "Fix gadgets.",
+      createdAt: "2026-07-31T12:00:10Z",
+      updatedAt: "2026-07-31T12:00:10Z",
+      url: `${secondUrl}#issuecomment-gadgets`,
+    }],
+  ]);
+  const fixture = extensionFixture({
+    prResolver(url) {
+      return url === PR_URL ? prView() : prView({
+        number: 43,
+        url: secondUrl,
+        headRepository: { nameWithOwner: "acme/gadgets" },
+      });
+    },
+    graphResolver(args) {
+      const number = Number(args.find((value) => value.startsWith("number="))?.slice(7));
+      return graphPullRequest({
+        number,
+        url: number === 42 ? PR_URL : secondUrl,
+        comments: { totalCount: 1, nodes: [comments.get(number)] },
+      });
+    },
+  });
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+  fixture.handlers.get("agent_start")({}, fixture.ctx);
+  await fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
+  await fixture.tools[0].execute("tool-2", { url: secondUrl }, undefined, undefined, fixture.ctx);
+
+  await fixture.handlers.get("agent_settled")({}, fixture.ctx);
+  assert.equal(fixture.sent.length, 1);
+  await acknowledgeLastFeedback(fixture);
+  fixture.handlers.get("agent_start")({}, fixture.ctx);
+  await fixture.handlers.get("agent_settled")({}, fixture.ctx);
+
+  assert.equal(fixture.sent.length, 2);
+  assert.notEqual(fixture.sent[0][0].details.number, fixture.sent[1][0].details.number);
+});
+
+test("registration is independent of cwd, checkout branch, and local HEAD", async () => {
+  const fixture = extensionFixture({
+    branch: "review/someone-elses-pr",
+    head: "b".repeat(40),
+    pr: prView({ headRepository: { nameWithOwner: "someone/widgets" } }),
+  });
+  fixture.ctx.cwd = "/unrelated/old-session-directory";
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+
+  await fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
+
   assert.equal(fixture.lease.acquisitions.length, 1);
-  await assert.rejects(
-    () => fixture.tools[0].execute("tool-3", { url: "https://github.com/acme/widgets/pull/43" }, undefined, undefined, fixture.ctx),
-    /already watches/,
-  );
+  assert.equal(fixture.execCalls.some(({ command }) => command === "git"), false);
+  assert.equal(fixture.execCalls.some(({ command, args }) => command === "gh" && args[0] === "repo"), false);
+  assert.equal(fixture.execCalls.every(({ options }) => options?.cwd === undefined), true);
 });
 
-test("rejects registration when the PR does not match the current branch or HEAD", async () => {
-  const wrongBranch = extensionFixture({ branch: "review/someone-elses-pr" });
-  await wrongBranch.handlers.get("session_start")({}, wrongBranch.ctx);
-  await assert.rejects(
-    () => wrongBranch.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, wrongBranch.ctx),
-    /does not match current branch/,
-  );
-  assert.equal(wrongBranch.lease.acquisitions.length, 0);
-  assert.equal(wrongBranch.timer.scheduled.length, 0);
-
-  const wrongHead = extensionFixture({ head: "b".repeat(40) });
-  await wrongHead.handlers.get("session_start")({}, wrongHead.ctx);
-  await assert.rejects(
-    () => wrongHead.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, wrongHead.ctx),
-    /does not match local HEAD/,
-  );
-  assert.equal(wrongHead.lease.acquisitions.length, 0);
-});
-
-test("rejects closed PRs and PRs whose head repository differs from the checkout", async () => {
+test("rejects closed PRs but permits PRs from any head repository", async () => {
   const closed = extensionFixture({ pr: prView({ state: "MERGED" }) });
   await closed.handlers.get("session_start")({}, closed.ctx);
   await assert.rejects(
@@ -377,10 +497,8 @@ test("rejects closed PRs and PRs whose head repository differs from the checkout
 
   const otherRepo = extensionFixture({ pr: prView({ headRepository: { nameWithOwner: "someone/widgets" } }) });
   await otherRepo.handlers.get("session_start")({}, otherRepo.ctx);
-  await assert.rejects(
-    () => otherRepo.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, otherRepo.ctx),
-    /does not match current repository/,
-  );
+  await otherRepo.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, otherRepo.ctx);
+  assert.equal(otherRepo.lease.acquisitions.length, 1);
 });
 
 test("restores only an explicit registration owned by the same Pi session", async () => {
@@ -416,6 +534,294 @@ test("restores only an explicit registration owned by the same Pi session", asyn
   assert.equal(forked.execCalls.length, 0);
 });
 
+test("new sessions start empty while the previous session retains ownership", async () => {
+  const registrationStore = fakeRegistrationStore();
+  const previous = extensionFixture({ sessionId: "session-1", registrationStore });
+  await previous.handlers.get("session_start")({}, previous.ctx);
+  await previous.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, previous.ctx);
+  await previous.handlers.get("session_shutdown")({ reason: "new" }, previous.ctx);
+
+  const fresh = extensionFixture({ sessionId: "session-2", registrationStore });
+  await fresh.handlers.get("session_start")({ reason: "new", previousSessionFile: "/sessions/session-1.jsonl" }, fresh.ctx);
+
+  assert.equal(fresh.lease.acquisitions.length, 0);
+  assert.equal(fresh.execCalls.length, 0);
+  assert.equal(registrationStore.records.values().next().value.ownerSessionId, "session-1");
+});
+
+test("resume restores only registrations already owned by the selected session", async () => {
+  const registrationStore = fakeRegistrationStore([
+    watchRegistration({ sessionId: "session-1" }),
+    watchRegistration({ sessionId: "session-2", registrationId: "registration-session-2-gadgets", number: 43, repo: "gadgets" }),
+  ]);
+  const resumed = extensionFixture({
+    sessionId: "session-2",
+    registrationStore,
+    graphResolver: () => graphPullRequest({
+      number: 43,
+      url: "https://github.com/acme/gadgets/pull/43",
+      title: "Keep gadgets correct",
+    }),
+  });
+
+  await resumed.handlers.get("session_start")({ reason: "resume", previousSessionFile: "/sessions/session-1.jsonl" }, resumed.ctx);
+
+  assert.equal(resumed.lease.acquisitions.length, 1);
+  assert.equal(resumed.lease.acquisitions[0].pr.repo, "gadgets");
+  assert.deepEqual([...registrationStore.records.values()].map((registration) => registration.ownerSessionId), ["session-1", "session-2"]);
+});
+
+test("restore refuses to overwrite a registration changed while waiting for its lease", async () => {
+  const registration = watchRegistration({ sessionId: "session-1", seen: ["comment-old:one"] });
+  const registrationStore = fakeRegistrationStore([registration]);
+  const lease = fakeLease();
+  let acquisitionStarted;
+  let releaseAcquire;
+  const started = new Promise((resolve) => { acquisitionStarted = resolve; });
+  const gate = new Promise((resolve) => { releaseAcquire = resolve; });
+  lease.acquire = async function(pr, sessionId) {
+    this.acquisitions.push({ pr, sessionId });
+    acquisitionStarted();
+    await gate;
+  };
+  const fixture = extensionFixture({ sessionId: "session-1", registrationStore, lease });
+
+  const restoring = fixture.handlers.get("session_start")({ reason: "startup" }, fixture.ctx);
+  await started;
+  await registrationStore.write({
+    ...registration,
+    ownerSessionId: "session-3",
+    ownerSessionFile: "/sessions/session-3.jsonl",
+    seen: ["comment-new:two"],
+  });
+  releaseAcquire();
+  await restoring;
+
+  const retained = registrationStore.records.values().next().value;
+  assert.equal(retained.ownerSessionId, "session-3");
+  assert.deepEqual(retained.seen, ["comment-new:two"]);
+  assert.equal(lease.releases, 1);
+  assert.match(fixture.notifications.at(-1).message, /changed ownership during restoration/);
+});
+
+test("fork and clone lifecycle moves every source registration to the successor", async () => {
+  const registrationStore = fakeRegistrationStore([
+    watchRegistration({ sessionId: "session-1" }),
+    watchRegistration({ sessionId: "session-1", registrationId: "registration-gadgets", number: 43, repo: "gadgets" }),
+  ]);
+  const successor = extensionFixture({
+    sessionId: "session-2",
+    registrationStore,
+    graphResolver(args) {
+      const number = Number(args.find((value) => value.startsWith("number="))?.slice(7));
+      return number === 42 ? graphPullRequest() : graphPullRequest({
+        number: 43,
+        url: "https://github.com/acme/gadgets/pull/43",
+        title: "Keep gadgets correct",
+      });
+    },
+  });
+
+  await successor.handlers.get("session_start")({ reason: "fork", previousSessionFile: "/sessions/session-1.jsonl" }, successor.ctx);
+
+  assert.equal(successor.lease.acquisitions.length, 2);
+  assert.equal([...registrationStore.records.values()].every((registration) => registration.ownerSessionId === "session-2"), true);
+  assert.equal([...registrationStore.records.values()].every((registration) => registration.ownerSessionFile === "/sessions/session-2.jsonl"), true);
+});
+
+test("command-line fork startup moves registrations copied from its parent session", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-watch-cli-fork-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const sessionFile = path.join(directory, "fork.jsonl");
+  await fs.writeFile(sessionFile, `${JSON.stringify({
+    type: "session",
+    version: 3,
+    id: "session-2",
+    timestamp: "2026-07-31T12:00:00Z",
+    cwd: "/workspace",
+    parentSession: "/sessions/session-1.jsonl",
+  })}\n`);
+  const registration = watchRegistration({ sessionId: "session-1" });
+  const registrationStore = fakeRegistrationStore([registration]);
+  const successor = extensionFixture({ sessionId: "session-2", sessionFile, registrationStore });
+  successor.entries.push({
+    type: "custom",
+    customType: "github-pr-watch-state",
+    data: {
+      version: 2,
+      active: true,
+      registrationId: registration.registrationId,
+      ownerSessionId: "session-1",
+      pr: registration.pr,
+      seen: [],
+    },
+  });
+
+  await successor.handlers.get("session_start")({ reason: "startup" }, successor.ctx);
+
+  assert.equal(successor.lease.acquisitions.length, 1);
+  assert.equal(registrationStore.records.values().next().value.ownerSessionId, "session-2");
+});
+
+test("command-line fork migrates a legacy parent registration and its crash-recovery delivery", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-watch-legacy-cli-fork-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const sessionFile = path.join(directory, "fork.jsonl");
+  await fs.writeFile(sessionFile, `${JSON.stringify({
+    type: "session",
+    version: 3,
+    id: "session-2",
+    timestamp: "2026-07-31T12:00:00Z",
+    cwd: "/workspace",
+    parentSession: "/sessions/session-1.jsonl",
+  })}\n`);
+  const registrationStore = fakeRegistrationStore();
+  const successor = extensionFixture({ sessionId: "session-2", sessionFile, registrationStore });
+  const legacy = watchRegistration({ sessionId: "session-1", seen: ["comment-old:one"] });
+  successor.entries.push({
+    type: "custom",
+    customType: "github-pr-watch-state",
+    data: {
+      version: 1,
+      active: true,
+      ownerSessionId: "session-1",
+      pr: legacy.pr,
+      seen: legacy.seen,
+    },
+  });
+  successor.entries.push({
+    type: "custom_message",
+    customType: "github_pr_feedback",
+    details: {
+      owner: "acme",
+      repo: "widgets",
+      number: 42,
+      fingerprints: ["comment-new:two"],
+    },
+  });
+
+  await successor.handlers.get("session_start")({ reason: "startup" }, successor.ctx);
+
+  assert.equal(successor.lease.acquisitions.length, 1);
+  const migrated = registrationStore.records.values().next().value;
+  assert.equal(migrated.ownerSessionId, "session-2");
+  assert.deepEqual(migrated.seen, ["comment-old:one", "comment-new:two"]);
+});
+
+test("an explicit call claims an inactive owner's registration without replaying seen feedback", async () => {
+  const seen = ["comment-id:old-edit"];
+  const registrationStore = fakeRegistrationStore([watchRegistration({ sessionId: "session-1", seen })]);
+  const fixture = extensionFixture({ sessionId: "session-2", registrationStore });
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+
+  const result = await fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
+
+  assert.match(result.content[0].text, /Moved this watch from inactive Pi session session-1/);
+  const registration = registrationStore.records.values().next().value;
+  assert.equal(registration.ownerSessionId, "session-2");
+  assert.deepEqual(registration.seen, seen);
+});
+
+test("an inactive-owner claim recovers a delivered fingerprint from the previous session file", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-watch-claim-recovery-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const sessionFile = path.join(directory, "owner.jsonl");
+  const registration = watchRegistration({
+    sessionId: "session-1",
+    sessionFile,
+    registrationId: "registration-claim-recovery",
+    seen: ["comment-old:one"],
+  });
+  const state = {
+    version: 2,
+    active: true,
+    registrationId: registration.registrationId,
+    ownerSessionId: "session-1",
+    pr: registration.pr,
+    seen: registration.seen,
+  };
+  await fs.writeFile(sessionFile, [
+    JSON.stringify({
+      type: "session",
+      version: 3,
+      id: "00000000-0000-4000-8000-000000000001",
+      timestamp: "2026-07-31T12:00:00.000Z",
+      cwd: "/workspace",
+    }),
+    JSON.stringify({
+      type: "custom",
+      id: "aaaaaaaa",
+      parentId: null,
+      timestamp: "2026-07-31T12:00:01.000Z",
+      customType: "github-pr-watch-state",
+      data: state,
+    }),
+    JSON.stringify({
+      type: "custom_message",
+      id: "bbbbbbbb",
+      parentId: "aaaaaaaa",
+      timestamp: "2026-07-31T12:00:02.000Z",
+      customType: "github_pr_feedback",
+      content: "feedback",
+      display: true,
+      details: {
+        deliveryId: "delivery-1",
+        registrationId: registration.registrationId,
+        owner: "acme",
+        repo: "widgets",
+        number: 42,
+        fingerprints: ["comment-delivered:two"],
+      },
+    }),
+  ].join("\n") + "\n");
+  const registrationStore = fakeRegistrationStore([registration]);
+  const fixture = extensionFixture({ sessionId: "session-2", registrationStore });
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+
+  await fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
+
+  const claimed = registrationStore.records.values().next().value;
+  assert.equal(claimed.ownerSessionId, "session-2");
+  assert.deepEqual(claimed.seen, ["comment-old:one", "comment-delivered:two"]);
+});
+
+test("a live owner conflict explains that watching is active and how to move it", async () => {
+  const registrationStore = fakeRegistrationStore([watchRegistration({ sessionId: "session-1" })]);
+  const lease = fakeLease();
+  lease.acquire = async () => { throw new Error("already leased"); };
+  const fixture = extensionFixture({ sessionId: "session-2", registrationStore, lease });
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+
+  await assert.rejects(
+    () => fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx),
+    /already being monitored by a live watcher.*latest durable registration names Pi session session-1.*stop the live Pi process holding the watch.*retry/i,
+  );
+  assert.equal(registrationStore.records.values().next().value.ownerSessionId, "session-1");
+});
+
+test("concurrent repeated registration coalesces into one validation and lease", async () => {
+  const fixture = extensionFixture();
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+  const originalExec = fixture.pi.exec;
+  let lookups = 0;
+  fixture.pi.exec = async (command, args, options) => {
+    if (command === "gh" && args[0] === "pr") {
+      lookups++;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    return originalExec(command, args, options);
+  };
+
+  const [first, second] = await Promise.all([
+    fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx),
+    fixture.tools[0].execute("tool-2", { url: PR_URL }, undefined, undefined, fixture.ctx),
+  ]);
+
+  assert.equal(first.content[0].text, second.content[0].text);
+  assert.equal(lookups, 1);
+  assert.equal(fixture.lease.acquisitions.length, 1);
+});
+
 test("stops polling, releases its lease, and stays passive when the PR closes", async () => {
   const fixture = extensionFixture({ pullRequest: graphPullRequest({ state: "MERGED" }) });
   await fixture.handlers.get("session_start")({}, fixture.ctx);
@@ -430,6 +836,24 @@ test("stops polling, releases its lease, and stays passive when the PR closes", 
   assert.equal(fixture.sent.length, 0);
   assert.equal(fixture.entries.at(-1).data.active, false);
   assert.match(fixture.notifications.at(-1).message, /Stopped watching/);
+});
+
+test("registration cleanup failure still releases the live lease", async () => {
+  const registrationStore = fakeRegistrationStore();
+  registrationStore.remove = async () => { throw new Error("cleanup failed"); };
+  const fixture = extensionFixture({
+    registrationStore,
+    pullRequest: graphPullRequest({ state: "MERGED" }),
+  });
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+
+  await assert.rejects(
+    () => fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx),
+    /cleanup failed/,
+  );
+
+  assert.equal(fixture.lease.releases, 1);
+  assert.equal(fixture.timer.scheduled.some((timer) => !timer.cancelled), false);
 });
 
 test("stops without an agent turn when feedback exceeds retained deduplication capacity", async () => {
@@ -674,6 +1098,46 @@ test("restores every delivered fingerprint from a large custom message after an 
   assert.equal(fixture.sent.length, 0);
 });
 
+test("keeps edited delivery fingerprints newest while recovering at capacity", async () => {
+  const pr = {
+    owner: "acme",
+    repo: "widgets",
+    number: 42,
+    url: PR_URL,
+    title: "Keep widgets correct",
+    state: "OPEN",
+    baseRefName: "main",
+    headRepository: "acme/widgets",
+    headRefName: "feat/widget-watch",
+    headRefOid: HEAD_SHA,
+    createdAt: "2026-07-31T12:00:00Z",
+  };
+  const seen = Array.from(
+    { length: 2_000 },
+    (_, index) => `conversation-comment:IC_${index}:old-${index}`,
+  );
+  const edited = "conversation-comment:IC_0:edited";
+  const added = "conversation-comment:IC_new:added";
+  const fixture = extensionFixture();
+  fixture.entries.push({
+    type: "custom",
+    customType: "github-pr-watch-state",
+    data: { version: 1, active: true, ownerSessionId: "session-1", pr, seen },
+  });
+  fixture.entries.push({
+    type: "custom_message",
+    customType: "github_pr_feedback",
+    details: { owner: "acme", repo: "widgets", number: 42, fingerprints: [edited, added] },
+  });
+
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+
+  assert.equal(fixture.runtime.seen.size, 2_000);
+  assert.equal(fixture.runtime.seen.has(edited), true);
+  assert.equal(fixture.runtime.seen.has(added), true);
+  assert.equal(fixture.runtime.seen.has(seen[1]), false);
+});
+
 test("replaces an edited comment fingerprint instead of evicting other current feedback", async () => {
   const comment = {
     id: "IC_edit",
@@ -689,7 +1153,7 @@ test("replaces an edited comment fingerprint instead of evicting other current f
   fixture.handlers.get("agent_start")({}, fixture.ctx);
   await fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
   await fixture.handlers.get("agent_settled")({}, fixture.ctx);
-  acknowledgeLastFeedback(fixture);
+  await acknowledgeLastFeedback(fixture);
   fixture.handlers.get("agent_start")({}, fixture.ctx);
   await fixture.handlers.get("agent_settled")({}, fixture.ctx);
 
@@ -698,13 +1162,13 @@ test("replaces an edited comment fingerprint instead of evicting other current f
   latestActiveTimer(fixture, 60_000).callback();
   await settleAsyncWork();
   assert.equal(fixture.sent.length, 2);
-  acknowledgeLastFeedback(fixture);
+  await acknowledgeLastFeedback(fixture);
 
   assert.equal(fixture.entries.at(-1).data.seen.length, 1);
   assert.match(fixture.sent[1][0].content, /Edited request/);
 });
 
-test("holds feedback while the checkout no longer matches the registered PR branch", async () => {
+test("delivers feedback without checkout gating and tells the agent to locate the checkout", async () => {
   const comment = {
     id: "IC_checkout",
     author: { login: "reviewer" },
@@ -714,24 +1178,38 @@ test("holds feedback while the checkout no longer matches the registered PR bran
     url: `${PR_URL}#issuecomment-checkout`,
   };
   const fixture = extensionFixture({ pullRequest: graphPullRequest({ comments: { totalCount: 1, nodes: [comment] } }) });
+  fixture.ctx.cwd = "/unrelated/old-session-directory";
   await fixture.handlers.get("session_start")({}, fixture.ctx);
   fixture.handlers.get("agent_start")({}, fixture.ctx);
   await fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
-  const originalExec = fixture.pi.exec;
-  let branch = "review/someone-elses-pr";
-  fixture.pi.exec = async (command, args, options) => {
-    if (command === "git" && args[0] === "branch") return { code: 0, stdout: `${branch}\n`, stderr: "" };
-    return originalExec(command, args, options);
-  };
 
   await fixture.handlers.get("agent_settled")({}, fixture.ctx);
 
-  assert.equal(fixture.sent.length, 0);
-  assert.match(fixture.statuses.at(-1).value, /feedback held: checkout branch is review\/someone-elses-pr/);
-
-  branch = "feat/widget-watch";
-  await fixture.handlers.get("agent_settled")({}, fixture.ctx);
   assert.equal(fixture.sent.length, 1);
+  assert.match(fixture.sent[0][0].content, /locate and verify the intended repository checkout/);
+});
+
+test("preserves queued-feedback status across scheduled polls", async () => {
+  const pullRequest = graphPullRequest();
+  const fixture = extensionFixture({ pullRequest });
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+  fixture.handlers.get("agent_start")({}, fixture.ctx);
+  await fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
+  pullRequest.comments = { totalCount: 1, nodes: [{
+    id: "IC_scheduled",
+    author: { login: "reviewer" },
+    body: "Keep this queued while the agent is active.",
+    createdAt: "2026-07-31T12:01:10Z",
+    updatedAt: "2026-07-31T12:01:10Z",
+    url: `${PR_URL}#issuecomment-scheduled`,
+  }] };
+
+  latestActiveTimer(fixture, 60_000).callback();
+  await settleAsyncWork();
+  latestActiveTimer(fixture, 60_000).callback();
+  await settleAsyncWork();
+
+  assert.match(fixture.statuses.at(-1).value, /1 feedback item queued/);
 });
 
 test("retries a silently dropped custom message after its acknowledgement timeout", async () => {
@@ -756,7 +1234,7 @@ test("retries a silently dropped custom message after its acknowledgement timeou
 
   assert.equal(fixture.sent.length, 2);
   assert.equal(fixture.entries.at(-1).data.seen.length, 0);
-  acknowledgeLastFeedback(fixture);
+  await acknowledgeLastFeedback(fixture);
   assert.equal(fixture.entries.at(-1).data.seen.length, 1);
 });
 
@@ -776,7 +1254,7 @@ test("holds later feedback until the outstanding automatic turn settles", async 
   await fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
   await fixture.handlers.get("agent_settled")({}, fixture.ctx);
   assert.equal(fixture.sent.length, 1);
-  acknowledgeLastFeedback(fixture);
+  await acknowledgeLastFeedback(fixture);
 
   pullRequest.comments.nodes.push({
     id: "IC_second",
@@ -833,6 +1311,34 @@ test("releases a restore lease acquired concurrently with shutdown", async () =>
   assert.equal(fixture.execCalls.length, 0);
 });
 
+test("shutdown rolls back and releases a registration whose durable write is still in flight", async () => {
+  const registrationStore = fakeRegistrationStore();
+  const originalWrite = registrationStore.write;
+  let writeStarted;
+  let releaseWrite;
+  const started = new Promise((resolve) => { writeStarted = resolve; });
+  const gate = new Promise((resolve) => { releaseWrite = resolve; });
+  registrationStore.write = async (registration) => {
+    writeStarted();
+    await gate;
+    await originalWrite(registration);
+  };
+  const fixture = extensionFixture({ registrationStore });
+  await fixture.handlers.get("session_start")({}, fixture.ctx);
+
+  const registration = fixture.tools[0].execute("tool-1", { url: PR_URL }, undefined, undefined, fixture.ctx);
+  void registration.catch(() => undefined);
+  await started;
+  const shutdown = fixture.handlers.get("session_shutdown")({ reason: "quit" }, fixture.ctx);
+  releaseWrite();
+
+  await assert.rejects(() => registration, /cancelled/);
+  await shutdown;
+  assert.equal(fixture.lease.releases, 1);
+  assert.equal(registrationStore.records.size, 0);
+  assert.equal(fixture.timer.scheduled.some((timer) => !timer.cancelled), false);
+});
+
 test("aborts an in-flight registration during session shutdown without acquiring a lease", async () => {
   const fixture = extensionFixture();
   await fixture.handlers.get("session_start")({}, fixture.ctx);
@@ -850,6 +1356,32 @@ test("aborts an in-flight registration during session shutdown without acquiring
   await assert.rejects(() => registration, /cancelled/);
   assert.equal(fixture.lease.acquisitions.length, 0);
   assert.equal(fixture.sent.length, 0);
+});
+
+test("file registration store atomically persists one bounded record per PR", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-watch-registrations-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const store = new FileWatchRegistrationStore(directory);
+  const registration = watchRegistration({ seen: ["comment-one:old", "comment-two:new"] });
+
+  await store.write(registration);
+  assert.deepEqual(await store.read(registration.pr), registration);
+  assert.deepEqual(await store.list(), [registration]);
+
+  const [file] = await fs.readdir(directory);
+  const replacement = path.join(directory, "replacement");
+  await fs.writeFile(replacement, "not json");
+  const unsafe = path.join(directory, "ignored.json");
+  await fs.symlink(replacement, unsafe);
+  await assert.rejects(() => store.list(), /malformed or unsafe/);
+  await fs.unlink(unsafe);
+  assert.deepEqual(await store.list(), [registration]);
+  assert.match(file, /^[0-9a-f]{64}\.json$/);
+
+  await fs.writeFile(path.join(directory, file), "not json");
+  await assert.rejects(() => store.read(registration.pr), /malformed or unsafe/);
+  await store.remove(registration.pr);
+  assert.equal(await store.read(registration.pr), undefined);
 });
 
 test("file lease release preserves a path replaced after acquisition", async (t) => {

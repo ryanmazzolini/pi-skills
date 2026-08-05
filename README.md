@@ -130,7 +130,7 @@ Pi gets a few extras that are not skills:
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
 - `intercom` provides local peer messaging, capability-gated bounded read-only tails, and an ephemeral First Mate presence role.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
-- `github_pr_watch` explicitly registers a PR just created by the current Pi session, polls its review feedback, and wakes the agent with a bounded review-context packet. It never discovers PRs from viewing or checking them out.
+- `github_pr_watch` explicitly assigns one or more PRs to the current Pi session, polls their review feedback, and wakes the agent with bounded review-context packets. Registrations survive reload and resume, move to fork/clone successors, and remain independent of the session cwd; merely viewing or checking out a PR never registers it.
 - `scheduled-jobs` adds the human-only `/scheduler` interface.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.
 
