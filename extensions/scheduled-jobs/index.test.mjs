@@ -385,6 +385,93 @@ test("ambient status loads once, follows shared cache events, and closes its wat
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
 });
 
+test("ambient status discovers a manifest from an unknown shared snapshot event", async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-discovery-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const manifestPath = path.join(base, "config", "pi-scheduler", "jobs.json");
+  const env = { HOME: base, XDG_CONFIG_HOME: path.join(base, "config"), XDG_STATE_HOME: path.join(base, "state") };
+  let manifestExists = false;
+  const statuses = [];
+  const watches = statusWatchHarness();
+  const dependencies = {
+    env,
+    exists: (filePath) => manifestExists && filePath === manifestPath,
+    async exec(command, args) {
+      if (command === "git") return commandResult("", 1);
+      throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+    },
+  };
+  const monitor = createSchedulerStatusMonitor(dependencies, watches.options);
+  const ctx = {
+    cwd: "/work",
+    hasUI: true,
+    mode: "tui",
+    ui: {
+      theme: { fg: (_color, text) => text },
+      setStatus(id, value) { statuses.push({ id, value }); },
+    },
+  };
+
+  await monitor.start(ctx);
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
+
+  manifestExists = true;
+  const blocked = overviewJob(inspection({ installed: true, enabled: true, health: "unhealthy" }));
+  writeSchedulerStatusSnapshot(manifestPath, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
+  const snapshotName = path.basename(schedulerStatusSnapshotPath(manifestPath, env));
+  watches.emit(`.${snapshotName}.123.atomic.tmp`);
+  watches.flush();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+
+  await monitor.stop();
+});
+
+test("ambient status closes the initial discovery event window", async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-initial-window-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const manifestPath = path.join(base, "config", "pi-scheduler", "jobs.json");
+  const env = { HOME: base, XDG_CONFIG_HOME: path.join(base, "config"), XDG_STATE_HOME: path.join(base, "state") };
+  const statuses = [];
+  const watches = statusWatchHarness();
+  let created = false;
+  const blocked = overviewJob(inspection({ installed: true, enabled: true, health: "unhealthy" }));
+  const dependencies = {
+    env,
+    exists(filePath) {
+      if (filePath !== manifestPath) return false;
+      if (created) return true;
+      created = true;
+      writeSchedulerStatusSnapshot(manifestPath, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
+      const snapshotName = path.basename(schedulerStatusSnapshotPath(manifestPath, env));
+      watches.emit(`.${snapshotName}.123.atomic.tmp`);
+      return false;
+    },
+    async exec(command, args) {
+      if (command === "git") return commandResult("", 1);
+      throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+    },
+  };
+  const monitor = createSchedulerStatusMonitor(dependencies, watches.options);
+  const ctx = {
+    cwd: "/work",
+    hasUI: true,
+    mode: "tui",
+    ui: {
+      theme: { fg: (_color, text) => text },
+      setStatus(id, value) { statuses.push({ id, value }); },
+    },
+  };
+
+  await monitor.start(ctx);
+  assert.equal(watches.watches.length, 1);
+  assert.equal(watches.timers.length, 1);
+  watches.flush();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+  await monitor.stop();
+});
+
 test("ambient status aggregates global and current-project snapshots", async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-scopes-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
@@ -427,12 +514,14 @@ test("ambient status aggregates global and current-project snapshots", async (t)
   writeSchedulerStatusSnapshot(projectManifest, { generatedAt: new Date().toISOString(), jobs: [draft] }, env);
   watches.emit(null);
   watches.flush();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
 
   writeUnavailableSchedulerStatusSnapshot(globalManifest, env);
   writeUnavailableSchedulerStatusSnapshot(projectManifest, env);
   watches.emit(null);
   watches.flush();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
   await monitor.stop();
 });
@@ -735,6 +824,14 @@ test("diagnostic prompts preserve failures as bounded data", () => {
   assert.ok(prompt.includes("'/opt/scheduled-jobs' doctor 'global:test:job' --manifest '/tmp/config/pi-scheduler/jobs.json' --json"));
   assert.match(prompt, /Do not install, update, run, enable, disable, or remove/);
   assert.ok(prompt.length <= 12_000);
+});
+
+test("diagnostic prompts report the failed execution behind an overlap receipt", () => {
+  const overview = overviewJob();
+  overview.recentRuns = Array.from({ length: 10 }, () => ({ status: "skipped", reason: "overlap" }));
+  overview.effectiveRun = { status: "failed", reason: "exited with code 3" };
+  const prompt = schedulerDiagnosticPrompt(overview, undefined, "/opt/scheduled-jobs");
+  assert.match(prompt, /Latest execution.*failed.*exited with code 3/);
 });
 
 test("does not hand a disappeared task to the agent", async () => {

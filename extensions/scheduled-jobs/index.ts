@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { schedulerJobStatus } from "../../lib/scheduled-jobs/job-status.mjs";
+import { schedulerEffectiveRun, schedulerJobStatus } from "../../lib/scheduled-jobs/job-status.mjs";
 import { nextCronOccurrence } from "../../lib/scheduled-jobs/schedule.mjs";
 import {
 	ensureSchedulerStatusDirectory,
@@ -288,6 +288,8 @@ export function createSchedulerStatusMonitor(
 	let expectedSnapshotNames = new Set<string>();
 	let generation = 0;
 	let pendingSync = false;
+	let pendingDiscovery = false;
+	let eventDiscoveryAbort: AbortController | undefined;
 	let lastCount: number | undefined;
 	let activeLoad: { abort: AbortController; promise: Promise<void> } | undefined;
 
@@ -339,7 +341,8 @@ export function createSchedulerStatusMonitor(
 		renderCount(target, count);
 	};
 
-	const scheduleSync = (watchGeneration: number) => {
+	const scheduleSync = (watchGeneration: number, discover = false) => {
+		pendingDiscovery ||= discover;
 		if (activeLoad) {
 			pendingSync = true;
 			return;
@@ -347,7 +350,31 @@ export function createSchedulerStatusMonitor(
 		if (debounceTimer) return;
 		debounceTimer = scheduleTimeout(() => {
 			debounceTimer = undefined;
-			if (generation === watchGeneration) sync();
+			if (generation !== watchGeneration) return;
+			if (!pendingDiscovery) {
+				sync();
+				return;
+			}
+			pendingDiscovery = false;
+			if (eventDiscoveryAbort) {
+				pendingDiscovery = true;
+				return;
+			}
+			const target = context;
+			if (!target || target.mode !== "tui") return;
+			const abort = new AbortController();
+			eventDiscoveryAbort = abort;
+			void discoverManifestPaths(target.cwd, dependencies, { signal: abort.signal })
+				.then((discovered) => {
+					if (abort.signal.aborted || generation !== watchGeneration || context?.cwd !== target.cwd) return;
+					setManifestSources(discovered);
+					sync();
+				})
+				.catch(() => {})
+				.finally(() => {
+					if (eventDiscoveryAbort === abort) eventDiscoveryAbort = undefined;
+					if (pendingDiscovery && generation === watchGeneration) scheduleSync(watchGeneration, true);
+				});
 		}, debounceMs);
 		debounceTimer.unref?.();
 	};
@@ -361,12 +388,12 @@ export function createSchedulerStatusMonitor(
 				{ persistent: false },
 				(_eventType, filename) => {
 					const reported = filename ? basename(filename.toString()) : undefined;
-					if (
-						reported
-						&& !expectedSnapshotNames.has(reported)
-						&& ![...expectedSnapshotNames].some((name) => reported.startsWith(`.${name}.`))
-					) return;
-					scheduleSync(watchGeneration);
+					const known = reported !== undefined && (
+						expectedSnapshotNames.has(reported)
+						|| [...expectedSnapshotNames].some((name) => reported.startsWith(`.${name}.`))
+					);
+					if (reported && !known && !/^(?:[0-9a-f]{64}\.json|\.[0-9a-f]{64}\.json\.[^.]+\.[^.]+\.tmp)$/.test(reported)) return;
+					scheduleSync(watchGeneration, !known);
 				},
 			);
 			watcher = next;
@@ -385,6 +412,9 @@ export function createSchedulerStatusMonitor(
 		manifests = [];
 		expectedSnapshotNames.clear();
 		pendingSync = false;
+		pendingDiscovery = false;
+		eventDiscoveryAbort?.abort();
+		eventDiscoveryAbort = undefined;
 		if (context?.mode === "tui") context.ui.setStatus(SCHEDULER_STATUS_ID, undefined);
 		context = undefined;
 		lastCount = undefined;
@@ -402,10 +432,10 @@ export function createSchedulerStatusMonitor(
 		const abort = new AbortController();
 		const run = (async () => {
 			try {
+				mountWatcher(loadGeneration);
 				const discovered = await discoverManifestPaths(nextContext.cwd, dependencies, { signal: abort.signal });
 				if (abort.signal.aborted || generation !== loadGeneration || context?.cwd !== nextContext.cwd) return;
 				setManifestSources(discovered);
-				mountWatcher(loadGeneration);
 				const data = await loadDashboardManifests(discovered, dependencies, { signal: abort.signal });
 				if (abort.signal.aborted || generation !== loadGeneration || context?.cwd !== nextContext.cwd) return;
 				renderCount(nextContext, data.jobs.filter((job) => schedulerJobStatus(job) === "needs-attention").length);
@@ -610,9 +640,9 @@ export function schedulerDiagnosticPrompt(
 		diagnostics.push(`Installed health: ${overview.installation.health}${overview.installation.healthCategory ? ` (${overview.installation.healthCategory})` : ""}${overview.installation.healthReason ? ` — ${overview.installation.healthReason}` : ""}`);
 	}
 	if (overview.installation.adapterDrift) diagnostics.push("The host adapter differs from the installed snapshot.");
-	const latest = overview.recentRuns[0];
+	const latest = schedulerEffectiveRun(overview) as SchedulerJobOverview["recentRuns"][number] | undefined;
 	if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
-		diagnostics.push(`Latest run: ${latest.status}${latest.reason ? ` — ${latest.reason}` : ""}`);
+		diagnostics.push(`Latest execution: ${latest.status}${latest.reason ? ` — ${latest.reason}` : ""}`);
 	}
 	const doctor = `${shellQuote(cliPath)} doctor ${shellQuote(overview.id)} --manifest ${shellQuote(overview.manifestPath)} --json`;
 	const header = [
@@ -769,7 +799,7 @@ async function loadRunOutput(
 	const status = sanitizeDisplay(run.status ?? "run");
 	return {
 		title: `${sanitizeDisplay(id)} · ${status} · ${sanitizeDisplay(run.startedAt ?? runId)}`,
-		text: `${sanitizeDisplay(result.logPath)}\n\n${boundedDisplay(result.content || "No output recorded for this run.")}${result.truncated ? "\n\nEarlier output was truncated by the CLI." : ""}`,
+		text: `${sanitizeDisplay(result.logPath)}\n\n${boundedDisplay(result.content || "No output recorded for this run.")}${result.truncation === "later" ? "\n\nLater output was truncated by the CLI." : result.truncated ? "\n\nEarlier output was truncated by the CLI." : ""}`,
 		complete: status !== "running",
 	};
 }
@@ -862,6 +892,7 @@ export function createSchedulerCommandHandler(dependencies: SchedulerDependencie
 						status: "error",
 						message: "Cancellation requested. Scheduler state may have changed; press r to refresh before another action.",
 						dashboard: loaded.dashboard,
+						clearStatusOnRefresh: true,
 						detail: detailSnapshot(loaded),
 					};
 					return {

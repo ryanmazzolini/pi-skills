@@ -110,6 +110,7 @@ test("formats human schedules, local times, and textual task states", () => {
   assert.equal(schedulerJobState(job({ candidateError: { code: "ENVIRONMENT", message: "missing" } })).label, "Needs attention");
   assert.equal(schedulerJobState(job({ recentRuns: [run({ status: "running", finishedAt: null })] })).label, "Running");
   assert.equal(schedulerJobState(job({ recentRuns: [run({ status: "timed-out", reason: "timeout" })] })).label, "Needs attention");
+  assert.equal(schedulerJobState(job({ recentRuns: [run({ status: "skipped", reason: "overlap" }), run({ status: "failed" })] })).label, "Needs attention");
 });
 
 test("renders a width-safe tasks dashboard with next run, history, and source errors", () => {
@@ -367,9 +368,25 @@ test("actions and lifecycle decisions stay compact over the selected task", asyn
   assert.equal(shortReview.length <= 8, true);
   assert.match(shortReview.join("\n"), /\[ Resume schedule \].*\[ Cancel \]/);
   assert.match(shortReview.join("\n"), /Enter Select.*Esc Cancel/);
+  const narrowShortReview = view.overlay().component.render(20);
+  assert.equal(narrowShortReview.length <= 8, true);
+  assert.equal(narrowShortReview.every((line) => visibleWidth(line) <= 20), true);
+  assert.match(narrowShortReview.join("\n"), /› \[ Resume \]/);
+  assert.match(narrowShortReview.join("\n"), /\[ Cancel \]/);
+  assert.match(narrowShortReview.join("\n"), /Enter\/Esc/);
+  view.tui.terminal.rows = 5;
+  const fiveRowReview = view.overlay().component.render(20);
+  assert.equal(fiveRowReview.length <= 5, true);
+  assert.match(fiveRowReview.join("\n"), /› \[ Resume \]/);
+  assert.match(fiveRowReview.join("\n"), /\[ Cancel \]/);
+  view.tui.terminal.rows = 4;
+  const fourRowReview = view.overlay().component.render(20);
+  assert.equal(fourRowReview.length <= 4, true);
+  assert.match(fourRowReview.join("\n"), /› \[ Resume \]/);
+  assert.match(fourRowReview.join("\n"), /\[ Cancel \]/);
 
   view.overlay().component.handleInput("\x1b[C");
-  assert.match(view.overlay().component.render(68).join("\n"), /› \[ Cancel \]/);
+  assert.match(view.overlay().component.render(20).join("\n"), /› \[ Cancel \]/);
   view.overlay().component.handleInput("\r");
   assert.match(view.overlay().component.render(64).join("\n"), /Actions for smoke:dashboard/);
   component.dispose();
@@ -453,6 +470,43 @@ test("refreshes task progress in place and stops polling when disposed", async (
   component.dispose();
   await component.refreshData();
   assert.equal(reloads, 1);
+});
+
+test("manual refresh clears a stale cancellation warning", async () => {
+  const view = harness();
+  const data = { jobs: [job()], sourceErrors: [], generatedAt: "2026-07-25T09:00:00.000Z" };
+  const component = new SchedulerDashboardComponent(data, view.tui, theme, () => {}, new Date(data.generatedAt), async () => ({
+    ...data,
+    generatedAt: "2026-07-25T09:00:01.000Z",
+  }));
+  component.setStatus("Cancellation requested. Scheduler state may have changed; press r to refresh before another action.", "error", true);
+  assert.match(component.render(100).join("\n"), /Scheduler state may have changed/);
+
+  component.handleInput("r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.doesNotMatch(component.render(100).join("\n"), /Scheduler state may have changed/);
+
+  component.setStatus("Scheduled runs paused.", "success");
+  component.handleInput("r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(component.render(100).join("\n"), /Scheduled runs paused/);
+  component.dispose();
+});
+
+test("manual refresh clears cancellation uncertainty during an automatic refresh", async () => {
+  const view = harness();
+  const data = { jobs: [job()], sourceErrors: [], generatedAt: "2026-07-25T09:00:00.000Z" };
+  let finishReload;
+  const component = new SchedulerDashboardComponent(data, view.tui, theme, () => {}, new Date(data.generatedAt), () => new Promise((resolve) => {
+    finishReload = resolve;
+  }));
+  component.setStatus("Cancellation requested. Scheduler state may have changed; press r to refresh before another action.", "error", true);
+  const automaticRefresh = component.refreshData();
+  component.handleInput("r");
+  finishReload({ ...data, generatedAt: "2026-07-25T09:00:01.000Z" });
+  await automaticRefresh;
+  assert.doesNotMatch(component.render(100).join("\n"), /Scheduler state may have changed/);
+  component.dispose();
 });
 
 test("disposing the dashboard aborts an in-flight observation command", async () => {
@@ -643,6 +697,7 @@ test("detail view hands failures to the open agent", () => {
 
 test("detail view gives concrete recovery routes for adapter drift and failed runs", () => {
   const view = harness();
+  const outcomes = [];
   const current = job({
     installation: {
       installed: true,
@@ -653,12 +708,17 @@ test("detail view gives concrete recovery routes for adapter drift and failed ru
       definitionDrift: false,
       adapterDrift: true,
     },
-    recentRuns: [run({ status: "timed-out", reason: "timed out after 30 seconds" })],
+    recentRuns: [run({ runId: "00000000-0000-4000-8000-000000000002", status: "skipped", reason: "overlap" })],
+    effectiveRun: run({ status: "timed-out", reason: "timed out after 30 seconds" }),
   });
-  const component = new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, () => {});
+  const component = new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, (result) => outcomes.push(result));
   const rendered = component.render(120).join("\n");
   assert.match(rendered, /review Pause or Resume/);
   assert.match(rendered, /open Runs.*retained output/);
+  component.handleInput("\t");
+  component.handleInput("j");
+  component.handleInput("\r");
+  assert.deepEqual(outcomes, [{ kind: "run", id: current.id, runId: current.effectiveRun.runId }]);
 });
 
 test("detail view progressively discloses runs and definition while retaining actions", () => {
