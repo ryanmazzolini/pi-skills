@@ -1135,14 +1135,15 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	for (const audit of audits) assert.ok(Buffer.byteLength(JSON.stringify(audit.data)) <= INTERCOM_PROJECTION_MAX_BYTES);
 
 	await peer.send(ownedId, { messageId: "", text: "pending-secret".repeat(1_000), expectsReply: true });
+	await peer.send(ownedId, { messageId: "second-pending-id", text: "second-pending-secret", expectsReply: true });
 	const inbound = await waitFor(() => delivered.find((call) => call[0].customType === "intercom_message"), 2_000);
 	assert.match(inbound[0].content, /pending-secret/);
 	const pending = await waitFor(async () => {
 		const result = await execute({ action: "pending", limit: 1 });
-		return result.details.count === 1 ? result : undefined;
+		return result.details.count === 2 ? result : undefined;
 	});
-	assert.equal(pending.details.pending[0].messageId, "");
-	assert.equal(pending.details.pending[0].fromSessionId, peerSessionId);
+	assert.deepEqual(pending.details.pending.map((ask) => ask.messageId), ["", "second-pending-id"]);
+	assert.ok(pending.details.pending.every((ask) => ask.fromSessionId === peerSessionId));
 	assert.equal(JSON.stringify(pending.details).includes("pending-secret"), false);
 	assert.ok(Buffer.byteLength(pending.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
 	assert.ok(delivered.every((call) => Buffer.byteLength(call[0].content) <= INTERCOM_PROJECTION_MAX_BYTES));
