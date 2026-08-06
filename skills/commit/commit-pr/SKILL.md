@@ -15,6 +15,12 @@ description: Create or update a draft pull request from the current branch. Use 
 6. Show the full title and body, base branch, review evidence, and validation status. Ask for confirmation or edits.
 7. After explicit approval, push if needed and create or update the PR. Create new PRs as drafts. Show the PR URL and offer next steps.
 
+## PR title
+
+State the concrete resulting change in plain, specific language. Use sentence case and a direct verb. Prefer changed behavior or an outcome over task wording, and unpack dense noun phrases when that makes the title easier to read. Keep precise project terms when they help the reviewer.
+
+The title should make sense without the original discussion. Repository conventions may add metadata such as a ticket ID, but the wording should remain readable on its own. For example, prefer `[sc-64199] Record inventory observations with the extensible schema` over `[sc-64199] Use the extensible inventory observation schema`.
+
 ## PR body
 
 Treat the PR body as an interface for a reviewer who has not followed the discussion.
