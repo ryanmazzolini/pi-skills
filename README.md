@@ -54,12 +54,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 | Skill | What it helps with |
 |---|---|
-| [`architecture-review`](./skills/architecture/architecture-review/SKILL.md) | Review design trade-offs, rollout risk, and operations |
-| [`design-an-interface`](./skills/architecture/design-an-interface/SKILL.md) | Compare meaningfully different designs for a module or API |
-| [`shape-first`](./skills/architecture/shape-first/SKILL.md) | Settle data, rules, and local boundaries before implementation |
-| [`simplest-sufficient-change`](./skills/architecture/simplest-sufficient-change/SKILL.md) | Choose the earliest repo-native solution that fully meets the need |
-| [`simplify-codebase-architecture`](./skills/architecture/simplify-codebase-architecture/SKILL.md) | Remove repeated decisions and needless layers |
-| [`ubiquitous-language`](./skills/architecture/ubiquitous-language/SKILL.md) | Build a domain glossary and flag muddy terminology |
+| [`architecture`](./skills/architecture/architecture/SKILL.md) | Route shaping, interface design, simplification, system review, implementation choice, and domain-language work |
 
 ### Coding and review
 
@@ -68,7 +63,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`code-review`](./skills/review/code-review/SKILL.md) | Find concrete defects in code changes and explain them in plain language |
 | [`diagnosing-bugs`](./skills/debugging/diagnosing-bugs/SKILL.md) | Diagnose hard, flaky, environment-specific, or performance bugs |
 | [`security-review`](./skills/security/security-review/SKILL.md) | Find proven, exploitable security problems in code and delivery paths |
-| [`explain-code`](./skills/explain/explain-code/SKILL.md) | Explain code with diagrams and analogies |
+| [`explain-code`](./skills/explain/explain-code/SKILL.md) | Explain code with concrete, drillable visual traces |
 | [`typescript`](./skills/typescript-nextjs/typescript/SKILL.md) | Apply strict TypeScript patterns and conventions |
 | [`nextjs-app-router`](./skills/typescript-nextjs/nextjs-app-router/SKILL.md) | Work with modern Next.js App Router patterns |
 | [`frontend-react`](./skills/typescript-nextjs/frontend-react/SKILL.md) | Implement and review accessible React and Next.js interfaces |
@@ -87,8 +82,8 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`daily-report`](./skills/notes/daily-report/SKILL.md) | Build evidence-based reports from Git, GitHub, and Shortcut activity |
 | [`notion-cli`](./skills/notes/notion-cli/SKILL.md) | Read and change Notion through the `ntn` CLI |
 | [`teach`](./skills/productivity/teach/SKILL.md) | Learn through short lessons, practice, and feedback |
-| [`writing-great-skills`](./skills/productivity/writing-great-skills/SKILL.md) | Write compact skills that produce reliable work |
-| [`context-guidelines`](./skills/ai-authoring/context-guidelines/SKILL.md) | Apply context-engineering principles to AI configuration |
+| [`wait-what`](./skills/productivity/wait-what/SKILL.md) | Re-pitch an explanation that did not land |
+| [`writing-for-agents`](./skills/ai-authoring/writing-for-agents/SKILL.md) | Write reliable instructions and context for agents |
 
 ### Agents, automation, and integrations
 

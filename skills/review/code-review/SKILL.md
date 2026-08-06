@@ -62,4 +62,6 @@ When no finding meets the reporting bar, say that no inline comments are propose
 
 When another skill supplies an output schema, follow its structure and metadata contract while keeping this skill's finding threshold, inline-only delivery, and prose.
 
+Keep each comment drillable: lead with the problem, then include its evidence and next step. Add a small state or sequence trace only when prose cannot make the triggering path clear, and follow it with a text explanation.
+
 Before publishing an inline comment, show its exact destination and body unless the user already approved that exact text. Follow the active attribution policy. If the host cannot attach a finding to a relevant changed line, stop and tell the requester that the finding cannot be published inline; do not move it to unchanged code or a top-level comment. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body; never approve or request changes. After publication, read each comment back and verify its target, content, and formatting.

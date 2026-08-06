@@ -25,7 +25,9 @@ Do not default to slides, dashboards, tables, or diagrams. If plain Markdown is 
 - Label assumptions, unknowns, alternatives, and hard-to-reverse choices.
 - End with the exact question the human must answer.
 
-Use the format that gives the needed fidelity: Markdown, HTML/CSS, inline SVG, Mermaid, Excalidraw, a product mockup, or a project-native prototype. Prefer a self-contained local artifact unless the project toolchain is needed for fidelity.
+Make the artifact drillable instead of dense. The first view should stand alone; link from it to named sections for evidence, alternatives, source paths, risks, rollout, or other details the reviewer may need.
+
+Use plain Markdown when it is clear enough. For a richer custom visual, prefer one self-contained HTML file with inline CSS and SVG so it opens without a build, external asset, or CDN. Use tldraw, Excalidraw, or another spatial canvas only when the reviewer needs to rearrange elements, explore placement, or collaborate spatially and the tool is available. Preserve a portable export or text explanation. Use a project-native prototype only when the project toolchain is needed for fidelity.
 
 Before presenting it, check that:
 

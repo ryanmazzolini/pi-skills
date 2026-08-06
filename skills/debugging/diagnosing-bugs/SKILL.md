@@ -43,7 +43,7 @@ Read [SPECIALIZED-LOOPS.md](SPECIALIZED-LOOPS.md) when an ordinary automated com
 
 ## After either path
 
-After verifying the fix, state the confirmed cause and evidence and record them in the commit or PR message. Then ask what would have prevented the bug. If the evidence reveals hidden coupling, tangled callers, or no good test point, recommend the `simplify-codebase-architecture` skill with those specifics. Do not let architectural follow-up delay or replace the verified fix.
+After verifying the fix, state the confirmed cause and evidence and record them in the commit or PR message. Then ask what would have prevented the bug. If the evidence reveals hidden coupling, tangled callers, or no good test point, recommend the simplification branch of the `architecture` skill with those specifics. Do not let architectural follow-up delay or replace the verified fix.
 
 ## Communication
 
