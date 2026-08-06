@@ -38,31 +38,28 @@ Use a severity taxonomy only when the caller or host expects one. Reserve a bloc
 
 ## Write for the code author
 
-Lead with the review outcome. Order findings by impact, with blockers before non-blocking improvements.
+Write every finding as a proposed inline comment on the smallest changed line or range in the reviewed diff that establishes the defect. Use the old side for deleted lines when the host supports it. Do not anchor a comment to unchanged surrounding code. Order multiple comments by impact.
 
-For each finding:
+Each comment should:
 
-1. Use a direct title that names the problem.
-2. Cite the smallest stable file and line range that establishes it.
-3. Explain what the code does, when that behavior occurs, and its concrete consequence.
-4. Ask for the smallest useful change. Request a test when it proves the corrected behavior or prevents a likely regression.
+1. Lead with a direct statement of the problem.
+2. Explain what the code does, when that behavior occurs, and its concrete consequence.
+3. Ask for the smallest useful change. Request a test when it proves the corrected behavior or prevents a likely regression.
 
-Keep one idea in each finding. Use code identifiers only when they make the explanation more precise, and explain necessary technical terms once.
+Keep one idea in each comment. Use concrete subjects and direct verbs. Use code identifiers only when they make the explanation more precise, and explain necessary technical terms once. The comment must stand on its own without a top-level summary.
 
 Prefer:
 
-> **The read-only bypass is not turned off**
->
-> The code enables the bypass and leaves it enabled, so later updates on the same object can skip the read-only guard. Limit the bypass to this write and add a test that confirms the guard is restored afterward.
+> This enables the bypass and leaves it enabled, so later updates on the same object can skip the read-only guard. Limit the bypass to this write and add a test that confirms the guard is restored afterward.
 
 Avoid abstract shorthand such as “the bypass outlives the intended write” when a direct description says the same thing.
 
 ## Return the result
 
-When findings exist, give the reader the findings and the evidence needed to act. Distinguish blocking findings from non-blocking improvements, then state what validation ran and what remains uncertain.
+When findings exist, return only the proposed inline comments. For each comment, provide its file, smallest useful changed line range, and diff side when needed as routing metadata, followed by the exact comment body. Do not add a top-level review body, summary, or verdict. Do not approve the change or request changes.
 
-When no finding meets the reporting bar, say that no high-confidence issues were found. Name the reviewed scope, validation performed, and any residual gap that materially limits confidence.
+When no finding meets the reporting bar, say that no inline comments are proposed. Do not create a top-level comment as a fallback.
 
-When another skill supplies an output schema, follow its structure and metadata contract while keeping this skill's finding threshold and prose.
+When another skill supplies an output schema, follow its structure and metadata contract while keeping this skill's finding threshold, inline-only delivery, and prose.
 
-Before publishing a review, show the exact destination and body unless the user already approved that exact text. Follow the active attribution policy. After publication, read the published body back and verify its target, content, and formatting.
+Before publishing an inline comment, show its exact destination and body unless the user already approved that exact text. Follow the active attribution policy. If the host cannot attach a finding to a relevant changed line, stop and tell the requester that the finding cannot be published inline; do not move it to unchanged code or a top-level comment. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body; never approve or request changes. After publication, read each comment back and verify its target, content, and formatting.
