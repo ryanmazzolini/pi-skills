@@ -57,6 +57,7 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 test("validates action-specific fields while preserving attachment and reply selection inputs", () => {
 	assert.doesNotThrow(() => validateIntercomAction({ action: "list" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "list", limit: 1 }));
+	assert.doesNotThrow(() => validateIntercomAction({ action: "pending", limit: 1 }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "triage" }));
 	assert.throws(() => validateIntercomAction({ action: "triage", limit: 1 }), /limit is not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "first-mate" }));
@@ -1137,7 +1138,7 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	const inbound = await waitFor(() => delivered.find((call) => call[0].customType === "intercom_message"), 2_000);
 	assert.match(inbound[0].content, /pending-secret/);
 	const pending = await waitFor(async () => {
-		const result = await execute({ action: "pending" });
+		const result = await execute({ action: "pending", limit: 1 });
 		return result.details.count === 1 ? result : undefined;
 	});
 	assert.equal(pending.details.pending[0].messageId, "");

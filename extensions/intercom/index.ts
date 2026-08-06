@@ -61,7 +61,7 @@ export const IntercomParams = Type.Object({
 	replyTo: Type.Optional(Type.String({ description: "Exact inbound message ID for reply selection, or thread ID for send/ask" })),
 	summaryToken: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Single-use opaque grant returned by First Mate triage for summarize" })),
 	operationId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Operation ID for operations inspection or cancellation" })),
-	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32, description: "Maximum operation snapshots or tail text messages to return; ignored for list" })),
+	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32, description: "Maximum operation snapshots or tail text messages to return; ignored for list and pending" })),
 	tailScanBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: SESSION_TAIL_LIMITS.scanBytes, description: "For tail only: emergency ceiling for file bytes read while finding requested text (default 512 MiB)" })),
 	tailProjectionBytes: Type.Optional(Type.Integer({ minimum: INTERCOM_TAIL_PROJECTION_MIN_BYTES, maximum: INTERCOM_PROJECTION_MAX_BYTES, description: "For tail only: maximum UTF-8 bytes in the model projection (default 48 KiB)" })),
 }, { additionalProperties: false });
@@ -94,9 +94,9 @@ export function validateIntercomAction(input: IntercomToolInput): void {
 	if (input.action !== "operations" && input.action !== "cancel" && input.operationId !== undefined) throw new Error(`operationId is not valid for ${input.action}`);
 	if (input.action === "summarize" && !input.summaryToken?.trim()) throw new Error("summarize requires summaryToken from the current First Mate triage");
 	if (input.action !== "summarize" && input.summaryToken !== undefined) throw new Error(`summaryToken is not valid for ${input.action}`);
-	// The flat tool schema exposes limit to list callers. Accept but ignore it so an
-	// accidental hint cannot hide peers from the complete session inventory.
-	if (input.action !== "operations" && input.action !== "tail" && input.action !== "list" && input.limit !== undefined) throw new Error(`limit is not valid for ${input.action}`);
+	// The flat tool schema exposes limit to list and pending callers. Accept but ignore it so an
+	// accidental hint cannot hide peers or unresolved asks from the complete inventories.
+	if (input.action !== "operations" && input.action !== "tail" && input.action !== "list" && input.action !== "pending" && input.limit !== undefined) throw new Error(`limit is not valid for ${input.action}`);
 	if (input.action !== "tail" && input.tailScanBytes !== undefined) throw new Error(`tailScanBytes is not valid for ${input.action}`);
 	if (input.action !== "tail" && input.tailProjectionBytes !== undefined) throw new Error(`tailProjectionBytes is not valid for ${input.action}`);
 	if (input.action !== "role" && input.role !== undefined) throw new Error(`role is not valid for ${input.action}`);
