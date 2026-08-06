@@ -38,7 +38,7 @@ Use a severity taxonomy only when the caller or host expects one. Reserve a bloc
 
 ## Write for the code author
 
-Write every finding as a proposed inline comment on the smallest stable file and line range that establishes the defect. Order multiple comments by impact.
+Write every finding as a proposed inline comment on the smallest changed line or range in the reviewed diff that establishes the defect. Use the old side for deleted lines when the host supports it. Do not anchor a comment to unchanged surrounding code. Order multiple comments by impact.
 
 Each comment should:
 
@@ -56,10 +56,10 @@ Avoid abstract shorthand such as “the bypass outlives the intended write” wh
 
 ## Return the result
 
-When findings exist, return only the proposed inline comments. For each comment, provide its file and smallest useful line range as routing metadata, followed by the exact comment body. Do not add a top-level review body, summary, or verdict. Do not approve the change or request changes.
+When findings exist, return only the proposed inline comments. For each comment, provide its file, smallest useful changed line range, and diff side when needed as routing metadata, followed by the exact comment body. Do not add a top-level review body, summary, or verdict. Do not approve the change or request changes.
 
 When no finding meets the reporting bar, say that no inline comments are proposed. Do not create a top-level comment as a fallback.
 
 When another skill supplies an output schema, follow its structure and metadata contract while keeping this skill's finding threshold, inline-only delivery, and prose.
 
-Before publishing an inline comment, show its exact destination and body unless the user already approved that exact text. Follow the active attribution policy. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body; never approve or request changes. After publication, read each comment back and verify its target, content, and formatting.
+Before publishing an inline comment, show its exact destination and body unless the user already approved that exact text. Follow the active attribution policy. If the host cannot attach a finding to a relevant changed line, stop and tell the requester that the finding cannot be published inline; do not move it to unchanged code or a top-level comment. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body; never approve or request changes. After publication, read each comment back and verify its target, content, and formatting.
