@@ -13,6 +13,8 @@ Keep one workspace folder for the ticket or approved ticketless fix, with one gi
 
 Add a worktree only when work on that PR is ready to begin and the user has confirmed its folder, branch, and base. This keeps every PR independently revisable and rebaseable without branch switching.
 
+Worktrees preserve delivery boundaries; they do not decide them. Prefer successive independently mergeable PRs based on the updated default branch. Do not propose a stack merely to partition a broad feature or separate technical layers. Use a stack only when an approved delivery plan records the exact technical dependency that prevents a later PR from merging independently.
+
 ## Shape the workspace
 
 - Name a single-PR worktree after its repo: `api/`.
@@ -59,7 +61,7 @@ If the user explicitly waives a ticket for a quick fix, treat that waiver as the
 
 ## Propose, then create
 
-In one checkpoint, propose the exact workspace folder, repo worktree, branch, and base for the first PR, plus the branches and bases of any planned stack. Ask the user to confirm before running `mkdir`, creating a branch, checking out a branch, or running `git worktree add`.
+In one checkpoint, propose the exact workspace folder, repo worktree, branch, and base for the first PR, plus the branches and bases of any approved stack. Ask the user to confirm before running `mkdir`, creating a branch, checking out a branch, or running `git worktree add`.
 
 Follow the repository's branch convention while keeping ticket ids visible:
 

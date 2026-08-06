@@ -25,19 +25,24 @@ Plan only when a dependency map or explicit delivery boundary would help executi
 
 ## Build delivery changes
 
-A **delivery change** is a coherent PR-shaped implementation unit inside one approved benefit. It crosses every project layer needed for one narrow observable improvement and can be reviewed on its own. When the plan deliberately uses several PRs, each change should remain mergeable independently or state the exact stack dependency that prevents it.
+A **delivery change** is a coherent PR-shaped implementation unit inside one approved benefit. Prefer one narrow observable user, caller, or business improvement that crosses every project layer it needs and can be reviewed on its own.
+
+A technical **enabler** may precede that improvement only when migration, compatibility, security, rollout safety, or a specific verification risk cannot safely co-land with its consumer. Include that consumer as a delivery change which depends on the enabler. Name why they cannot safely land together, the protected risk, and what remains working after the enabler merges. “Foundation,” convenience, generic test infrastructure, future-proofing, and technical layering alone do not justify an enabler.
 
 Each delivery change must:
 
 - fit in one fresh session
+- contain one primary outcome or one justified enabling boundary
 - trace to the target benefit and applicable walkthrough
+- state who can do what differently, or name the enabler's immediate consumer and protected risk
 - name implementation details only in concrete leaf tasks
 - include its own verification evidence
-- preserve a working repository state or state a necessary integration exception
+- remain independently understandable, testable, reversible, and mergeable, or state the necessary integration exception
+- preserve a working repository state or state a necessary integration exception with its dependent verification change
 
-Build the thinnest useful end-to-end change first. Do not plan horizontal sequences such as data → backend → UI or schema → producer → consumer. Put internal machinery in the first benefit step that needs it. Add a discovery change only when its result could stop or reshape delivery; state its bound and fallback.
+Build the thinnest useful end-to-end change first. Do not use horizontal sequences such as data → backend → UI or schema → producer → consumer merely to make diffs smaller. Put internal machinery in the first valuable change that needs it. Keep a schema-only or other technical change separate only when it meets the enabler rule above. Add a discovery change only when its result could stop or reshape delivery; state its bound and fallback.
 
-A normal planned benefit often fits in 2–3 delivery changes. Each additional change needs its own delivery, safety, migration, ownership, or verification boundary. Keep speculative flexibility and unrelated improvements deferred.
+Make the first delivery change the thinnest useful one. Add another only for a distinct delivery, safety, migration, ownership, or verification boundary. Keep cleanup, optimization, speculative flexibility, generalization, and unrelated improvements deferred until a delivered outcome or observed evidence requires them.
 
 ## Record dependencies
 
@@ -50,6 +55,9 @@ The **ready set** contains every incomplete change whose dependencies are comple
 - at least one change is ready
 - every included behavior is covered
 - every change traces to the target benefit
+- every enabler has a named consuming change with a dependency edge
+
+Prefer successive PRs based on the updated default branch after the preceding PR merges. Do not create a stack merely for concurrent review or to partition technical layers. Record an exact stack dependency only when a compatibility seam cannot make the later change independently mergeable.
 
 When a planned change maps to a PR worktree, record its worktree name, base branch, and merge condition. Let `ticket-workspace` create that worktree only when the human confirms it is ready to begin.
 
@@ -61,7 +69,7 @@ When a mechanical change cannot stay working because it breaks callers across th
 2. Migrate callers in independently verifiable batches.
 3. Remove the old form only after every migration dependency completes.
 
-Keep each change working and its checks passing when possible. If only final integration can pass, state why and add a dependent integration verification change.
+When removal belongs to the approved outcome, treat contract as its required final delivery boundary rather than unrelated cleanup. Keep each change working and its checks passing when possible. If only final integration can pass, state why and add a dependent integration verification change.
 
 ## Write the plan
 
@@ -89,7 +97,7 @@ Tasks:
 
 Delivery: [direct branch or PR worktree, base, and merge condition when relevant]
 Verification: [automated, manual, visual, playtest, or review evidence]
-Covers: [target benefit and experience steps]
+Covers: [user, caller, or business outcome; for an enabler, its immediate consumer and protected risk]
 ```
 
 Use project language for outcomes and implementation names only in tasks. Point to alignment, milestone, or design authorities instead of repeating them.

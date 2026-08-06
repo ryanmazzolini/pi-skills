@@ -32,7 +32,7 @@ After intent is settled, choose how to deliver it:
   - parallel work is worthwhile
 - **A roadmap helps** when several independently useful outcomes need durable coordination or recovery. See [references/roadmaps.md](references/roadmaps.md).
 
-Choose the lightest delivery shape that preserves the settled intent and useful boundaries. Small work should pause when it exposes an unresolved consequential choice. Large work may remain direct when its intent is settled and delivery is coherent. Size and elapsed time do not decide the delivery shape. Neither do a branch, worktree, pull request, or session count.
+Choose the lightest delivery shape that preserves the settled intent and useful boundaries. Treat an MVP as a destination, not one delivery scope. Keep related work direct only when every part is required for the same narrow observable outcome. When another independently reviewable outcome or justified enabling change exists, use planned delivery or defer it. Size, elapsed time, a branch, a worktree, a pull request, or a session count does not decide the boundary by itself.
 
 When existing workflow files, interruption, or context compaction make the state unclear, read [references/recovery.md](references/recovery.md) before choosing.
 
@@ -41,6 +41,7 @@ When existing workflow files, interruption, or context compaction make the state
 Continue from the settled outcome or exact bounded request. Do not reopen it merely to repeat alignment or planning. Before substantial edits, verify:
 
 - the authoritative intent, observable completion, and outcome boundaries
+- the next delivery change: one narrow observable outcome or justified enabler, plus the work deferred beyond it
 - the current and intended UX/DX walkthrough when an interface changes, or the behavior that must remain unchanged
 - the live repository, cwd, branch, and worktree
 - allowed scope and existing work to preserve
@@ -51,9 +52,9 @@ A gap warrants a question when it could materially change the settled value, beh
 
 On the default branch, propose a feature branch. Commit to the default branch only with explicit user approval. Use `ticket-workspace` when the work is durable or the current workspace is shared or dirty.
 
-Once intent is settled, make ordinary repo-native interface, data, and structure choices directly within it. Use `shape-first` when the user asks for shaping or a consequential local design choice needs its checkpoints. Apply `simplest-sufficient-change` before code.
+Once intent is settled, make ordinary repo-native interface, data, and structure choices directly within it. Use `shape-first` when the user asks for shaping or a consequential local design choice needs its checkpoints. Apply `simplest-sufficient-change` before code. Defer cleanup, optimization, generalization, and machinery that the current delivery does not need.
 
-Pause direct implementation if it exposes an unresolved consequential choice. Also pause if it would conflict with or reinterpret authoritative intent. Revisit `align` when human judgment remains necessary.
+Finish, validate, and present this delivery before starting another. Pause sooner if implementation exposes another independently reviewable delivery boundary, an unresolved consequential choice, or a conflict with authoritative intent. Use `delivery-plan` for the additional boundary and revisit `align` only when human judgment remains necessary.
 
 Do not create workflow files merely because a direct delivery lasts longer than expected. When it must survive a fresh session or context reset, read [references/durable-context.md](references/durable-context.md). Create only a minimal continuation record. Keep direct delivery unless the settled intent or delivery coherence changes.
 
@@ -67,7 +68,7 @@ For an experiential question that words cannot settle, Align may temporarily use
 
 Dependencies in `plan.md`, not section order, determine which delivery changes can start. Recommend the most useful ready change and why, then get human confirmation before starting or dispatching coordinated work.
 
-Run one delivery change synchronously unless it contains independent work units whose parallelism is worth the integration cost. For that case, read [references/implementation-wave.md](references/implementation-wave.md). The Ship coordinator owns concurrency and integration.
+Run one delivery change synchronously unless it contains independent work units whose parallelism is worth the integration cost. For that case, read [references/implementation-wave.md](references/implementation-wave.md). The Ship coordinator owns concurrency and integration. After completing the delivery change, validate and present it before starting the next one.
 
 ## Navigate a roadmap
 
