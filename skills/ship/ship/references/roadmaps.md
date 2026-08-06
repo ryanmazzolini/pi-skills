@@ -1,6 +1,6 @@
 # Milestone Roadmaps
 
-Use a roadmap only when several independently useful human or caller benefits need durable coordination or recovery under one shared destination. A low-complexity coherent change stays direct even when its improvements can be named separately. Multiple files, sessions, branches, PRs, or implementation dependencies do not by themselves justify a roadmap.
+Use a roadmap only when several independently useful human or caller benefits need durable coordination or recovery under one shared destination. The shared destination may be an MVP; each milestone is one useful increment toward it, not the whole MVP as a single delivery scope. A low-complexity coherent change stays direct only when its named improvements are all required for the same observable outcome rather than independently deliverable or reviewable outcomes. Multiple files, sessions, branches, PRs, or implementation dependencies do not by themselves justify a roadmap.
 
 ## Frame human-centered milestones
 
@@ -41,7 +41,7 @@ Use this compact milestone shape:
 **Work item:** [link to milestone index]
 ```
 
-Dependencies, not section order, determine the ready set. A milestone with no incomplete dependencies is ready. Prefer the ready milestone with the strongest human benefit or risk-reduction value, explain why, and get confirmation before starting it.
+Dependencies, not section order, determine the ready set. A milestone with no incomplete dependencies is ready. Prefer the ready milestone that delivers the earliest usable or learnable value. Choose risk reduction first only when it materially unlocks or protects that value. Explain why and get confirmation before starting it.
 
 ## Give every milestone a stable home
 
@@ -49,7 +49,7 @@ Roadmap approval creates one minimal sibling work item per milestone so links an
 
 Add `alignment.md`, `plan.md`, a ticket workspace, or review evidence only when that milestone's chosen route needs it. A selected milestone returns to Ship and proceeds directly by default. Use Align only for consequential human decisions and `delivery-plan` only for a useful implementation dependency graph.
 
-A milestone may use several PR worktrees without becoming several milestones when every PR contributes to the same benefit and approval decision.
+A milestone may need several PRs without becoming several milestones. Route those boundaries through `delivery-plan`. Keep each PR independently mergeable by default; use a stack only when the plan records the exact technical dependency that prevents it.
 
 ## Complete and reconcile milestones
 
