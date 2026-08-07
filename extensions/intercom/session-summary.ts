@@ -23,6 +23,7 @@ export const SESSION_SUMMARY_CONFIG = Object.freeze({
 export const SESSION_SUMMARY_LIMITS = Object.freeze({
 	concurrency: 2,
 	captureAttemptsPerAgent: 4,
+	cachedPerTriage: 8,
 	grantTtlMs: 5 * 60 * 1_000,
 	minimumIdleMs: 24 * 60 * 60 * 1_000,
 });
@@ -73,6 +74,8 @@ export interface SessionSummaryCard {
 	limitations: string[];
 	evidenceIds: string[];
 }
+
+export type SessionSummaryDisplayCard = Omit<SessionSummaryCard, "evidenceIds">;
 
 export interface SummaryEvidenceItem {
 	id: string;
@@ -374,7 +377,7 @@ export async function summarizeSessionSnapshot(
 	throw new Error(`Session summary model did not return a valid evidence-backed card after ${SESSION_SUMMARY_CONFIG.maxAttempts} attempts`);
 }
 
-function statusLabel(card: SessionSummaryCard): string {
+function statusLabel(card: SessionSummaryDisplayCard): string {
 	if (card.state === "complete" && card.safeToClose === "yes") return "Done — safe to close.";
 	if (card.state === "complete") return "Done.";
 	if (card.state === "awaiting_decision") return "Needs a decision.";
@@ -383,11 +386,11 @@ function statusLabel(card: SessionSummaryCard): string {
 	return "Unclear.";
 }
 
-function nextStep(card: SessionSummaryCard): string {
-	if (card.state === "complete" && card.safeToClose === "yes") return "Confirm current project state still matches this snapshot, then close the stale session.";
+function nextStep(card: SessionSummaryDisplayCard): string {
+	if (card.state === "complete" && card.safeToClose === "yes") return "Ask whether First Mate should tell the owning session to recheck and perform its own cleanup; First Mate cannot close sessions.";
 	if (card.state === "awaiting_decision") return "Inspect the owning session's current persisted request before asking for a decision.";
 	if (card.state === "blocked") return "Confirm the blocker against current project state before contacting the owning session.";
-	if (card.state === "in_progress") return "Confirm current project state before deciding whether to continue or close.";
+	if (card.state === "in_progress") return "Confirm current project state before deciding whether to continue or prepare for closure.";
 	if (card.state === "complete") return "Inspect current project state before deciding whether more work is required.";
 	return "Inspect more persisted history or current project state before taking action.";
 }
@@ -400,8 +403,7 @@ function markdownText(value: string): string {
 	return value.replace(/([\\`*_\[\]<>])/gu, "\\$1");
 }
 
-export function renderSessionSummary(result: SessionSummaryResult, snapshot: SessionTailSnapshot, targetSessionId: string): string {
-	const { card, evidence } = result;
+function renderSummaryCard(card: SessionSummaryDisplayCard, targetSessionId: string): string[] {
 	const lines = [
 		`## ${markdownText(card.title)} (${targetSessionId.slice(0, 8)})`,
 		"",
@@ -415,6 +417,12 @@ export function renderSessionSummary(result: SessionSummaryResult, snapshot: Ses
 			"**Then:** First Mate rechecks the current persisted request before relaying approval; the owning session rechecks before executing.",
 		);
 	}
+	return lines;
+}
+
+export function renderSessionSummary(result: SessionSummaryResult, snapshot: SessionTailSnapshot, targetSessionId: string): string {
+	const { card, evidence } = result;
+	const lines = renderSummaryCard(card, targetSessionId);
 	const scope = [
 		"Untrusted synthesis of a last-known persisted snapshot",
 		`${evidence.selectedTextEvents} recent text messages`,
@@ -426,6 +434,25 @@ export function renderSessionSummary(result: SessionSummaryResult, snapshot: Ses
 		"expand tool result for exact evidence",
 		...card.limitations.map(markdownText),
 		`evidence digest ${evidence.digest.slice(0, 12)}`,
+	].filter((item): item is string => Boolean(item));
+	lines.push("", `_${scope.join(" · ")}_`);
+	return lines.join("\n");
+}
+
+export function renderCachedSessionSummary(
+	card: SessionSummaryDisplayCard,
+	targetSessionId: string,
+	createdAt: string,
+	lastTurnAtSummary: string,
+): string {
+	const lines = renderSummaryCard(card, targetSessionId);
+	const scope = [
+		"Untrusted cached synthesis of a last-known persisted snapshot",
+		`created ${createdAt}`,
+		`advertised and confirmed last turn still matches ${lastTurnAtSummary}`,
+		"reused without model inference",
+		"source session not messaged",
+		...card.limitations.map(markdownText),
 	].filter((item): item is string => Boolean(item));
 	lines.push("", `_${scope.join(" · ")}_`);
 	return lines.join("\n");

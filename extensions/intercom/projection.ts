@@ -255,6 +255,13 @@ export interface FirstMateTriageProjectionInput {
 	pendingPeersSkipped: number;
 	unidentifiedPeers: number;
 	ambiguousPeers: number;
+	cachedSummaries?: readonly {
+		targetSessionId: string;
+		text: string;
+	}[];
+	cachedSummariesDeferred?: number;
+	potentiallyStaleCachedSummaries?: number;
+	summaryCacheUnavailable?: number;
 	summaryCandidates?: readonly { targetSessionId: string; token: string }[];
 	summaryCandidatesDeferred?: number;
 	summaryCandidatesUnavailable?: number;
@@ -312,6 +319,26 @@ export function projectFirstMateTriage(input: FirstMateTriageProjectionInput): T
 			fixed += `\n- Pi session ID ${sessionId ? JSON.stringify(sessionId) : "unavailable"} · message ${JSON.stringify(entry.message.id)} · ${preview}`;
 		}
 	}
+	let cachedShown = 0;
+	if ((input.cachedSummaries?.length ?? 0) > 0) {
+		fixed += "\n\n**Reusable cached summaries (advertised and confirmed last turn unchanged):**";
+		for (const candidate of input.cachedSummaries ?? []) {
+			const block = `\n\nPi session ID: ${JSON.stringify(candidate.targetSessionId)}\n${candidate.text}`;
+			if (byteLength(fixed) + byteLength(block) > 32 * 1024) break;
+			fixed += block;
+			cachedShown++;
+		}
+	}
+	const cachedOmittedByProjection = (input.cachedSummaries?.length ?? 0) - cachedShown;
+	const cachedProjectionTruncated = cachedOmittedByProjection > 0;
+	const cachedDeferred = (input.cachedSummariesDeferred ?? 0) + cachedOmittedByProjection;
+	if (cachedDeferred > 0) fixed += `\n${cachedDeferred} additional unchanged cached summaries were deferred.`;
+	if ((input.potentiallyStaleCachedSummaries ?? 0) > 0) {
+		fixed += `\n${input.potentiallyStaleCachedSummaries} cached summary record(s) did not match the current advertised and confirmed last turn and were withheld as potentially stale.`;
+	}
+	if ((input.summaryCacheUnavailable ?? 0) > 0) {
+		fixed += `\n${input.summaryCacheUnavailable} cached summary record(s) were unreadable and were not reused.`;
+	}
 	if ((input.summaryCandidates?.length ?? 0) > 0) {
 		fixed += "\n\n**Single-use isolated summary grants (confirmed at least 24 hours stale):**";
 		for (const candidate of input.summaryCandidates ?? []) {
@@ -348,7 +375,7 @@ export function projectFirstMateTriage(input: FirstMateTriageProjectionInput): T
 	const snapshots = input.tails.filter((tail) => tail.snapshot !== undefined).length;
 	const remaining = INTERCOM_PROJECTION_MAX_BYTES - byteLength(required);
 	const perTailBytes = snapshots === 0 ? 0 : Math.min(INTERCOM_TAIL_PROJECTION_MIN_BYTES, Math.floor(remaining / snapshots));
-	let truncated = false;
+	let truncated = cachedProjectionTruncated;
 	let text = fixed;
 	for (const [index, tail] of input.tails.entries()) {
 		text += bases[index]!;
