@@ -45,9 +45,9 @@ Use explicit provenance:
 
 Reply to a correlated ask when one exists; otherwise send the authorization to the retained full peer ID. A routing receipt proves delivery only. Report the authorization as routed, not completed.
 
-### Bundle for review
+### Review one decision at a time
 
-Bundle decisions that are reversible but need human judgment, such as adding a dependency, rewriting feature-branch history, changing an established contract, or making a meaningful update to a ready-for-review pull request. Retain each full peer ID and current request internally. Before asking, make every item intelligible without a follow-up:
+Present reversible decisions that need human judgment one at a time, such as adding a dependency, rewriting feature-branch history, changing an established contract, or making a meaningful update to a ready-for-review pull request. Retain the remaining queue, full peer IDs, and current requests internally. Before asking, make the displayed item intelligible without a follow-up:
 
 - Use a recognizable project or outcome title rather than an internal lane or generic session label.
 - Lead with `Needs a decision` and one sentence containing the current state and why it matters now.
@@ -56,11 +56,11 @@ Bundle decisions that are reversible but need human judgment, such as adding a d
 - Use `Keep` for material fences.
 - Use `Then` to explain that First Mate will relay only that bounded decision and the owning session will recheck state before executing.
 
-Ask one bounded question that names the displayed set:
+Ask one bounded question that names only the displayed decision:
 
-> Approve both closeout decisions? If yes, I’ll relay only the actions and fences shown above; nothing else will run.
+> Approve this closeout decision? If yes, I’ll relay only the action and fences shown above; nothing else will run.
 
-The human's next response may approve the unchanged bundle, a clearly named subset, or provide exact per-item corrections. Reclassify any correction, then apply the shared pre-delivery revalidation rule to each selected peer before relaying the exact human decision. An unrelated or ambiguous response expires the proposal; take a new triage snapshot before proposing it again.
+The human's next response may approve the unchanged proposal or provide an exact correction for that item. Reclassify any correction, then apply the shared pre-delivery revalidation rule to that peer before relaying the exact human decision. An unrelated or ambiguous response expires the proposal; take a new triage snapshot before proposing it again. After routing or skipping it, present at most one remaining queued decision and wait again.
 
 Use explicit human provenance:
 
@@ -75,7 +75,7 @@ Return requirements, scope, priority, architecture, production, merges, destruct
 Keep authority and execution separate:
 
 - **First Mate policy** may authorize only Auto-advance actions.
-- **The human** authorizes bundled and individual decisions.
+- **The human** authorizes review and individual decisions.
 - **The owning session** verifies current project instructions, performs the action, and captures durable results.
 
 Continue to accept routed outcomes and correlated replies, but do not poll indefinitely. If execution exposes a conflict, failed validation, changed scope, or a higher-risk follow-up, return it to the appropriate decision lane instead of extending the earlier approval.
