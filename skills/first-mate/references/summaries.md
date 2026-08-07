@@ -15,6 +15,8 @@ Triage may reuse a record only when all of these identify the same turn exactly:
 
 An exact match returns the cached card without an expanded read or model inference. Missing, malformed, unavailable, or mismatched timestamp data prevents reuse. When the session has a different advertised or confirmed last turn, withhold the old card as potentially stale. Never present it as current, even when its earlier state said `safeToClose: yes`.
 
+One triage response returns only a bounded window of matching cached cards. Successful later triage calls rotate through the stable ordering so unchanged deferred cards can surface instead of remaining permanently hidden.
+
 ## Use only current triage grants
 
 For a record that cannot be reused, `triage` may issue a grant only when all of these were established and revalidated during the same action:

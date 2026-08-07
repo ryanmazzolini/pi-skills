@@ -15,6 +15,7 @@ import intercomExtension, {
 	incomingContent,
 	presenceName,
 	sanitizeSelfDeclaredMetadata,
+	selectRotatingSummaryCandidates,
 	selectSessionSummaryCandidates,
 	validateIntercomAction,
 } from "./index.ts";
@@ -110,6 +111,25 @@ test("selects at most four oldest confirmed 24-hour snapshots for isolated synth
 	assert.equal(selected.omitted, 1);
 	assert.deepEqual(selectSessionSummaryCandidates(result, 0), { selected: [], omitted: 5 });
 	assert.throws(() => selectSessionSummaryCandidates(result, 5), /limit is invalid/);
+});
+
+test("rotates the first bounded cached summary so projection cannot starve deferred records", () => {
+	const candidates = Array.from({ length: 10 }, (_, index) => `session-${index}`);
+	const firstCandidates = [];
+	let cursor = 0;
+	for (let index = 0; index < candidates.length; index++) {
+		const window = selectRotatingSummaryCandidates(candidates, 8, cursor);
+		firstCandidates.push(window.selected[0]);
+		assert.equal(window.omitted, 2);
+		cursor = window.nextCursor;
+	}
+	assert.deepEqual(firstCandidates, candidates);
+	assert.equal(cursor, 0);
+	assert.deepEqual(selectRotatingSummaryCandidates([], 8, cursor), {
+		selected: [],
+		omitted: 0,
+		nextCursor: 0,
+	});
 });
 
 test("uses the legacy unnamed alias and preserves attachment bodies", () => {
