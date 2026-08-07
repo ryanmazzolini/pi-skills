@@ -24,7 +24,7 @@ Apply the capability and inventory checks in [Start or recover](../SKILL.md#star
 Use current conversational evidence to choose the narrowest supported action:
 
 - **Auto-advance:** an explicit request satisfies every very-low-risk condition in [decision handling](decision-handling.md).
-- **Review:** a reversible, nontrivial decision belongs in one human review bundle.
+- **Review:** a reversible, nontrivial decision is presented to the human one thread at a time.
 - **Reply:** an exact pending Intercom ask needs human content and does not fit a decision lane.
 - **Decide:** current text identifies a consequential human-owned choice or blocker.
 - **Resume:** the current user request is clearly unfinished and the peer can continue without a new human decision.
