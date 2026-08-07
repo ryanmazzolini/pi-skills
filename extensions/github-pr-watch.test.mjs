@@ -299,6 +299,21 @@ test("restores watches from Pi session state for reload, resume, and fork while 
   assert.equal(fresh.statuses.at(-1).value, undefined);
 });
 
+test("restarts the same extension runtime after session shutdown", async () => {
+  const f = fixture();
+  await f.handlers.get("session_start")({ reason: "startup" }, f.ctx);
+  await f.tools[0].execute("call", { url: PR_URL }, undefined, undefined, f.ctx);
+  await f.handlers.get("session_shutdown")({ reason: "reload" }, f.ctx);
+
+  const callsBeforeRestart = f.execCalls.length;
+  await f.handlers.get("session_start")({ reason: "reload" }, f.ctx);
+  const result = await f.tools[0].execute("call-again", { url: PR_URL }, undefined, undefined, f.ctx);
+
+  assert.equal(f.execCalls.length > callsBeforeRestart, true);
+  assert.match(result.content[0].text, /Watching acme\/widgets#42/);
+  assert.match(f.statuses.at(-1).value, /1 PR watched/);
+});
+
 test("recovers delivered fingerprints from persisted custom messages", async () => {
   const events = collectFeedback(pr(), [issueComment()], [], [], {}).events;
   const formatted = formatFeedback(events, new Date(NOW).toISOString());

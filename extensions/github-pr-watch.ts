@@ -385,7 +385,7 @@ export class GithubPrWatchRuntime {
 	private readonly pi: ExtensionAPI;
 	private readonly watches = new Map<string, Watch>();
 	private readonly registrations = new Map<string, PendingRegistration>();
-	private readonly lifecycleAbort = new AbortController();
+	private lifecycleAbort = new AbortController();
 	private ctx: ExtensionContext | undefined;
 	private timer: Timer | undefined;
 	private deliveryTimer: Timer | undefined;
@@ -415,7 +415,14 @@ export class GithubPrWatchRuntime {
 	}
 
 	async startSession(ctx: ExtensionContext): Promise<void> {
+		if (this.disposed) {
+			this.disposed = false;
+			this.lifecycleAbort = new AbortController();
+		}
 		this.ctx = ctx;
+		this.agentActive = false;
+		this.turnWindowStarted = this.now();
+		this.turns = 0;
 		this.watches.clear();
 		for (const [key, watch] of restoredWatches(ctx)) this.watches.set(key, watch);
 		this.updateStatus();
@@ -484,6 +491,7 @@ export class GithubPrWatchRuntime {
 		this.clearDeliveryTimer();
 		this.pollAbort?.abort();
 		this.pollAbort = undefined;
+		while (this.polling) await new Promise<void>((resolve) => setImmediate(resolve));
 		await Promise.allSettled([...this.registrations.values()].map((registration) => registration.promise));
 		this.pendingDelivery = undefined;
 		this.ctx?.ui.setStatus("github-pr-watch", undefined);
