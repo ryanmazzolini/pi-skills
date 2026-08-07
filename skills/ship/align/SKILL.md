@@ -33,7 +33,7 @@ Work from the benefit toward concrete behavior:
 
 Describe the walkthrough in user or caller language with ordinary values, not proposed types, schemas, status values, or architecture. Reuse a confirmed walkthrough unless new evidence changes it.
 
-When solution shaping is needed, use `../../architecture/shape-first/SKILL.md`. Stop at what implementation needs. Leave local interfaces, structure, TODOs, and code to later work. Reopen only the parts changed by later answers.
+When solution shaping is needed, use the shape-a-change branch of [`architecture`](../../architecture/architecture/SKILL.md). Stop at what implementation needs. Leave local interfaces, structure, TODOs, and code to later work. Reopen only the parts changed by later answers.
 
 ## Prototype what words cannot settle
 

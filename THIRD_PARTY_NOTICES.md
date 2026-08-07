@@ -38,18 +38,17 @@ Some skills in this package are adapted from [`mattpocock/skills`](https://githu
 
 Adapted artifacts:
 
-- `skills/architecture/design-an-interface`
-- `skills/architecture/simplify-codebase-architecture` (from `improve-codebase-architecture`)
-- `skills/architecture/ubiquitous-language`
+- `skills/architecture/architecture` (including material from `design-an-interface`, `improve-codebase-architecture`, and `ubiquitous-language`)
 - `skills/ship/align` (from `grill-me` and `grill-with-docs`)
 - `skills/debugging/diagnosing-bugs`
 - `skills/handoff`
 - `skills/productivity/teach`
-- `skills/productivity/writing-great-skills`
+- `skills/productivity/wait-what`
+- `skills/ai-authoring/writing-for-agents`
 
 ## DietrichGebert/ponytail
 
-`skills/architecture/simplest-sufficient-change` adapts the solution ladder from [`DietrichGebert/ponytail`](https://github.com/DietrichGebert/ponytail), licensed under the MIT License.
+`skills/architecture/architecture/references/simplest-sufficient-change.md` adapts the solution ladder from [`DietrichGebert/ponytail`](https://github.com/DietrichGebert/ponytail), licensed under the MIT License.
 
 ```text
 MIT License
