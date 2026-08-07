@@ -511,6 +511,19 @@ export function selectSessionSummaryCandidates(result: RuntimeTriageResult, maxi
 	return { selected: eligible.slice(0, maximum), omitted: Math.max(0, eligible.length - maximum) };
 }
 
+export function selectRotatingSummaryCandidates<T>(candidates: readonly T[], maximum: number, cursor: number) {
+	if (!Number.isSafeInteger(maximum) || maximum < 0 || !Number.isSafeInteger(cursor) || cursor < 0) {
+		throw new Error("Cached summary rotation is invalid");
+	}
+	if (candidates.length === 0 || maximum === 0) {
+		return { selected: [] as T[], omitted: candidates.length, nextCursor: 0 };
+	}
+	const start = cursor % candidates.length;
+	const count = Math.min(maximum, candidates.length);
+	const selected = Array.from({ length: count }, (_, offset) => candidates[(start + offset) % candidates.length]!);
+	return { selected, omitted: candidates.length - count, nextCursor: (start + 1) % candidates.length };
+}
+
 export function cachedSummaryMatchesTail(
 	record: SessionSummaryCacheRecord,
 	tail: RuntimeTriageResult["tails"][number],
@@ -540,6 +553,7 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 	const summaryGrants = new Map<string, SessionSummaryGrant>();
 	const summaryCache = options.summaryCache ?? new FileSessionSummaryCache(join(getIntercomPaths().runtimeDir, "summaries"));
 	let summaryCaptureBudget = SESSION_SUMMARY_LIMITS.captureAttemptsPerAgent;
+	let summaryCacheCursor = 0;
 	let piSessionId: string | undefined;
 	let model = "unknown";
 	let startedAt = 0;
@@ -567,10 +581,15 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 			.sort((left, right) =>
 				Date.parse(left.record.lastTurnAtSummary) - Date.parse(right.record.lastTurnAtSummary)
 				|| left.tail.targetSessionId.localeCompare(right.tail.targetSessionId));
-		const selectedReusable = reusableCandidates.slice(0, SESSION_SUMMARY_LIMITS.cachedPerTriage);
+		const reusableWindow = selectRotatingSummaryCandidates(
+			reusableCandidates,
+			SESSION_SUMMARY_LIMITS.cachedPerTriage,
+			summaryCacheCursor,
+		);
 		return {
-			reusableCandidates: selectedReusable,
-			reusableDeferred: Math.max(0, reusableCandidates.length - selectedReusable.length),
+			reusableCandidates: reusableWindow.selected,
+			reusableDeferred: reusableWindow.omitted,
+			nextCacheCursor: reusableWindow.nextCursor,
 			potentiallyStale: inspected.filter((item) => item.record && !cachedSummaryMatchesTail(item.record, item.tail)).length,
 			unavailable: inspected.filter((item) => item.cacheUnavailable).length,
 			result,
@@ -589,13 +608,16 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 		expectedGeneration: number,
 		signal?: AbortSignal,
 	) => {
-		const reusable: Array<{ targetSessionId: string; record: SessionSummaryCacheRecord; text: string }> = [];
+		const reusable = new Array<{ targetSessionId: string; record: SessionSummaryCacheRecord; text: string } | undefined>(
+			inspection.reusableCandidates.length,
+		);
 		const effectiveTails = new Map(inspection.result.tails.map((tail) => [tail.targetSessionId, tail]));
 		let potentiallyStale = inspection.potentiallyStale;
 		let next = 0;
 		const workers = Array.from({ length: Math.min(SESSION_SUMMARY_LIMITS.concurrency, inspection.reusableCandidates.length) }, async () => {
 			while (next < inspection.reusableCandidates.length) {
-				const item = inspection.reusableCandidates[next++]!;
+				const index = next++;
+				const item = inspection.reusableCandidates[index]!;
 				try {
 					const current = await active.tail(
 						item.tail.targetSessionId,
@@ -620,7 +642,7 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 						potentiallyStale++;
 						continue;
 					}
-					reusable.push({
+					reusable[index] = {
 						targetSessionId: item.tail.targetSessionId,
 						record: item.record,
 						text: renderCachedSessionSummary(
@@ -629,7 +651,7 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 							item.record.createdAt,
 							item.record.lastTurnAtSummary,
 						),
-					});
+					};
 				} catch {
 					if (signal?.aborted) throw new Error("Intercom operation cancelled");
 					potentiallyStale++;
@@ -647,12 +669,9 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 		}
 		const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
 		if (rejected) throw rejected.reason;
-		reusable.sort((left, right) =>
-			Date.parse(left.record.lastTurnAtSummary) - Date.parse(right.record.lastTurnAtSummary)
-			|| left.targetSessionId.localeCompare(right.targetSessionId));
 		return {
 			...inspection,
-			reusable,
+			reusable: reusable.filter((item): item is NonNullable<typeof item> => item !== undefined),
 			potentiallyStale,
 			result: {
 				...inspection.result,
@@ -1075,6 +1094,7 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 							truncated: identity.truncated || projected.truncated || tailsTruncated,
 						};
 						assertCompactRecord(details, "Intercom triage details");
+						summaryCacheCursor = cacheInspection.nextCacheCursor;
 						summaryGrants.clear();
 						for (const grant of summaryCapture.grants) summaryGrants.set(grant.token, grant);
 						return { content: [{ type: "text" as const, text: projected.text }], details };
