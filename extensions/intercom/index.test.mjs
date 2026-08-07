@@ -1008,6 +1008,7 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	const survivedFailedTriage = await execute({ action: "summarize", summaryToken });
 	assert.match(survivedFailedTriage.content[0].text, /## Tail decision/);
 	assert.equal(survivedFailedTriage.details.cacheStored, true);
+	assert.equal(survivedFailedTriage.details.cacheWriteResult, "stored");
 	assert.equal(survivedFailedTriage.details.lastTurnAtSummary, "2026-01-01T00:00:02.000Z");
 	assert.match(survivedFailedTriage.details.createdAt, /^\d{4}-\d{2}-\d{2}T/);
 	assert.equal(summaryModelCalls.length, 1);
