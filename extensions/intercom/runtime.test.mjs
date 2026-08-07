@@ -238,6 +238,14 @@ test("runtime rejects unavailable, duplicate, and changed tail advertisements", 
 	await assert.rejects(new IntercomRuntime({ client: changedClient, openTail: () => ({ ...opener(), close: () => { changedClosed++; } }) }).tail("worker", 8), /advertisement changed/);
 	assert.equal(changedClosed, 1);
 
+	const timestampTarget = { ...target, lastConversationalTimestamp: 1 };
+	const timestampClient = new FakeClient([peer("self", "caller"), timestampTarget]);
+	timestampClient.listResponses = [timestampClient.sessions, [peer("self", "caller"), { ...timestampTarget, lastConversationalTimestamp: 2 }]];
+	await assert.rejects(
+		new IntercomRuntime({ client: timestampClient, openTail: opener }).tail("worker", 8),
+		/conversational timestamp changed/,
+	);
+
 	const disconnectedClient = new FakeClient([peer("self", "caller"), target]);
 	disconnectedClient.listResponses = [disconnectedClient.sessions, [peer("self", "caller")]];
 	await assert.rejects(new IntercomRuntime({ client: disconnectedClient, openTail: opener }).tail("worker", 8), /advertisement changed/);

@@ -68,7 +68,7 @@ Use explicit human provenance:
 
 ### Individual decision
 
-Return requirements, scope, priority, architecture, production, merges, destructive data operations, cleanup or deletion, access changes, security exceptions, gate bypasses, and other hard-to-reverse choices individually to the human. Once the human gives an exact decision, apply the shared pre-delivery revalidation rule and relay only that decision and its stated fences using the human-approved provenance above. Never convert silence or a general preference into approval.
+Return requirements, scope, priority, architecture, production, merges, destructive data operations, specific cleanup or deletion, access changes, security exceptions, gate bypasses, and other hard-to-reverse choices individually to the human. The owner-cleanup request in [isolated stale-session summaries](summaries.md) is not approval for a specific deletion: it tells the owner to perform only routine, reversible cleanup already within scope and to preserve every normal gate. Once the human gives an exact decision, apply the shared pre-delivery revalidation rule and relay only that decision and its stated fences using the human-approved provenance above. Never convert silence or a general preference into approval.
 
 ## Reconcile outcomes
 
