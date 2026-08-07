@@ -41,11 +41,11 @@
     {
       "name": "productivity",
       "source": "./skills/productivity",
-      "description": "Durable learning and personal productivity workflows",
+      "description": "Durable learning and concise re-explanation workflows",
       "strict": false,
       "skills": [
         "./teach",
-        "./writing-great-skills"
+        "./wait-what"
       ]
     },
     {
@@ -69,10 +69,10 @@
     {
       "name": "ai-authoring",
       "source": "./skills/ai-authoring",
-      "description": "Context engineering guidance for AI configuration",
+      "description": "Reliable writing for agent instructions and context",
       "strict": false,
       "skills": [
-        "./context-guidelines"
+        "./writing-for-agents"
       ]
     },
     {
@@ -108,15 +108,10 @@
     {
       "name": "architecture",
       "source": "./skills/architecture",
-      "description": "Architecture review, interface design, refactoring, and domain-language workflows",
+      "description": "Architecture shaping, interface design, simplification, review, and domain language",
       "strict": false,
       "skills": [
-        "./architecture-review",
-        "./design-an-interface",
-        "./shape-first",
-        "./simplest-sufficient-change",
-        "./simplify-codebase-architecture",
-        "./ubiquitous-language"
+        "./architecture"
       ]
     },
     {

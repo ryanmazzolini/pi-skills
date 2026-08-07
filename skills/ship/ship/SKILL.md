@@ -52,7 +52,7 @@ A gap warrants a question when it could materially change the settled value, beh
 
 On the default branch, propose a feature branch. Commit to the default branch only with explicit user approval. Use `ticket-workspace` when the work is durable or the current workspace is shared or dirty.
 
-Once intent is settled, make ordinary repo-native interface, data, and structure choices directly within it. Use `shape-first` when the user asks for shaping or a consequential local design choice needs its checkpoints. Apply `simplest-sufficient-change` before code. Defer cleanup, optimization, generalization, and machinery that the current delivery does not need.
+Once intent is settled, make ordinary repo-native interface, data, and structure choices directly within it. Use the shaping branch of [`architecture`](../../architecture/architecture/SKILL.md) when the user asks for shaping or a consequential local design choice needs its checkpoints. Before every implementation, apply its simplest-sufficient-change lens. Defer cleanup, optimization, generalization, and machinery that the current delivery does not need.
 
 Finish, validate, and present this delivery before starting another. Pause sooner if implementation exposes another independently reviewable delivery boundary, an unresolved consequential choice, or a conflict with authoritative intent. Use `delivery-plan` for the additional boundary and revisit `align` only when human judgment remains necessary.
 
