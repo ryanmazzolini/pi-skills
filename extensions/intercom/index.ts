@@ -1158,16 +1158,21 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 								lastTurnAtSummary: new Date(lastTurn).toISOString(),
 								card: cachedCard,
 							};
-							let cacheStored = true;
+							let cacheWriteResult: "stored" | "superseded" | "same-turn-retained" | "failed";
 							try {
-								await summaryCache.write(cacheRecord);
+								cacheWriteResult = await summaryCache.write(cacheRecord);
 							} catch {
-								cacheStored = false;
+								cacheWriteResult = "failed";
 							}
+							const cacheStored = cacheWriteResult === "stored";
 							const rendered = renderSessionSummary(summary, grant.snapshot, grant.targetSessionId);
-							const text = cacheStored
+							const text = cacheWriteResult === "stored"
 								? rendered
-								: `${rendered}\n\n[Central summary cache write failed; this result will not be reusable.]`;
+								: cacheWriteResult === "superseded"
+									? `${rendered}\n\n[A newer central summary cache record was retained; this older result was not stored.]`
+									: cacheWriteResult === "same-turn-retained"
+										? `${rendered}\n\n[Another central summary cache record for this same session turn was retained; this result was not stored.]`
+										: `${rendered}\n\n[Central summary cache write failed; this result will not be reusable.]`;
 							assertProjectionBound(text, "Intercom session summary");
 							const details = {
 								kind: "session_summary" as const,
@@ -1177,6 +1182,7 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 								lastTurnAtSummary: cacheRecord.lastTurnAtSummary,
 								lastConversationalTimestamp: lastTurn,
 								cacheStored,
+								cacheWriteResult,
 								model: `${SESSION_SUMMARY_CONFIG.provider}/${SESSION_SUMMARY_CONFIG.model}`,
 								reasoning: SESSION_SUMMARY_CONFIG.reasoning,
 								state: summary.card.state,
