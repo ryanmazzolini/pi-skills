@@ -26,7 +26,7 @@ See [the marketplace manifest](./.claude-plugin/marketplace.json) for every fami
 
 ## What to expect
 
-- [`ship`](./skills/ship/ship/SKILL.md) routes work through the lightest useful path: direct implementation by default, focused alignment or delivery planning when needed, and milestone roadmaps only for work that benefits from durable coordination.
+- [`ship`](./skills/ship/ship/SKILL.md) routes work through the lightest useful path: focused alignment, design review, or delivery planning when needed; one human route checkpoint approves skipped steps before production implementation; and milestone roadmaps remain reserved for work that benefits from durable coordination.
 - New Ship workflows use durable Markdown instead of hidden session state and live under `projects/<project>/work/<work-item>/` in the vault selected by `~/.config/pi-skills/workflows.json`. LLMs can create or edit the complete routing file directly and check it with the workflow-profile doctor. Relevant existing `.plans`, `.plan`, `docs/plans`, and `PI_SKILLS_PLANS_ROOT` workflows are reused in place. See [workflow profiles](./skills/ship/ship/references/workflow-profiles.md) for configuration and diagnosis.
 - Most skills are guidance, not a subscription to every tool I happen to like. Optional integrations only matter when you use their matching skills.
 
@@ -43,6 +43,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`align`](./skills/ship/align/SKILL.md) | Settle consequential human decisions for one target outcome |
 | [`research`](./skills/ship/research/SKILL.md) | Fan out, verify, and reduce uncertainty before a technical decision |
 | [`prototype`](./skills/ship/prototype/SKILL.md) | Build a throwaway artifact to answer one experiential design question |
+| [`design-doc`](./skills/ship/design-doc/SKILL.md) | Expose costly experience, system, program, and build-order choices before coding |
 | [`delivery-plan`](./skills/ship/delivery-plan/SKILL.md) | Plan dependent delivery changes for one approved benefit |
 | [`ticket-workspace`](./skills/ticket-workspace/ticket-workspace/SKILL.md) | Create or reuse workspaces with one git worktree per PR |
 | [`ticket-workspace-cleanup`](./skills/ticket-workspace/ticket-workspace-cleanup/SKILL.md) | Stop confirmed workspace-local processes and safely remove completed ticket workspaces |

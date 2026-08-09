@@ -12,18 +12,18 @@ Treat a supplied workflow directory as a locator. Classify it with [durable-cont
 
 For vault-native work, resolve each target through [workflow-profiles.md](workflow-profiles.md). Read the work-item index first and then its canonical `Current` target. Read alignment, delivery plan, roadmap, review evidence, or files under `working/` only when the index or current document points to them.
 
-A direct change may have no workflow files. In that case, reconcile the explicit user request and conversation with the live repository, branch, worktree, diff, tests, and external delivery state. If that evidence establishes one clear continuation, resume directly. Ask rather than inventing scope when it does not.
+A direct change may have no workflow files. In that case, reconcile the explicit user request and conversation with the live repository, branch, worktree, diff, tests, external delivery state, and any approved implementation route. If that evidence establishes one clear continuation, resume it through Ship. Ask rather than inventing scope when it does not.
 
 ## Reconstruct the route
 
 Inspect live repository state, run state, diffs, and recorded review or validation evidence. Reconstruct only what applies:
 
-- **Direct:** requested benefit, observable completion, existing edits, remaining work, and next checkpoint.
-- **Aligned:** target benefit, deferred outcomes, settled and open decisions, and whether direct implementation can resume.
-- **Planned:** approved benefit, completed delivery changes, dependency-derived ready changes, and current confirmation.
+- **Direct:** requested benefit, observable completion, existing edits, remaining work, approved implementation route, and next checkpoint.
+- **Aligned:** target benefit, deferred outcomes, settled and open decisions, post-alignment design and delivery route, and route approval.
+- **Planned:** approved benefit, completed delivery changes, dependency-derived ready changes, and current implementation-route confirmation.
 - **Roadmap:** shared destination, milestone results, dependency-derived ready milestones, changed parent decisions, and next human checkpoint.
 
-Reconcile files with live evidence before editing. Recommend the lightest safe route forward. Duration, a branch, or a PR does not promote a clear direct continuation into alignment or planning.
+Reconcile files with live evidence before editing. Recommend the lightest safe route forward. Duration, a branch, or a PR does not promote a clear direct continuation into alignment or planning. When current route approval cannot be recovered or a skipped-step reason no longer holds, return to Ship's implementation-route checkpoint before production edits.
 
 For a legacy RPI workflow, preserve its files and content. Infer a proposed route and dependency graph from evidence, then ask about ambiguous progress or dependencies before writing any migration. Do not bulk-migrate old workflows or provide an `rpi` alias.
 

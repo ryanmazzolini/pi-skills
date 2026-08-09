@@ -7,7 +7,7 @@ description: Settle consequential human choices for one target outcome. Use when
 
 **Be relentless about decisions that can materially change the target outcome or how it will be delivered.** Investigate first. Settle one focused decision per turn. Stop when no such decision remains.
 
-Alignment is optional. Do not use it when the requested benefit, completion signal, and important boundaries are already clear. An approved alignment returns to Ship's direct route unless dependency-aware delivery planning is genuinely useful.
+Alignment is optional. Do not use it when the requested benefit, completion signal, and important boundaries are already clear. An approved alignment returns to Ship to decide whether design review is warranted, then choose and confirm the implementation route.
 
 ## Keep one target outcome
 
@@ -80,7 +80,7 @@ Alignment is complete when the actor, benefit, observable completion, included a
 
 Before presenting completion, rerun scope and consistency checks. Use selective early review from `../ship/references/review-gate.md` only for a named ambiguity or high-risk choice. Present the target benefit, deferred outcomes, confirmed experience, current assumptions, and any unresolved blocker. Ask one short question: **Is this alignment ready to use?**
 
-After approval, return to Ship. Ship resumes direct implementation unless `delivery-plan` would add real dependency or coordination value.
+After approval, return to Ship. Ship decides whether design review is warranted, chooses direct or planned delivery, and gets route approval before production implementation.
 
 ## Preserve durable decisions
 
