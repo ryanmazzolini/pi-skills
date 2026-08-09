@@ -9,7 +9,7 @@ Make consequential solution choices legible before code exists. Produce one adap
 
 ## Confirm design review is warranted
 
-Inspect the settled request, live code, tests, project documentation, decisions, history, and current workflow. Follow [`durable-context.md`](../ship/references/durable-context.md) to locate or create the canonical work item. Treat a caller-supplied workflow directory as a locator until that reference verifies it.
+Inspect the settled request, live code, tests, project documentation, decisions, history, and any already-verified current workflow. Do not create durable workflow context while deciding whether design review is warranted.
 
 Use this skill only when both conditions hold:
 
@@ -22,7 +22,7 @@ Intent must be settled enough to design. Use [`research`](../research/SKILL.md) 
 
 ## Write the smallest useful design
 
-Read [DESIGN-FORMAT.md](DESIGN-FORMAT.md), create or update one `design.md` in the canonical work item, and set the work-item index's `Current` pointer to it. Preserve a verified legacy workflow in place. Delete inapplicable template sections instead of filling them with ceremony.
+Follow [`durable-context.md`](../ship/references/durable-context.md) to locate or create the canonical work item. Treat a caller-supplied workflow directory as a locator until that reference verifies it. Then read [DESIGN-FORMAT.md](DESIGN-FORMAT.md), create or update one `design.md` in the canonical work item, and set the work-item index's `Current` pointer to it. Preserve a verified legacy workflow in place. Delete inapplicable template sections instead of filling them with ceremony.
 
 Scale the document to the expensive choices:
 
