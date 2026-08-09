@@ -47,7 +47,7 @@ Dependencies, not section order, determine the ready set. A milestone with no in
 
 Roadmap approval creates one minimal sibling work item per milestone so links and dependencies survive fresh sessions. Its `index.md` records the project, ticket, profile, workspace, parent roadmap, benefit, completion condition, and dependencies. Until another continuation exists, `Current` may point to the milestone index itself.
 
-Add `alignment.md`, `plan.md`, a ticket workspace, or review evidence only when that milestone's chosen route needs it. A selected milestone returns to Ship and proceeds directly by default. Use Align only for consequential human decisions and `delivery-plan` only for a useful implementation dependency graph.
+Add `alignment.md`, `design.md`, `plan.md`, a ticket workspace, or review evidence only when that milestone's chosen route needs it. A selected milestone returns to Ship to choose and approve its current Research, Align, Design Doc, and Delivery Plan route before production implementation.
 
 A milestone may need several PRs without becoming several milestones. Route those boundaries through `delivery-plan`. Keep each PR independently mergeable by default; use a stack only when the plan records the exact technical dependency that prevents it.
 
