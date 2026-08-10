@@ -22,7 +22,7 @@ Intent must be settled enough to design. Use [`research`](../research/SKILL.md) 
 
 ## Write the smallest useful design
 
-Follow [`durable-context.md`](../ship/references/durable-context.md) to locate or create the canonical work item. Treat a caller-supplied workflow directory as a locator until that reference verifies it. Then read [DESIGN-FORMAT.md](DESIGN-FORMAT.md), create or update one `design.md` in the canonical work item, and set the work-item index's `Current` pointer to it. Preserve a verified legacy workflow in place. Delete inapplicable template sections instead of filling them with ceremony.
+Follow [`durable-context.md`](../ship/references/durable-context.md) to choose one workflow home: reuse a verified legacy workflow in place, or locate or create the canonical vault work item, never both. Then read [DESIGN-FORMAT.md](DESIGN-FORMAT.md) and create or update `design.md` in that home. For vault-native work, set the work-item index's `Current` pointer to it; for legacy work, retain its existing continuation convention when present. Delete inapplicable template sections instead of filling them with ceremony.
 
 Scale the document to the expensive choices:
 
