@@ -61,7 +61,7 @@ Account for every one of Research, Align, Design Doc, and Delivery Plan exactly 
 
 One answer may approve every displayed skip. An exact instruction already approving the named route counts; a general request to implement does not. Fold this route summary into an existing plan or implementation confirmation when practical, but make the approval question cover both.
 
-Reuse the approval while the target outcome, boundaries, material constraints, skipped-step reasons, and delivery shape remain unchanged. Present it again when new evidence makes a skipped step plausible or changes the route. When work needs durable continuation, record the approved route in the active design, plan, or handoff instead of creating another state file.
+Reuse the approval while the target outcome, boundaries, material constraints, skipped-step reasons, and delivery shape remain unchanged. Present it again when new evidence makes a skipped step plausible or changes the route. When work needs durable continuation, record the approved route in the canonical `Current` document—for example an alignment, design, plan, milestone index, or handoff—instead of creating a separate state file.
 
 ## Complete a direct delivery
 
