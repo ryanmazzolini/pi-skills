@@ -8,7 +8,7 @@
     {
       "name": "ship",
       "source": "./skills/ship",
-      "description": "Route research, direct changes, alignment, prototypes, delivery plans, and milestone roadmaps",
+      "description": "Route research, direct changes, alignment, design review, prototypes, delivery plans, and milestone roadmaps",
       "strict": false,
       "skills": [
         "./ship",
@@ -16,6 +16,7 @@
         "./align",
         "./research",
         "./prototype",
+        "./design-doc",
         "./delivery-plan"
       ]
     },

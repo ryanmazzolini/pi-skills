@@ -1,11 +1,11 @@
 ---
 name: "ship"
-description: Route coding work through the lightest useful path. Use for direct implementation, consequential alignment, dependency-aware delivery planning, milestone roadmaps, recovery, review, or delivery.
+description: Route coding work through the lightest useful path. Use for direct implementation, consequential alignment, upfront design review, dependency-aware delivery planning, milestone roadmaps, recovery, review, or delivery.
 ---
 
 # Ship
 
-Move work to its next useful human checkpoint. Use the least process that keeps the outcome clear and the work recoverable. First determine what is settled. Then choose the delivery shape. Alignment and delivery planning answer different questions. Neither is a required stage.
+Move work to its next useful human checkpoint. Use the least process that keeps the outcome clear and the work recoverable. First determine what is settled. Then decide whether design review is warranted and choose the delivery shape. Research, alignment, design review, and delivery planning answer different questions. None is a required stage, but the human explicitly approves the route before production implementation when any are skipped.
 
 ## Determine what is settled
 
@@ -19,6 +19,12 @@ Pause direct implementation when sources of intent conflict or leave a consequen
 For example, a small retry button needs alignment when its placement, retry behavior, and feedback are unspecified. It can proceed directly when an authoritative UI specification and contract tests settle all three.
 
 Small, local, or reversible work does not settle a missing choice. Reuse settled intent instead of repeating alignment.
+
+## Decide whether to review the design
+
+Before choosing a delivery shape or implementing, use [`design-doc`](../design-doc/SKILL.md) only when implementation would otherwise make an implicit choice about the intended experience, system fit, program shape, or build order and discovering a wrong choice after coding would cause expensive rework. Skip it when the relevant choices are already authoritative, obvious, trivial, or cheaply reversible.
+
+Design review makes a proposed solution legible; it does not settle conflicting intent or replace dependency-aware delivery planning. After approval, return here to choose direct or planned delivery.
 
 ## Choose the delivery shape
 
@@ -36,10 +42,32 @@ Choose the lightest delivery shape that preserves the settled intent and useful 
 
 When existing workflow files, interruption, or context compaction make the state unclear, read [references/recovery.md](references/recovery.md) before choosing.
 
+## Confirm the implementation route
+
+Ship may start Research, Align, Design Doc, or Delivery Plan automatically when its trigger is met. Before production implementation, get explicit human approval for a compact route that names the delivery shape, steps used, and steps skipped:
+
+```md
+**Delivery:** [direct delivery, planned delivery, or selected roadmap milestone]
+
+**Use:** [every selected conditional step, completed or still needed; `None` when all are skipped]
+
+**Skip:**
+- **[Unused step]:** [why its trigger is not met]
+
+**Proceed on this route?**
+```
+
+Account for every one of Research, Align, Design Doc, and Delivery Plan exactly once under **Use** or **Skip**. Tie each skip to its trigger: evidence needs no Research beyond routine inspection; intent leaves no consequential choice for Align; wrong implicit experience, system, program, or order choices would not cause expensive rework requiring a Design Doc; or one coherent delivery needs no dependency plan. List Prototype only when an experiential uncertainty makes it plausible, and Roadmap only when several independently useful outcomes make it plausible. Do not manufacture a reason to mention either one on ordinary work.
+
+One answer may approve every displayed skip. An exact instruction already approving the named route counts; a general request to implement does not. Fold this route summary into an existing plan or implementation confirmation when practical, but make the approval question cover both.
+
+Reuse the approval while the target outcome, boundaries, material constraints, skipped-step reasons, and delivery shape remain unchanged. Present it again when new evidence makes a skipped step plausible or changes the route. When work needs durable continuation, record the approved route in the canonical `Current` document—for example an alignment, design, plan, milestone index, or handoff—instead of creating a separate state file.
+
 ## Complete a direct delivery
 
-Continue from the settled outcome or exact bounded request. Do not reopen it merely to repeat alignment or planning. Before substantial edits, verify:
+Continue from the settled outcome or exact bounded request and any approved design. Do not reopen them merely to repeat alignment, design, or planning. Do not make production edits until the current implementation route is approved. Before substantial edits, verify:
 
+- the approved implementation route and its reasons for skipped steps
 - the authoritative intent, observable completion, and outcome boundaries
 - the next delivery change: one narrow observable outcome or justified enabler, plus the work deferred beyond it
 - the current and intended UX/DX walkthrough when an interface changes, or the behavior that must remain unchanged
@@ -60,13 +88,13 @@ Do not create workflow files merely because a direct delivery lasts longer than 
 
 ## Resume after alignment
 
-Alignment helps settle a human choice that evidence cannot. Approval does not force a delivery plan. Return here and choose the delivery shape. Stay direct when one coherent change can deliver the result. Reach for `delivery-plan` when dependency or delivery boundaries make slicing useful.
+Alignment helps settle a human choice that evidence cannot. Approval does not force design review or a delivery plan. Return here, decide whether design review is warranted, and then choose the delivery shape. Stay direct when one coherent change can deliver the result. Reach for `delivery-plan` when dependency or delivery boundaries make slicing useful.
 
 For an experiential question that words cannot settle, Align may temporarily use [`prototype`](../prototype/SKILL.md). A prototype supplies evidence and returns to alignment. It does not authorize production implementation.
 
 ## Execute a delivery plan
 
-Dependencies in `plan.md`, not section order, determine which delivery changes can start. Recommend the most useful ready change and why, then get human confirmation before starting or dispatching coordinated work.
+Dependencies in `plan.md`, not section order, determine which delivery changes can start. Recommend the most useful ready change and why, then get human confirmation before starting or dispatching coordinated work. Include the implementation route in that confirmation when it is not already approved.
 
 Run one delivery change synchronously unless it contains independent work units whose parallelism is worth the integration cost. For that case, read [references/implementation-wave.md](references/implementation-wave.md). The Ship coordinator owns concurrency and integration. After completing the delivery change, validate and present it before starting the next one.
 
@@ -84,6 +112,8 @@ The live project and canonical work-item files decide current state. Conversatio
 - Completed work has passed its required review gate and awaits approval: when the request is exact and may be routine enough for a discoverable First Mate, use [references/first-mate-escalation.md](references/first-mate-escalation.md); otherwise present the checkpoint and wait.
 - A decision-linked investigation remains: use `research`, then resume the checkpoint its result informs.
 - A consequential human decision remains: use `align`.
+- Settled intent still has costly implicit solution choices: use `design-doc`.
+- Production implementation is ready but its used and skipped steps lack current route approval: present the implementation route and wait.
 - An approved outcome has a useful delivery plan: recommend a ready delivery change.
 - An approved roadmap has an unfinished ready milestone: recommend that milestone.
 - A direct continuation remains clear: resume it directly.
@@ -93,7 +123,7 @@ If state is truly ambiguous, give your interpretation and ask one direct questio
 
 ## Record and present results
 
-Record material decisions, scope changes, implementation results, and validation evidence as they happen. Keep delivery-change evidence with its plan entry and milestone-specific evidence in the milestone work item. Do not report routine progress to First Mate; use [references/first-mate-escalation.md](references/first-mate-escalation.md) only for an exact approval request, cross-project blocker, or missing context.
+Record material decisions, scope changes, approved implementation routes, implementation results, and validation evidence as they happen. Keep delivery-change evidence with its plan entry and milestone-specific evidence in the milestone work item. Do not report routine progress to First Mate; use [references/first-mate-escalation.md](references/first-mate-escalation.md) only for an exact approval request, cross-project blocker, or missing context.
 
 Before presenting a final code-bearing delivery for approval, apply [references/review-gate.md](references/review-gate.md). Alignment, plans, and intermediate checkpoints do not require broad independent review by default.
 
