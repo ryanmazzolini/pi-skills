@@ -19,7 +19,7 @@ A ticket workspace is the ticket folder used by `ticket-workspace`:
 
 Clean the ticket folder as the unit of work. Never broaden cleanup outside that folder unless the user explicitly asks.
 
-When `HERDR_ENV=1`, run cleanup in the calling pane and leave that pane open. Do not hand off cleanup, prompt another agent, focus another pane, or close any pane. The current pane's Pi and its inspection subprocesses are expected occupants of the target, not process blockers; never signal them. All other Pi, agent, shell, editor, shared, or ambiguous processes remain blockers.
+When `HERDR_ENV=1`, run cleanup in the calling pane and leave that pane open. Do not hand off cleanup, prompt another agent, focus another pane, or close any pane. Keep the calling pane's session spine—the pane shell, its Pi process, and the exact foreground command chain Pi launched for the current cleanup step. Never signal those processes. Do not exempt an older or unrelated descendant merely because the pane shell or Pi is its ancestor; classify it normally as safe to stop or as a blocker.
 
 ## 1. Pin the target
 
@@ -38,10 +38,10 @@ Completion: exactly one ticket folder is selected, or you stop and ask the user 
 For each immediate child directory of the ticket folder:
 
 - Classify it as a linked Git worktree, regular Git checkout, or non-repo directory.
-- Record branch, `git status --short --branch`, upstream/tracking state, and whether the path is the current working directory.
+- Record branch, `git status --short --branch`, upstream/tracking state, and whether the path is the current working directory. For each upstream branch eligible for deletion, query the authoritative remote with `git ls-remote --heads <remote> refs/heads/<branch>` and record its object ID or absence.
 - Record untracked/non-repo files that would remain if repo worktrees were removed.
 - Treat a regular Git checkout as a blocker outside the standard worktree cleanup. Do not reduce it to an approved leftover: removing it requires separate approval after inventorying unique refs, repository-local configuration, unpushed objects, and ignored files.
-- List complete process trees with a working directory inside the target, including every PID, command, and cwd. Identify the current Herdr pane's Pi process tree from the current pane state when applicable. Mark that tree as expected self-processes, clearly disposable dev servers or watchers as safe, and every other Pi/agent, shell, editor, shared or ambiguous process as a blocker. An incomplete scan is a blocker.
+- List complete process trees with a working directory inside the target, including every PID, command, and cwd. Identify the calling pane's session spine from current pane and process state: its pane shell, Pi process, and exact foreground command chain for the current cleanup step. Mark only that spine as expected self-processes. Classify every other descendant normally: clearly disposable dev servers or watchers are safe to stop; other Pi/agent, shell, editor, shared, or ambiguous processes are blockers. An incomplete scan is a blocker.
 
 Completion: every path and process is classified, and all dirty, unpushed, untracked, detached, non-repo, process, or calling-pane state is visible.
 
@@ -55,10 +55,10 @@ Before deleting anything, summarize:
 - leftover non-repo files or directories
 - expected self-processes, safe process trees, and process blockers
 - local branches eligible for deletion
-- upstream branches eligible for optional deletion, with exact remote and branch names
+- upstream branches eligible for optional deletion, with exact remote names, branch names, and inventoried object IDs
 - whether the calling Herdr pane will remain open with its working directory removed
 
-Ask the user to confirm the exact processes, worktrees, local branches, ticket-folder contents, and any upstream branches to remove. Upstream deletion is excluded unless the user explicitly approves the named remote branch. If there are blockers, recommend the smallest safe next action instead of forcing. Do not signal a process or run `git worktree remove`, `rm -rf`, `git branch -d/-D`, `git push --delete`, or `git worktree prune` before confirmation.
+Ask the user to confirm the exact processes, worktrees, local branches, ticket-folder contents, and any upstream branches to remove. Upstream deletion is excluded unless the user explicitly approves the named remote branch at its inventoried object ID. If there are blockers, recommend the smallest safe next action instead of forcing. Do not signal a process or run `git worktree remove`, `rm -rf`, `git branch -d/-D`, `git push --delete`, or `git worktree prune` before confirmation.
 
 Completion: the user has approved the exact local cleanup and separately chosen whether to delete each named upstream branch, or cleanup stops with unresolved blockers.
 
@@ -66,7 +66,7 @@ Completion: the user has approved the exact local cleanup and separately chosen 
 
 Execute exactly the approved list, nothing beside it:
 
-1. Re-scan, then `SIGTERM` only confirmed safe PIDs; omit broad selectors such as `pkill node`. If the tree changed or a blocker appeared, ask again. Verify every PID exits and ask before `SIGKILL`. Never signal the calling Herdr pane's expected self-processes.
+1. Re-scan, then `SIGTERM` only confirmed safe PIDs; omit broad selectors such as `pkill node`. If the tree changed or a blocker appeared, ask again. Verify every PID exits and ask before `SIGKILL`. Never signal the calling pane's session spine, but do not protect an unrelated descendant based only on ancestry.
 2. Remove linked worktrees with `git worktree remove <path>`, run from a surviving worktree of the same repo, never from inside the path being removed.
 3. Delete approved local branches only after their worktrees are removed and only when they are merged. Force-delete a local branch only when the user named that exact action.
 4. Remove the emptied ticket folder with `rmdir`; use `rm -rf` only for approved leftovers.
