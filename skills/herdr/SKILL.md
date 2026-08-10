@@ -1,6 +1,6 @@
 ---
 name: "herdr"
-description: "Control Herdr when the user explicitly asks, or hand off active Pi work to a fresh workspace session after ticket-workspace prepares it. Requires HERDR_ENV=1."
+description: "Control Herdr when the user explicitly asks, keep the current pane isolated while cleaning a completed ticket workspace, or hand off active Pi work after ticket-workspace prepares it. Requires HERDR_ENV=1."
 ---
 
 # Herdr
@@ -33,6 +33,12 @@ Treat focus as live human input:
 
 Treat focus and closure as separate decisions. Before closing anything, inspect current topology and stop if the approved target or surrounding state changed. Close only an exact pane, tab, or workspace the human explicitly approved closing. Creating or focusing a destination never authorizes closing its source. Keep the Herdr server and unrelated panes running. After an operation, verify the approved topology without changing focus, then report the result concisely.
 
+## Retire ticket work
+
+When the user invokes `ticket-workspace-cleanup` from a Herdr pane, perform that cleanup in the calling pane. The Git, process, and filesystem cleanup may remove its working directory; pane cleanup remains a human action.
+
+Do not create or reuse a handoff destination, prompt another agent, send cleanup or closure commands to another Pi session, change focus, or close a pane. Keep the calling Pi alive. After the approved local cleanup and any separately approved upstream cleanup are verified, report the calling pane ID as ready for manual closure and stop without running more commands from a removed working directory.
+
 ## Hand off Pi work
 
-When continuing the current work in another Herdr workspace, read [references/pi-session-transfer.md](references/pi-session-transfer.md). Start a fresh Pi session with a concise continuation brief. The default handoff preserves the source pane and human focus. Focusing the destination or closing the source requires the distinct approval described there.
+When continuing active work in another Herdr workspace, read [references/pi-session-transfer.md](references/pi-session-transfer.md). Do not use a handoff to retire completed work. Start a fresh Pi session with a concise continuation brief. The default handoff preserves the source pane and human focus. Focusing the destination or closing the source requires the distinct approval described there.
