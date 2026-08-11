@@ -1,5 +1,5 @@
 ---
-name: "ship-coach"
+name: "coach"
 description: "Ship real work through cognitive apprenticeship and guided human contribution."
 disable-model-invocation: true
 argument-hint: "[what you want to understand or practice while shipping]"
