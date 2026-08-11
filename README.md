@@ -46,7 +46,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`design-doc`](./skills/ship/design-doc/SKILL.md) | Expose costly experience, system, program, and build-order choices before coding |
 | [`delivery-plan`](./skills/ship/delivery-plan/SKILL.md) | Plan dependent delivery changes for one approved benefit |
 | [`ticket-workspace`](./skills/ticket-workspace/ticket-workspace/SKILL.md) | Create or reuse workspaces with one git worktree per PR |
-| [`ticket-workspace-cleanup`](./skills/ticket-workspace/ticket-workspace-cleanup/SKILL.md) | Stop confirmed workspace-local processes and safely remove completed ticket workspaces |
+| [`ticket-workspace-cleanup`](./skills/ticket-workspace/ticket-workspace-cleanup/SKILL.md) | Remove completed ticket workspaces and branches while leaving Herdr pane closure to the user |
 | [`handoff`](./skills/handoff/SKILL.md) | Write a Markdown handoff for another agent or fresh session |
 | [`commit-simple`](./skills/commit/commit-simple/SKILL.md) | Prepare branches, commits, and pushes |
 | [`commit-pr`](./skills/commit/commit-pr/SKILL.md) | Create or update a draft pull request |
