@@ -44,13 +44,13 @@ Each comment should:
 
 1. Lead with a direct statement of the problem.
 2. Explain what the code does, when that behavior occurs, and its concrete consequence.
-3. Ask for the smallest useful change. Request a test when it proves the corrected behavior or prevents a likely regression.
+3. Suggest the smallest useful change. Suggest a test when it proves the corrected behavior or prevents a likely regression.
 
-Keep one idea in each comment. Use concrete subjects and direct verbs. Use code identifiers only when they make the explanation more precise, and explain necessary technical terms once. The comment must stand on its own without a top-level summary.
+Keep one idea in each comment. Use concrete subjects and direct verbs. Use code identifiers when they make the explanation more precise, and explain necessary technical terms once. The comment must stand on its own without a top-level summary.
 
 Prefer:
 
-> This enables the bypass and leaves it enabled, so later updates on the same object can skip the read-only guard. Limit the bypass to this write and add a test that confirms the guard is restored afterward.
+> This enables the bypass and leaves it enabled, so later updates on the same object can skip the read-only guard. We could limit the bypass to this write and add a test that confirms the guard is restored afterward.
 
 Avoid abstract shorthand such as “the bypass outlives the intended write” when a direct description says the same thing.
 
