@@ -12,7 +12,7 @@
       "strict": false,
       "skills": [
         "./ship",
-        "./ship-coach",
+        "./coach",
         "./align",
         "./research",
         "./prototype",
