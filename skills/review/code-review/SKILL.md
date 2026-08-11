@@ -1,67 +1,82 @@
 ---
 name: "code-review"
-description: "Review code changes for concrete introduced defects and write actionable findings in plain language. Use for pull requests, commits, patches, or local diffs; combine with repository- and language-specific guidance."
+description: "Review code changes for defects they introduce and propose clear inline comments. Use for pull requests, commits, patches, or local diffs; combine with repository- and language-specific guidance."
 ---
 
 # Code Review
 
-Review the selected change for concrete defects it introduces. This skill owns the review standard and finding prose. A caller or companion skill may own repository access, isolation, saved reports, or a machine-readable output schema.
+Review the selected change for defects it introduces. A caller or companion skill may provide repository access, isolation, saved reports, or a required output format.
 
-## Establish the target
+## Review target
 
-Identify the change's intent, base, head, and changed files. Read the diff, then inspect enough surrounding code, tests, repository instructions, and history to understand the affected behavior. Load applicable language, framework, security, or interface-review skills when they add relevant criteria.
+Identify the change's intent, base, head, and changed files. Review the exact requested commit or diff. If it changes during the review, refresh it before drawing conclusions.
 
-Use the exact requested revision. If the target moves during review, refresh it before drawing conclusions. Account for every changed file, including interactions that cross file boundaries.
+Read the diff, then inspect enough surrounding code, tests, repository instructions, and history to understand the affected behavior. Load applicable language, framework, security, or interface-review skills when they add relevant criteria.
 
-Trace changed state and side effects beyond the immediate edit. For each temporary flag or bypass, find where the prior state is restored and inspect every operation that can run before it. If no restoration exists, inspect later operations on the same instance and report any unintended wider behavior. Prove that locks, resources, and subscriptions are released on every exit path.
+Account for every changed file and any behavior that crosses file boundaries.
 
-Reviews are report-only by default. Do not change the reviewed code or publish comments unless the user explicitly asks and the active workflow permits it.
+Reviews are read-only by default. Do not change the reviewed code or publish comments unless the user explicitly asks and the active workflow permits it.
 
-## Decide what is worth reporting
+## Inspect the behavior
 
-Prioritize correctness, data loss, security, broken control flow, races, contract changes, failure handling, rollout risk, and material violations of repository instructions.
+Trace changed state and side effects beyond the edited lines.
+
+- For each temporary flag or bypass, find where the previous state is restored. Inspect every operation that can run before restoration. If the code never restores it, inspect later operations on the same instance and report any unintended wider behavior that meets the requirements below.
+- For each lock, resource, or subscription, verify that every exit path releases it.
+
+## What to report
+
+Prioritize correctness, data loss, security, broken control flow, races, contract changes, failure handling, rollout risk, and repository rules whose violation would have a meaningful consequence.
 
 Report a finding only when all of these are clear:
 
-- The changed code causes it.
+- The changed code causes it or makes it worse.
 - A concrete input or runtime path triggers it.
 - The consequence matters to a caller, user, operator, or maintainer.
 - The author can take a specific next step within the change's scope.
 
 Confirm suspected findings against the implementation and existing tests. When available, use a test, CI for the reviewed revision, or a focused reproduction.
 
-Put deterministic check failures under validation instead of repeating them as findings. Report the underlying defect only when it independently meets the finding bar.
+Put deterministic check failures under validation instead of repeating them as findings. Report the underlying defect only when it independently meets the requirements above.
 
-Omit problems the change neither introduces nor makes worse, unsupported risks, generic requests for tests or documentation, and low-value style preferences.
+Do not report unsupported risks, generic requests for tests or documentation, low-value style preferences, or problems the change neither introduces nor makes worse.
 
-Use a severity taxonomy only when the caller or host expects one. Reserve a blocker for a concrete reason the change should not proceed in its current form. Keep any severity label separate from the plain-language title.
+Use severity labels only when the caller or host expects them. Reserve a blocker for a concrete reason the change should not proceed. Keep the label separate from the plain-language title.
 
-## Write for the code author
+## Write the comment
 
-Write every finding as a proposed inline comment on the smallest changed line or range in the reviewed diff that establishes the defect. Use the old side for deleted lines when the host supports it. Do not anchor a comment to unchanged surrounding code. Order multiple comments by impact.
+Write each finding as a proposed inline comment on the smallest changed line or range that establishes the defect. Use the old side for deleted lines when the host supports it. Do not anchor comments to unchanged surrounding code. Order multiple comments by impact.
 
 Each comment should:
 
 1. Lead with a direct statement of the problem.
-2. Explain what the code does, when that behavior occurs, and its concrete consequence.
+2. Explain what the code does, when it happens, and the concrete consequence.
 3. Suggest the smallest useful change. Suggest a test when it proves the corrected behavior or prevents a likely regression.
 
-Keep one idea in each comment. Use concrete subjects and direct verbs. Use code identifiers when they make the explanation more precise, and explain necessary technical terms once. The comment must stand on its own without a top-level summary.
+Keep one idea in each comment. Use concrete subjects and direct verbs. Use code identifiers when they make the explanation more precise, and explain necessary technical terms once. Each comment must stand on its own without a top-level summary.
 
 Prefer:
 
-> This enables the bypass and leaves it enabled, so later updates on the same object can skip the read-only guard. We could limit the bypass to this write and add a test that confirms the guard is restored afterward.
+> This enables the bypass and leaves it enabled, so later updates on the same object can skip the read-only guard. One option is to limit the bypass to this write and add a test that confirms the guard is restored afterward.
 
 Avoid abstract shorthand such as “the bypass outlives the intended write” when a direct description says the same thing.
 
+When prose cannot make the triggering path clear, add a small state or sequence trace and follow it with a text explanation.
+
 ## Return the result
 
-When findings exist, return only the proposed inline comments. For each comment, provide its file, smallest useful changed line range, and diff side when needed as routing metadata, followed by the exact comment body. Do not add a top-level review body, summary, or verdict. Do not approve the change or request changes.
+When findings exist, return only the proposed inline comments. For each comment, include the file, smallest useful changed line range, and diff side when needed, followed by the exact comment body. Do not add a top-level review body, summary, or verdict. Do not approve the change or request changes.
 
-When no finding meets the reporting bar, say that no inline comments are proposed. Do not create a top-level comment as a fallback.
+When no finding meets the requirements above, say that no inline comments are proposed. Do not create a top-level comment as a fallback.
 
-When another skill supplies an output schema, follow its structure and metadata contract while keeping this skill's finding threshold, inline-only delivery, and prose.
+When another skill supplies an output schema, follow its structure while preserving this skill's finding requirements, inline-only delivery, and prose.
 
-Keep each comment drillable: lead with the problem, then include its evidence and next step. Add a small state or sequence trace only when prose cannot make the triggering path clear, and follow it with a text explanation.
+## Publish comments
 
-Before publishing an inline comment, show its exact destination and body unless the user already approved that exact text. Follow the active attribution policy. If the host cannot attach a finding to a relevant changed line, stop and tell the requester that the finding cannot be published inline; do not move it to unchanged code or a top-level comment. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body; never approve or request changes. After publication, read each comment back and verify its target, content, and formatting.
+Before publishing:
+
+1. Show the exact destination and body unless the user already approved that text.
+2. Follow the active attribution policy.
+3. If the host cannot attach a finding to a relevant changed line, stop and explain that it cannot be published inline. Do not move it to unchanged code or a top-level comment.
+4. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body. Never approve or request changes.
+5. Read each published comment back and verify its target, content, and formatting.
