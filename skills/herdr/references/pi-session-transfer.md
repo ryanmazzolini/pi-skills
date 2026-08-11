@@ -27,7 +27,7 @@ Treat a general “yes” as approval only for the background handoff. Focusing 
    - completed work and live branch or worktree state;
    - canonical work-item or evidence paths to read, when they exist;
    - the next approved action and unresolved human decisions; and
-   - the source pane ID for any later approved cleanup.
+   - the source pane ID only to identify it if the human later makes a separate topology request.
 
    Direct the destination to verify its own identity and live state without changing focus, report that it is ready, and wait for the user. It must not mutate the project or topology in its startup turn. Prefer pointers to canonical durable records over copying long context.
 6. Create a bounded agent name as `pi_` plus the first 28 lowercase hexadecimal characters of the destination pane ID's SHA-256 hash. For example, `w10:p1` becomes `pi_d152398ef54bbb3aa1ac11ed8f95`. Treat the exact `agent_not_found` result from `herdr agent get <agent-name>` as available. If it returns a live agent, leave the destination workspace and panes open, do not start Pi, and stop with their IDs. Stop and report any other lookup error.
@@ -55,6 +55,6 @@ Stop after reporting the verified destination and that the source remains open. 
 A verified handoff grants no permission to focus or close anything. Handle either action only as a fresh, explicit human request:
 
 - **Focus destination:** Confirm it still exists, focus it once, and keep the source open.
-- **Close source:** The destination Pi must perform this action. If the request reaches the source Pi, submit the exact approval and source pane ID to the verified destination with `herdr agent prompt`, then make no further topology mutations. The destination rechecks both panes and closes only the named source pane. It does not change focus unless the human separately asks.
+- **Close source:** If the request reaches the verified destination Pi, it rechecks both panes and closes only the named source pane. It does not change focus unless the human separately asks. If the request reaches the source Pi, stop and tell the human to close that pane manually; never relay closure or cleanup through `herdr agent prompt` or another Pi session.
 
 Do not bundle either action into the initial handoff confirmation or pre-authorize it in the destination's startup message.
