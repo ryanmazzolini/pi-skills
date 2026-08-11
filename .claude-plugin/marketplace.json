@@ -70,9 +70,10 @@
     {
       "name": "ai-authoring",
       "source": "./skills/ai-authoring",
-      "description": "Reliable writing for agent instructions and context",
+      "description": "Clear human-facing prose and reliable agent instructions",
       "strict": false,
       "skills": [
+        "./clear-writing",
         "./writing-for-agents"
       ]
     },

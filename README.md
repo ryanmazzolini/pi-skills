@@ -84,6 +84,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`notion-cli`](./skills/notes/notion-cli/SKILL.md) | Read and change Notion through the `ntn` CLI |
 | [`teach`](./skills/productivity/teach/SKILL.md) | Learn through short lessons, practice, and feedback |
 | [`wait-what`](./skills/productivity/wait-what/SKILL.md) | Re-pitch an explanation that did not land |
+| [`clear-writing`](./skills/ai-authoring/clear-writing/SKILL.md) | Rewrite human-facing prose so it is direct and easy to read |
 | [`writing-for-agents`](./skills/ai-authoring/writing-for-agents/SKILL.md) | Write reliable instructions and context for agents |
 
 ### Agents, automation, and integrations
