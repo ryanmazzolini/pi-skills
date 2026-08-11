@@ -10,6 +10,8 @@ Treat agent-facing writing as a behavior contract. Make the intended process pre
 
 Before revising an existing document, inspect the live environment and recent history. Name the behavior each section protects. Preserve, change, or remove it deliberately, especially approval boundaries, stopping points, optional branches, and handoffs.
 
+After the behavior contract is correct, apply [`clear-writing`](../clear-writing/SKILL.md) when drafting or rewriting reader-facing prose. It improves clarity without replacing the constraints above.
+
 ## Define the contract
 
 State the outcome, relevant context, hard constraints, success criteria, and stopping conditions. Use concrete decision criteria instead of vague caution. Reserve `must`, `always`, and `never` for invariants. Say what the agent may do autonomously and what requires approval.

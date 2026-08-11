@@ -7,4 +7,6 @@ license: "MIT; adapted from mattpocock/skills"
 
 # Wait, What?
 
-Re-pitch the last message; do not merely shorten it. Lead with the core point in one sentence, then supply the context I was missing in plain concrete language and the project's domain terms. Change the example or visual when that makes the point clearer. End with named details I can ask to drill into.
+Re-explain the last response because it did not land. Do not merely rewrite or shorten it.
+
+Lead with the core point in one sentence. Identify and supply the likely missing context in plain, concrete language and the project's domain terms. Use a different example, visual, or mental model when it makes the explanation clearer. End with named details the user can ask to explore further.
