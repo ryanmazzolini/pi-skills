@@ -17,6 +17,14 @@ Account for every changed file and any behavior that crosses file boundaries.
 
 Reviews are read-only by default. Do not change the reviewed code or publish comments unless the user explicitly asks and the active workflow permits it.
 
+## Review setup
+
+Temporary review infrastructure is allowed when it helps inspect or validate the change without modifying it. Prefer OS temporary directories. Track every clone, worktree, ref, dependency install, process, and generated artifact you create.
+
+Remove only resources created for this review. Do not remove caller-provided or pre-existing resources.
+
+Before returning the review result, stop processes and remove every clone, worktree, ref, dependency install, and generated artifact created for the review. Keep a resource while waiting for publication approval only when the publication step still needs it. Remove it after publishing or when publication is declined. If cleanup fails, report the exact resource left behind and the failure.
+
 ## Inspect the behavior
 
 Trace changed state and side effects beyond the edited lines.
@@ -63,15 +71,17 @@ When prose cannot make the triggering path clear, add a small state or sequence 
 
 When findings exist, return only the proposed inline comments. Classify every finding as **Blocking** or **Non-blocking** using the requirement above. If the caller or host requires another severity scheme, map it separately without replacing this classification.
 
-Present each finding as:
+Put the classification at the top of the publishable comment body. Keep the file and line outside it as presentation metadata:
 
 ```markdown
-**Blocking — `path/to/file:line`**
+`path/to/file:line`
 
+> **Blocking**
+>
 > Exact comment body
 ```
 
-Include the smallest useful changed line range and diff side when needed. Apply AI attribution to the draft by default unless overriden explicitly by the user or policy in context. Keep any attribution inside the quoted comment body. The draft should match what would be published.
+Include the smallest useful changed line range and diff side when needed. Apply AI attribution to the draft by default unless overridden explicitly by the user or policy in context. Keep the classification and any attribution inside the quoted comment body. The draft should match what would be published.
 
 Do not add a top-level review body, summary, or verdict. Do not approve the change or request changes.
 
