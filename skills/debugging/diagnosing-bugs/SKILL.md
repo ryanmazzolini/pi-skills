@@ -47,7 +47,14 @@ Read [SPECIALIZED-LOOPS.md](SPECIALIZED-LOOPS.md) when an ordinary automated com
 
 5. **Lock down the bug.** Identify the regression seam that exercises the real bug pattern. Include the actual caller chain only when it matters. If no such test point exists, document the architectural gap instead of proposing a shallow test that would give false confidence. For diagnosis only, do not add the test or apply the fix; continue to cleanup. For remediation, turn the minimized reproducer into a failing test and observe it fail before applying the narrow fix. After the fix, observe the regression test pass and rerun the original, unminimized loop.
 
-6. **Clean up and validate.** In either mode, remove all tagged instrumentation and reverse approved temporary diagnostic changes unless the user separately approves retaining them. Remove an artifact only when it has no continuing diagnostic, regression, or reference value. When an artifact remains useful, name its purpose, propose a durable location, and retain it only with approval. For remediation, verify the original exact symptom is gone, the regression test passes or the seam gap is documented, the performance baseline improved when applicable, and the repository's full expected validation passes. Report any validation blocker explicitly.
+6. **Clean up and validate.** Complete the cleanup for the active mode:
+   - In either mode, remove all tagged instrumentation and reverse approved temporary diagnostic changes unless the user separately approves retaining them.
+   - Distill reusable conclusions, commands, and procedures into the owning project or work-item record.
+   - Preserve raw evidence unchanged in its designated raw area when verification or later analysis may need it.
+   - Remove artifacts with no continuing diagnostic, regression, reference, or evidentiary value instead of preserving the whole diagnostic workspace.
+   - Follow the project's storage and redaction rules for every retained result.
+   - Name each retained artifact's purpose, propose its durable location, and retain it only with approval. Verify the durable copy before deleting the temporary artifact.
+   - For remediation, verify the original exact symptom is gone, the regression test passes or the seam gap is documented, the performance baseline improved when applicable, and the repository's full expected validation passes. Report any validation blocker explicitly.
 
 ## Finish the requested outcome
 
