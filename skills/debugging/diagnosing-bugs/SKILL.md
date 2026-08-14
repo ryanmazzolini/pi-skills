@@ -6,6 +6,13 @@ license: "MIT; adapted from mattpocock/skills"
 
 # Diagnosing Bugs
 
+First establish the requested outcome:
+
+- **Diagnosis only** is the default when the user asks why something failed, asks a question, or says to diagnose or debug it. Inspect files and run existing commands. Do not edit project files or change production systems unless the user separately approves a bounded diagnostic change such as adding instrumentation; that approval does not authorize a fix. Use OS temporary files for disposable local artifacts when possible.
+- **Diagnosis and remediation** requires an explicit request to fix the bug or approval after diagnosis. Make only the approved project changes and follow the repository's normal approval boundaries for commits, pushes, and pull requests.
+
+Do not infer remediation authority from a diagnosis request.
+
 Build the smallest tight feedback loop that can go red on the user's exact symptom. Run it before diagnosing or fixing. Let observed evidence drive the diagnosis.
 
 A usable loop has one command you have already run. Record the command and its exact output. It exercises the real bug path, distinguishes the reported failure from nearby failures, and can turn red before the fix and green after it. It should run in seconds, not minutes, where practical. For a flaky bug, use a pinned, measured reproduction rate instead of demanding identical verdicts.
@@ -18,10 +25,11 @@ Use this path only when an error identifies a narrow violated contract and one c
 
 1. Run the command and capture the exact failure.
 2. State the evidenced cause. Switch to the full loop if the cause remains uncertain.
-3. Add or tighten regression coverage at the seam that exercises the real bug pattern. If no correct seam exists, record the gap and retain the reproducer as evidence.
-4. Apply the narrow fix, rerun the original command, then run the repository's expected broader validation.
+3. For diagnosis only, identify the regression seam and smallest likely fix, then follow the cleanup rule below before reporting the evidence and stopping.
+4. For remediation, add or tighten regression coverage at the seam that exercises the real bug pattern. If no correct seam exists, record the gap and retain the reproducer as evidence.
+5. For remediation, apply the narrow fix, rerun the original command, then run the repository's expected broader validation.
 
-Stop when the exact original failure is green, regression evidence covers it, and broader validation has passed or its blocker is explicit.
+Diagnosis is complete when the evidence establishes the cause or names the remaining uncertainty and the next evidence needed. Remediation is complete when the exact original failure is green, regression evidence covers it, and broader validation has passed or its blocker is explicit.
 
 ## Uncertain-bug full loop
 
@@ -35,16 +43,18 @@ Read [SPECIALIZED-LOOPS.md](SPECIALIZED-LOOPS.md) when an ordinary automated com
 
 3. **Rank hypotheses and checkpoint.** Before testing, write 3–5 ranked hypotheses. Make each falsifiable: name the change or observation that would support or reject it. Show the concise ranked list to the user so domain knowledge can reorder it; if they are unavailable, continue with the stated ranking rather than blocking.
 
-4. **Probe one prediction at a time.** Prefer a debugger or REPL, then targeted instrumentation at boundaries that distinguish the ranked hypotheses. Tag every temporary log with one unique cleanup prefix such as `[DEBUG-a4f2]`. For performance bugs, measure a stable baseline on a named workload and use timing, profiles, query plans, or bisection before changing code; compare the same measurement after the fix.
+4. **Probe one prediction at a time.** Prefer a debugger or REPL, then targeted instrumentation at boundaries that distinguish the ranked hypotheses. Tag every temporary log with one unique cleanup prefix such as `[DEBUG-a4f2]`. For performance bugs, measure a stable baseline on a named workload and use timing, profiles, query plans, or bisection before changing code. When remediating, compare the same measurement after the fix.
 
-5. **Lock down the bug and fix it.** Put the regression test where it exercises the real bug pattern. Include the actual caller chain only when it matters. Turn the minimized reproducer into a failing test and observe it fail before applying the narrow fix. If no such test point exists, document the architectural gap instead of adding a shallow test that gives false confidence. After the fix, observe the regression test pass and rerun the original, unminimized loop.
+5. **Lock down the bug.** Identify the regression seam that exercises the real bug pattern. Include the actual caller chain only when it matters. If no such test point exists, document the architectural gap instead of proposing a shallow test that would give false confidence. For diagnosis only, do not add the test or apply the fix; continue to cleanup. For remediation, turn the minimized reproducer into a failing test and observe it fail before applying the narrow fix. After the fix, observe the regression test pass and rerun the original, unminimized loop.
 
-6. **Clean up and validate.** Remove all tagged instrumentation and grep for its prefix; delete throwaway harnesses unless they are intentionally retained as named regression tooling. Verify the original exact symptom is gone, the regression test passes or the seam gap is documented, the performance baseline improved when applicable, and the repository's full expected validation passes. Report any validation blocker explicitly.
+6. **Clean up and validate.** In either mode, remove all tagged instrumentation and reverse approved temporary diagnostic changes unless the user separately approves retaining them. Remove an artifact only when it has no continuing diagnostic, regression, or reference value. When an artifact remains useful, name its purpose, propose a durable location, and retain it only with approval. For remediation, verify the original exact symptom is gone, the regression test passes or the seam gap is documented, the performance baseline improved when applicable, and the repository's full expected validation passes. Report any validation blocker explicitly.
 
-## After either path
+## Finish the requested outcome
 
-After verifying the fix, state the confirmed cause and evidence and record them in the commit or PR message. Then ask what would have prevented the bug. If the evidence reveals hidden coupling, tangled callers, or no good test point, recommend the simplification branch of the `architecture` skill with those specifics. Do not let architectural follow-up delay or replace the verified fix.
+After diagnosis only, state the confirmed cause and evidence, distinguish any remaining uncertainty, and recommend the smallest next action. Ask whether to apply the fix only when remediation is a useful next step.
+
+After remediation, state the confirmed cause, fix, regression evidence, and validation. Include the cause in a commit or pull request message only when that artifact is separately approved and created. Then ask what would have prevented the bug. If the evidence reveals hidden coupling, tangled callers, or no good test point, recommend the simplification branch of the `architecture` skill with those specifics. Do not let architectural follow-up delay or replace the verified fix.
 
 ## Communication
 
-Keep the investigation internally thorough. Keep user updates concise: report the working loop, the ranked-hypothesis checkpoint, the confirmed cause, the fix and regression seam, and final validation or blockers. Do not narrate routine searches or every failed probe.
+Keep the investigation internally thorough. Keep user updates concise: report the working loop, the ranked-hypothesis checkpoint, and the confirmed cause. Report the fix, regression evidence, and final validation only after remediation. Do not narrate routine searches or every failed probe.
