@@ -61,11 +61,38 @@ Each comment should:
 
 1. Lead with a direct statement of the problem.
 2. Explain what the code does, when it happens, and the concrete consequence.
-3. Offer the smallest useful change as a suggestion. State what the change could achieve instead of telling the author what to do. Suggest a test when it proves the corrected behavior or prevents a likely regression.
+3. Offer the smallest useful change as a suggestion. Suggest a test when it proves the corrected behavior or prevents a likely regression.
+
+State the defect and consequence directly. Phrase the remediation as an option rather than a command. Use forms such as “X could…”, “One option is…”, or “This could be avoided by…”. Do not use imperative remediation such as “Render…”, “Include…”, or “Add…”.
+
+Prefer this remediation sentence:
+
+> A loading or unavailable state could ensure availability is shown only after a successful response.
+
+Avoid this remediation sentence:
+
+> Render a loading or unavailable state and only show availability after a successful response.
+
+Match each claim to the available evidence:
+
+- State verified behavior as fact.
+- State an unverified premise conditionally and name it, such as “If `null` means occupancy is unknown, …”.
+- When missing context affects the scope or remediation, say what needs confirming and why it matters.
+- Do not weaken a verified defect with “might”, “maybe”, or “could”. Reserve those words for genuine uncertainty or suggested remediation.
+
+Before stating that something is uncertain, try to resolve it from the available implementation, types, tests, configuration, documentation, and history. Only leave it uncertain when those sources do not establish the answer. Residual uncertainty may qualify a finding's scope or remediation, but it cannot substitute for evidence that the defect exists. If an unresolved premise determines whether there is a defect at all, do not report it as a finding. Do not classify a finding as **Blocking** while it depends on an unresolved material assumption.
+
+For example, when the defect is verified but the intended remediation is not:
+
+> This returns `success: true` after a reservation fails, so callers treat a partial reservation as complete. The repository does not establish whether partial failures should roll back or return item-level errors. Either approach could preserve the response contract; confirming the intended recovery behavior would determine which one fits.
 
 Keep one idea in each comment. Use code identifiers when they make the explanation more precise. Each comment must stand on its own without a top-level summary.
 
 When prose cannot make the triggering path clear, add a small state or sequence trace and follow it with a text explanation.
+
+Before returning the review, check each comment for unresolved evidence. If missing evidence affects the finding's scope or remediation, the comment must name the missing contract or fact and explain which decision it affects. Listing alternatives alone is not enough.
+
+Then scan every proposed change or test. Rewrite commands, including sentences using “must”, “should”, or “need to”, as suggestions.
 
 ## Return the result
 
