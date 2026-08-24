@@ -9,7 +9,7 @@ Rewrite prose for a capable reader who needs the relevant context without unnece
 
 ## Preserve the meaning
 
-Before rewriting, identify the main point, intended reader, and useful result. Preserve facts, requirements, safeguards, conditions, uncertainty, and precise technical terms. Follow any format or content rules for the artifact.
+Before rewriting, identify the main point, intended reader, and useful result. Preserve facts, requirements, safeguards, conditions, uncertainty, and any technical term whose exact wording carries meaning. Preserve precise meaning, not terminology for its own sake. Follow any format or content rules for the artifact.
 
 Read enough surrounding context to understand what the text means. If an ambiguity could materially change the rewrite, explain it and ask one focused question. Do not silently resolve it.
 
@@ -19,7 +19,9 @@ Treat pasted text as output-only unless the user asks you to edit a file.
 
 Lead with the main point, then develop one idea at a time. Start a new paragraph when the focus changes. Prefer short, direct sentences with enough variation and connection to read naturally.
 
-Use concrete subjects and direct verbs. Prefer plain, specific words over abstractions, internal jargon, stacked nouns, or inflated claims. Keep precise project and engineering terms when they help the reader. Explain necessary technical language once.
+Use concrete subjects and direct verbs. Prefer plain, specific words over abstractions, internal jargon, stacked nouns, or inflated claims.
+
+Treat reader competence and reader context separately. Do not infer familiarity with a system, domain, incident, or local vocabulary from general technical expertise. Prefer the reader's terms. Introduce a local term only when the reader needs its exact name to act or continue the discussion, and explain its practical meaning first.
 
 Use one term for each concept instead of rotating synonyms. Reserve hedges for real uncertainty, and state exactly what is unknown and why.
 
@@ -33,7 +35,9 @@ When explaining an unfamiliar process, system, or trade-off, begin with one conc
 
 Before asking a question, explain the situation that makes the answer necessary. Then ask one short, focused question.
 
-When describing a change, state what changed, what happened before, and why the new behavior is better. When giving an update, state what changed or was decided, what it means, and what happens next.
+When describing a change, state what changed, what happened before, and why the new behavior is better.
+
+Treat investigation notes as source material, not as the structure of the response. For a decision or update, state the conclusion, its practical effect, and what happens next. Include only the evidence the reader needs to understand or act; link the rest.
 
 Describe product requirements through user outcomes before implementation details when possible.
 
@@ -53,7 +57,8 @@ Confirm that:
 - the main point appears before supporting detail;
 - concrete subjects perform clear actions;
 - each paragraph or list has one purpose;
-- jargon, repetition, and process narration are gone;
+- unnecessary or unexplained jargon, repetition, and process narration are gone;
+- the reader can understand and act without decoding unfamiliar terms or reconstructing the conclusion from supporting evidence;
 - the result is concise without hiding necessary context.
 
 Return the rewritten text first. Add commentary only for a material ambiguity, trade-off, or intentional change the reader needs to know about.

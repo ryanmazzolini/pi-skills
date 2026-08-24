@@ -44,20 +44,25 @@ When existing workflow files, interruption, or context compaction make the state
 
 ## Confirm the implementation route
 
-Ship may start Research, Align, Design Doc, or Delivery Plan automatically when its trigger is met. Before production implementation, get explicit human approval for a compact route that names the delivery shape, steps used, and steps skipped:
+Ship may start Research, Align, Design Doc, or Delivery Plan automatically when its trigger is met. Ask for route approval only after intent is settled. Do not combine an unresolved product, safety, scope, or experience decision with route approval.
+
+Before production implementation, get explicit human approval for a compact route. Explain the route in ordinary project language; Ship's workflow names record the route but must not carry its meaning. A reader should be able to approve it without knowing Ship's vocabulary:
 
 ```md
-**Delivery:** [direct delivery, planned delivery, or selected roadmap milestone]
+**Proposal:** [one-sentence ordinary-language summary of how the work will proceed]
 
-**Use:** [every selected conditional step, completed or still needed; `None` when all are skipped]
+**Delivery:** [ordinary-language description] ([one of: `direct delivery`, `planned delivery`, or roadmap milestone])
+
+**Use:** [write `None` when every conditional step is skipped; otherwise list each selected step]
+- **[Concrete action]** (`Research`, `Align`, `Design Doc`, or `Delivery Plan`): [why it helps or what it settled]
 
 **Skip:**
-- **[Unused step]:** [why its trigger is not met]
+- **[Concrete omitted action]** (`Research`, `Align`, `Design Doc`, or `Delivery Plan`): [why it is not needed]
 
 **Proceed on this route?**
 ```
 
-Account for every one of Research, Align, Design Doc, and Delivery Plan exactly once under **Use** or **Skip**. Tie each skip to its trigger: evidence needs no Research beyond routine inspection; intent leaves no consequential choice for Align; wrong implicit experience, system, program, or order choices would not cause expensive rework requiring a Design Doc; or one coherent delivery needs no dependency plan. List Prototype only when an experiential uncertainty makes it plausible, and Roadmap only when several independently useful outcomes make it plausible. Do not manufacture a reason to mention either one on ordinary work.
+Account for every one of Research, Align, Design Doc, and Delivery Plan exactly once under **Use** or **Skip**. Put its workflow name in parentheses after the plain-language action. Tie each skip to its trigger: evidence needs no Research beyond routine inspection; intent leaves no consequential choice for Align; wrong implicit experience, system, program, or order choices would not cause expensive rework requiring a Design Doc; or one coherent delivery needs no dependency plan. List Prototype only when an experiential uncertainty makes it plausible, and Roadmap only when several independently useful outcomes make it plausible. Do not manufacture a reason to mention either one on ordinary work.
 
 One answer may approve every displayed skip. An exact instruction already approving the named route counts; a general request to implement does not. Fold this route summary into an existing plan or implementation confirmation when practical, but make the approval question cover both.
 
