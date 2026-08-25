@@ -45,6 +45,8 @@ Describe product requirements through user outcomes before implementation detail
 
 Artifact-specific instructions decide required content and format. This skill improves the prose without replacing those rules.
 
+For user interfaces, begin with the action the person is trying to complete and the visible effect. Use terms they encounter in their work. Keep service names, data-model terms, persistence details, and internal scope boundaries out of the interface unless knowing them changes what the person should do. Name buttons after the action or result, not the implementation mechanism.
+
 For pull requests, commit messages, and review comments, write about the project change and the context the reader needs. Keep investigation notes, prompting, and agent workflow out of the artifact.
 
 For agent instructions, use `writing-for-agents` to make the behavior contract reliable, then apply this skill to make it clear.
