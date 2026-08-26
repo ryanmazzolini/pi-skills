@@ -1,17 +1,21 @@
 ---
 name: "code-review"
-description: "Review code changes for defects they introduce and propose clear inline comments. Use for pull requests, commits, patches, or local diffs; combine with repository- and language-specific guidance."
+description: "Review code changes against their intended issue, recommend a human review action, and draft clear comments for introduced defects. Use for pull requests, stacked pull requests, commits, patches, or local diffs; combine with repository- and language-specific guidance."
 ---
 
 # Code Review
 
-Review the selected change for defects it introduces. A caller or companion skill may provide repository access, isolation, saved reports, or a required output format.
+Review the selected change against its intended outcome and for defects it introduces. A caller or companion skill may provide repository access, isolation, saved reports, or a required output format.
 
 ## Review target
 
-Identify the change's intent, base, head, and changed files. Review the exact requested commit or diff. If it changes during the review, refresh it before drawing conclusions.
+Identify each change's intent, base, head, and changed files. Review the exact requested commit or diff. If it changes during the review, refresh it before drawing conclusions.
 
-Read the diff, then inspect enough surrounding code, tests, repository instructions, and history to understand the affected behavior. Load applicable language, framework, security, or interface-review skills when they add relevant criteria.
+For a pull request, read its description and retrieve every explicitly linked issue before inspecting the implementation. Record the original problem, its user or operator impact, the requested outcome, acceptance criteria, and stated exclusions. If no issue is linked or an issue is unavailable, name the context used instead and do not infer missing requirements.
+
+For multiple or stacked pull requests, review each against its immediate parent. Keep its evidence, recommendation, and comments in a separate output section. Assign a finding to the pull request that introduced it, and do not repeat inherited findings higher in the stack.
+
+Read the diff, then inspect enough surrounding code, tests, repository instructions, architecture decisions, and history to understand the affected behavior. Load applicable language, framework, security, or interface-review skills when they add relevant criteria.
 
 Account for every changed file and any behavior that crosses file boundaries.
 
@@ -26,6 +30,8 @@ Remove only resources created for this review. Do not remove caller-provided or 
 Before returning the review result, stop processes and remove every clone, worktree, ref, dependency install, and generated artifact created for the review. Keep a resource while waiting for publication approval only when the publication step still needs it. Remove it after publishing or when publication is declined. If cleanup fails, report the exact resource left behind and the failure.
 
 ## Inspect the behavior
+
+Trace the requested outcome and each acceptance criterion into the implementation and tests. Confirm that the change produces the promised behavior rather than merely resembling the requested implementation. Respect explicit partial scope; when a pull request claims to close an issue, report a material unmet outcome as an introduced finding.
 
 Trace changed state and side effects beyond the edited lines.
 
@@ -45,15 +51,25 @@ Report a finding only when all of these are clear:
 
 Confirm suspected findings against the implementation and existing tests. When available, use a test, CI for the reviewed revision, or a focused reproduction.
 
-Put deterministic check failures under validation instead of repeating them as findings. Report the underlying defect only when it independently meets the requirements above.
+Treat deterministic check failures as evidence rather than duplicating them as comments. Mention a material failed or unavailable check under **Notable**; report the underlying defect only when it independently meets the requirements above.
 
-Do not report unsupported risks, generic requests for tests or documentation, low-value style preferences, or problems the change neither introduces nor makes worse.
+Do not report unsupported risks, generic requests for tests or documentation, or low-value style preferences.
 
-A finding is **Blocking** only when there is a concrete reason the change should not proceed.
+A pre-existing problem is not a pull-request finding. Flag one only when it is concrete, material, directly relevant to the reviewed behavior, and likely to receive a specific follow-up. Do not include an adjacent issue merely because the review exposed it. Put a qualifying note after introduced findings under **Existing issue**, say that the pull request did not introduce it, and link to the relevant code at an immutable revision and to its tracking item when available. It does not affect the pull-request recommendation and is not a proposed inline comment on the pull request.
+
+Classify introduced findings by the action the human reviewer should take:
+
+- **Wait for fix** means the reviewer should see the correction before approving. Use it for any required correction unless the reviewer can justify **Fix before merge**. Critical consequences, likely design or contract changes, and corrections whose validation is necessary for confidence always belong here.
+- **Fix before merge** means the defect must be addressed, and the reviewer can specifically justify that its expected correction is narrow enough not to need another review. The human may approve with the comment open.
+- **Non-blocking** means the pull request can merge without addressing the comment. Treat it as an optional improvement or follow-up.
 
 ## Write the comment
 
-Write each finding as a proposed inline comment on the smallest changed line or range that establishes the defect. Use the old side for deleted lines when the host supports it. Do not anchor comments to unchanged surrounding code. Order multiple comments by impact.
+Write each introduced finding as a proposed inline comment on the smallest changed line or range that establishes the defect. Use the old side for deleted lines when the host supports it. Do not anchor comments to unchanged surrounding code.
+
+Make the displayed file and line reference a deep link when the review host supports one. Use an immutable blob link pinned to the reviewed head, or to the base for deleted lines. A host-provided diff link is suitable only when it is pinned to the reviewed revision. Fall back to a plain path for local-only reviews rather than inventing a link. Display ranges as `path/to/file:81-86`; keep host-specific anchors such as `#L81-L86` in the URL.
+
+Group comments by action in this order: **Wait for fix**, **Fix before merge**, then **Non-blocking**. Order comments within each group by impact.
 
 Apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) when drafting each comment. Preserve the technical meaning and review requirements while making it ready to publish.
 
@@ -80,7 +96,7 @@ Match each claim to the available evidence:
 - When missing context affects the scope or remediation, say what needs confirming and why it matters.
 - Do not weaken a verified defect with “might”, “maybe”, or “could”. Reserve those words for genuine uncertainty or suggested remediation.
 
-Before stating that something is uncertain, try to resolve it from the available implementation, types, tests, configuration, documentation, and history. Only leave it uncertain when those sources do not establish the answer. Residual uncertainty may qualify a finding's scope or remediation, but it cannot substitute for evidence that the defect exists. If an unresolved premise determines whether there is a defect at all, do not report it as a finding. Do not classify a finding as **Blocking** while it depends on an unresolved material assumption.
+Before stating that something is uncertain, try to resolve it from the available implementation, types, tests, configuration, documentation, and history. Only leave it uncertain when those sources do not establish the answer. Residual uncertainty may qualify a finding's scope or remediation, but it cannot substitute for evidence that the defect exists. If an unresolved premise determines whether there is a defect at all, do not report it as a finding. Do not classify a finding as **Wait for fix** while it depends on an unresolved material assumption.
 
 For example, when the defect is verified but the intended remediation is not:
 
@@ -96,31 +112,80 @@ Then scan every proposed change or test. Rewrite commands, including sentences u
 
 ## Return the result
 
-When findings exist, return only the proposed inline comments. Classify every finding as **Blocking** or **Non-blocking** using the requirement above. If the caller or host requires another severity scheme, map it separately without replacing this classification.
+Return one section for each reviewed pull request, commit, or diff. For a hosted pull request, make the section title a link to it.
 
-Put the classification at the top of the publishable comment body. Keep the file and line outside it as presentation metadata:
+Lead each section with exactly one recommendation:
+
+- **Approve** when no introduced findings or **Discussion** remain. **Existing issue** notes do not affect this recommendation.
+- **Approve with comments** when the section contains **Fix before merge**, **Non-blocking**, or **Discussion** items but no **Wait for fix** finding.
+- **Wait for fixes** when any **Wait for fix** finding remains.
+
+Write it as `**Recommendation: Approve with comments.**` When comments exist, follow it with one short rationale:
+
+- For **Wait for fixes**, say what the human needs to verify before approving.
+- When **Fix before merge** items remain, name them and say why the human does not need to review their corrections again.
+- With only **Non-blocking** items, say that they are optional or suitable for follow-up.
+- With only **Discussion**, say that the open question does not block approval.
+
+This distinction allows a human to approve a narrow required correction without implying that the current revision is ready to merge.
+
+The recommendation advises the human reviewer. Do not approve the change or request changes on their behalf.
+
+Follow the recommendation with compact prose:
+
+- **Original issue.** For a hosted pull request with an available linked issue, summarize the original problem and requested outcome. Deep-link the issue. State the issue itself rather than narrating that it was retrieved or validated.
+- **Context.** Use this instead when a hosted pull request has no available linked issue. Name the PR description or other source used and state what required context remains unavailable.
+- **Intent.** Use this for a commit, patch, or local diff with a stated request. Omit it when no intent source is available rather than manufacturing context.
+- **Change.** Explain how the implementation addresses the issue or stated intent. When neither is available, describe only the observed behavior without claiming that it satisfies an unstated outcome. For hosted changes, link the defining implementation and tests to immutable reviewed revisions, and link CI or other validation evidence to the exact reviewed run.
+- **Notable.** Add this only for another fact, trade-off, dependency, or validation gap that materially helps the review. Do not emit an empty placeholder or a separate validation section.
+
+Then return the draft groups in this order, omitting empty groups: **Wait for fix**, **Fix before merge**, **Non-blocking**, **Discussion**, then **Existing issue**. The first three contain publishable inline comments. Put the classification at the top of each inline comment body, and keep the deep-linked file and line outside it as presentation metadata:
 
 ```markdown
-`path/to/file:line`
+### Fix before merge
 
-> **Blocking**
+[`path/to/file:line`](immutable-or-diff-link)
+
+> **Fix before merge**
 >
 > Exact comment body
 ```
 
-Include the smallest useful changed line range and diff side when needed. Apply AI attribution to the draft by default unless overridden explicitly by the user or policy in context. Keep the classification and any attribution inside the quoted comment body. The draft should match what would be published.
+Each **Existing issue** note must say that the pull request did not introduce the problem. If no groups remain, say that no inline comments are proposed.
 
-Do not add a top-level review body, summary, or verdict. Do not approve the change or request changes.
+Apply AI attribution to publishable drafts by default unless overridden explicitly by the user or policy in context. Keep the classification and any attribution inside the quoted comment body. Each draft should match what would be published.
 
-When no finding meets the requirements above, say that no inline comments are proposed. Do not create a top-level comment as a fallback.
+When another skill supplies an output schema, follow its structure while preserving the issue validation, per-target separation, recommendation, finding requirements, grouping, and prose above.
 
-When another skill supplies an output schema, follow its structure while preserving this skill's finding requirements, classification, inline-only delivery, and prose.
+## PR-level discussion
+
+A pull request may have at most one proposed top-level discussion comment. Use this exception only when every topic:
+
+- concerns an architecture decision or repository rule that materially affects the pull request;
+- spans several changes or cannot be fairly anchored to one changed line;
+- links to the decision and the defining changes; and
+- needs context from the author before the reviewer can draw a conclusion.
+
+Combine multiple qualifying topics into short, readable paragraphs in the same comment. State the observed relationship and ask one focused question for each topic. Do not add an action classification, prescribe a remedy, or change the recommendation to **Wait for fixes** because of an unresolved discussion.
+
+Present it only when it exists:
+
+```markdown
+### Discussion — PR-level comment
+
+> [ADR-012](immutable-link) places operational reads behind the Admin Gateway. This pull request adds a [worker route](immutable-link) and [direct dashboard request](immutable-link). Does infrastructure still route this request through the gateway?
+```
+
+Deep-link each referenced decision and defining change inside the discussion body at an immutable reviewed revision.
+
+Do not use a top-level comment because an ordinary finding lacks a valid inline anchor.
 
 ## Publish comments
 
 Before publishing:
 
 1. Show the exact destination and body unless the user already approved that text.
-2. If the host cannot attach a finding to a relevant changed line, stop and explain that it cannot be published inline. Do not move it to unchanged code or a top-level comment.
-3. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body. Never approve or request changes.
-4. Read each published comment back and verify its target, content, and formatting.
+2. If the host cannot attach an introduced finding to a relevant changed line, stop and explain that it cannot be published inline. Do not move it to unchanged code or a top-level comment.
+3. Publish a proposed **Discussion** only as the single top-level comment described above. Treat **Existing issue** items as reviewer notes unless the user chooses a separate destination.
+4. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body. Never approve or request changes.
+5. Read each published comment back and verify its target, content, and formatting.
