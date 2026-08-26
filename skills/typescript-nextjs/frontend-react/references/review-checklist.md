@@ -25,6 +25,7 @@ Use before finalizing generated frontend code or addressing PR review feedback.
 - Custom controls have keyboard behavior and ARIA state, or are replaced with native controls.
 - Focus indicators are visible.
 - Touch targets are large enough for primary actions.
+- Motion has a user-visible purpose, does not lag behind frequent or keyboard input, and respects reduced-motion preferences.
 
 ## Tests and Validation
 

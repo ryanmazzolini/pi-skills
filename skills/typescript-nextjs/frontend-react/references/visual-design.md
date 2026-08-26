@@ -15,6 +15,7 @@ Bias correction for LLM styling defaults. Adapted from [taste-skill](https://git
 
 - `min-h-[100dvh]` over `h-screen` for full-height sections (iOS Safari viewport jump).
 - CSS Grid over flex percentage math (`w-[calc(33%-1rem)]` is a bug farm).
+- Before adding motion, use `hci` to decide whether it helps the user or merely adds friction.
 - Animate only `transform` and `opacity`; never `top`/`left`/`width`/`height`.
 - Every animation respects `prefers-reduced-motion`.
 - Forms: label above input, error text below, consistent `gap-2`.
