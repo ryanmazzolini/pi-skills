@@ -12,6 +12,7 @@ import { createPiChildSessionAdapter, resolveChildResources } from "./child-sess
 import { createParentDelivery, type DeliveryMetadata } from "./delivery.ts";
 import { createFileRunRepository } from "./persistence.ts";
 import {
+	DEFAULT_MAX_ACTIVE_CHILDREN,
 	DelegateRuntime,
 	deriveRunStatus,
 	projectRun,
@@ -786,7 +787,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 			children: createPiChildSessionAdapter(),
 			delivery,
 			workspaces: createGitWorkspaceManager(),
-			maxActiveChildren: 3,
+			maxActiveChildren: DEFAULT_MAX_ACTIVE_CHILDREN,
 		});
 		delegateUi = createDelegateUi(runtime);
 		runtimeSubscription = runtime.subscribe(() => syncControlTool());
