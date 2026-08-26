@@ -13,6 +13,7 @@ Load only the references the task touches:
 - [references/INTERACTION-STATES.md](references/INTERACTION-STATES.md) — loading, empty, error, success, destructive-action, and validation states.
 - [references/ACCESSIBILITY.md](references/ACCESSIBILITY.md) — semantic HTML, WCAG thresholds, keyboard flow, focus, forms, screen readers.
 - [references/RESPONSIVE.md](references/RESPONSIVE.md) — mobile-first layout, touch targets, overflow, slow networks, low-end devices.
+- [references/MOTION.md](references/MOTION.md) — whether motion helps, frequent and keyboard-driven interactions, duration, reduced motion.
 
 ## External References
 
