@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Opinionated pi skills — planning, git workflows, code review, and dev conventions",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "bin": {
     "daily-report": "skills/notes/daily-report/scripts/daily-report.mjs",
     "scheduled-jobs": "bin/scheduled-jobs.mjs"
@@ -14,7 +16,10 @@
   "scripts": {
     "test": "npm run validate:skills && npm run typecheck:extensions && node --test",
     "typecheck:extensions": "tsc --noEmit -p tsconfig.extensions.json",
-    "validate:skills": "node scripts/validate-skills.mjs"
+    "validate:skills": "node scripts/validate-skills.mjs",
+    "eval:skills": "dotenv -e .env -- sh -c 'cd evals/skills && exec baml run RunEval -- \"$@\"' sh",
+    "eval:skills:check": "cd evals/skills && baml check && baml test -i 'contracts::*'",
+    "eval:skills:test": "dotenv -e .env -- sh -c 'if [ -t 2 ] && [ \"${TERM:-}\" != dumb ]; then export SKILL_EVAL_SPINNER=1; fi; cd evals/skills && baml test -i \"research::*\"; status=$?; if [ \"${SKILL_EVAL_SPINNER:-}\" = 1 ]; then printf \"\\033[?25h\" >&2; fi; exit $status'"
   },
   "license": "MIT",
   "repository": {
@@ -37,10 +42,15 @@
     "@earendil-works/pi-tui": "0.83.0",
     "@types/node": "^24.0.0",
     "typebox": "^1.1.38",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "dotenv-cli": "^11.0.0"
   },
   "pi": {
-    "skills": ["./skills"],
-    "extensions": ["./extensions"]
+    "skills": [
+      "./skills"
+    ],
+    "extensions": [
+      "./extensions"
+    ]
   }
 }
