@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 export const RUN_SCHEMA_VERSION = 3;
 export const DEFAULT_RESULT_LIMIT_BYTES = 32 * 1024;
+export const DEFAULT_MAX_ACTIVE_CHILDREN = 10;
 
 export type ChildState =
 	| "queued"
@@ -678,7 +679,7 @@ export class DelegateRuntime {
 		this.children = options.children;
 		this.delivery = options.delivery;
 		this.workspaces = options.workspaces;
-		this.maxActiveChildren = options.maxActiveChildren ?? 3;
+		this.maxActiveChildren = options.maxActiveChildren ?? DEFAULT_MAX_ACTIVE_CHILDREN;
 		this.now = options.now ?? (() => new Date());
 		this.createId = options.createId ?? ((kind) => `${kind}_${crypto.randomUUID()}`);
 	}

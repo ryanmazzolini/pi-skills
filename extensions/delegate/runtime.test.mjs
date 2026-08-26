@@ -213,20 +213,24 @@ test("coalesces duplicate streaming activity while preserving a liveness heartbe
   unsubscribe();
 });
 
-test("a four-child batch runs three children and starts the fourth in FIFO order", async () => {
+test("an eleven-child batch runs ten children and starts the eleventh in FIFO order", async () => {
   const { runtime, children } = runtimeFixture();
+  const labels = Array.from({ length: 11 }, (_, index) => `task-${index + 1}`);
   const handle = await runtime.start(startInput({
-    tasks: ["one", "two", "three", "four"].map((task) => ({ task, label: task })),
+    tasks: labels.map((task) => ({ task, label: task })),
   }));
   await settle();
 
-  assert.deepEqual(children.launches.map((launch) => launch.input.child.label), ["one", "two", "three"]);
-  assert.deepEqual(runtime.get(handle.runId).children.map((child) => child.state), ["running", "running", "running", "queued"]);
+  assert.deepEqual(children.launches.map((launch) => launch.input.child.label), labels.slice(0, 10));
+  assert.deepEqual(runtime.get(handle.runId).children.map((child) => child.state), [
+    ...Array.from({ length: 10 }, () => "running"),
+    "queued",
+  ]);
 
-  children.launches[1].done.resolve(success("two done"));
+  children.launches[1].done.resolve(success("task done"));
   await settle();
-  assert.deepEqual(children.launches.map((launch) => launch.input.child.label), ["one", "two", "three", "four"]);
-  assert.equal(runtime.get(handle.runId).children[3].state, "running");
+  assert.deepEqual(children.launches.map((launch) => launch.input.child.label), labels);
+  assert.equal(runtime.get(handle.runId).children[10].state, "running");
 });
 
 test("the inference queue is FIFO across separate runs", async () => {
@@ -411,7 +415,7 @@ test("accepting a held attention reply removes the obsolete recoverable request 
 });
 
 test("cancellation holds its inference slot until the child abort settles", async () => {
-  const { runtime, children } = runtimeFixture();
+  const { runtime, children } = runtimeFixture({ maxActiveChildren: 3 });
   const handle = await runtime.start(startInput({
     tasks: ["one", "two", "three", "four", "five"].map((task) => ({ task, label: task })),
   }));
