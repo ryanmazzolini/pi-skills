@@ -21,6 +21,12 @@ Lead with the main point, then develop one idea at a time. Start a new paragraph
 
 Use concrete subjects and direct verbs. Prefer plain, specific words over abstractions, internal jargon, stacked nouns, or inflated claims.
 
+Prefer facts to shorthand. Write requirements as actions or conditions, not names for bodies of work. Do not assume readers share a label because the source uses it. Keep a label only when the context shows readers know its meaning, when the text defines and reuses it, or when the reader needs the exact name. Otherwise write the facts. Before returning, remove each label while keeping its explanation. If the reader can still understand and act, and the label does not save a repeated explanation, leave it out.
+
+For example, replace “this request is urgent” with “send the answer before 3 pm today.” Replace “finish the opening checks” with “unlock both exits and test the smoke alarm.”
+
+If the text already says what the reader needs in plain words, leave it alone. Change a sentence only when you can name what the reader could misunderstand or struggle to find. Style preference is not enough. Do not swap synonyms, join or split sentences, or add transitions merely to produce a rewrite.
+
 Treat reader competence and reader context separately. Do not infer familiarity with a system, domain, incident, or local vocabulary from general technical expertise. Prefer the reader's terms. Introduce a local term only when the reader needs its exact name to act or continue the discussion, and explain its practical meaning first.
 
 Use one term for each concept instead of rotating synonyms. Reserve hedges for real uncertainty, and state exactly what is unknown and why.
@@ -59,6 +65,10 @@ Confirm that:
 - the main point appears before supporting detail;
 - concrete subjects perform clear actions;
 - each paragraph or list has one purpose;
+- requirements state actions or conditions instead of only naming work;
+- each remaining label is known to the reader, defined and reused, or an exact name they need;
+- describing words either change the meaning or have been removed;
+- each changed sentence fixes something the reader could misunderstand or struggle to find;
 - unnecessary or unexplained jargon, repetition, and process narration are gone;
 - the reader can understand and act without decoding unfamiliar terms or reconstructing the conclusion from supporting evidence;
 - the result is concise without hiding necessary context.
