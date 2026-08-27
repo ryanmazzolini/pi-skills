@@ -8,13 +8,15 @@ Use independent review earlier only for a named uncertainty or risk that is chea
 
 Choose the lenses, reviewer count, model, reasoning depth, and order from how new, hard to reverse, wide-reaching, or visible the work is; what can fail; the strength of validation; and earlier findings. Load `agent-coordination` before choosing delegated routes. Do not hardcode model names here.
 
-Use the smallest review that can credibly challenge the result:
+Delegated reviewers do not inherit ambient skills. Before each delegate call, choose the skills that define the review criteria and pass every applicable name through `delegate.skills`. Include `code-review` for a final code-bearing review. Add relevant language, framework, and lens-specific skills, such as `security-review` for a security lens, `frontend-hci-review` for a user flow, or `writing-for-agents` for agent instructions. Do not rely on task prose asking the reviewer to load a skill that was not provided.
+
+Use the smallest review that can credibly challenge the result. When the target has independent risk surfaces or evidence partitions, dispatch focused read-only reviewers in parallel and synthesize their findings. Keep one holistic lens when cross-cutting behavior is itself a risk. Do not create duplicate lenses merely to increase the reviewer count.
 
 - A narrow mechanical delivery may need one lightweight review of intended behavior and unintended changes.
-- Ordinary implementation usually needs one balanced review of accepted behavior, correctness, regressions, and whether validation reaches the real user or system boundary. Add a separate UX, maintainability, or compatibility lens only when it could change the result.
+- Ordinary implementation needs coverage of accepted behavior, correctness, regressions, and whether validation reaches the real user or system boundary. Use one reviewer when the target is narrow enough to cover those together; otherwise split distinct behavior, validation, UX, maintainability, or compatibility lenses when each could change the result.
 - Destructive, concurrent, security-sensitive, release, or migration work may need several independent lenses, deeper reasoning, earlier hazard review, or a dedicated security reviewer.
 
-Reviewers start with fresh context and work read-only. Give them the approved alignment or other authority that defines correctness, the exact code-bearing target, one clear lens, relevant repository guidance, and available validation. Review the integrated result rather than isolated agent outputs.
+Reviewers start with fresh context and work read-only. Pass an explicit inspection-only tool allowlist and omit `edit` and `write`. When a reviewer needs `bash`, limit it to non-mutating inspection or validation in disposable temporary infrastructure. Give reviewers the approved alignment or other authority that defines correctness, the exact code-bearing target, one clear lens, relevant repository guidance, and available validation. Review the integrated result rather than isolated agent outputs.
 
 ## Review earlier selectively
 
@@ -30,7 +32,7 @@ Re-review only when a fix materially changes accepted behavior, the risk profile
 
 Bind review evidence to the reviewed commit or range, or to a working-tree diff fingerprint. Record later changes, why they were material or nonmaterial, and any resulting validation. Evidence remains current through documented nonmaterial changes; material changes require a new pass.
 
-For durable work, record each completed pass in `review-evidence.md` beside the workflow files. For a vault-native work item, resolve the review-evidence target through the helper in [workflow-profiles.md](workflow-profiles.md) before writing it. Include the exact target, review lenses and routes, findings and their resolution, post-review changes, validation, and remaining risk. This is a working record, not part of the reviewed target or deliverable diff. Keep raw transcripts out of the workflow.
+For durable work, record each completed pass in `review-evidence.md` beside the workflow files. For a vault-native work item, resolve the review-evidence target through the helper in [workflow-profiles.md](workflow-profiles.md) before writing it. Include the exact target, review lenses, selected skills and routes, findings and their resolution, post-review changes, validation, and remaining risk. This is a working record, not part of the reviewed target or deliverable diff. Keep raw transcripts out of the workflow.
 
 ## Present the result
 
