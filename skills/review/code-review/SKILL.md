@@ -57,11 +57,23 @@ Do not report unsupported risks, generic requests for tests or documentation, or
 
 A pre-existing problem is not a pull-request finding. Flag one only when it is concrete, material, directly relevant to the reviewed behavior, and likely to receive a specific follow-up. Do not include an adjacent issue merely because the review exposed it. Put a qualifying note after introduced findings under **Existing issue**, say that the pull request did not introduce it, and link to the relevant code at an immutable revision and to its tracking item when available. It does not affect the pull-request recommendation and is not a proposed inline comment on the pull request.
 
-Classify introduced findings by the action the human reviewer should take:
+Before classifying findings or recommending an action, assess the risk of merging the reviewed revision. Use **Low**, **Moderate**, or **High** as a concise judgment, not a score. Consider:
 
-- **Wait for fix** means the reviewer should see the correction before approving. Use it for any required correction unless the reviewer can justify **Fix before merge**. Critical consequences, likely design or contract changes, and corrections whose validation is necessary for confidence always belong here.
-- **Fix before merge** means the defect must be addressed, and the reviewer can specifically justify that its expected correction is narrow enough not to need another review. The human may approve with the comment open.
+- the worst credible consequence and how many users, systems, or records it could affect;
+- whether failure is easy to detect, contain, reverse, or repair;
+- exposure involving data integrity, security, money, contracts, concurrency, asynchronous ordering, migrations, or compatibility;
+- rollout controls, observability, and exact-head validation that reduce the risk; and
+- complexity or novelty that makes an undiscovered defect more likely.
+
+Judge the residual risk with those controls in place. High risk does not prevent approval when the evidence and safeguards are sufficient. Low risk does not excuse a material unmet outcome. Do not inflate the rating with unsupported possibilities.
+
+Classify each introduced finding in the current reviewed revision by what it blocks. A small or already-understood correction may justify **Blocks merge**, but it does not remove the finding until the reviewed head contains it.
+
+- **Blocks approval** means the reviewer should see the correction before approving. Use it when the consequence is material in the context of the change, the correction may alter a design or contract, or validation of the correction is necessary for confidence. Higher-risk changes require stronger justification before using **Blocks merge** instead.
+- **Blocks merge** means the defect must be addressed, but its consequence is limited and the expected correction is isolated and clear enough not to need another review. The human may approve with the comment open.
 - **Non-blocking** means the pull request can merge without addressing the comment. Treat it as an optional improvement or follow-up.
+
+A material confidence gap may block approval even when it is not a proven defect. Use this only when specific missing evidence prevents confidence proportional to the change risk, such as unavailable exact-head validation for a destructive migration. Put it under **Notable**, name the evidence needed, and do not turn it into an inline finding or a generic request for more tests. Do not create a separate confidence gap for evidence already required to resolve a **Blocks approval** finding; name that verification in the finding or recommendation rationale instead.
 
 ## Write the comment
 
@@ -69,7 +81,7 @@ Write each introduced finding as a proposed inline comment on the smallest chang
 
 Make the displayed file and line reference a deep link when the review host supports one. Use an immutable blob link pinned to the reviewed head, or to the base for deleted lines. A host-provided diff link is suitable only when it is pinned to the reviewed revision. Fall back to a plain path for local-only reviews rather than inventing a link. Display ranges as `path/to/file:81-86`; keep host-specific anchors such as `#L81-L86` in the URL.
 
-Group comments by action in this order: **Wait for fix**, **Fix before merge**, then **Non-blocking**. Order comments within each group by impact.
+Group comments by action in this order: **Blocks approval**, **Blocks merge**, then **Non-blocking**. Order comments within each group by impact.
 
 Apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) when drafting each comment. Preserve the technical meaning and review requirements while making it ready to publish.
 
@@ -96,7 +108,7 @@ Match each claim to the available evidence:
 - When missing context affects the scope or remediation, say what needs confirming and why it matters.
 - Do not weaken a verified defect with “might”, “maybe”, or “could”. Reserve those words for genuine uncertainty or suggested remediation.
 
-Before stating that something is uncertain, try to resolve it from the available implementation, types, tests, configuration, documentation, and history. Only leave it uncertain when those sources do not establish the answer. Residual uncertainty may qualify a finding's scope or remediation, but it cannot substitute for evidence that the defect exists. If an unresolved premise determines whether there is a defect at all, do not report it as a finding. Do not classify a finding as **Wait for fix** while it depends on an unresolved material assumption.
+Before stating that something is uncertain, try to resolve it from the available implementation, types, tests, configuration, documentation, and history. Only leave it uncertain when those sources do not establish the answer. Residual uncertainty may qualify a finding's scope or remediation, but it cannot substitute for evidence that the defect exists. If an unresolved premise determines whether there is a defect at all, do not report it as a finding. Do not classify a finding as **Blocks approval** while it depends on an unresolved material assumption.
 
 For example, when the defect is verified but the intended remediation is not:
 
@@ -116,18 +128,18 @@ Return one section for each reviewed pull request, commit, or diff. For a hosted
 
 Lead each section with exactly one recommendation:
 
-- **Approve** when no introduced findings or **Discussion** remain. **Existing issue** notes do not affect this recommendation.
-- **Approve with comments** when the section contains **Fix before merge**, **Non-blocking**, or **Discussion** items but no **Wait for fix** finding.
-- **Wait for fixes** when any **Wait for fix** finding remains.
+- **Approve** when no introduced findings or **Discussion** remain and the evidence is sufficient for the change risk. **Existing issue** notes do not affect this recommendation.
+- **Approve with comments** when the section contains **Blocks merge**, **Non-blocking**, or **Discussion** items but no **Blocks approval** finding or material confidence gap.
+- **Wait before approving** when any **Blocks approval** finding remains or a material confidence gap prevents a risk-proportionate review.
 
-Write it as `**Recommendation: Approve with comments.**` When comments exist, follow it with one short rationale:
+Write it as `**Recommendation: Approve with comments.**` Follow it with `**Change risk: <rating>.**`, replacing `<rating>` with the assessed **Low**, **Moderate**, or **High** value, and one short explanation of the main exposure, containment or recovery path, and evidence that affects the decision. Then add one short recommendation rationale when comments or a material confidence gap exist:
 
-- For **Wait for fixes**, say what the human needs to verify before approving.
-- When **Fix before merge** items remain, name them and say why the human does not need to review their corrections again.
+- For **Wait before approving**, say what the human needs to verify before approving.
+- When **Blocks merge** items remain, name them and say why the human does not need to review their corrections again.
 - With only **Non-blocking** items, say that they are optional or suitable for follow-up.
 - With only **Discussion**, say that the open question does not block approval.
 
-This distinction allows a human to approve a narrow required correction without implying that the current revision is ready to merge.
+This distinction allows a human to approve a narrow required correction without implying that the current revision is ready to merge. The risk statement explains why the same type of defect may warrant a different action in a more consequential or harder-to-recover change.
 
 The recommendation advises the human reviewer. Do not approve the change or request changes on their behalf.
 
@@ -139,14 +151,14 @@ Follow the recommendation with compact prose:
 - **Change.** Explain how the implementation addresses the issue or stated intent. When neither is available, describe only the observed behavior without claiming that it satisfies an unstated outcome. For hosted changes, link the defining implementation and tests to immutable reviewed revisions, and link CI or other validation evidence to the exact reviewed run.
 - **Notable.** Add this only for another fact, trade-off, dependency, or validation gap that materially helps the review. Do not emit an empty placeholder or a separate validation section.
 
-Then return the draft groups in this order, omitting empty groups: **Wait for fix**, **Fix before merge**, **Non-blocking**, **Discussion**, then **Existing issue**. The first three contain publishable inline comments. Put the classification at the top of each inline comment body, and keep the deep-linked file and line outside it as presentation metadata:
+Then return the draft groups in this order, omitting empty groups: **Blocks approval**, **Blocks merge**, **Non-blocking**, **Discussion**, then **Existing issue**. The first three contain publishable inline comments. Put the classification at the top of each inline comment body, and keep the deep-linked file and line outside it as presentation metadata:
 
 ```markdown
-### Fix before merge
+### Blocks merge
 
 [`path/to/file:line`](immutable-or-diff-link)
 
-> **Fix before merge**
+> **Blocks merge**
 >
 > Exact comment body
 ```
@@ -166,7 +178,7 @@ A pull request may have at most one proposed top-level discussion comment. Use t
 - links to the decision and the defining changes; and
 - needs context from the author before the reviewer can draw a conclusion.
 
-Combine multiple qualifying topics into short, readable paragraphs in the same comment. State the observed relationship and ask one focused question for each topic. Do not add an action classification, prescribe a remedy, or change the recommendation to **Wait for fixes** because of an unresolved discussion.
+Combine multiple qualifying topics into short, readable paragraphs in the same comment. State the observed relationship and ask one focused question for each topic. Do not add an action classification, prescribe a remedy, or change the recommendation to **Wait before approving** because of an unresolved discussion.
 
 Present it only when it exists:
 
