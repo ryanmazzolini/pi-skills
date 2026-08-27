@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
+import { childOutputGuidance, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-resources-test-"));
@@ -88,6 +88,46 @@ test("temporary worktrees preserve project skill identity across root relocation
     resolvedSkillIdentity(child, { name: "user-skill", filePath: "/other/user-skill/SKILL.md" }, false),
     resolvedSkillIdentity(child, { name: "user-skill", filePath: "/other/different/SKILL.md" }, true),
   );
+});
+
+test("structured child guidance requires the final tool without conflicting text instructions", () => {
+  assert.match(childOutputGuidance({ schema: { type: "object" } }), /call delegate_final exactly once/);
+  assert.match(childOutputGuidance({ schema: { type: "object" } }), /Do not return the result as assistant text/);
+  assert.match(childOutputGuidance("text"), /Return a concise final answer/);
+});
+
+test("recovers only exact schema-valid structured assistant text", () => {
+  const output = {
+    schema: {
+      type: "object",
+      properties: {
+        answer: { type: "string" },
+        count: { type: "integer" },
+      },
+      required: ["answer", "count"],
+      additionalProperties: false,
+    },
+  };
+
+  assert.deepEqual(
+    recoverStructuredResult(output, '{"answer":"done","count":2}'),
+    { answer: "done", count: 2 },
+  );
+  assert.deepEqual(
+    recoverStructuredResult(output, '  {"answer":"done","count":2}\n'),
+    { answer: "done", count: 2 },
+  );
+
+  for (const text of [
+    'Result: {"answer":"done","count":2}',
+    '```json\n{"answer":"done","count":2}\n```',
+    '{"answer":"done"}',
+    '{"answer":"done","count":"2"}',
+    '{"answer":"done","count":2,"extra":true}',
+    '{not json}',
+  ]) {
+    assert.equal(recoverStructuredResult(output, text), undefined);
+  }
 });
 
 test("runtime-owned terminal tools are sequential and stop mixed tool batches", async () => {
