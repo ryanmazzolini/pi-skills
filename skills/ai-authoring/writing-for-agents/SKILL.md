@@ -24,7 +24,7 @@ Keep instructions needed on every run in the active document. Put uncommon cases
 
 Treat the repository and runtime as sources of truth. Do not cache commands, file layouts, or configuration that the agent can inspect cheaply unless the lookup has a real trap or cost.
 
-Keep each meaning in one authoritative place. Put reusable policy in configuration, task-specific continuation material in its durable work item, and disposable traces in the session or a temporary directory. Co-locate a rule with its conditions and caveats. Use a small number of canonical examples only when they clarify an ambiguous choice or required output.
+Keep each meaning in one place. Put reusable policy in configuration, task-specific continuation material in its durable work item, and disposable traces in the session or a temporary directory. Co-locate a rule with its conditions and caveats. Use a small number of canonical examples only when they clarify an ambiguous choice or required output.
 
 ## Make behavior checkable
 
