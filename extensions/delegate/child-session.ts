@@ -13,6 +13,7 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
+import { Check } from "typebox/value";
 import {
 	childWorkspaceCwd,
 	type AttentionKind,
@@ -45,7 +46,7 @@ export function childSessionModelRuntime(modelRegistry: ExtensionContext["modelR
 
 const CHILD_GUIDANCE = [
 	"You are a delegated child working for a parent Pi session.",
-	"Complete only the assigned task and return a concise final answer with concrete evidence.",
+	"Complete only the assigned task.",
 	"Do not address the end user, open interactive dialogs, or delegate to other agents.",
 	"Follow the applicable AGENTS.md instructions and use only the tools provided to this child session.",
 	`When you need clarification, approval, or a parent-owned decision, call ${ATTENTION_TOOL} once instead of guessing or addressing the user.`,
@@ -54,6 +55,25 @@ const CHILD_GUIDANCE = [
 interface TurnCapture {
 	attention?: { kind: AttentionKind; question: string; context?: string };
 	structured?: unknown;
+}
+
+export function childOutputGuidance(output: ChildOutputContract): string {
+	return output === "text"
+		? "Return a concise final answer with concrete evidence."
+		: `This task requires structured output. When complete, call ${FINAL_TOOL} exactly once to submit it. Do not return the result as assistant text.`;
+}
+
+export function recoverStructuredResult(
+	output: Exclude<ChildOutputContract, "text">,
+	text: string,
+): unknown | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+	return Check(Type.Unsafe(output.schema), parsed) ? parsed : undefined;
 }
 
 function usageFromSession(session: { getSessionStats(): { tokens: Omit<ChildUsage, "cost">; cost: number } }): ChildUsage {
@@ -290,13 +310,17 @@ async function createChild(
 	if (signal.aborted) throw new Error("Child start cancelled");
 	const agentDir = getAgentDir();
 	const cwd = childWorkspaceCwd(child.workspace);
+	const additionalGuidance = [
+		childOutputGuidance(child.resolved.output),
+		...(child.workspace.kind === "temporary"
+			? ["This is an extension-owned temporary workspace. Do not commit, create branches, or change Git history; leave filesystem changes for parent review."]
+			: []),
+	];
 	const { loader, settingsManager, resolvedSkills } = await createChildResourceLoader(
 		cwd,
 		agentDir,
 		child.resolved.skills.map((skill) => skill.name),
-		child.workspace.kind === "temporary"
-			? ["This is an extension-owned temporary workspace. Do not commit, create branches, or change Git history; leave filesystem changes for parent review."]
-			: [],
+		additionalGuidance,
 	);
 	const expectedSkills = child.resolved.skills
 		.map((skill) => resolvedSkillIdentity(child, skill, false))
@@ -357,13 +381,19 @@ async function createChild(
 			await session.prompt(prompt, { expandPromptTemplates: false, source: "extension" });
 			const usage = usageFromSession(session);
 			if (turnCapture.attention) return { kind: "attention", request: turnCapture.attention, usage };
-			if (child.resolved.output !== "text") {
-				if (turnCapture.structured === undefined) {
-					return { kind: "failure", message: `Child did not submit a result through ${FINAL_TOOL}`, usage };
-				}
-				return { kind: "success", result: { kind: "structured", value: turnCapture.structured }, usage };
-			}
 			const assistant = lastAssistant(session.messages);
+			if (child.resolved.output !== "text") {
+				if (turnCapture.structured !== undefined) {
+					return { kind: "success", result: { kind: "structured", value: turnCapture.structured }, usage };
+				}
+				if (assistant.stopReason !== "error" && assistant.stopReason !== "aborted") {
+					const recovered = recoverStructuredResult(child.resolved.output, assistant.text);
+					if (recovered !== undefined) {
+						return { kind: "success", result: { kind: "structured", value: recovered }, usage };
+					}
+				}
+				return { kind: "failure", message: `Child did not submit a result through ${FINAL_TOOL}`, usage };
+			}
 			if (assistant.stopReason === "error" || assistant.stopReason === "aborted") {
 				return {
 					kind: "failure",
