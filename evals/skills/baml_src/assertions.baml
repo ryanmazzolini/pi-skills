@@ -19,6 +19,7 @@ function EvaluateHardAssertion(
         let value: ToolBeforeAssertion => EvaluateToolBefore(value, calls),
         let value: QueryBatchAssertion => EvaluateQueryBatch(value, calls),
         let value: CommandAllowlistAssertion => EvaluateCommandAllowlist(value, calls),
+        let value: UrlCountAssertion => EvaluateUrlCount(value, calls),
     }
 }
 
@@ -178,6 +179,44 @@ function EvaluateCommandAllowlist(
         passed: unexpected.length() == 0,
         evidence: evidence,
     }
+}
+
+function EvaluateUrlCount(
+    assertion: UrlCountAssertion,
+    calls: ToolCallRecord[],
+) -> HardAssertionResult {
+    let matching: ToolCallRecord[] = [];
+    let url_count = 0;
+    for (let call in calls) {
+        if (call.tool == assertion.tool) {
+            matching.push(call);
+            let urls: string[] = call.urls ?? [];
+            if (urls.length() > 0) {
+                url_count += urls.length();
+            } else if (call.url != null) {
+                url_count += 1;
+            };
+        };
+    }
+    ;
+    let minimum = assertion.min ?? 0;
+    let maximum = assertion.max ?? 2147483647;
+    let passed = url_count >= minimum && url_count <= maximum;
+    let expected: string[] = [];
+    if (assertion.min != null) {
+        expected.push("at least " + assertion.min.to_string());
+    };
+    if (assertion.max != null) {
+        expected.push("at most " + assertion.max.to_string());
+    };
+    let evidence = [
+        `Observed ${url_count} URL entry or entries across ${matching.length()} ${assertion.tool} call(s); expected ${expected.join(" and ")}.`,
+    ];
+    for (let call in matching) {
+        evidence.push(`tool call ${call.index}: ${baml.json.to_string(call)}`);
+    }
+    ;
+    HardAssertionResult { description: assertion.description, passed: passed, evidence: evidence }
 }
 
 function AllHardAssertionsPass(results: HardAssertionResult[]) -> bool {

@@ -73,10 +73,19 @@ class CommandAllowlistAssertion {
     description: string,
 }
 
+class UrlCountAssertion {
+    kind: "url-count",
+    tool: "fetch_content",
+    min: int?,
+    max: int?,
+    description: string,
+}
+
 type HardAssertion = ToolCountAssertion
     | ToolBeforeAssertion
     | QueryBatchAssertion
-    | CommandAllowlistAssertion;
+    | CommandAllowlistAssertion
+    | UrlCountAssertion;
 
 class SemanticCriterion {
     id: string,
