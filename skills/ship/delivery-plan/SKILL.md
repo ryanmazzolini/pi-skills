@@ -7,6 +7,8 @@ description: Plan dependency-aware delivery changes for one approved benefit. Us
 
 Turn one approved benefit into the smallest useful `plan.md`, then stop before implementation. A delivery plan is optional. If one coherent direct change can deliver the benefit safely, tell Ship that no plan is needed rather than manufacturing one.
 
+Keep planning mechanics in `plan.md`. When talking to the user, lead with what becomes possible, why the work must be separated, and which concrete change can start. Do not make them decode delivery-change labels, dependency-graph checks, ready sets, enablers, or Ship workflow names unless an exact name helps them review the plan.
+
 ## Confirm the planning input
 
 Use a caller-supplied workflow directory only after [`durable-context.md`](../ship/references/durable-context.md) classifies it as a relevant legacy workflow or this workspace profile's canonical work item. Otherwise follow that reference to locate or create the workflow. Do not independently create a repository `.plans` workflow.
@@ -106,6 +108,6 @@ Use project language for outcomes and implementation names only in tasks. Point 
 
 Rerun the outcome and graph checks. For vault-native work, resolve `plan.md` and `index.md` through the workflow-profile helper before writing, then set `Current` to the plan. Preserve a verified legacy workflow in place.
 
-Use selective early review from `../ship/references/review-gate.md` only for a named scope, dependency, or high-risk uncertainty. Explain the target benefit, deferred work that affects approval, dependency shape, ready changes, and important risk. Recommend the first ready change. End with one short question: **Is this delivery plan ready to use?**
+Use selective early review from `../ship/references/review-gate.md` only for a named scope, dependency, or high-risk uncertainty. Lead with the result and the first change you recommend. Explain only the deferred behavior, ordering constraint, or risk that could affect approval. Do not reproduce the `plan.md` schema, headings, labels, or graph checks in the conversation; when the sequence matters, use a short numbered list of concrete project changes. End with one short question: **Can we use this plan to start the first change?**
 
 The plan is ready when a fresh session can start every delivery change, graph checks pass, material review findings are closed or explicitly deferred, and the user approves it. Return execution to Ship.

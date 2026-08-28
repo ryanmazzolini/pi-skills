@@ -8,6 +8,8 @@ license: "MIT; adapted from mattpocock/skills"
 
 Answer one question through experience, then discard the code. A prototype gathers alignment evidence; it is not production implementation.
 
+Keep alignment routing, experiment bookkeeping, and cleanup mechanics internal unless they change what the user may safely do. Before evaluation, say where to try the prototype and what to judge. Afterward, state the decision it settled and whether the throwaway code was removed.
+
 ## Bound the experiment
 
 Run a prototype inside an active alignment. Treat a caller-supplied alignment as a locator: first use [`durable-context.md`](../ship/references/durable-context.md) to classify its workflow as verified legacy or the workspace profile's canonical work item. For vault-native work, resolve the alignment target through the workflow-profile helper before reading or updating it. Otherwise use the current verified `alignment.md` or legacy `question.md`. If none exists, return to `align` to create or reuse one and micro-align the experiment before writing code.
@@ -45,4 +47,4 @@ Compare the working tree with the recorded baseline and confirm that no prototyp
 
 Return to `align` at the decision the prototype interrupted. Do not advance to planning or promote prototype code into production. Production implementation may later reproduce the validated behavior under normal project standards.
 
-Keep the user-facing result concise: where to try the prototype and what to judge before the verdict, then the learned decision and cleanup status afterward.
+Keep the user-facing result concise and in product language. Do not narrate the workflow that led to the prototype or where it returns next.

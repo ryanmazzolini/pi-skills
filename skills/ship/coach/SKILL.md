@@ -9,13 +9,15 @@ argument-hint: "[what you want to understand or practice while shipping]"
 
 Ship governs what happens next. Ship Coach governs how the human participates.
 
+Keep the teaching method and Ship state internal. Talk about the project, the next contribution, and why it matters. Do not name checkpoints, scaffolding, fading, or other coaching mechanics unless the human asks about the method.
+
 Progressively load [`../ship/SKILL.md`](../ship/SKILL.md): read the state-routing guidance first, then the current-checkpoint guidance and referenced material when their stated conditions apply. Follow it as the authority for durable context, alignment, planning, scope, implementation, recovery, validation, review, approval, and graduation. Use **cognitive apprenticeship**—model → scaffold → observe → fade—for explanation, work ownership, and pause points.
 
 ## Establish the coaching focus
 
 Reconcile the current Ship state far enough to identify the next checkpoint. Use the invocation text as the learning focus when it names something concrete. Otherwise recommend one useful capability tied to the next checkpoint and ask the human to correct it.
 
-When calibration requires a question, focus it on one coaching choice. Give the needed context, then ask one short question. Give a more consequential Align decision priority. Infer the coaching focus from the response or calibrate on a later turn.
+When calibration requires a question, focus it on one coaching choice. Give the needed project context, then ask one short question in the human's terms. Give a more consequential product or scope decision priority. Infer the coaching focus from the response or calibrate on a later turn.
 
 Keep coaching session-scoped. After context compaction or a fresh session, the human invokes Ship Coach again. Coaching state stays in conversation; existing Ship artifacts remain the workflow record.
 
