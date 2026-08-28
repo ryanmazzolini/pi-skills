@@ -132,7 +132,7 @@ Lead each section with exactly one recommendation:
 - **Approve with comments** when the section contains **Blocks merge**, **Non-blocking**, or **Discussion** items but no **Blocks approval** finding or material confidence gap.
 - **Wait before approving** when any **Blocks approval** finding remains or a material confidence gap prevents a risk-proportionate review.
 
-Write it as `**Recommendation: Approve with comments.**` Follow it with `**Change risk: <rating>.**`, replacing `<rating>` with the assessed **Low**, **Moderate**, or **High** value, and one short explanation of the main exposure, containment or recovery path, and evidence that affects the decision. Then add one short recommendation rationale when comments or a material confidence gap exist:
+Write it as `**Recommendation: Approve with comments.**` Include `**Change risk: <rating>.**` only when the assessed risk is **Moderate** or **High**, replacing `<rating>` with that value. Omit the risk line for **Low** risk. When the line is present, follow it with one short explanation of the main exposure, containment or recovery path, and evidence that affects the decision. Then add one short recommendation rationale when comments or a material confidence gap exist. For a Low-risk review, mention a containment factor only when it helps explain the recommendation:
 
 - For **Wait before approving**, say what the human needs to verify before approving.
 - When **Blocks merge** items remain, name them and say why the human does not need to review their corrections again.
