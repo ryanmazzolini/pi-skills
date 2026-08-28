@@ -9,6 +9,8 @@ thoughts/
 node_modules/
 dist/
 coverage/
+.skill-eval-results/
+.env
 
 # OS/editor junk
 .DS_Store
