@@ -46,27 +46,17 @@ When existing workflow files, interruption, or context compaction make the state
 
 Ship may start Research, Align, Design Doc, or Delivery Plan automatically when its trigger is met. Ask for route approval only after intent is settled. Do not combine an unresolved product, safety, scope, or experience decision with route approval.
 
-Before production implementation, get explicit human approval for a compact route. Explain the route in ordinary project language; Ship's workflow names record the route but must not carry its meaning. A reader should be able to approve it without knowing Ship's vocabulary:
+Before production implementation, account for each of Research, Align, Design Doc, and Delivery Plan exactly once as needed or not needed, with a reason. Keep this accounting internal while the work is safely session-local; record it in the canonical `Current` document when the work needs durable continuation. List Prototype only when an experiential uncertainty makes it plausible, and Roadmap only when several independently useful outcomes make it plausible. Do not manufacture a reason to mention either one on ordinary work.
 
-```md
-**Proposal:** [one-sentence ordinary-language summary of how the work will proceed]
+Ask for explicit approval in ordinary project language. Lead with the concrete change and how you will deliver it. Mention investigation, a decision, upfront design, or sequencing only when it will actually happen before implementation. Do not list routine activities you will omit. When an omission materially changes approval, say what will not be done and state the concrete project boundary or risk instead of naming the skipped process. Do not show a routing checklist, `Use`/`Skip` sections, workflow names, or delivery-shape labels unless the user asks or needs an exact artifact name to continue.
 
-**Delivery:** [ordinary-language description] ([one of: `direct delivery`, `planned delivery`, or roadmap milestone])
+For example:
 
-**Use:** [write `None` when every conditional step is skipped; otherwise list each selected step]
-- **[Concrete action]** (`Research`, `Align`, `Design Doc`, or `Delivery Plan`): [why it helps or what it settled]
+> The app already exposes both quantities, so I can add the preview in one frontend change and cover valid and invalid input with focused tests. No API change is needed. Shall I implement it?
 
-**Skip:**
-- **[Concrete omitted action]** (`Research`, `Align`, `Design Doc`, or `Delivery Plan`): [why it is not needed]
+An exact instruction already approving that proposed route counts; a general request to implement does not. Fold the approval question into an existing plan or implementation confirmation when practical.
 
-**Proceed on this route?**
-```
-
-Account for every one of Research, Align, Design Doc, and Delivery Plan exactly once under **Use** or **Skip**. Put its workflow name in parentheses after the plain-language action. Tie each skip to its trigger: evidence needs no Research beyond routine inspection; intent leaves no consequential choice for Align; wrong implicit experience, system, program, or order choices would not cause expensive rework requiring a Design Doc; or one coherent delivery needs no dependency plan. List Prototype only when an experiential uncertainty makes it plausible, and Roadmap only when several independently useful outcomes make it plausible. Do not manufacture a reason to mention either one on ordinary work.
-
-One answer may approve every displayed skip. An exact instruction already approving the named route counts; a general request to implement does not. Fold this route summary into an existing plan or implementation confirmation when practical, but make the approval question cover both.
-
-Reuse the approval while the target outcome, boundaries, material constraints, skipped-step reasons, and delivery shape remain unchanged. Present it again when new evidence makes a skipped step plausible or changes the route. When work needs durable continuation, record the approved route in the canonical `Current` document—for example an alignment, design, plan, milestone index, or handoff—instead of creating a separate state file.
+Reuse the approval while the target outcome, boundaries, material constraints, omitted-step reasons, and delivery shape remain unchanged. Present it again when new evidence makes an omitted step plausible or changes the route. When work needs durable continuation, record the approval scope and the complete route accounting—each of Research, Align, Design Doc, and Delivery Plan as needed or not needed, with its reason—in the canonical `Current` document, such as an alignment, design, plan, milestone index, or handoff. Do not create a separate state file.
 
 ## Complete a direct delivery
 
@@ -132,4 +122,4 @@ Record material decisions, scope changes, approved implementation routes, implem
 
 Before presenting a final code-bearing delivery for approval, apply [references/review-gate.md](references/review-gate.md). Alignment, plans, and intermediate checkpoints do not require broad independent review by default.
 
-Start a human update with the result or decision. Add required validation and review status. Mention remaining risk only when it affects what happens next. End with one short action or question when the user must respond. When Markdown cannot make a consequential decision clear, read [references/review-artifacts.md](references/review-artifacts.md) and create the smallest useful review aid.
+Start a human update with the result or decision in project language. Add only the validation, review status, or remaining risk needed to understand what happens next. Keep Ship's routing, artifact maintenance, and internal checks out of the update. End with one short action or question when the user must respond. When Markdown cannot make a consequential decision clear, read [references/review-artifacts.md](references/review-artifacts.md) and create the smallest useful review aid.
