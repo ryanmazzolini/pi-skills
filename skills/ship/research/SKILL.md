@@ -34,4 +34,4 @@ Use prose for connected reasoning, bullets for separate choices or actions, and 
 - When no destination was requested, put the result in the conversation.
 - For a requested file, write to the agreed path.
 - For active Ship work with a durable work item, follow the [work-item research guidance](../ship/references/durable-context.md) and link retained synthesis from the decision it informs.
-- Before posting publicly, show the destination and proposed body. Confirm publication and whether AI attribution is wanted.
+- Before posting publicly, show the destination and proposed body. Ask two explicit questions: whether to publish and whether AI attribution is wanted.

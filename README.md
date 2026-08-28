@@ -120,6 +120,7 @@ An explicit Intercom `send` starts the recipient turn without awaiting a respons
 - Notion CLI (`ntn`) powers `notion-cli`.
 - [agent-browser](https://github.com/vercel-labs/agent-browser) powers browser automation.
 - [Herdr](https://herdr.dev/) is only needed for Herdr-managed sessions.
+- [New BAML](https://new.boundaryml.com/) toolchain `0.15.0` powers the optional, local-only [skill behavior evals](./evals/skills/README.md).
 
 The scheduler uses launchd on macOS, systemd user timers on Linux, or `crontab` as a warned fallback.
 
@@ -135,7 +136,7 @@ Pi gets a few extras that are not skills:
 
 ## Contributing
 
-Found an issue? Issues and small PRs are welcome. See [`AGENTS.md`](./AGENTS.md) for repository conventions, then run `npm test` for the full local check.
+Found an issue? Issues and small PRs are welcome. See [`AGENTS.md`](./AGENTS.md) for repository conventions, then run `npm test` for the full local check. Skill behavior changes can also use the optional [local eval suite](./evals/skills/README.md); its model results are review evidence, not CI gates.
 
 ## License
 
