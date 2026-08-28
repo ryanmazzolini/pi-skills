@@ -113,9 +113,9 @@ function BuildEvalReport(
     let scenarios = SelectScenarios(LoadScenarios(scenario_path), scenario_id);
     let scenario_skill_target = ValidateScenarioSkillTarget(scenarios);
     let skill_path = ResolveRepoPath(scenario_skill_target);
-    let skill_text = baml.fs.read(skill_path);
     let runs: SubjectRun[] = [];
     for (let scenario in scenarios) {
+        let skill_text = LoadSkillText(scenario);
         let repetition = 1;
         while (repetition <= repetitions) {
             runs.push(RunOne(scenario, skill_text, repetition, skip_judge));
