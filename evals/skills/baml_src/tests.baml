@@ -335,6 +335,20 @@ testset "contracts" {
         assert.is_true(results[3].passed);
     }
 
+    test "source bounds count every URL in a fetch batch" {
+        let scenario = LoadScenarios(DefaultScenarioPath())[1];
+        let fetch_call = TestCall(1, "fetch_content", 0);
+        fetch_call.urls = [
+            "https://example.test/one",
+            "https://example.test/two",
+            "https://example.test/three",
+            "https://example.test/four",
+        ];
+        let results = EvaluateHardAssertions(scenario, [fetch_call]);
+        assert.is_true(results[4].passed);
+        assert.is_true(!results[5].passed);
+    }
+
     test "argument matching ignores fixture result text" {
         let scenario = LoadScenarios(DefaultScenarioPath())[5];
         let read_call = TestCall(1, "read", 0);
