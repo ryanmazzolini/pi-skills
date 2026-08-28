@@ -7,6 +7,8 @@ description: Settle consequential human choices for one target outcome. Use when
 
 **Be relentless about decisions that can materially change the target outcome or how it will be delivered.** Investigate first. Settle one focused decision per turn. Stop when no such decision remains.
 
+Keep the method internal. In user-facing messages, state the concrete choice, why it affects the result, and the recommended answer. Do not make the user decode Align, target-outcome, ranking, or workflow language unless an exact artifact name helps them continue.
+
 Alignment is optional. Do not use it when the requested benefit, completion signal, and important boundaries are already clear. An approved alignment returns to Ship to decide whether design review is warranted, then choose and confirm the implementation route.
 
 ## Keep one target outcome
@@ -78,7 +80,7 @@ Recommend the smallest useful move: narrow the target, defer a benefit, return t
 
 Alignment is complete when the actor, benefit, observable completion, included and deferred outcomes, primary walkthrough when applicable, important constraints, observable behavior, and needed solution direction are clear enough to implement, and every consequential human decision is settled.
 
-Before presenting completion, rerun scope and consistency checks. Use selective early review from `../ship/references/review-gate.md` only for a named ambiguity or high-risk choice. Present the target benefit, deferred outcomes, confirmed experience, current assumptions, and any unresolved blocker. Ask one short question: **Is this alignment ready to use?**
+Before presenting completion, rerun scope and consistency checks. Use selective early review from `../ship/references/review-gate.md` only for a named ambiguity or high-risk choice. State what the user or caller will be able to do, what this change will not include, and any assumption or blocker that could still affect implementation. Include only the confirmed experience needed to judge that result. Ask one short question: **Is this clear enough to implement?**
 
 After approval, return to Ship. Ship decides whether design review is warranted, chooses direct or planned delivery, and gets route approval before production implementation.
 

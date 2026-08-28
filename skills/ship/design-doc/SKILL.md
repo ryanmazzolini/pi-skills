@@ -7,6 +7,8 @@ description: "Create a compact human-readable design before implementation. Use 
 
 Make consequential solution choices legible before code exists. Produce one adaptive `design.md`, get the smallest useful human review, then return to Ship without implementing.
 
+Keep document structure and Ship routing out of the conversation. Lead the user-facing review with the proposed experience or system change, why deciding it now avoids rework, and the one choice that most needs challenge. Mention section names or workflow mechanics only when they help the reviewer navigate an artifact.
+
 ## Confirm design review is warranted
 
 Inspect the settled request, live code, tests, project documentation, decisions, history, and any already-verified current workflow. Do not create durable workflow context while deciding whether design review is warranted.
@@ -59,7 +61,7 @@ If several PRs, migrations, worktrees, releases, or dependency edges need coordi
 
 ## Review and return to Ship
 
-Present the complete compact design by default. Lead with the recommendation, name what the reviewer should challenge, call out the least-confident choice, and ask one short question: **Is this design ready to implement?**
+Present only the parts needed to judge the costly choices. Lead with the recommendation and its practical effect, then explain the one choice or risk the reviewer should challenge. Do not reproduce `design.md` headings or its section order, and do not label the message as a design checkpoint. Ask one short question: **Is this design ready to implement?**
 
 Split review into product/experience and technical/program checkpoints only when a wrong first-half decision would invalidate substantial work on the second half. Do not add independent gates for every section.
 

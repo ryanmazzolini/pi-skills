@@ -27,7 +27,7 @@ When the loop stops, return workflow-linked research to the exact checkpoint it 
 
 ## Deliver the result
 
-Turn the exploration loop's return package into a reader-facing result, or answer a narrow lookup directly. Lead with the result and its practical effect. Cite the original sources behind important claims.
+Turn the investigation into a reader-facing result, or answer a narrow lookup directly. Lead with the result and its practical effect. Cite the original sources behind important claims. Do not narrate exploration phases, evidence paths, or the workflow checkpoint unless the user needs that detail to act or reproduce the work.
 
 Use prose for connected reasoning, bullets for separate choices or actions, and a table only when it makes comparison clearer. Omit raw search logs, source inventories, and rejected paths unless they are needed for reproducibility or continuation.
 
