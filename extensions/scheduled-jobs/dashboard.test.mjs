@@ -698,6 +698,7 @@ test("detail view hands failures to the open agent", () => {
 test("detail view gives concrete recovery routes for adapter drift and failed runs", () => {
   const view = harness();
   const outcomes = [];
+  const timedOut = run({ status: "timed-out", reason: "timed out after 30 seconds" });
   const current = job({
     installation: {
       installed: true,
@@ -708,8 +709,10 @@ test("detail view gives concrete recovery routes for adapter drift and failed ru
       definitionDrift: false,
       adapterDrift: true,
     },
-    recentRuns: [run({ runId: "00000000-0000-4000-8000-000000000002", status: "skipped", reason: "overlap" })],
-    effectiveRun: run({ status: "timed-out", reason: "timed out after 30 seconds" }),
+    recentRuns: [
+      run({ runId: "00000000-0000-4000-8000-000000000002", status: "skipped", reason: "overlap" }),
+      timedOut,
+    ],
   });
   const component = new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, (result) => outcomes.push(result));
   const rendered = component.render(120).join("\n");
@@ -718,7 +721,7 @@ test("detail view gives concrete recovery routes for adapter drift and failed ru
   component.handleInput("\t");
   component.handleInput("j");
   component.handleInput("\r");
-  assert.deepEqual(outcomes, [{ kind: "run", id: current.id, runId: current.effectiveRun.runId }]);
+  assert.deepEqual(outcomes, [{ kind: "run", id: current.id, runId: timedOut.runId }]);
 });
 
 test("detail view progressively discloses runs and definition while retaining actions", () => {

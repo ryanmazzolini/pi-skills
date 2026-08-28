@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
 import { Box, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { schedulerEffectiveRun, schedulerJobStatus } from "../../lib/scheduled-jobs/job-status.mjs";
+import { schedulerJobStatus, schedulerLatestExecution } from "../../lib/scheduled-jobs/job-status.mjs";
 
 export interface SchedulerFailureView {
 	code: string;
@@ -57,7 +57,6 @@ export interface SchedulerJobOverview {
 	nextRun: string | null;
 	nextRunError: SchedulerFailureView | null;
 	recentRuns: SchedulerRunView[];
-	effectiveRun?: SchedulerRunView | null;
 	historyError: SchedulerFailureView | null;
 }
 
@@ -409,14 +408,8 @@ function duration(value: number | null): string {
 	return `${Math.floor(value / 60_000)}m ${Math.round((value % 60_000) / 1_000)}s`;
 }
 
-function jobRuns(job: SchedulerJobOverview): SchedulerRunView[] {
-	const effective = schedulerEffectiveRun(job) as SchedulerRunView | undefined;
-	if (!effective || job.recentRuns.some((run) => run.runId === effective.runId)) return job.recentRuns;
-	return [...job.recentRuns, effective];
-}
-
 function allRuns(data: SchedulerDashboardData): Array<{ job: SchedulerJobOverview; run: SchedulerRunView }> {
-	return data.jobs.flatMap((job) => jobRuns(job).map((run) => ({ job, run }))).sort((left, right) => {
+	return data.jobs.flatMap((job) => job.recentRuns.map((run) => ({ job, run }))).sort((left, right) => {
 		const time = Date.parse(right.run.startedAt) - Date.parse(left.run.startedAt);
 		return time || right.run.runId.localeCompare(left.run.runId);
 	});
@@ -450,7 +443,7 @@ function orderedTasks(data: SchedulerDashboardData): SchedulerJobOverview[] {
 }
 
 function hasRunningRuns(data: SchedulerDashboardData): boolean {
-	return data.jobs.some((job) => jobRuns(job).some((run) => run.status === "running"));
+	return data.jobs.some((job) => job.recentRuns.some((run) => run.status === "running"));
 }
 
 export class SchedulerDashboardComponent implements Component {
@@ -723,7 +716,7 @@ export class SchedulerDashboardComponent implements Component {
 		const marker = selected ? this.theme.fg("accent", "›") : " ";
 		const label = selected ? this.theme.fg("accent", job.key) : job.key;
 		const next = job.nextRun ? `next ${formatSchedulerTime(job.nextRun, this.now)}` : state.label.startsWith("Paused") ? "schedule paused" : state.label === "Draft" ? "not installed" : "next run unavailable";
-		const latest = schedulerEffectiveRun(job) as SchedulerRunView | undefined;
+		const latest = schedulerLatestExecution(job) as SchedulerRunView | undefined;
 		const last = latest ? `last ${runState(latest).label.toLowerCase()} ${formatSchedulerTime(latest.startedAt, this.now)}` : "no recorded runs";
 		const identity = `${marker} ${this.theme.fg(state.color, state.icon)} ${label}`;
 		const status = `${this.theme.fg("dim", `· ${job.scope.kind} ·`)} ${this.theme.fg(state.color, state.label)}`;
@@ -900,7 +893,7 @@ export class SchedulerJobDetailComponent implements Component {
 			return;
 		}
 		if (this.tab === "runs") {
-			const runs = jobRuns(this.job);
+			const runs = this.job.recentRuns;
 			if ((matchesKey(data, "up") || data === "k") && this.selectedRun > 0) this.selectedRun--;
 			else if ((matchesKey(data, "down") || data === "j") && this.selectedRun < runs.length - 1) this.selectedRun++;
 			else if (matchesKey(data, "return") || matchesKey(data, "right")) {
@@ -1014,7 +1007,7 @@ export class SchedulerJobDetailComponent implements Component {
 	}
 
 	private overviewLines(width: number): string[] {
-		const latest = schedulerEffectiveRun(this.job) as SchedulerRunView | undefined;
+		const latest = schedulerLatestExecution(this.job) as SchedulerRunView | undefined;
 		return [
 			...wrapTextWithAnsi(this.job.description, width),
 			"",
@@ -1052,7 +1045,7 @@ export class SchedulerJobDetailComponent implements Component {
 			lines.push("", this.theme.fg("warning", "The host adapter differs from the reviewed installed state."));
 			lines.push(`Recovery: press ${this.theme.fg("accent", "a")} and review Pause or Resume to reconcile it, or Remove to clean known adapters.`);
 		}
-		const latest = schedulerEffectiveRun(this.job) as SchedulerRunView | undefined;
+		const latest = schedulerLatestExecution(this.job) as SchedulerRunView | undefined;
 		if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
 			lines.push("", this.theme.fg("error", `Latest execution ${runState(latest).label.toLowerCase()}${latest.reason ? ` · ${latest.reason}` : ""}`));
 			lines.push("Recovery: open Runs, select the failed run, and press Enter to inspect its retained output before running again.");
@@ -1061,7 +1054,7 @@ export class SchedulerJobDetailComponent implements Component {
 	}
 
 	private detailRunLines(width: number): string[] {
-		const runs = jobRuns(this.job);
+		const runs = this.job.recentRuns;
 		if (runs.length === 0) return [this.theme.fg("dim", "No recorded runs for this task.")];
 		this.selectedRun = Math.min(this.selectedRun, runs.length - 1);
 		return runs.map((run, index) => {

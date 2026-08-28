@@ -30,8 +30,7 @@ export interface SchedulerStatusJob {
 		adapterDrift?: unknown;
 	};
 	recentRuns?: Array<{ status?: unknown }>;
-	effectiveRun?: { status?: unknown } | null;
 }
 
-export function schedulerEffectiveRun(job: SchedulerStatusJob): { status?: unknown } | undefined;
+export function schedulerLatestExecution(job: SchedulerStatusJob): { status?: unknown } | undefined;
 export function schedulerJobStatus(job: SchedulerStatusJob): SchedulerJobStatus;
