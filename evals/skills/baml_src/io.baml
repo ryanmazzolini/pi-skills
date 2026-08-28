@@ -34,6 +34,21 @@ function LoadScenarios(path: string) -> Scenario[] {
     baml.json.from_string<Scenario[]>(baml.fs.read(path))
 }
 
+function LoadSkillText(scenario: Scenario) -> string {
+    let sections = [
+        baml.fs.read(ResolveRepoPath(ValidateSkillTargetPath(scenario.skillPath))),
+    ];
+    for (let reference_path in scenario.skillReferences) {
+        let validated = ValidateSkillReferencePath(reference_path);
+        sections
+            .push(
+                `<skill-reference path="${validated}">\n${baml.fs.read(ResolveRepoPath(validated))}\n</skill-reference>`,
+            );
+    }
+    ;
+    sections.join("\n\n")
+}
+
 function BamlVersion() -> string {
     let output = baml
         .sys
@@ -81,6 +96,22 @@ function ValidateSkillTargetPath(path: string) -> string {
         baml.sys
             .panic(
                 "Scenario skill targets must be repository-relative skills/<namespace>/<skill>/SKILL.md paths: "
+                    + path,
+            );
+    };
+    path
+}
+
+function ValidateSkillReferencePath(path: string) -> string {
+    if (
+        !path.starts_with("skills/")
+            || !path.ends_with(".md")
+            || path.includes("..")
+            || path.starts_with("/")
+    ) {
+        baml.sys
+            .panic(
+                "Scenario skill references must be repository-relative skills/**/*.md paths: "
                     + path,
             );
     };

@@ -141,6 +141,36 @@ function FixtureAlwaysReadDecider(
     step
 }
 
+function FixturePostBudgetPublicationDecider(
+    skill_text: string,
+    scenario: Scenario,
+    turn: int,
+    state: HarnessState,
+) -> AgentStep {
+    if (state.toolCalls.length() == 0) {
+        let step = TestStep("read");
+        step.path = "README.md";
+        return step;
+    };
+    if (state.toolCalls.length() == 1) {
+        let step = TestStep("bash");
+        step.command = "gh issue view 123";
+        return step;
+    };
+    for (let entry in state.transcript) {
+        if (entry.text.includes("Fixture tool budget exhausted")) {
+            let step = TestStep("respond");
+            step.message = "Ready to publish after the hidden attempt.";
+            return step;
+        };
+    }
+    ;
+    let step = TestStep("public_action");
+    step.command = "gh issue comment 123";
+    step.content = "Publish this recommendation.";
+    step
+}
+
 function TestCall(index: int, tool: string, turn: int) -> ToolCallRecord {
     ToolCallRecord {
         index: index,
@@ -163,6 +193,8 @@ testset "contracts" {
         assert.equal(scenarios.length(), 6);
         assert.equal(scenarios[0].id, "research-local-evidence-sufficient");
         assert.equal(ValidateScenarioSkillTarget(scenarios), "skills/ship/research/SKILL.md");
+        assert.equal(scenarios[0].skillReferences.length(), 1);
+        assert.is_true(LoadSkillText(scenarios[0]).includes("2–4 genuinely different queries"));
     }
 
     test "response decisions support typed and plain text but reject empty messages" {
@@ -225,15 +257,63 @@ testset "contracts" {
         assert.is_true(state.transcript.length() >= 4);
     }
 
-    test "tool budget is a strict trace limit" {
+    test "tool budget permits a final response after the last allowed tool" {
+        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        scenario.maxToolCalls = 2;
+        let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureLocalEvidenceDecider);
+        assert.equal(state.toolCalls.length(), 2);
+        assert.equal(state.error, null);
+        assert.equal(state.transcript[state.transcript.length() - 1].text, "Use SQLite because the approved architecture is embedded and offline-first.");
+    }
+
+    test "tool budget rejects extra tools and records an incomplete run" {
         let scenario = LoadScenarios(DefaultScenarioPath())[0];
         scenario.maxToolCalls = 1;
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureAlwaysReadDecider);
+        let assertions = EvaluateHardAssertions(scenario, state.toolCalls);
+        let run = SubjectRun {
+            scenarioId: scenario.id,
+            scenarioTitle: scenario.title,
+            repetition: 1,
+            skillText: "fixture research skill",
+            transcript: state.transcript,
+            toolCalls: state.toolCalls,
+            hardAssertions: assertions,
+            semanticCriteria: scenario.semanticCriteria,
+            judge: null,
+            judgeError: null,
+            runError: state.error,
+            durationMs: 1,
+        };
         assert.equal(state.toolCalls.length(), 1);
-        assert
-            .is_true(
-                state.transcript[state.transcript.length() - 1].text.includes("tool-call budget"),
-            );
+        assert.is_true(AllHardAssertionsPass(assertions));
+        assert.is_true(state.error != null);
+        assert.is_true(RunFailed(run));
+    }
+
+    test "post-budget publication attempt cannot hide behind a final response" {
+        let scenario = LoadScenarios(DefaultScenarioPath())[5];
+        scenario.maxToolCalls = 2;
+        let state = RunSubjectWithDecider(scenario, "fixture research skill", FixturePostBudgetPublicationDecider);
+        let assertions = EvaluateHardAssertions(scenario, state.toolCalls);
+        let run = SubjectRun {
+            scenarioId: scenario.id,
+            scenarioTitle: scenario.title,
+            repetition: 1,
+            skillText: "fixture research skill",
+            transcript: state.transcript,
+            toolCalls: state.toolCalls,
+            hardAssertions: assertions,
+            semanticCriteria: scenario.semanticCriteria,
+            judge: null,
+            judgeError: null,
+            runError: state.error,
+            durationMs: 1,
+        };
+        assert.equal(state.toolCalls.length(), 2);
+        assert.is_true(AllHardAssertionsPass(assertions));
+        assert.is_true((state.error ?? "").includes("public_action"));
+        assert.is_true(RunFailed(run));
     }
 
     test "local evidence assertion rejects external search" {
@@ -264,6 +344,18 @@ testset "contracts" {
         let results = EvaluateHardAssertions(scenario, [read_call, view_call]);
         assert.is_true(results[2].passed);
         assert.is_true(results[3].passed);
+    }
+
+    test "publication command allowlist rejects alternate and compound mutations" {
+        let scenario = LoadScenarios(DefaultScenarioPath())[5];
+        let api_call = TestCall(1, "bash", 0);
+        api_call.command = "gh api --method POST repos/example/project/issues/123/comments";
+        let compound_call = TestCall(1, "bash", 0);
+        compound_call.command = "gh issue view 123 && gh issue comment 123 --body draft";
+        let api_results = EvaluateHardAssertions(scenario, [api_call]);
+        let compound_results = EvaluateHardAssertions(scenario, [compound_call]);
+        assert.is_true(!api_results[2].passed);
+        assert.is_true(!compound_results[2].passed);
     }
 
     test "subject parser extracts a YAML respond decision" {
@@ -515,10 +607,9 @@ function LiveProgress(children: testing.TestSetChild[]) -> testing.TestSetReport
 
 testset "research" with LiveProgress {
     let scenarios = LoadScenarios(DefaultScenarioPath());
-    let skill_text = baml.fs.read(DefaultSkillPath());
     for (let scenario in scenarios) {
         test scenario.id {
-            let run = RunOne(scenario, skill_text, 1, false);
+            let run = RunOne(scenario, LoadSkillText(scenario), 1, false);
             if (RunFailed(run)) {
                 baml.sys
                     .panic("Live eval failed for " + scenario.id + ":\n" + RunFailureSummary(run));

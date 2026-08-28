@@ -92,6 +92,7 @@ class Scenario {
     id: string,
     title: string,
     skillPath: string,
+    skillReferences: string[],
     turns: string[],
     files: map<string, string>,
     searchResponses: string[],

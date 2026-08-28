@@ -36,10 +36,10 @@ function DecideNextDecision(
 
         Available actions and fields:
         - read: path
-        - web_search: queries (prefer one batch of 2–4 distinct queries when a broad pass is needed)
+        - web_search: queries
         - fetch_content: url or urls
-        - bash: command. Use this for fixture-backed read-only shell and GitHub CLI
-          inspection, including `gh issue view`.
+        - bash: command. Use exactly `gh issue view <number>` for fixture-backed GitHub
+          issue inspection; do not add options or shell operators.
         - edit: path and content
         - write: path and content
         - public_action: command and content. Reserve this only for a public mutation or
@@ -53,7 +53,7 @@ function DecideNextDecision(
         external evidence is needed, use fetch_content on the strongest primary sources
         before responding.
 
-        Explicitly loaded skill:
+        Explicitly loaded skill and declared references:
         <skill>
         {{ skill_text }}
         </skill>
@@ -351,7 +351,7 @@ function RunSubjectIntoStateWithDecider(
         let finished = false;
         let cycles = 0;
         let max_cycles = scenario.maxToolCalls + 4;
-        while (!finished && cycles < max_cycles && state.toolCalls.length() < scenario.maxToolCalls) {
+        while (!finished && cycles < max_cycles) {
             cycles += 1;
             let outcome = TryDecideNextStep(decider, skill_text, scenario, turn_index, state);
             match (outcome.step) {
@@ -396,6 +396,19 @@ function RunSubjectIntoStateWithDecider(
                                 },
                             );
                         finished = true;
+                    } else if (state.toolCalls.length() >= scenario.maxToolCalls) {
+                        let message = `Subject attempted ${step.action} after reaching the scenario tool-call budget.`;
+                        state.error = message;
+                        state
+                            .transcript
+                            .push(
+                                TranscriptEntry {
+                                    turn: turn_index,
+                                    role: "assistant",
+                                    text: message + " Rejected action: " + baml.json.to_string(step),
+                                },
+                            );
+                        finished = true;
                     } else {
                         state
                             .transcript
@@ -416,17 +429,19 @@ function RunSubjectIntoStateWithDecider(
         }
         ;
         if (!finished) {
+            let stop_message = if (state.toolCalls.length() >= scenario.maxToolCalls) {
+                "Stopped after reaching the scenario tool-call budget without a final response."
+            } else {
+                "Stopped after the scenario step limit without a final response."
+            };
+            state.error = stop_message;
             state
                 .transcript
                 .push(
                     TranscriptEntry {
                         turn: turn_index,
                         role: "assistant",
-                        text: if (state.toolCalls.length() >= scenario.maxToolCalls) {
-                            "Stopped after reaching the scenario tool-call budget without a final response."
-                        } else {
-                            "Stopped after the scenario step limit without a final response."
-                        },
+                        text: stop_message,
                     },
                 );
         };

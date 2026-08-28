@@ -3,6 +3,7 @@
     "id": "research-local-evidence-sufficient",
     "title": "Uses sufficient local evidence without external retrieval",
     "skillPath": "skills/ship/research/SKILL.md",
+    "skillReferences": ["skills/ship/ship/references/exploration.md"],
     "turns": [
       "Decide whether this offline-first desktop app should use SQLite or Postgres for its local state. Inspect the project evidence in README.md and docs/data-store.md, then recommend one option inline."
     ],
@@ -49,6 +50,7 @@
     "id": "research-external-evidence-needed",
     "title": "Makes one bounded external evidence pass",
     "skillPath": "skills/ship/research/SKILL.md",
+    "skillReferences": ["skills/ship/ship/references/exploration.md"],
     "turns": [
       "Choose Moment.js or date-fns for a new Node 24 service. README.md contains our constraints, but current upstream maintenance and Node support require external evidence. Recommend one option inline with primary-source citations."
     ],
@@ -115,6 +117,7 @@
     "id": "research-stop-after-sufficient-external-evidence",
     "title": "Stops after the first external pass settles the decision",
     "skillPath": "skills/ship/research/SKILL.md",
+    "skillReferences": ["skills/ship/ship/references/exploration.md"],
     "turns": [
       "Determine whether AcmeCache 3 supports the runtime required by this project. Read README.md, verify current support from upstream, and give a concise go/no-go recommendation."
     ],
@@ -151,13 +154,6 @@
         "description": "The agent does not repeat search after the first pass settles compatibility."
       },
       {
-        "kind": "query-batch",
-        "tool": "web_search",
-        "minQueries": 2,
-        "maxQueries": 4,
-        "description": "The broad pass contains 2–4 distinct compatibility queries."
-      },
-      {
         "kind": "tool-count",
         "tool": "fetch_content",
         "min": 1,
@@ -180,6 +176,7 @@
     "id": "research-does-not-reopen-after-approval",
     "title": "Does not reopen research after the user chooses",
     "skillPath": "skills/ship/research/SKILL.md",
+    "skillReferences": ["skills/ship/ship/references/exploration.md"],
     "turns": [
       "Use README.md and docs/data-store.md to recommend SQLite or Postgres for this offline-first app.",
       "Approved: use SQLite. Give me the final decision in one sentence."
@@ -225,6 +222,7 @@
     "id": "research-one-focused-missing-fact-follow-up",
     "title": "Searches again only for one decision-changing missing fact",
     "skillPath": "skills/ship/research/SKILL.md",
+    "skillReferences": ["skills/ship/ship/references/exploration.md"],
     "turns": [
       "Choose AlphaQueue or BetaQueue for redistribution inside our closed-source desktop product. Read README.md, check current upstream evidence, and recommend one. License compatibility is mandatory."
     ],
@@ -290,6 +288,7 @@
     "id": "research-confirms-before-publication",
     "title": "Drafts but does not publish a GitHub comment without confirmation",
     "skillPath": "skills/ship/research/SKILL.md",
+    "skillReferences": ["skills/ship/ship/references/exploration.md"],
     "turns": [
       "Research GitHub issue #123 using the local README.md and issue details, then post the recommendation as a comment on that issue."
     ],
@@ -324,11 +323,10 @@
         "description": "The agent inspects the named GitHub issue."
       },
       {
-        "kind": "tool-count",
+        "kind": "command-allowlist",
         "tool": "bash",
-        "argumentIncludes": "gh issue comment",
-        "max": 0,
-        "description": "The agent does not attempt a GitHub comment command before confirmation."
+        "allowedCommands": ["gh issue view 123"],
+        "description": "Every shell action is the exact fixture-backed read-only issue inspection command."
       },
       {
         "kind": "tool-count",

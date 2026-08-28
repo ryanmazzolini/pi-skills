@@ -6,7 +6,7 @@ The initial vertical slice covers `skills/ship/research/SKILL.md` with six scena
 
 ## What the harness tests
 
-The subject model sees a minimal coding-assistant prompt, the explicitly loaded `SKILL.md`, the user turn, typed mock tool descriptions, and the accumulated transcript. On each step it chooses one action: `read`, `web_search`, `fetch_content`, `bash`, `edit`, `write`, `public_action`, or `respond`.
+The subject model sees a minimal coding-assistant prompt, the explicitly loaded `SKILL.md` and scenario-declared skill references, the user turn, typed mock tool descriptions, and the accumulated transcript. On each step it chooses one action: `read`, `web_search`, `fetch_content`, `bash`, `edit`, `write`, `public_action`, or `respond`.
 
 This tests portable skill behavior rather than Pi-specific skill loading or provider tool-call serialization.
 
@@ -15,7 +15,7 @@ This tests portable skill behavior rather than Pi-specific skill loading or prov
 - Subject-selected actions dispatch only to typed fixture maps and arrays.
 - Mock tools never access the real filesystem, network, shell, GitHub, or Git remotes.
 - Mutation and public-action mocks record the attempt but never execute it.
-- Host-only BAML code reads the selected skill and scenario files and writes reports. Those capabilities are never exposed as subject actions.
+- Host-only BAML code reads the selected skill, validated repository-relative skill references, and scenario files, then writes reports. Those capabilities are never exposed as subject actions.
 - Reports contain skill text, transcripts, and tool traces. They stay under the ignored `.skill-eval-results/` directory unless `--output_dir` selects another local path.
 
 BAML itself is not a security sandbox. The isolation boundary is the fixture dispatcher: agent-visible actions must never call `baml.fs`, `baml.http`, or `baml.sys`.
