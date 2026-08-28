@@ -828,8 +828,10 @@ test("diagnostic prompts preserve failures as bounded data", () => {
 
 test("diagnostic prompts report the failed execution behind an overlap receipt", () => {
   const overview = overviewJob();
-  overview.recentRuns = Array.from({ length: 10 }, () => ({ status: "skipped", reason: "overlap" }));
-  overview.effectiveRun = { status: "failed", reason: "exited with code 3" };
+  overview.recentRuns = [
+    ...Array.from({ length: 9 }, () => ({ status: "skipped", reason: "overlap" })),
+    { status: "failed", reason: "exited with code 3" },
+  ];
   const prompt = schedulerDiagnosticPrompt(overview, undefined, "/opt/scheduled-jobs");
   assert.match(prompt, /Latest execution.*failed.*exited with code 3/);
 });

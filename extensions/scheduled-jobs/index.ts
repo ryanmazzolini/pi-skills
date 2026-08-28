@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { schedulerEffectiveRun, schedulerJobStatus } from "../../lib/scheduled-jobs/job-status.mjs";
+import { schedulerJobStatus, schedulerLatestExecution } from "../../lib/scheduled-jobs/job-status.mjs";
 import { nextCronOccurrence } from "../../lib/scheduled-jobs/schedule.mjs";
 import {
 	ensureSchedulerStatusDirectory,
@@ -640,7 +640,7 @@ export function schedulerDiagnosticPrompt(
 		diagnostics.push(`Installed health: ${overview.installation.health}${overview.installation.healthCategory ? ` (${overview.installation.healthCategory})` : ""}${overview.installation.healthReason ? ` — ${overview.installation.healthReason}` : ""}`);
 	}
 	if (overview.installation.adapterDrift) diagnostics.push("The host adapter differs from the installed snapshot.");
-	const latest = schedulerEffectiveRun(overview) as SchedulerJobOverview["recentRuns"][number] | undefined;
+	const latest = schedulerLatestExecution(overview) as SchedulerJobOverview["recentRuns"][number] | undefined;
 	if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
 		diagnostics.push(`Latest execution: ${latest.status}${latest.reason ? ` — ${latest.reason}` : ""}`);
 	}
