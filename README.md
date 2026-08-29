@@ -128,7 +128,7 @@ Pi gets a few extras that are not skills:
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
 - `intercom` provides local peer messaging, capability-gated bounded read-only tails, and an ephemeral First Mate presence role.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
-- `scheduled-jobs` adds the human-only `/scheduler` dashboard for task health, next runs, live run history and output, and reviewed lifecycle operations. Use arrows or `j`/`k` to select, `Tab` to switch Tasks/Runs, `Enter` for details, `a` for actions on the selected task in Tasks or Details, `r` to refresh in place, `d` to hand a blocked task to the open agent for diagnosis, and `q` or `Esc` to close or go back. A compact footer appears whenever the dashboard classifies a task as Needs attention. Scheduler state changes publish one shared snapshot, so open Pi sessions update through a filesystem event without periodic overview scans.
+- `scheduled-jobs` adds the human-only `/scheduler` dashboard for task health, next runs, bounded run history and output, and reviewed lifecycle operations. Use arrows or `j`/`k` to select, `Tab` to switch Tasks/Runs, `Enter` for details, `a` for actions, `r` to refresh, and `q` or `Esc` to go back or close. Actions use Pi's native selection, confirmation, and loader UI; Run now blocks until the installed snapshot finishes. A compact footer appears whenever the dashboard classifies a task as Needs attention. Scheduler changes publish one count-only file per manifest, so open Pi sessions update through filesystem events without periodic overview scans.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.
 
 ## Contributing
