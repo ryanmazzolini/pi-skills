@@ -6,11 +6,10 @@ import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { run as runCli } from "../../bin/scheduled-jobs.mjs";
 import {
-  readSchedulerStatusSnapshot,
-  schedulerStatusSnapshotPath,
-  writeSchedulerStatusSnapshot,
-  writeUnavailableSchedulerStatusSnapshot,
-} from "../../lib/scheduled-jobs/status-cache.mjs";
+  publishSchedulerAttention,
+  readSchedulerAttention,
+  schedulerAttentionPath,
+} from "../../lib/scheduled-jobs/attention.mjs";
 import scheduledJobsExtension, {
   actionReviewText,
   applicableActions,
@@ -36,6 +35,12 @@ function cliSuccess(value) {
 
 function cliFailure(code, message) {
   return commandResult("", 7, JSON.stringify({ ok: false, error: { code, message, details: null } }));
+}
+
+function writeAttentionFixture(manifestPath, overviewOrEnv, maybeEnv) {
+  const overview = maybeEnv ? overviewOrEnv : { jobs: [] };
+  const env = maybeEnv ?? overviewOrEnv;
+  return publishSchedulerAttention(manifestPath, () => overview, env);
 }
 
 function uiHarness(selectors = [], confirmations = [], customs = []) {
@@ -288,7 +293,7 @@ function statusWatchHarness() {
   };
 }
 
-test("ambient status loads once, follows shared cache events, and closes its watcher", async (t) => {
+test("ambient status loads once, follows shared attention events, and closes its watcher", async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-watch-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const manifestPath = path.join(base, "config", "pi-scheduler", "jobs.json");
@@ -331,35 +336,36 @@ test("ambient status loads once, follows shared cache events, and closes its wat
   assert.equal(watches.watches[0].options.persistent, false);
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
 
-  writeUnavailableSchedulerStatusSnapshot(manifestPath, env);
-  const snapshotName = path.basename(schedulerStatusSnapshotPath(manifestPath, env));
-  watches.emit(`.${snapshotName}.123.atomic.tmp`);
-  watches.emit(`.${snapshotName}.123.atomic.tmp`);
+  writeAttentionFixture(manifestPath, env);
+  const attentionName = path.basename(schedulerAttentionPath(manifestPath, env));
+  watches.emit(`.${attentionName}.123.atomic.tmp`);
+  watches.emit(`.${attentionName}.123.atomic.tmp`);
   assert.equal(watches.timers.length, 1);
   assert.equal(watches.timers[0].unrefed, true);
   watches.flush();
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
   assert.equal(overviewCalls, 1);
 
-  writeSchedulerStatusSnapshot(manifestPath, {
+  writeAttentionFixture(manifestPath, {
     generatedAt: new Date().toISOString(),
     jobs: [current, { ...current, id: "global:test:other", key: "test:other" }],
   }, env);
-  watches.emit(path.basename(schedulerStatusSnapshotPath(manifestPath, env)));
+  watches.emit(path.basename(schedulerAttentionPath(manifestPath, env)));
   watches.flush();
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 2 stuck" });
 
-  writeUnavailableSchedulerStatusSnapshot(manifestPath, env);
+  writeAttentionFixture(manifestPath, env);
   watches.watches[0].error(new Error("watch failed"));
   await monitor.updateContext(ctx);
   assert.equal(watches.watches.length, 2);
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
 
-  writeSchedulerStatusSnapshot(manifestPath, { generatedAt: new Date().toISOString(), jobs: [current] }, env);
-  watches.emit(path.basename(schedulerStatusSnapshotPath(manifestPath, env)));
+  writeAttentionFixture(manifestPath, { generatedAt: new Date().toISOString(), jobs: [current] }, env);
+  watches.emit(path.basename(schedulerAttentionPath(manifestPath, env)));
   watches.flush();
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
   manifestExists = false;
+  writeAttentionFixture(manifestPath, env);
   await monitor.reconcile(ctx);
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
 
@@ -368,7 +374,7 @@ test("ambient status loads once, follows shared cache events, and closes its wat
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
 });
 
-test("ambient status discovers a manifest from an unknown shared snapshot event", async (t) => {
+test("ambient status observes a newly created global attention file", async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-discovery-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const manifestPath = path.join(base, "config", "pi-scheduler", "jobs.json");
@@ -400,9 +406,9 @@ test("ambient status discovers a manifest from an unknown shared snapshot event"
 
   manifestExists = true;
   const blocked = overviewJob(inspection({ installed: true, enabled: true, health: "unhealthy" }));
-  writeSchedulerStatusSnapshot(manifestPath, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
-  const snapshotName = path.basename(schedulerStatusSnapshotPath(manifestPath, env));
-  watches.emit(`.${snapshotName}.123.atomic.tmp`);
+  writeAttentionFixture(manifestPath, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
+  const attentionName = path.basename(schedulerAttentionPath(manifestPath, env));
+  watches.emit(`.${attentionName}.123.atomic.tmp`);
   watches.flush();
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
@@ -410,7 +416,7 @@ test("ambient status discovers a manifest from an unknown shared snapshot event"
   await monitor.stop();
 });
 
-test("ambient status closes the initial discovery event window", async (t) => {
+test("ambient status does not miss attention written during its initial load", async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-initial-window-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const manifestPath = path.join(base, "config", "pi-scheduler", "jobs.json");
@@ -425,9 +431,9 @@ test("ambient status closes the initial discovery event window", async (t) => {
       if (filePath !== manifestPath) return false;
       if (created) return true;
       created = true;
-      writeSchedulerStatusSnapshot(manifestPath, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
-      const snapshotName = path.basename(schedulerStatusSnapshotPath(manifestPath, env));
-      watches.emit(`.${snapshotName}.123.atomic.tmp`);
+      writeAttentionFixture(manifestPath, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
+      const attentionName = path.basename(schedulerAttentionPath(manifestPath, env));
+      watches.emit(`.${attentionName}.123.atomic.tmp`);
       return false;
     },
     async exec(command, args) {
@@ -455,7 +461,7 @@ test("ambient status closes the initial discovery event window", async (t) => {
   await monitor.stop();
 });
 
-test("ambient status aggregates global and current-project snapshots", async (t) => {
+test("ambient status aggregates global and current-project attention", async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-scopes-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const globalManifest = path.join(base, "config", "pi-scheduler", "jobs.json");
@@ -493,15 +499,15 @@ test("ambient status aggregates global and current-project snapshots", async (t)
   await monitor.start(ctx);
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 2 stuck" });
 
-  writeSchedulerStatusSnapshot(globalManifest, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
-  writeSchedulerStatusSnapshot(projectManifest, { generatedAt: new Date().toISOString(), jobs: [draft] }, env);
+  writeAttentionFixture(globalManifest, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
+  writeAttentionFixture(projectManifest, { generatedAt: new Date().toISOString(), jobs: [draft] }, env);
   watches.emit(null);
   watches.flush();
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
 
-  writeUnavailableSchedulerStatusSnapshot(globalManifest, env);
-  writeUnavailableSchedulerStatusSnapshot(projectManifest, env);
+  writeAttentionFixture(globalManifest, env);
+  writeAttentionFixture(projectManifest, env);
   watches.emit(null);
   watches.flush();
   await new Promise((resolve) => setImmediate(resolve));
@@ -844,7 +850,7 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
   assert.equal(fs.existsSync(path.join(value.env.XDG_STATE_HOME, "pi-scheduler", "jobs")), true);
   const remaining = fs.readdirSync(path.join(value.env.XDG_STATE_HOME, "pi-scheduler", "jobs"));
   assert.deepEqual(remaining, []);
-  assert.equal(readSchedulerStatusSnapshot(value.manifestPath, value.env).attentionCount, 0);
+  assert.equal(readSchedulerAttention(value.manifestPath, value.env), 0);
 });
 
 test("a terminal installed run publishes shared attention without an open Pi session", async (t) => {
@@ -890,12 +896,12 @@ test("a terminal installed run publishes shared attention without an open Pi ses
     /exited with code 7/,
   );
 
-  assert.equal(readSchedulerStatusSnapshot(value.manifestPath, value.env).attentionCount, 1);
+  assert.equal(readSchedulerAttention(value.manifestPath, value.env), 1);
 });
 
-test("an unreadable manifest clears its shared attention snapshot", async (t) => {
+test("an unreadable manifest clears its shared attention", async (t) => {
   const value = lifecycleFixture(t);
-  writeSchedulerStatusSnapshot(value.manifestPath, {
+  writeAttentionFixture(value.manifestPath, {
     generatedAt: new Date().toISOString(),
     jobs: [{ id: "global:test:job", candidateError: { code: "ENVIRONMENT", message: "blocked" }, installation: { installed: false }, recentRuns: [] }],
   }, value.env);
@@ -905,5 +911,5 @@ test("an unreadable manifest clears its shared attention snapshot", async (t) =>
     runCli(["overview", "--manifest", value.manifestPath, "--json"], value.runtime),
     /invalid field|job key/i,
   );
-  assert.equal(readSchedulerStatusSnapshot(value.manifestPath, value.env).attentionCount, 0);
+  assert.equal(readSchedulerAttention(value.manifestPath, value.env), 0);
 });
