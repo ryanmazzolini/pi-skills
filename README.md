@@ -92,6 +92,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | Skill | What it helps with |
 |---|---|
 | [`first-mate`](./skills/first-mate/SKILL.md) | Orient, triage, and coordinate safely across connected Pi sessions |
+| [`meta-review`](./skills/meta-review/SKILL.md) | Find testable improvements to skills and workflows from recent personal Pi sessions |
 | [`agent-coordination`](./skills/agent-coordination/SKILL.md) | Choose configured models and reasoning levels for delegated work |
 | [`scheduled-jobs`](./skills/scheduled-jobs/SKILL.md) | Inspect and operate reviewed recurring local jobs |
 | [`shortcut`](./skills/shortcut/shortcut/SKILL.md) | Work with Shortcut stories through the `short` CLI |
