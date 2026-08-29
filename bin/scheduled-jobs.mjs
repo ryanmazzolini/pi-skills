@@ -23,12 +23,7 @@ import {
   updateJob,
 } from "../lib/scheduled-jobs/lifecycle.mjs";
 import { manifestOverview } from "../lib/scheduled-jobs/overview.mjs";
-import {
-  updateSchedulerStatusRun,
-  withSchedulerStatusLock,
-  writeSchedulerStatusSnapshot,
-  writeUnavailableSchedulerStatusSnapshot,
-} from "../lib/scheduled-jobs/status-cache.mjs";
+import { publishSchedulerAttention } from "../lib/scheduled-jobs/attention.mjs";
 import {
   MAX_RUN_HISTORY,
   executeInstalled,
@@ -149,49 +144,24 @@ function currentManifestOverview(manifestPath, runtime, env, historyLimit = 10) 
   });
 }
 
-function publishStatusSnapshot(manifestPath, runtime, env) {
+function publishAttention(manifestPath, runtime, env) {
   if (!manifestPath) return;
   try {
-    withSchedulerStatusLock(manifestPath, env, () => {
-      try {
-        const current = currentManifestOverview(manifestPath, runtime, env);
-        writeSchedulerStatusSnapshot(manifestPath, current, env);
-      } catch {
-        try {
-          writeUnavailableSchedulerStatusSnapshot(manifestPath, env);
-        } catch {
-          // Status publication must never change the scheduler command result.
-        }
-      }
-    });
+    publishSchedulerAttention(
+      manifestPath,
+      () => currentManifestOverview(manifestPath, runtime, env),
+      env,
+    );
   } catch {
-    // Status publication must never change the scheduler command result.
+    // Derived attention must never change a scheduler command result.
   }
 }
 
-async function withStatusRefresh(manifestPath, runtime, env, operation) {
+async function withAttentionRefresh(manifestPath, runtime, env, operation) {
   try {
     return await operation();
   } finally {
-    publishStatusSnapshot(manifestPath, runtime, env);
-  }
-}
-
-function publishRunStatus(manifestPath, id, env) {
-  if (!manifestPath) return;
-  try {
-    const current = readRunHistory(id, { env, limit: MAX_RUN_HISTORY }).find((run) => run.pid === process.pid);
-    if (current) updateSchedulerStatusRun(manifestPath, id, current, env);
-  } catch {
-    // Status publication must never change the scheduler command result.
-  }
-}
-
-async function withRunStatusRefresh(manifestPath, id, env, operation) {
-  try {
-    return await operation();
-  } finally {
-    publishRunStatus(manifestPath, id, env);
+    publishAttention(manifestPath, runtime, env);
   }
 }
 
@@ -206,32 +176,10 @@ function commandOverview(positionals, options, runtime, env) {
     adapterOptions: runtime.adapterOptions,
     historyLimit: options.historyLimit ?? 10,
   });
-  let overviewError;
-  try {
-    const result = withSchedulerStatusLock(options.manifestPath, env, () => {
-      try {
-        const current = compute();
-        try {
-          writeSchedulerStatusSnapshot(options.manifestPath, current, env);
-        } catch {
-          // A cache write cannot turn a successful overview into a failure.
-        }
-        return current;
-      } catch (error) {
-        overviewError = error;
-        try {
-          writeUnavailableSchedulerStatusSnapshot(options.manifestPath, env);
-        } catch {
-          // Preserve the authoritative overview error.
-        }
-        throw error;
-      }
-    });
-    return { command: "overview", result };
-  } catch (error) {
-    if (overviewError) throw overviewError;
-    return { command: "overview", result: compute() };
-  }
+  return {
+    command: "overview",
+    result: publishSchedulerAttention(options.manifestPath, compute, env),
+  };
 }
 
 function commandRunLog(positionals, options, env) {
@@ -340,6 +288,11 @@ function overviewSourcePath(id, env) {
   return undefined;
 }
 
+function installedManifestEnvironment(id, manifestPath, env) {
+  if (!id.startsWith("global:") || !manifestPath) return env;
+  return { ...env, XDG_CONFIG_HOME: path.dirname(path.dirname(manifestPath)) };
+}
+
 async function executeCommand(command, positionals, options, runtime) {
   const { platform, adapterOptions } = runtime;
   let env = runtime.env;
@@ -369,12 +322,14 @@ async function executeCommand(command, positionals, options, runtime) {
     remove: removeJob,
   }[command];
   if (lifecycleOperation) {
-    return withStatusRefresh(sourcePath, operationRuntime, env, async () => ({
+    return withAttentionRefresh(sourcePath, operationRuntime, env, async () => ({
       command,
       result: lifecycleOperation(lifecycleInput(id, options, operationRuntime)),
     }));
   }
   if (command === "run" || command === "_run-installed") {
+    const manifestPath = command === "run" ? sourcePath : installedManifestPath;
+    const attentionEnv = command === "run" ? env : installedManifestEnvironment(id, manifestPath, env);
     const operation = async () => ({
       command,
       result: await executeInstalled(id, {
@@ -382,11 +337,10 @@ async function executeCommand(command, positionals, options, runtime) {
         expectedDigest: options.expectedInstalledDigest,
         expectedRevision: options.expectedRevision,
         trigger: command === "_run-installed" ? "scheduled" : "manual",
+        onStateChange: () => publishAttention(manifestPath, operationRuntime, attentionEnv),
       }),
     });
-    return command === "run"
-      ? withStatusRefresh(sourcePath, operationRuntime, env, operation)
-      : withRunStatusRefresh(installedManifestPath, id, env, operation);
+    return withAttentionRefresh(manifestPath, operationRuntime, attentionEnv, operation);
   }
   if (command === "status") {
     return { command, result: requireAvailableInstallation(installedStatus(id, { env, adapterOptions })) };
