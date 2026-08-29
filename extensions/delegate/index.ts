@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
 	getAgentDir,
@@ -37,7 +37,7 @@ const DelegateParams = Type.Object({
 	label: Type.Optional(Type.String({ minLength: 1, description: "Label for task; only valid with task" })),
 	tasks: Type.Optional(Type.Array(TaskParams, { minItems: 1, maxItems: 32, description: "A homogeneous labeled task batch" })),
 	cwd: Type.Optional(Type.String({ minLength: 1, description: "Working directory or clean source directory; defaults to the parent cwd" })),
-	workspace: Type.Optional(Type.String({ enum: ["existing", "temporary"], description: "Use the existing directory or an extension-owned reviewable temporary worktree" })),
+	workspace: Type.Optional(Type.String({ enum: ["existing", "temporary"], description: "Use the existing directory or an isolated temporary workspace: a Git worktree in a repository, otherwise a scratch directory" })),
 	context: Type.Optional(Type.String({ enum: ["fresh", "fork"], description: "Fresh agent context or a full parent-session fork" })),
 	skills: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { uniqueItems: true, description: "Explicit skill names" })),
 	tools: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { uniqueItems: true, description: "Explicit built-in coding tool allowlist" })),
@@ -110,14 +110,22 @@ export function toolText(result: RunView): string {
 		lines.push(`${child.label}: ${child.state} — ${renderedResult(child)}`);
 		if (child.workspace) {
 			const revision = child.workspace.revision ? ` · ${child.workspace.revision}` : "";
-			lines.push(`  Workspace: ${child.workspace.state}${revision}`);
+			const label = child.workspace.backing === "scratch" ? "Scratch" : "Workspace";
+			lines.push(`  ${label}: ${child.workspace.state}${revision}`);
+			lines.push(`  Path: ${child.workspace.pathRef}`);
 			if (child.workspace.message) lines.push(`  Workspace note: ${child.workspace.message}`);
 			if (child.workspace.cleanupError) lines.push(`  Cleanup failed: ${child.workspace.cleanupError}`);
+			if (child.workspace.contents) {
+				lines.push("  Contents:", ...child.workspace.contents.map((entry) => `    ${entry}`));
+				if (child.workspace.contentsTruncated) lines.push("    [additional entries omitted]");
+			}
 			if (child.workspace.patchRef) lines.push(`  Patch: ${child.workspace.patchRef}`);
 			if (child.workspace.manifestRef) lines.push(`  Manifest: ${child.workspace.manifestRef}`);
 			if (child.workspace.state === "working"
 				&& (child.state === "completed" || child.state === "failed" || child.state === "cancelled")) {
-				lines.push("  Next: review this child with delegate_control");
+				lines.push(child.workspace.backing === "scratch"
+					? "  Next: preserve useful artifacts, then clean this scratch workspace with delegate_control"
+					: "  Next: review this child with delegate_control");
 			}
 			if ((child.workspace.state === "review_pending" || child.workspace.state === "conflict") && child.workspace.revision) {
 				lines.push(`  Next: apply or discard revision ${child.workspace.revision} with delegate_control`);
@@ -231,7 +239,7 @@ export function agentDeskTarget(runId?: string, childId?: string): AgentDeskTarg
 	};
 }
 
-async function existingDirectory(parentCwd: string, value: string | undefined): Promise<string> {
+export async function existingDirectory(parentCwd: string, value: string | undefined): Promise<string> {
 	const cwd = value ? resolve(parentCwd, value) : parentCwd;
 	let info;
 	try {
@@ -240,7 +248,7 @@ async function existingDirectory(parentCwd: string, value: string | undefined): 
 		throw new Error(`Delegated working directory does not exist: ${cwd}`);
 	}
 	if (!info.isDirectory()) throw new Error(`Delegated working directory is not a directory: ${cwd}`);
-	return cwd;
+	return realpath(cwd);
 }
 
 export function normalizeTasks(params: { task?: string; label?: string; tasks?: Array<{ task: string; label?: string }> }): Array<{ task: string; label: string }> {
@@ -442,12 +450,12 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 	const delegateTool: ToolDefinition<typeof DelegateParams, DelegateToolDetails> = {
 		name: "delegate",
 		label: "Agents",
-		description: "Start one agent or a homogeneous labeled agent batch and immediately return a live handle. Shared options can select an existing directory or reviewable temporary worktree, fresh or forked context, named skills, coding tools, an exact model/reasoning route, and structured output. Agents never inherit ambient extensions or delegation capability.",
+		description: "Start one agent or a homogeneous labeled agent batch and immediately return a live handle. Shared options can select an existing directory or isolated temporary workspace, fresh or forked context, named skills, coding tools, an exact model/reasoning route, and structured output. Temporary work uses a Git worktree in a repository and a scratch directory otherwise. Agents never inherit ambient extensions or delegation capability.",
 		promptSnippet: "Start focused agent work without blocking the parent turn",
 		promptGuidelines: [
 			"Use delegate when isolated context, independent judgment, or concurrency materially helps; continue useful parent work after it returns.",
 			"Use tasks for homogeneous parallel work. Use separate delegate calls when agents need different resources or models.",
-			"Use a temporary workspace for an isolated writer, then review its exact revision before explicitly applying or discarding it.",
+			"Use a temporary workspace for isolation. Review and explicitly apply or discard Git work; for scratch research, preserve or distill useful artifacts before explicit cleanup.",
 			"Do not call delegate and immediately wait when useful independent parent work remains.",
 			"Treat delegate run and child IDs as internal orchestration data. Never repeat them in user-facing prose; direct users to /agents for diagnostics.",
 		],
@@ -526,7 +534,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 	const controlTool: ToolDefinition<typeof DelegateControlParams, DelegateControlDetails> = {
 		name: "delegate_control",
 		label: "Agent Control",
-		description: "Inspect, wait for, steer, reply to, cancel, or resume an agent run. Review, apply, discard, and cleanup manage finalized temporary workspaces by exact revision and explicit recovery. Status is a one-time snapshot; wait is the blocking completion path. Invalid IDs, fields, and transitions are tool errors; agent failures are returned as run data.",
+		description: "Inspect, wait for, steer, reply to, cancel, or resume an agent run. Review, apply, and discard manage finalized Git workspaces by exact revision. Cleanup retries failed Git cleanup or explicitly removes a finalized scratch workspace after useful artifacts are preserved. Status is a one-time snapshot; wait is the blocking completion path. Invalid IDs, fields, and transitions are tool errors; agent failures are returned as run data.",
 		promptSnippet: "Control one existing agent run without polling",
 		promptGuidelines: [
 			"Choose one result path per dependency: continue and rely on automatic delivery, or call wait once when blocked. Reserve status for one-time inspection after a state change. Switch modes or retry only after an explicit failure or timeout.",
@@ -663,7 +671,8 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 						? cleaned.children.find((candidate) => candidate.id === second)
 						: cleaned.children.find((candidate) => candidate.workspace.kind === "temporary");
 					const integration = child?.workspace.kind === "temporary" ? child.workspace.integration : undefined;
-					const failed = !!(integration && "cleanupError" in integration && integration.cleanupError);
+					const failed = !!(integration && (("cleanupError" in integration && integration.cleanupError)
+						|| (integration.state === "working" && integration.message)));
 					ctx.ui.notify(failed ? `Cleanup still failed: ${first}` : `Cleanup completed: ${first}`, failed ? "warning" : "info");
 				} else if (action === "review") {
 					if (!first) {
@@ -744,8 +753,9 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 		delegateUi?.dispose();
 		if (runtime) await runtime.dispose();
 
+		const delegateRunsRoot = join(getAgentDir(), "delegate-runs");
 		const repository = createFileRunRepository(
-			join(getAgentDir(), "delegate-runs"),
+			delegateRunsRoot,
 			(message) => ctx.ui.notify(message, "warning"),
 		);
 		const delivery = createParentDelivery({
@@ -786,7 +796,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 			repository,
 			children: createPiChildSessionAdapter(),
 			delivery,
-			workspaces: createGitWorkspaceManager(),
+			workspaces: createGitWorkspaceManager(delegateRunsRoot),
 			maxActiveChildren: DEFAULT_MAX_ACTIVE_CHILDREN,
 		});
 		delegateUi = createDelegateUi(runtime);

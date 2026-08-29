@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
 	RUN_SCHEMA_VERSION,
 	type DelegationRun,
+	isGitTemporaryWorkspace,
 	type RunPaths,
 	type RunRepository,
 } from "./runtime.ts";
@@ -118,12 +119,16 @@ export class FileRunRepository implements RunRepository {
 			if (child.sessionDir !== expected.childSessionDir) {
 				throw new Error(`Delegation child ${child.id} has an invalid session path`);
 			}
-			if (child.workspace.kind === "temporary"
-				&& (child.workspace.worktreePath !== expected.worktreeDir
-					|| child.workspace.patchPath !== expected.patchFile
-					|| child.workspace.manifestPath !== expected.manifestFile
-					|| child.workspace.branch !== temporaryWorkspaceBranch(run.id, child.id))) {
-				throw new Error(`Delegation child ${child.id} has invalid temporary workspace ownership`);
+			if (child.workspace.kind === "temporary") {
+				if (child.workspace.worktreePath !== expected.worktreeDir) {
+					throw new Error(`Delegation child ${child.id} has invalid temporary workspace ownership`);
+				}
+				if (isGitTemporaryWorkspace(child.workspace)
+					&& (child.workspace.patchPath !== expected.patchFile
+						|| child.workspace.manifestPath !== expected.manifestFile
+						|| child.workspace.branch !== temporaryWorkspaceBranch(run.id, child.id))) {
+					throw new Error(`Delegation child ${child.id} has invalid temporary workspace ownership`);
+				}
 			}
 		}
 	}

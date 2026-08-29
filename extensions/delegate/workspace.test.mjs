@@ -429,3 +429,163 @@ test("reports an unchanged temporary tree and cleans it without artifacts", asyn
   assert.equal(fs.existsSync(workspace.worktreePath), false);
   assert.equal(fs.existsSync(workspace.patchPath), false);
 });
+
+test("creates and explicitly cleans an empty scratch workspace for a non-Git source", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, "input.txt"), "source material\n");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const manager = new GitWorkspaceManager(store);
+  const input = {
+    sourceCwd: source,
+    runId: "run-scratch",
+    childId: "child-scratch",
+    worktreePath: path.join(store, "parent", "run-scratch", "worktrees", "child-scratch"),
+    patchPath: path.join(store, "parent", "run-scratch", "patches", "child-scratch.patch"),
+    manifestPath: path.join(store, "parent", "run-scratch", "patches", "child-scratch.manifest.json"),
+  };
+  const workspace = await manager.prepare(input);
+
+  assert.equal(workspace.kind, "temporary");
+  assert.equal("repoRoot" in workspace, false);
+  assert.equal(workspace.worktreePath, input.worktreePath);
+  assert.deepEqual(fs.readdirSync(workspace.worktreePath), []);
+  assert.equal(fs.statSync(workspace.worktreePath).mode & 0o777, 0o700);
+  assert.equal(fs.readFileSync(path.join(source, "input.txt"), "utf8"), "source material\n");
+
+  fs.writeFileSync(path.join(workspace.worktreePath, "evidence.log"), "useful evidence\n");
+  fs.mkdirSync(path.join(workspace.worktreePath, "raw"));
+  fs.writeFileSync(path.join(workspace.worktreePath, "raw", "output.txt"), "captured output\n");
+  const movedSource = path.join(root, "moved-source");
+  fs.renameSync(source, movedSource);
+  assert.deepEqual(await manager.inspectScratch(workspace), {
+    entries: ["evidence.log", "raw/", "raw/output.txt"],
+    truncated: false,
+  });
+  await manager.cleanup(workspace);
+  assert.equal(fs.existsSync(workspace.worktreePath), false);
+  assert.equal(fs.readFileSync(path.join(movedSource, "input.txt"), "utf8"), "source material\n");
+});
+
+test("refuses scratch paths outside the configured temporary root and replacement symlinks", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-safety-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  const outside = path.join(root, "outside");
+  fs.mkdirSync(source);
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, "preserve.txt"), "preserve me\n");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const manager = new GitWorkspaceManager(store);
+  const unsafe = {
+    sourceCwd: source,
+    runId: "run-unsafe",
+    childId: "child-unsafe",
+    worktreePath: outside,
+    patchPath: path.join(store, "patches", "unsafe.patch"),
+    manifestPath: path.join(store, "patches", "unsafe.json"),
+  };
+  await assert.rejects(manager.prepare(unsafe), /outside the delegate temporary root/);
+  assert.equal(fs.readFileSync(path.join(outside, "preserve.txt"), "utf8"), "preserve me\n");
+
+  const safe = { ...unsafe, worktreePath: path.join(store, "run", "workspaces", "child") };
+  const workspace = await manager.prepare(safe);
+  fs.rmSync(workspace.worktreePath, { recursive: true });
+  fs.symlinkSync(outside, workspace.worktreePath);
+  await assert.rejects(manager.cleanup(workspace), /workspace was replaced/);
+  assert.equal(fs.readFileSync(path.join(outside, "preserve.txt"), "utf8"), "preserve me\n");
+});
+
+test("refuses scratch cleanup through a replaced ancestor symlink", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-ancestor-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const manager = new GitWorkspaceManager(store);
+  const workspacePath = path.join(store, "run", "workspaces", "child");
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    worktreePath: workspacePath,
+    patchPath: path.join(store, "run", "patches", "child.patch"),
+    manifestPath: path.join(store, "run", "patches", "child.json"),
+  });
+  fs.writeFileSync(path.join(workspacePath, "original.txt"), "original scratch\n");
+
+  const originalParent = path.join(store, "run", "original-workspaces");
+  fs.renameSync(path.dirname(workspacePath), originalParent);
+  const replacementParent = path.join(store, "other", "workspaces");
+  const replacementChild = path.join(replacementParent, "child");
+  fs.mkdirSync(replacementChild, { recursive: true });
+  fs.writeFileSync(path.join(replacementChild, "valuable.txt"), "do not delete\n");
+  fs.symlinkSync(replacementParent, path.dirname(workspacePath));
+
+  await assert.rejects(manager.cleanup(workspace), /replaced path/);
+  assert.equal(fs.readFileSync(path.join(originalParent, "child", "original.txt"), "utf8"), "original scratch\n");
+  assert.equal(fs.readFileSync(path.join(replacementChild, "valuable.txt"), "utf8"), "do not delete\n");
+});
+
+test("refuses scratch cleanup after the temporary root becomes a symlink, including after restart", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-root-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const manager = new GitWorkspaceManager(store);
+  const workspacePath = path.join(store, "parent", "run", "worktrees", "child");
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    worktreePath: workspacePath,
+    patchPath: path.join(store, "parent", "run", "patches", "child.patch"),
+    manifestPath: path.join(store, "parent", "run", "patches", "child.json"),
+  });
+  fs.writeFileSync(path.join(workspacePath, "original.txt"), "original scratch\n");
+
+  const originalRoot = path.join(root, "original-delegate-runs");
+  fs.renameSync(store, originalRoot);
+  const replacementRoot = path.join(root, "replacement-delegate-runs");
+  const replacementChild = path.join(replacementRoot, "parent", "run", "worktrees", "child");
+  fs.mkdirSync(replacementChild, { recursive: true });
+  fs.writeFileSync(path.join(replacementChild, "valuable.txt"), "do not delete\n");
+  fs.symlinkSync(replacementRoot, store);
+
+  await assert.rejects(manager.cleanup(workspace), /temporary root was replaced/);
+  await assert.rejects(new GitWorkspaceManager(store).cleanup(workspace), /temporary root was replaced/);
+  assert.equal(fs.readFileSync(path.join(originalRoot, "parent", "run", "worktrees", "child", "original.txt"), "utf8"), "original scratch\n");
+  assert.equal(fs.readFileSync(path.join(replacementChild, "valuable.txt"), "utf8"), "do not delete\n");
+});
+
+test("never treats a registered Git worktree as scratch based on persisted fields", async (t) => {
+  const { repo, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store);
+  const workspace = await manager.prepare(preparation(store, "registered-not-scratch"));
+  const disguised = {
+    kind: "temporary",
+    sourceCwd: repo,
+    worktreePath: workspace.worktreePath,
+    integration: { state: "working" },
+  };
+
+  await assert.rejects(manager.cleanup(disguised), /registered Git worktree/);
+  assert.equal(fs.existsSync(workspace.worktreePath), true);
+  await manager.cleanup(workspace);
+});
+
+test("does not fall back to scratch after detecting a Git source", async (t) => {
+  const { repo, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store);
+  fs.writeFileSync(path.join(repo, "keep.txt"), "dirty\n");
+
+  await assert.rejects(manager.prepare(preparation(store, "git-failure")), /must be clean/);
+  assert.equal(fs.existsSync(path.join(store, "worktrees", "git-failure")), false);
+});
