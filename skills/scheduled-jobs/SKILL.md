@@ -12,26 +12,24 @@ Use `scheduled-jobs` for scheduler lifecycle work. Prefer the human-only Pi `/sc
 Pass one exact manifest path. The CLI does not discover projects.
 
 ```bash
-scheduled-jobs list --manifest ~/.config/pi-scheduler/jobs.json
+scheduled-jobs overview --manifest ~/.config/pi-scheduler/jobs.json --json
 scheduled-jobs inspect global:daily-report:work --manifest ~/.config/pi-scheduler/jobs.json --json
 scheduled-jobs doctor global:daily-report:work --manifest ~/.config/pi-scheduler/jobs.json --json
 scheduled-jobs status global:daily-report:work --json
+scheduled-jobs runs global:daily-report:work --limit 20 --json
+scheduled-jobs run-log global:daily-report:work RUN_ID --lines 200
 scheduled-jobs logs global:daily-report:work --lines 200
 ```
 
-Project declarations must be at the exact Git root under `.pi/scheduler.json`. Treat every manifest as inert input. Installation creates a private reviewed snapshot and leaves it disabled.
+`overview` reports task health, next scheduled occurrence, and bounded structured run history for one manifest. `runs` and `run-log` inspect individual execution receipts and output; older installations begin with no recorded runs. Project declarations must be at the exact Git root under `.pi/scheduler.json`. Treat every manifest as inert input. Installation creates a private reviewed snapshot and leaves it disabled.
 
 ## Required checkpoint
 
-Before `install`, `update`, `run`, `enable`, `disable`, or `remove`:
+Before `install`, `update`, `run`, `enable`, `disable`, or `remove`, re-inspect and show the scope, source path, relevant lifecycle effect, and the candidate digest or installed digest plus lifecycle revision.
 
-1. Show the user the scope and source path.
-2. Show the exact resolved argv, executable mappings, working directory, schedule, adapter, timeout, and warnings.
-3. Show the candidate digest for install/update or the installed digest and lifecycle revision for other operations.
-4. For updates, summarize the installed-to-candidate differences.
-5. Ask for explicit confirmation of that exact operation.
+For `install`, `update`, or `run`, also show the exact resolved argv, executable mappings, working directory, schedule, adapter, timeout, and warnings. For updates, summarize the installed-to-candidate differences. For `enable` or `disable`, show the schedule, adapter, warnings, and whether future runs will start or stop. For `remove`, show the adapter artifacts and installed state being removed and make clear that the declaration remains.
 
-Do not reuse an earlier approval after any digest or revision changes. Re-inspect and ask again. Run-now always uses the installed snapshot; never run an uninstalled declaration directly.
+Ask for explicit confirmation of that exact operation. Do not reuse approval after a digest or revision changes. Run-now always uses the installed snapshot; never run an uninstalled declaration directly.
 
 ## Lifecycle
 
@@ -46,9 +44,11 @@ scheduled-jobs disable JOB_ID --expected-installed-digest DIGEST --expected-revi
 scheduled-jobs remove JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 ```
 
-Fresh installs are disabled. Confirm run-now and enablement separately. Native enablement may immediately perform one catch-up run; cron fallback does not catch up.
+Fresh installs are disabled. Confirm run-now and enablement separately. `run` blocks until the installed snapshot finishes, then records its structured receipt and bounded output. Native enablement may immediately perform one catch-up run; cron fallback does not catch up.
 
 ## Recovery
+
+For a blocked task, run the exact read-only `doctor` command shown in its details before changing source or environment state. Explain the cause before changing anything. The dashboard's `r` key only refreshes observed state; it does not perform recovery.
 
 - `STALE_CANDIDATE` or `STALE_STATE`: stop, re-inspect, display the changed contract, and obtain new confirmation.
 - Definition drift: the installed snapshot remains authoritative until a confirmed update.
