@@ -163,7 +163,7 @@ test("dashboard emits plain navigation and refresh intents", () => {
 });
 
 test("detail emits refresh, action, run, and back intents", () => {
-  const view = harness();
+  const view = harness(40);
   const timedOut = run({ runId: "00000000-0000-4000-8000-000000000002", status: "timed-out", reason: "timed out" });
   const current = job({
     candidateError: { code: "ENVIRONMENT", message: "missing command" },
@@ -173,6 +173,8 @@ test("detail emits refresh, action, run, and back intents", () => {
   const rendered = new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, () => {}, new Date(), doctor).render(120).join("\n");
   assert.match(rendered, /Recovery: run .*scheduled-jobs.* doctor/);
   assert.match(rendered, /Latest execution timed out/);
+  assert.match(rendered, /affected execution is selected/);
+  assert.doesNotMatch(rendered, /repair|private state/);
 
   const refresh = [];
   new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, (result) => refresh.push(result)).handleInput("r");
@@ -185,13 +187,51 @@ test("detail emits refresh, action, run, and back intents", () => {
   const runs = [];
   const runView = new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, (result) => runs.push(result));
   runView.handleInput("\t");
-  runView.handleInput("j");
   runView.handleInput("\r");
   assert.deepEqual(runs, [{ kind: "run", id: current.id, runId: timedOut.runId }]);
 
   const back = [];
   new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, (result) => back.push(result)).handleInput("q");
   assert.deepEqual(back, [{ kind: "back" }]);
+});
+
+test("detail scroll keys follow content direction and End reaches the bottom", () => {
+  const view = harness(12);
+  const definition = Array.from({ length: 20 }, (_, index) => `definition line ${String(index + 1).padStart(2, "0")}`).join("\n");
+  const component = new SchedulerJobDetailComponent(job(), definition, view.tui, theme, () => {});
+  component.handleInput("\t");
+  component.handleInput("\t");
+
+  assert.match(component.render(60).join("\n"), /definition line 01/);
+  component.handleInput("j");
+  assert.doesNotMatch(component.render(60).join("\n"), /definition line 01/);
+  component.handleInput("k");
+  assert.match(component.render(60).join("\n"), /definition line 01/);
+  component.handleInput("\u001b[F");
+  assert.match(component.render(60).join("\n"), /definition line 20/);
+});
+
+test("unhealthy installed state directs recovery through doctor and reviewed actions", () => {
+  const view = harness();
+  const unhealthy = job({
+    installation: {
+      installed: true,
+      health: "unhealthy",
+      healthReason: "installed runtime changed",
+      healthCategory: "runtime",
+      enabled: false,
+      digest: "digest",
+      revision: 2,
+      definitionDrift: false,
+      adapterDrift: false,
+    },
+  });
+  const doctor = "scheduled-jobs doctor global:daily-report:work --manifest /config/pi-scheduler/jobs.json --json";
+  const rendered = new SchedulerJobDetailComponent(unhealthy, "Definition", view.tui, theme, () => {}, new Date(), doctor).render(120).join("\n");
+
+  assert.match(rendered, /Recovery: run scheduled-jobs doctor/);
+  assert.match(rendered, /use only reviewed lifecycle actions/);
+  assert.doesNotMatch(rendered, /repair the private installed state/);
 });
 
 test("text output is synchronous and emits explicit refresh", () => {
