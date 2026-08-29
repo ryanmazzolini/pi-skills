@@ -62,7 +62,7 @@ test("completion delivery tells the parent to review a temporary writer", async 
     send: (content) => sent.push(content),
   });
   const temporaryView = structuredClone(view);
-  temporaryView.children[0].workspace = { kind: "temporary", state: "working" };
+  temporaryView.children[0].workspace = { kind: "temporary", backing: "git", state: "working", pathRef: "/tmp/worktree" };
   temporaryView.children[0].result.value = "x".repeat(40_000);
 
   assert.equal(await delivery.deliver(run(), temporaryView), "delivered");
@@ -70,6 +70,30 @@ test("completion delivery tells the parent to review a temporary writer", async 
   assert.match(sent[0], /delegate_control action=review/);
   assert.match(sent[0], /childId=child-1/);
   assert.match(sent[0], /Full run: \/tmp\/run.json/);
+});
+
+test("completion delivery preserves scratch artifacts for explicit disposition", async () => {
+  const sent = [];
+  const delivery = createParentDelivery({
+    current: () => ({ sessionId: "parent-1", inputGeneration: 1, branchIds: ["leaf-1"] }),
+    send: (content) => sent.push(content),
+  });
+  const scratchView = structuredClone(view);
+  scratchView.children[0].workspace = {
+    kind: "temporary",
+    backing: "scratch",
+    state: "working",
+    pathRef: "/tmp/delegate/scratch",
+    contents: ["evidence.log", "raw/output.txt"],
+    contentsTruncated: false,
+  };
+
+  assert.equal(await delivery.deliver(run(), scratchView), "delivered");
+  assert.match(sent[0], /Scratch workspace preserved at \/tmp\/delegate\/scratch/);
+  assert.match(sent[0], /Preserve useful artifacts/);
+  assert.match(sent[0], /Scratch contents:\n- evidence\.log\n- raw\/output\.txt/);
+  assert.match(sent[0], /delegate_control action=cleanup/);
+  assert.doesNotMatch(sent[0], /action=review/);
 });
 
 test("completion delivery preserves temporary review evidence references", async () => {
@@ -81,7 +105,9 @@ test("completion delivery preserves temporary review evidence references", async
   const reviewedView = structuredClone(view);
   reviewedView.children[0].workspace = {
     kind: "temporary",
+    backing: "git",
     state: "review_pending",
+    pathRef: "/tmp/worktree",
     revision: "tree-reviewed",
     patchRef: "/tmp/review.patch",
     manifestRef: "/tmp/review.manifest.json",

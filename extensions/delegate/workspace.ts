@@ -1,12 +1,16 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { chmod, link, lstat, mkdir, readlink, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { chmod, link, lstat, mkdir, readlink, readdir, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	WorkspaceConflictError,
 	type DiffSummary,
+	type GitTemporaryWorkspace,
+	type ScratchContentsSummary,
+	type ScratchTemporaryWorkspace,
 	type TemporaryWorkspace,
+	isGitTemporaryWorkspace,
 	type WorkspaceDestinationInspection,
 	type WorkspaceInspection,
 	type WorkspaceManager,
@@ -176,14 +180,25 @@ function samePathIdentity(left: PathIdentity | undefined, right: PathIdentity): 
 	return left?.dev === right.dev && left.ino === right.ino;
 }
 
-async function repositoryRoot(cwd: string): Promise<string> {
-	let root: string;
+async function detectRepositoryRoot(cwd: string): Promise<string | undefined> {
 	try {
-		root = (await runGit(["rev-parse", "--show-toplevel"], { cwd })).stdout.trim();
-	} catch {
-		throw new Error(`Temporary workspace source is not inside a Git repository: ${cwd}`);
+		const root = (await runGit(["rev-parse", "--show-toplevel"], { cwd })).stdout.trim();
+		return realpath(root);
+	} catch (error) {
+		if (/not a git repository/i.test(error instanceof Error ? error.message : String(error))) return undefined;
+		throw error;
 	}
-	return realpath(root);
+}
+
+async function repositoryRoot(cwd: string): Promise<string> {
+	const root = await detectRepositoryRoot(cwd);
+	if (!root) throw new Error(`Temporary workspace source is not inside a Git repository: ${cwd}`);
+	return root;
+}
+
+function pathIsInside(root: string, candidate: string): boolean {
+	const path = relative(root, candidate);
+	return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
 }
 
 async function assertCleanRepository(repoRoot: string): Promise<void> {
@@ -216,7 +231,7 @@ async function findRegisteredWorktree(repoRoot: string, worktreePath: string): P
 	return undefined;
 }
 
-async function assertOwnedWorktree(workspace: TemporaryWorkspace): Promise<void> {
+async function assertOwnedWorktree(workspace: GitTemporaryWorkspace): Promise<void> {
 	if (!workspace.branch.startsWith("pi-delegate/")) throw new Error(`Refusing unsafe temporary branch: ${workspace.branch}`);
 	const sourceRoot = await repositoryRoot(workspace.sourceCwd);
 	if (sourceRoot !== workspace.repoRoot) throw new Error(`Temporary workspace repository changed: ${sourceRoot}`);
@@ -359,7 +374,7 @@ async function installTreePathNoReplace(repoRoot: string, path: string, state: G
 	}
 }
 
-async function rollbackFailedApply(workspace: TemporaryWorkspace, review: WorkspaceReview, cause: unknown): Promise<string> {
+async function rollbackFailedApply(workspace: GitTemporaryWorkspace, review: WorkspaceReview, cause: unknown): Promise<string> {
 	const paths = await changedPaths(workspace.repoRoot, review.baseTree, review.revision);
 	const states = await Promise.all(paths.map(async (path) => ({
 		path,
@@ -466,7 +481,7 @@ function parseSummary(value: string): DiffSummary {
 }
 
 async function writeReviewArtifacts(
-	workspace: TemporaryWorkspace,
+	workspace: GitTemporaryWorkspace,
 	baseTree: string,
 	revision: string,
 ): Promise<DiffSummary> {
@@ -489,7 +504,7 @@ async function writeReviewArtifacts(
 	return summary;
 }
 
-async function cleanupTemporaryWorkspace(workspace: TemporaryWorkspace, expectedRevision?: string): Promise<void> {
+async function cleanupTemporaryWorkspace(workspace: GitTemporaryWorkspace, expectedRevision?: string): Promise<void> {
 	await rm(`${workspace.patchPath}.index`, { force: true }).catch(() => {});
 	await rm(`${workspace.patchPath}.destination.index`, { force: true }).catch(() => {});
 	if (!workspace.branch.startsWith("pi-delegate/")) throw new Error(`Refusing unsafe temporary branch: ${workspace.branch}`);
@@ -524,7 +539,7 @@ async function cleanupTemporaryWorkspace(workspace: TemporaryWorkspace, expected
 }
 
 async function cleanupFailedPreparation(
-	workspace: TemporaryWorkspace,
+	workspace: GitTemporaryWorkspace,
 	setupIdentity: PathIdentity,
 	branchOwned: boolean,
 ): Promise<void> {
@@ -571,10 +586,124 @@ async function cleanupFailedPreparation(
 	if (conflicts.length > 0) throw new WorkspaceConflictError(`Failed setup cleanup conflict: ${conflicts.join("; ")}`);
 }
 
+interface TemporaryRoot {
+	configuredPath: string;
+	canonicalPath: string;
+	identity: PathIdentity;
+}
+
+async function createScratchWorkspace(
+	input: WorkspacePreparationInput,
+	sourceCwd: string,
+	temporaryRoot: TemporaryRoot,
+): Promise<ScratchTemporaryWorkspace> {
+	const configuredRoot = temporaryRoot.configuredPath;
+	const candidate = resolve(input.worktreePath);
+	if (!pathIsInside(configuredRoot, candidate) || candidate === configuredRoot) {
+		throw new Error(`Scratch workspace path is outside the delegate temporary root: ${input.worktreePath}`);
+	}
+	if (await pathExists(candidate)) throw new Error(`Temporary workspace path already exists: ${candidate}`);
+	const canonicalRoot = temporaryRoot.canonicalPath;
+	await mkdir(dirname(candidate), { recursive: true, mode: 0o700 });
+	const canonicalParent = await realpath(dirname(candidate));
+	const expectedParent = resolve(canonicalRoot, relative(configuredRoot, dirname(candidate)));
+	if (canonicalParent !== expectedParent) {
+		throw new Error(`Scratch workspace parent escapes the delegate temporary root: ${input.worktreePath}`);
+	}
+	await mkdir(candidate, { mode: 0o700 });
+	return {
+		kind: "temporary",
+		sourceCwd,
+		worktreePath: input.worktreePath,
+		integration: { state: "working" },
+	};
+}
+
+async function ownedScratchDirectory(
+	workspace: ScratchTemporaryWorkspace,
+	temporaryRoot: TemporaryRoot,
+): Promise<string | undefined> {
+	const configuredRoot = temporaryRoot.configuredPath;
+	const candidate = resolve(workspace.worktreePath);
+	if (!pathIsInside(configuredRoot, candidate) || candidate === configuredRoot) {
+		throw new WorkspaceConflictError(`Scratch workspace is outside the delegate temporary root: ${workspace.worktreePath}`);
+	}
+	let info;
+	try {
+		info = await lstat(candidate);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
+	if (info.isSymbolicLink() || !info.isDirectory()) {
+		throw new WorkspaceConflictError(`Scratch workspace was replaced: ${workspace.worktreePath}`);
+	}
+	const candidateRepository = await detectRepositoryRoot(candidate);
+	if (candidateRepository) {
+		const registration = await findRegisteredWorktree(candidateRepository, candidate);
+		if (registration) {
+			throw new WorkspaceConflictError(`Scratch path is a registered Git worktree: ${workspace.worktreePath}`);
+		}
+	}
+	const canonicalCandidate = await realpath(candidate);
+	const expectedCandidate = resolve(temporaryRoot.canonicalPath, relative(configuredRoot, candidate));
+	if (canonicalCandidate !== expectedCandidate || canonicalCandidate === temporaryRoot.canonicalPath) {
+		throw new WorkspaceConflictError(`Scratch workspace uses a replaced path: ${workspace.worktreePath}`);
+	}
+	return candidate;
+}
+
+async function inspectScratchWorkspace(
+	workspace: ScratchTemporaryWorkspace,
+	temporaryRoot: TemporaryRoot,
+): Promise<ScratchContentsSummary> {
+	const root = await ownedScratchDirectory(workspace, temporaryRoot);
+	if (!root) return { entries: [], truncated: false, error: "Scratch workspace is missing" };
+	const entries: string[] = [];
+	const directories = [""];
+	let bytes = 0;
+	let truncated = false;
+	while (directories.length > 0 && entries.length < 128 && bytes < 8 * 1024) {
+		const directory = directories.shift()!;
+		const children = await readdir(join(root, directory), { withFileTypes: true });
+		children.sort((left, right) => left.name.localeCompare(right.name));
+		for (const child of children) {
+			const path = directory ? `${directory}/${child.name}` : child.name;
+			const display = child.isDirectory() ? `${path}/` : child.isSymbolicLink() ? `${path}@` : path;
+			const size = Buffer.byteLength(display, "utf8");
+			if (entries.length >= 128 || bytes + size > 8 * 1024) {
+				truncated = true;
+				break;
+			}
+			entries.push(display);
+			bytes += size;
+			if (child.isDirectory()) directories.push(path);
+		}
+	}
+	if (directories.length > 0) truncated = true;
+	return { entries, truncated };
+}
+
+async function cleanupScratchWorkspace(workspace: ScratchTemporaryWorkspace, temporaryRoot: TemporaryRoot): Promise<void> {
+	const candidate = await ownedScratchDirectory(workspace, temporaryRoot);
+	if (!candidate) return;
+	await rm(candidate, { recursive: true });
+}
+
 export class GitWorkspaceManager implements WorkspaceManager {
+	private readonly temporaryRootPath: string | undefined;
+	private temporaryRoot: TemporaryRoot | undefined;
+
+	constructor(temporaryRoot?: string) {
+		this.temporaryRootPath = temporaryRoot;
+	}
+
 	async prepare(input: WorkspacePreparationInput): Promise<TemporaryWorkspace> {
 		const sourceCwd = await realpath(input.sourceCwd);
-		const repoRoot = await repositoryRoot(sourceCwd);
+		const repoRoot = await detectRepositoryRoot(sourceCwd);
+		if (!repoRoot) {
+			return createScratchWorkspace(input, sourceCwd, await this.requireTemporaryRoot(true));
+		}
 		const relativeCwd = relative(repoRoot, sourceCwd);
 		if (relativeCwd === ".." || relativeCwd.startsWith(`..${sep}`) || isAbsolute(relativeCwd)) {
 			throw new Error(`Temporary workspace source is outside its repository: ${sourceCwd}`);
@@ -582,7 +711,7 @@ export class GitWorkspaceManager implements WorkspaceManager {
 		await assertCleanRepository(repoRoot);
 		if (await pathExists(input.worktreePath)) throw new Error(`Temporary workspace path already exists: ${input.worktreePath}`);
 		const baseCommit = (await runGit(["rev-parse", "HEAD^{commit}"], { cwd: repoRoot })).stdout.trim();
-		const workspace: TemporaryWorkspace = {
+		const workspace: GitTemporaryWorkspace = {
 			kind: "temporary",
 			sourceCwd,
 			repoRoot,
@@ -625,7 +754,7 @@ export class GitWorkspaceManager implements WorkspaceManager {
 		}
 	}
 
-	async inspect(workspace: TemporaryWorkspace): Promise<WorkspaceInspection> {
+	async inspect(workspace: GitTemporaryWorkspace): Promise<WorkspaceInspection> {
 		await assertOwnedWorktree(workspace);
 		const snapshot = await snapshotTree(workspace.worktreePath, workspace.baseCommit, `${workspace.patchPath}.index`);
 		if (snapshot.revision === snapshot.baseTree) return { kind: "no_changes" };
@@ -642,7 +771,7 @@ export class GitWorkspaceManager implements WorkspaceManager {
 		};
 	}
 
-	async inspectDestination(workspace: TemporaryWorkspace, review: WorkspaceReview): Promise<WorkspaceDestinationInspection> {
+	async inspectDestination(workspace: GitTemporaryWorkspace, review: WorkspaceReview): Promise<WorkspaceDestinationInspection> {
 		const currentRoot = await repositoryRoot(workspace.sourceCwd);
 		if (currentRoot !== workspace.repoRoot) {
 			return { kind: "changed", message: `Destination repository changed: expected ${workspace.repoRoot}, found ${currentRoot}` };
@@ -661,7 +790,7 @@ export class GitWorkspaceManager implements WorkspaceManager {
 		};
 	}
 
-	async assertRevision(workspace: TemporaryWorkspace, revision: string): Promise<void> {
+	async assertRevision(workspace: GitTemporaryWorkspace, revision: string): Promise<void> {
 		await assertOwnedWorktree(workspace);
 		const current = await snapshotTree(workspace.worktreePath, workspace.baseCommit, `${workspace.patchPath}.index`);
 		if (current.revision !== revision) {
@@ -669,7 +798,7 @@ export class GitWorkspaceManager implements WorkspaceManager {
 		}
 	}
 
-	async apply(workspace: TemporaryWorkspace, review: WorkspaceReview): Promise<void> {
+	async apply(workspace: GitTemporaryWorkspace, review: WorkspaceReview): Promise<void> {
 		await this.assertRevision(workspace, review.revision);
 		const currentRoot = await repositoryRoot(workspace.sourceCwd);
 		if (currentRoot !== workspace.repoRoot) {
@@ -699,11 +828,43 @@ export class GitWorkspaceManager implements WorkspaceManager {
 		}
 	}
 
-	cleanup(workspace: TemporaryWorkspace, expectedRevision?: string): Promise<void> {
-		return cleanupTemporaryWorkspace(workspace, expectedRevision);
+	async inspectScratch(workspace: ScratchTemporaryWorkspace): Promise<ScratchContentsSummary> {
+		return inspectScratchWorkspace(workspace, await this.requireTemporaryRoot(false));
+	}
+
+	async cleanup(workspace: TemporaryWorkspace, expectedRevision?: string): Promise<void> {
+		if (isGitTemporaryWorkspace(workspace)) return cleanupTemporaryWorkspace(workspace, expectedRevision);
+		return cleanupScratchWorkspace(workspace, await this.requireTemporaryRoot(false));
+	}
+
+	private async requireTemporaryRoot(create: boolean): Promise<TemporaryRoot> {
+		if (!this.temporaryRootPath) throw new Error("Scratch workspaces require a configured delegate temporary root");
+		const configuredPath = resolve(this.temporaryRootPath);
+		if (create) await mkdir(configuredPath, { recursive: true, mode: 0o700 });
+		let info;
+		try {
+			info = await lstat(configuredPath, { bigint: true });
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+				throw new WorkspaceConflictError("Delegate temporary root is missing");
+			}
+			throw error;
+		}
+		if (info.isSymbolicLink() || !info.isDirectory()) {
+			throw new WorkspaceConflictError("Delegate temporary root was replaced");
+		}
+		const identity = { dev: info.dev, ino: info.ino };
+		const canonicalPath = await realpath(configuredPath);
+		if (this.temporaryRoot
+			&& (!samePathIdentity(this.temporaryRoot.identity, identity)
+				|| this.temporaryRoot.canonicalPath !== canonicalPath)) {
+			throw new WorkspaceConflictError("Delegate temporary root identity changed");
+		}
+		this.temporaryRoot ??= { configuredPath, canonicalPath, identity };
+		return this.temporaryRoot;
 	}
 }
 
-export function createGitWorkspaceManager(): WorkspaceManager {
-	return new GitWorkspaceManager();
+export function createGitWorkspaceManager(temporaryRoot?: string): WorkspaceManager {
+	return new GitWorkspaceManager(temporaryRoot);
 }

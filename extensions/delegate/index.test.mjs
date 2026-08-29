@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import delegateExtension, { agentDeskTarget, currentDelegationRun, currentHeldRun, delegateLaunchText, heldEntryData, heldEntryState, heldEntryTitle, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
+import delegateExtension, { agentDeskTarget, currentDelegationRun, currentHeldRun, delegateLaunchText, existingDirectory, heldEntryData, heldEntryState, heldEntryTitle, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
+
+test("canonicalizes a symlinked delegated working directory before resource and workspace resolution", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-cwd-test-"));
+  const source = path.join(root, "source");
+  const alias = path.join(root, "alias");
+  fs.mkdirSync(source);
+  fs.symlinkSync(source, alias);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  assert.equal(await existingDirectory(root, "alias"), fs.realpathSync(source));
+});
 
 test("validates the one-or-batch task boundary", () => {
   assert.deepEqual(normalizeTasks({ task: " Read it " }), [{ task: "Read it", label: "Read it" }]);
@@ -87,7 +101,7 @@ test("recommends temporary workspace review only after the child is finalized", 
       label: "Writer",
       state: "running",
       lastActivity: { kind: "tool", summary: "Editing", observedAt: new Date(0).toISOString() },
-      workspace: { kind: "temporary", state: "working" },
+      workspace: { kind: "temporary", backing: "git", state: "working", pathRef: "/tmp/worktree" },
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0 },
     }],
   };
@@ -95,6 +109,13 @@ test("recommends temporary workspace review only after the child is finalized", 
   assert.doesNotMatch(toolText(view), /Next: review/);
   view.children[0].state = "completed";
   assert.match(toolText(view), /Next: review/);
+
+  view.children[0].workspace = { kind: "temporary", backing: "scratch", state: "working", pathRef: "/tmp/scratch" };
+  const scratch = toolText(view);
+  assert.match(scratch, /Scratch: working/);
+  assert.match(scratch, /Path: \/tmp\/scratch/);
+  assert.match(scratch, /preserve useful artifacts, then clean/);
+  assert.doesNotMatch(scratch, /Next: review/);
 });
 
 test("selects the newest manageable run for the no-argument agents command", () => {
@@ -200,6 +221,9 @@ test("registers a small execution tool and separate control tool", async () => {
     "task", "label", "tasks", "cwd", "workspace", "context", "skills", "tools", "model", "reasoning", "outputSchema",
   ]);
   assert.deepEqual(delegate.parameters.properties.workspace.enum, ["existing", "temporary"]);
+  assert.match(delegate.parameters.properties.workspace.description, /Git worktree.*scratch directory/);
+  assert.match(delegate.description, /Git worktree.*scratch directory/);
+  assert.match(delegate.promptGuidelines.join("\n"), /scratch research.*explicit cleanup/);
   assert.deepEqual(Object.keys(delegate.parameters.properties.tasks.items.properties), ["task", "label"]);
   assert.equal(delegate.renderShell, "self");
   assert.match(delegate.promptGuidelines.join("\n"), /Never repeat them in user-facing prose/);

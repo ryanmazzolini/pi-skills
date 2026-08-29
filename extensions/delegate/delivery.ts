@@ -37,11 +37,17 @@ function formatRun(view: RunView): string {
 	for (const child of view.children) {
 		lines.push("", `### ${child.label} — ${child.state}`);
 		if (child.workspace?.state === "working") {
-			lines.push(`Temporary workspace preserved. Review it with delegate_control action=review, runId=${view.runId}, childId=${child.childId}.`);
+			lines.push(child.workspace.backing === "scratch"
+				? `Scratch workspace preserved at ${child.workspace.pathRef}. Preserve useful artifacts, then clean it with delegate_control action=cleanup, runId=${view.runId}, childId=${child.childId}.`
+				: `Temporary workspace preserved at ${child.workspace.pathRef}. Review it with delegate_control action=review, runId=${view.runId}, childId=${child.childId}.`);
 		} else if (child.workspace) {
 			lines.push(`Temporary workspace: ${child.workspace.state}${child.workspace.revision ? ` (${child.workspace.revision})` : ""}.`);
 			if (child.workspace.message) lines.push(`Workspace note: ${child.workspace.message}`);
 			if (child.workspace.cleanupError) lines.push(`Cleanup failed: ${child.workspace.cleanupError}. Retry with delegate_control action=cleanup.`);
+		}
+		if (child.workspace?.contents) {
+			lines.push("Scratch contents:", ...child.workspace.contents.map((entry) => `- ${entry}`));
+			if (child.workspace.contentsTruncated) lines.push("- [additional entries omitted]");
 		}
 		if (child.workspace?.patchRef) lines.push(`Patch: ${child.workspace.patchRef}`);
 		if (child.workspace?.manifestRef) lines.push(`Manifest: ${child.workspace.manifestRef}`);
