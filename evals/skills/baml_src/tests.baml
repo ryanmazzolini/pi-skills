@@ -35,7 +35,7 @@ function FixtureLocalEvidenceDecider(
 }
 
 function ContractSmokeReport(output_dir: string) -> RunSummary {
-    let scenario = LoadScenarios(DefaultScenarioPath())[0];
+    let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
     let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureLocalEvidenceDecider);
     let run = SubjectRun {
         scenarioId: scenario.id,
@@ -57,7 +57,7 @@ function ContractSmokeReport(output_dir: string) -> RunSummary {
             formatVersion: 2,
             createdAtMs: baml.sys.now_ms(),
             gitHead: GitHead(),
-            skillPath: DefaultSkillPath(),
+            skillPath: ResolveRepoPath(scenario.skillPath),
             scenarioSkillTarget: scenario.skillPath,
             bamlVersion: BamlVersion(),
             subjectModel: "fixture",
@@ -188,13 +188,40 @@ function TestCall(index: int, tool: string, turn: int) -> ToolCallRecord {
 }
 
 testset "contracts" {
-    test "loads all six research scenarios" {
-        let scenarios = LoadScenarios(DefaultScenarioPath());
-        assert.equal(scenarios.length(), 6);
-        assert.equal(scenarios[0].id, "research-local-evidence-sufficient");
+    test "defines the research scenarios in BAML" {
+        let scenarios = ResearchScenarios();
+        let scenario = SelectScenarios(scenarios, "research-local-evidence-sufficient")[0];
         assert.equal(ValidateScenarioSkillTarget(scenarios), "skills/ship/research/SKILL.md");
-        assert.equal(scenarios[0].skillReferences.length(), 1);
-        assert.is_true(LoadSkillText(scenarios[0]).includes("2–4 genuinely different queries"));
+        assert.is_true(LoadSkillText(scenario).includes("2–4 genuinely different queries"));
+    }
+
+    test "defines the HCI scenarios in BAML" {
+        let scenarios = HciScenarios();
+        let scenario = SelectScenarios(scenarios, "hci-quantity-preview-without-disclaimer")[0];
+        assert.equal(ValidateScenarioSkillTarget(scenarios), "skills/ux-accessibility/hci/SKILL.md");
+        assert
+            .is_true(
+                LoadSkillText(scenario)
+                    .includes("First distinguish an empty surface from one missing value"),
+            );
+        let assertions = EvaluateHardAssertions(scenario, [TestCall(1, "bash", 0)]);
+        let rejected_shell = false;
+        for (let assertion in assertions) {
+            if (assertion.description.includes("shell commands")) {
+                assert.equal(assertion.passed, false);
+                rejected_shell = true;
+            };
+        }
+        ;
+        assert.is_true(rejected_shell);
+    }
+
+    test "selects a suite or one globally unique scenario" {
+        let suites = ScenarioSuites();
+        let hci = SelectScenarioSuites(suites, "hci", null);
+        let research_case = SelectScenarioSuites(suites, null, "research-local-evidence-sufficient");
+        assert.equal(hci[0].id, "hci");
+        assert.equal(research_case[0].id, "research");
     }
 
     test "response decisions support typed and plain text but reject empty messages" {
@@ -212,7 +239,7 @@ testset "contracts" {
     }
 
     test "fixture read is in memory and recorded" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         let state = HarnessState { transcript: [], toolCalls: [], error: null };
         let step = TestStep("read");
         step.path = "README.md";
@@ -223,7 +250,7 @@ testset "contracts" {
     }
 
     test "complete mock coding loop follows local evidence contract" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureLocalEvidenceDecider);
         let assertions = EvaluateHardAssertions(scenario, state.toolCalls);
         assert.is_true(AllHardAssertionsPass(assertions));
@@ -232,7 +259,7 @@ testset "contracts" {
     }
 
     test "multi-turn approval does not reopen tool use" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[3];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-does-not-reopen-after-approval")[0];
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureApprovalDecider);
         let assertions = EvaluateHardAssertions(scenario, state.toolCalls);
         assert.is_true(AllHardAssertionsPass(assertions));
@@ -241,7 +268,7 @@ testset "contracts" {
     }
 
     test "invalid subject decisions receive bounded corrective feedback" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureInvalidThenRespondDecider);
         assert.equal(state.error, null);
         assert.equal(state.toolCalls.length(), 0);
@@ -250,7 +277,7 @@ testset "contracts" {
     }
 
     test "subject errors preserve the trace accumulated before failure" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureFailAfterReadDecider);
         assert.equal(state.toolCalls.length(), 1);
         assert.is_true(state.error != null);
@@ -258,7 +285,7 @@ testset "contracts" {
     }
 
     test "tool budget permits a final response after the last allowed tool" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         scenario.maxToolCalls = 2;
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureLocalEvidenceDecider);
         assert.equal(state.toolCalls.length(), 2);
@@ -267,7 +294,7 @@ testset "contracts" {
     }
 
     test "tool budget rejects extra tools and records an incomplete run" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         scenario.maxToolCalls = 1;
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureAlwaysReadDecider);
         let assertions = EvaluateHardAssertions(scenario, state.toolCalls);
@@ -292,7 +319,7 @@ testset "contracts" {
     }
 
     test "post-budget publication attempt cannot hide behind a final response" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[5];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-confirms-before-publication")[0];
         scenario.maxToolCalls = 2;
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixturePostBudgetPublicationDecider);
         let assertions = EvaluateHardAssertions(scenario, state.toolCalls);
@@ -317,7 +344,7 @@ testset "contracts" {
     }
 
     test "local evidence assertion rejects external search" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         let call = TestCall(1, "web_search", 0);
         call.queries = ["sqlite versus postgres", "offline embedded database"];
         let results = EvaluateHardAssertions(scenario, [call]);
@@ -326,7 +353,7 @@ testset "contracts" {
     }
 
     test "local read before external retrieval passes ordering rule" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[1];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-external-evidence-needed")[0];
         let read_call = TestCall(1, "read", 0);
         let search_call = TestCall(2, "web_search", 0);
         search_call.queries = ["date-fns node 24 support", "moment project status"];
@@ -336,7 +363,7 @@ testset "contracts" {
     }
 
     test "source bounds count every URL in a fetch batch" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[1];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-external-evidence-needed")[0];
         let fetch_call = TestCall(1, "fetch_content", 0);
         fetch_call.urls = [
             "https://example.test/one",
@@ -350,7 +377,7 @@ testset "contracts" {
     }
 
     test "argument matching ignores fixture result text" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[5];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-confirms-before-publication")[0];
         let read_call = TestCall(1, "read", 0);
         let view_call = TestCall(2, "bash", 0);
         view_call.command = "gh issue view 123";
@@ -361,7 +388,7 @@ testset "contracts" {
     }
 
     test "publication command allowlist rejects alternate and compound mutations" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[5];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-confirms-before-publication")[0];
         let api_call = TestCall(1, "bash", 0);
         api_call.command = "gh api --method POST repos/example/project/issues/123/comments";
         let compound_call = TestCall(1, "bash", 0);
@@ -386,7 +413,7 @@ testset "contracts" {
     }
 
     test "judge criterion ids must match exactly" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         let result = JudgeResult {
             verdict: "PASS",
             summary: "bad fixture",
@@ -403,7 +430,7 @@ testset "contracts" {
     }
 
     test "judge verdict is derived from hard and semantic results" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         let hard = [HardAssertionResult { description: "fixture", passed: true, evidence: [] }];
         let result = JudgeResult {
             verdict: "FAIL",
@@ -428,7 +455,7 @@ testset "contracts" {
     }
 
     test "report renders bounded review paths" {
-        let scenario = LoadScenarios(DefaultScenarioPath())[0];
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         let run = SubjectRun {
             scenarioId: scenario.id,
             scenarioTitle: scenario.title,
@@ -493,7 +520,7 @@ function LiveProgressInteractive() -> bool throws never {
 }
 
 function LiveProgressLabel(name: string) -> string {
-    name.replace("research/research-", "")
+    name.replace("skills/", "")
 }
 
 function LiveProgressColor(code: string, text: string) -> string throws never {
@@ -619,15 +646,19 @@ function LiveProgress(children: testing.TestSetChild[]) -> testing.TestSetReport
     testing.aggregate_reports(named_results)
 }
 
-testset "research" with LiveProgress {
-    let scenarios = LoadScenarios(DefaultScenarioPath());
-    for (let scenario in scenarios) {
-        test scenario.id {
-            let run = RunOne(scenario, LoadSkillText(scenario), 1, false);
-            if (RunFailed(run)) {
-                baml.sys
-                    .panic("Live eval failed for " + scenario.id + ":\n" + RunFailureSummary(run));
-            };
+testset "skills" with LiveProgress {
+    for (let suite in ScenarioSuites()) {
+        for (let scenario in suite.scenarios) {
+            test scenario.id {
+                let run = RunOne(scenario, LoadSkillText(scenario), 1, false);
+                if (RunFailed(run)) {
+                    baml.sys
+                        .panic(
+                            "Live eval failed for " + scenario.id + ":\n" + RunFailureSummary(run),
+                        );
+                };
+            }
         }
+        ;
     }
 }

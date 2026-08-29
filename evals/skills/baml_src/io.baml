@@ -22,18 +22,6 @@ function ResolveRepoPath(path: string) -> string {
     }
 }
 
-function DefaultScenarioPath() -> string {
-    RepoRoot() + "/evals/skills/scenarios/research.json"
-}
-
-function DefaultSkillPath() -> string {
-    RepoRoot() + "/skills/ship/research/SKILL.md"
-}
-
-function LoadScenarios(path: string) -> Scenario[] {
-    baml.json.from_string<Scenario[]>(baml.fs.read(path))
-}
-
 function LoadSkillText(scenario: Scenario) -> string {
     let sections = [
         baml.fs.read(ResolveRepoPath(ValidateSkillTargetPath(scenario.skillPath))),

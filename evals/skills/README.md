@@ -2,7 +2,7 @@
 
 This local-only suite exercises a skill inside a controlled, traditional coding-agent harness written entirely in BAML. It is review evidence, not a deterministic CI gate.
 
-The initial vertical slice covers `skills/ship/research/SKILL.md` with six scenarios. BAML owns the typed agent loop, fixture tools, deterministic trace assertions, semantic judge, native testsets, CLI entry point, and JSON/Markdown reports.
+BAML owns the typed scenario definitions, suite registry, agent loop, fixture tools, deterministic trace assertions, semantic judge, native testsets, CLI entry point, and JSON/Markdown reports.
 
 ## What the harness tests
 
@@ -15,7 +15,7 @@ This tests portable skill behavior rather than Pi-specific skill loading or prov
 - Subject-selected actions dispatch only to typed fixture maps and arrays.
 - Mock tools never access the real filesystem, network, shell, GitHub, or Git remotes.
 - Mutation and public-action mocks record the attempt but never execute it.
-- Host-only BAML code reads the selected skill, validated repository-relative skill references, and scenario files, then writes reports. Those capabilities are never exposed as subject actions.
+- Host-only BAML code reads the selected skill and validated repository-relative skill references, then writes reports. Those capabilities are never exposed as subject actions.
 - Reports contain skill text, transcripts, and tool traces. They stay under the ignored `.skill-eval-results/` directory unless `--output_dir` selects another local path.
 
 BAML itself is not a security sandbox. The isolation boundary is the fixture dispatcher: agent-visible actions must never call `baml.fs`, `baml.http`, or `baml.sys`.
@@ -50,7 +50,7 @@ List the native BAML tests:
 (cd evals/skills && baml test --list)
 ```
 
-Run all six live research behavior tests:
+Run all live skill behavior tests:
 
 ```bash
 npm run eval:skills:test
@@ -58,17 +58,23 @@ npm run eval:skills:test
 
 The scenarios run in parallel, while each scenario's agent loop remains ordered. Interactive npm runs show one cyan suite spinner with the completed scenario count. Each completion prints a stable green `✓` or red `✗` line, and `NO_COLOR` disables coloring. Redirected and non-interactive runs use stable `[RUN]`, `[PASS]`, and `[FAIL]` lines instead.
 
-Run all scenarios and write JSON and Markdown reports:
+Run all scenarios and write separate JSON and Markdown reports for each skill:
 
 ```bash
 npm run eval:skills
 ```
 
-Run one scenario:
+Run a research scenario:
 
 ```bash
 npm run eval:skills -- \
   --scenario_id research-local-evidence-sufficient
+```
+
+Run the HCI scenarios:
+
+```bash
+npm run eval:skills -- --suite_id hci
 ```
 
 Repeat each selected scenario:
@@ -83,13 +89,14 @@ Run the subject and deterministic assertions without the semantic judge:
 npm run eval:skills -- --skip_judge true
 ```
 
-Select an explicit scenario file or output location. Each scenario file declares the one skill it targets; mixed-skill files are rejected.
+Choose where to write reports:
 
 ```bash
 npm run eval:skills -- \
-  --scenario_path evals/skills/scenarios/research.json \
   --output_dir .skill-eval-results/manual-run
 ```
+
+`--output_dir` is the parent directory for each selected skill's report.
 
 ## Interpreting results
 

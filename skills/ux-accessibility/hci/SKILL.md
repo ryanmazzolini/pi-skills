@@ -7,6 +7,8 @@ description: Apply usability, WCAG accessibility, responsive design, and interac
 
 Prefer native platform behavior and observable user outcomes over custom interaction code.
 
+Before proposing UI copy, check whether status, labels, values, actions, or layout can communicate the state directly. Fix a misleading flow or action before adding prose that explains around it. Persistent copy must add information the surrounding interface cannot carry. Keep implementation boundaries and unverified recovery out of user-facing text.
+
 Load only the references the task touches:
 
 - [references/HEURISTICS.md](references/HEURISTICS.md) — usability heuristics as review lenses. Medium-agnostic: apply to UI, API responses, CLI output, and error surfaces.

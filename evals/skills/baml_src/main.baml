@@ -102,7 +102,7 @@ function RunOne(
 }
 
 function BuildEvalReport(
-    scenario_path: string,
+    scenarios: Scenario[],
     scenario_id: string?,
     repetitions: int,
     skip_judge: bool,
@@ -110,11 +110,11 @@ function BuildEvalReport(
     if (repetitions < 1) {
         baml.sys.panic("repetitions must be a positive integer");
     };
-    let scenarios = SelectScenarios(LoadScenarios(scenario_path), scenario_id);
-    let scenario_skill_target = ValidateScenarioSkillTarget(scenarios);
+    let selected_scenarios = SelectScenarios(scenarios, scenario_id);
+    let scenario_skill_target = ValidateScenarioSkillTarget(selected_scenarios);
     let skill_path = ResolveRepoPath(scenario_skill_target);
     let runs: SubjectRun[] = [];
-    for (let scenario in scenarios) {
+    for (let scenario in selected_scenarios) {
         let skill_text = LoadSkillText(scenario);
         let repetition = 1;
         while (repetition <= repetitions) {
@@ -142,30 +142,37 @@ function BuildEvalReport(
     }
 }
 
-function RunEval(
-    scenario_path: string? = null,
+function RunEvals(
+    suite_id: string? = null,
     scenario_id: string? = null,
     repetitions: int = 1,
     output_dir: string? = null,
     skip_judge: bool = false,
-) -> RunSummary {
-    let resolved_scenario_path = if (scenario_path == null) {
-        DefaultScenarioPath()
-    } else {
-        ResolveRepoPath(scenario_path)
-    };
-    let report = BuildEvalReport(resolved_scenario_path, scenario_id, repetitions, skip_judge);
+) -> RunSummary[] {
     let destination = if (output_dir == null) {
-        RepoRoot() + "/.skill-eval-results/" + report.createdAtMs.to_string()
+        RepoRoot() + "/.skill-eval-results/" + baml.sys.now_ms().to_string()
     } else {
         ResolveRepoPath(output_dir)
     };
-    let summary = WriteReport(destination, report);
-    baml.io.eprintln("JSON report: " + summary.jsonPath);
-    baml.io.eprintln("Markdown report: " + summary.markdownPath);
-    baml.io.eprintln(`Failures: ${summary.failures}/${summary.totalRuns}`);
-    if (summary.failures > 0) {
+    let suites = SelectScenarioSuites(ScenarioSuites(), suite_id, scenario_id);
+    let summaries: RunSummary[] = [];
+    let failures = 0;
+    let total_runs = 0;
+    for (let suite in suites) {
+        let summary = WriteReport(
+            destination + "/" + suite.id,
+            BuildEvalReport(suite.scenarios, scenario_id, repetitions, skip_judge),
+        );
+        summaries.push(summary);
+        failures += summary.failures;
+        total_runs += summary.totalRuns;
+        baml.io.eprintln(suite.id + " JSON report: " + summary.jsonPath);
+        baml.io.eprintln(suite.id + " Markdown report: " + summary.markdownPath);
+    }
+    ;
+    baml.io.eprintln(`Failures: ${failures}/${total_runs}`);
+    if (failures > 0) {
         baml.sys.exit(1);
     };
-    summary
+    summaries
 }
