@@ -572,6 +572,8 @@ export class SchedulerJobDetailComponent implements Component {
 		this.done = done;
 		this.now = now;
 		this.doctorCommand = doctorCommand;
+		const latestExecution = schedulerLatestExecution(job);
+		this.selectedRun = latestExecution ? Math.max(0, job.recentRuns.indexOf(latestExecution as SchedulerRunView)) : 0;
 	}
 
 	handleInput(data: string): void {
@@ -605,11 +607,11 @@ export class SchedulerJobDetailComponent implements Component {
 			this.tui.requestRender();
 			return;
 		}
-		if (matchesKey(data, "up") || data === "k") this.scroll++;
-		else if (matchesKey(data, "down") || data === "j") this.scroll = Math.max(0, this.scroll - 1);
-		else if (matchesKey(data, "pageUp") || matchesKey(data, "ctrl+u")) this.scroll += 8;
-		else if (matchesKey(data, "pageDown") || matchesKey(data, "ctrl+d")) this.scroll = Math.max(0, this.scroll - 8);
-		else if (matchesKey(data, "end")) this.scroll = 0;
+		if (matchesKey(data, "up") || data === "k") this.scroll = Math.max(0, this.scroll - 1);
+		else if (matchesKey(data, "down") || data === "j") this.scroll++;
+		else if (matchesKey(data, "pageUp") || matchesKey(data, "ctrl+u")) this.scroll = Math.max(0, this.scroll - 8);
+		else if (matchesKey(data, "pageDown") || matchesKey(data, "ctrl+d")) this.scroll += 8;
+		else if (matchesKey(data, "end")) this.scroll = Number.MAX_SAFE_INTEGER;
 		this.tui.requestRender();
 	}
 
@@ -634,6 +636,7 @@ export class SchedulerJobDetailComponent implements Component {
 			body: (bodyWidth, bodyHeight) => {
 				const lines = body(bodyWidth);
 				const start = this.tab === "runs" ? 0 : Math.min(this.scroll, Math.max(0, lines.length - bodyHeight));
+				if (this.tab !== "runs") this.scroll = start;
 				return lines.slice(start, start + bodyHeight);
 			},
 			compactBody: (bodyWidth) => [tabs, ...body(bodyWidth)],
@@ -672,7 +675,7 @@ export class SchedulerJobDetailComponent implements Component {
 			lines.push(
 				"",
 				...failures.map((error) => this.theme.fg("error", `${error!.code}: ${error!.message}`)),
-				`Recovery: run ${this.theme.fg("accent", this.doctorCommand)}. Refresh with r after correcting the source, environment, or private state.`,
+				`Recovery: run ${this.theme.fg("accent", this.doctorCommand)}. Refresh with r after resolving the issue through the declaration, environment, or reviewed lifecycle actions.`,
 			);
 		}
 		if (this.job.candidate?.adapter.warning) lines.push("", this.theme.fg("warning", this.job.candidate.adapter.warning));
@@ -683,7 +686,7 @@ export class SchedulerJobDetailComponent implements Component {
 			} else if (this.job.installation.health === "unhealthy" && this.job.installation.healthCategory === "commands" && this.job.installation.definitionDrift && !this.job.installation.enabled) {
 				lines.push(`Recovery: press ${this.theme.fg("accent", "a")} and review Update installed snapshot.`);
 			} else {
-				lines.push("Recovery: inspect Definition and repair the private installed state before retrying; unsafe lifecycle actions remain unavailable.");
+				lines.push(`Recovery: run ${this.theme.fg("accent", this.doctorCommand)}, then use only reviewed lifecycle actions; do not edit private state by hand.`);
 			}
 		} else if (this.job.installation.adapterDrift) {
 			lines.push("", this.theme.fg("warning", "The host adapter differs from the reviewed installed state."));
@@ -692,7 +695,7 @@ export class SchedulerJobDetailComponent implements Component {
 		const latest = schedulerLatestExecution(this.job) as SchedulerRunView | undefined;
 		if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
 			lines.push("", this.theme.fg("error", `Latest execution ${runState(latest).label.toLowerCase()}${latest.reason ? ` · ${latest.reason}` : ""}`));
-			lines.push("Recovery: open Runs, select the failed run, and press Enter to inspect its retained output before running again.");
+			lines.push("Recovery: open Runs; the affected execution is selected. Press Enter to inspect its retained output before running again.");
 		}
 		return lines;
 	}
