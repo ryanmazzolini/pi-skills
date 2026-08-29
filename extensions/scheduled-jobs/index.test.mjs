@@ -651,9 +651,9 @@ test("native actions preserve exact installed digest and revision fencing", asyn
 
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
-  const call = scripted.calls.find(({ args }) => args[0] === "start");
+  const call = scripted.calls.find(({ args }) => args[0] === "run");
   assert.deepEqual(call.args.slice(0, 7), [
-    "start",
+    "run",
     "global:test:job",
     "--expected-installed-digest",
     "installed-digest",
@@ -809,9 +809,6 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
       if (command === "git") return commandResult("", 128, "not a worktree");
       const cliArgs = args;
       cliCommands.push(cliArgs[0]);
-      if (cliArgs[0] === "start") {
-        return cliSuccess({ command: "start", result: { status: "started", runId: "00000000-0000-4000-8000-000000000001" } });
-      }
       try {
         const result = await runCli(cliArgs, value.runtime);
         return commandResult(result.stdout);
@@ -839,7 +836,7 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
 
   await handler("", { cwd: value.env.HOME, hasUI: true, mode: "tui", ui: harness.ui });
 
-  for (const command of ["install", "start", "enable", "disable", "remove"]) {
+  for (const command of ["install", "run", "enable", "disable", "remove"]) {
     assert.equal(cliCommands.includes(command), true, `missing ${command}`);
   }
   assert.equal(harness.confirms.length, 5);

@@ -677,7 +677,7 @@ function operationArguments(job: JobView, action: SchedulerAction): string[] {
 			"--expected-revision", revision,
 		];
 	}
-	return [action === "run" ? "start" : action, job.id, "--expected-installed-digest", installedDigest, "--expected-revision", revision];
+	return [action, job.id, "--expected-installed-digest", installedDigest, "--expected-revision", revision];
 }
 
 type LoaderOutcome<T> =
@@ -786,7 +786,7 @@ async function loadSelectedTask(
 }
 
 function successMessage(job: JobView, action: SchedulerAction): string {
-	if (action === "run") return `Started ${sanitizeDisplay(job.id)}. Open Runs to inspect its receipt and output.`;
+	if (action === "run") return `Completed ${sanitizeDisplay(job.id)}. Open Runs to inspect its receipt and output.`;
 	if (action === "enable") return "Scheduled runs resumed.";
 	if (action === "disable") return "Scheduled runs paused.";
 	if (action === "remove") return "Installed schedule removed. The declaration remains a draft.";

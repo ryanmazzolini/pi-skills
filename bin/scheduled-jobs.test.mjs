@@ -6,8 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { resolveExecutable } from "../lib/scheduled-jobs/index.mjs";
-import { readRunHistory, readRunOutput } from "../lib/scheduled-jobs/runtime.mjs";
-import { readSchedulerStatusSnapshot } from "../lib/scheduled-jobs/status-cache.mjs";
+import { readRunHistory } from "../lib/scheduled-jobs/runtime.mjs";
 import { run } from "./scheduled-jobs.mjs";
 
 const DAILY_REPORT_CLI = fileURLToPath(new URL("../skills/notes/daily-report/scripts/daily-report.mjs", import.meta.url));
@@ -95,16 +94,6 @@ function fixture(t) {
 
 function json(result) {
   return JSON.parse(result.stdout);
-}
-
-async function waitFor(check, message, timeoutMilliseconds = 5_000) {
-  const deadline = Date.now() + timeoutMilliseconds;
-  while (Date.now() < deadline) {
-    const result = check();
-    if (result) return result;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(message);
 }
 
 test("an installed snapshot reconciles daily-report under the fixed scheduler environment", async (t) => {
@@ -210,81 +199,6 @@ test("doctor fails when an installed executable becomes unsafe outside the calle
   await assert.rejects(
     run(["doctor", id, "--manifest", value.manifestPath, "--json"], runtime),
     (error) => error.code === "INSTALLED_UNHEALTHY" && /writable/.test(error.message),
-  );
-});
-
-test("start returns a run receipt while the installed snapshot continues in the background", async (t) => {
-  const value = fixture(t);
-  const releasePath = path.join(path.dirname(value.env.HOME), "release-job");
-  fs.writeFileSync(value.scriptPath, `
-    import fs from "node:fs";
-    console.log("background run waiting");
-    while (!fs.existsSync(${JSON.stringify(releasePath)})) await new Promise((resolve) => setTimeout(resolve, 20));
-    console.log("background run complete");
-  `);
-  const id = "global:test:cli";
-  const inspected = await run(["inspect", id, "--manifest", value.manifestPath, "--json"], value.runtime);
-  const installed = await run([
-    "install", id,
-    "--manifest", value.manifestPath,
-    "--expected-candidate-digest", json(inspected).candidate.digest,
-    "--json",
-  ], value.runtime);
-  const status = json(installed).result;
-  await assert.rejects(
-    run([
-      "start", id,
-      "--expected-installed-digest", "b".repeat(64),
-      "--expected-revision", String(status.metadata.revision),
-      "--json",
-    ], value.runtime),
-    (error) => error.code === "STALE_STATE",
-  );
-  assert.deepEqual(readRunHistory(id, { env: value.env }), []);
-  const started = await run([
-    "start", id,
-    "--expected-installed-digest", status.metadata.digest,
-    "--expected-revision", String(status.metadata.revision),
-    "--json",
-  ], value.runtime);
-  const receipt = json(started).result;
-  assert.equal(receipt.status, "started");
-  assert.match(receipt.runId, /^[0-9a-f-]{36}$/);
-  const acknowledged = readRunHistory(id, { env: value.env }).find((entry) => entry.runId === receipt.runId);
-  assert.equal(acknowledged?.pid, receipt.pid);
-  const running = await waitFor(
-    () => readRunHistory(id, { env: value.env }).find((entry) => entry.runId === receipt.runId && entry.status === "running"),
-    "background run did not create a running receipt",
-  );
-  assert.equal(running.trigger, "manual");
-  await waitFor(
-    () => /background run waiting/.test(readRunOutput(id, receipt.runId, { env: value.env }).content),
-    "background job did not begin execution",
-  );
-
-  const overlappingStart = await run([
-    "start", id,
-    "--expected-installed-digest", status.metadata.digest,
-    "--expected-revision", String(status.metadata.revision),
-    "--json",
-  ], value.runtime);
-  const overlapReceipt = json(overlappingStart).result;
-  const skipped = await waitFor(
-    () => readRunHistory(id, { env: value.env }).find((entry) => entry.runId === overlapReceipt.runId && entry.status === "skipped"),
-    "overlapping background start did not become a skipped receipt",
-  );
-  assert.equal(skipped.reason, "overlap");
-
-  fs.writeFileSync(releasePath, "continue\n");
-  const completed = await waitFor(
-    () => readRunHistory(id, { env: value.env }).find((entry) => entry.runId === receipt.runId && entry.status !== "running"),
-    "background run did not finish",
-  );
-  assert.equal(completed.status, "succeeded");
-  assert.match(readRunOutput(id, receipt.runId, { env: value.env }).content, /background run complete/);
-  await waitFor(
-    () => readSchedulerStatusSnapshot(value.manifestPath, value.env)?.jobs.find((job) => job.id === id)?.runStatus === "succeeded",
-    "background run did not publish its terminal scheduler status",
   );
 });
 
