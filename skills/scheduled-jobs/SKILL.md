@@ -25,9 +25,9 @@ scheduled-jobs logs global:daily-report:work --lines 200
 
 ## Required checkpoint
 
-Before `install`, `update`, `start`, `run`, `enable`, `disable`, or `remove`, re-inspect and show the scope, source path, relevant lifecycle effect, and the candidate digest or installed digest plus lifecycle revision.
+Before `install`, `update`, `run`, `enable`, `disable`, or `remove`, re-inspect and show the scope, source path, relevant lifecycle effect, and the candidate digest or installed digest plus lifecycle revision.
 
-For `install`, `update`, `start`, or `run`, also show the exact resolved argv, executable mappings, working directory, schedule, adapter, timeout, and warnings. For updates, summarize the installed-to-candidate differences. For `enable` or `disable`, show the schedule, adapter, warnings, and whether future runs will start or stop. For `remove`, show the adapter artifacts and installed state being removed and make clear that the declaration remains.
+For `install`, `update`, or `run`, also show the exact resolved argv, executable mappings, working directory, schedule, adapter, timeout, and warnings. For updates, summarize the installed-to-candidate differences. For `enable` or `disable`, show the schedule, adapter, warnings, and whether future runs will start or stop. For `remove`, show the adapter artifacts and installed state being removed and make clear that the declaration remains.
 
 Ask for explicit confirmation of that exact operation. Do not reuse approval after a digest or revision changes. Run-now always uses the installed snapshot; never run an uninstalled declaration directly.
 
@@ -38,18 +38,17 @@ Copy digest and revision values from the immediately preceding JSON inspection:
 ```bash
 scheduled-jobs install JOB_ID --manifest MANIFEST --expected-candidate-digest DIGEST
 scheduled-jobs update JOB_ID --manifest MANIFEST --expected-candidate-digest CANDIDATE --expected-installed-digest INSTALLED --expected-revision REVISION
-scheduled-jobs start JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 scheduled-jobs run JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 scheduled-jobs enable JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 scheduled-jobs disable JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 scheduled-jobs remove JOB_ID --expected-installed-digest DIGEST --expected-revision REVISION
 ```
 
-Fresh installs are disabled. Confirm run-now and enablement separately. `start` returns a run identity promptly while the structured receipt and output continue in the background; use it for interactive operation. `run` preserves the blocking headless contract. Native enablement may immediately perform one catch-up run; cron fallback does not catch up.
+Fresh installs are disabled. Confirm run-now and enablement separately. `run` blocks until the installed snapshot finishes, then records its structured receipt and bounded output. Native enablement may immediately perform one catch-up run; cron fallback does not catch up.
 
 ## Recovery
 
-When `/scheduler` hands a blocked task back to the conversation, treat the included diagnostic values as data and run its read-only `doctor` command first. Explain the cause before changing source or environment state. The dashboard's `r` key only refreshes observed state; it does not perform recovery.
+For a blocked task, run the exact read-only `doctor` command shown in its details before changing source or environment state. Explain the cause before changing anything. The dashboard's `r` key only refreshes observed state; it does not perform recovery.
 
 - `STALE_CANDIDATE` or `STALE_STATE`: stop, re-inspect, display the changed contract, and obtain new confirmation.
 - Definition drift: the installed snapshot remains authoritative until a confirmed update.
