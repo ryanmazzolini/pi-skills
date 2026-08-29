@@ -92,6 +92,40 @@ test("formats human schedules, local times, and textual task states", () => {
   assert.equal(schedulerJobState(job({ recentRuns: [run({ status: "skipped", reason: "overlap" }), run({ status: "failed" })] })).label, "Needs attention");
 });
 
+test("attention rows explain why each task needs review", () => {
+  const view = harness(40);
+  const data = {
+    jobs: [
+      job({ id: "global:test:failed", key: "test:failed", recentRuns: [run({ status: "failed", exitCode: 7, reason: "exited with code 7" })] }),
+      job({ id: "global:test:environment", key: "test:environment", candidateError: { code: "ENVIRONMENT", message: "missing command" }, recentRuns: [] }),
+      job({
+        id: "global:test:command",
+        key: "test:command",
+        installation: { installed: true, health: "unhealthy", healthCategory: "commands", enabled: false, definitionDrift: false, adapterDrift: false },
+      }),
+    ],
+    sourceErrors: [],
+    generatedAt: new Date().toISOString(),
+  };
+  const rendered = new SchedulerDashboardComponent(data, view.tui, theme, () => {}).render(100).join("\n");
+
+  assert.match(rendered, /test:failed · global · Needs attention · Run failed/);
+  assert.match(rendered, /exited with code 7/);
+  assert.match(rendered, /test:environment · global · Needs attention · Environment blocked/);
+  assert.match(rendered, /test:command · global · Needs attention · Command unavailable/);
+
+  const selectedEnvironment = new SchedulerDashboardComponent(
+    data,
+    view.tui,
+    theme,
+    () => {},
+    new Date(),
+    "global:test:environment",
+  ).render(54);
+  assert.match(selectedEnvironment.join("\n"), /missing command/);
+  assert.equal(selectedEnvironment.every((line) => visibleWidth(line) <= 54), true);
+});
+
 test("renders a width-safe tasks dashboard with next run, history, and source errors", () => {
   const view = harness();
   const now = new Date(2026, 6, 25, 9, 0);

@@ -295,6 +295,32 @@ export function schedulerJobState(job: SchedulerJobOverview): { label: string; i
 	}
 }
 
+function compactAttentionDetail(value: string | null | undefined): string | undefined {
+	return value?.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim() || undefined;
+}
+
+function schedulerAttention(job: SchedulerJobOverview): { cause: string; detail?: string } {
+	const latest = schedulerLatestExecution(job) as SchedulerRunView | undefined;
+	if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
+		const cause = latest.status === "timed-out" ? "Run timed out" : latest.status === "interrupted" ? "Run interrupted" : "Run failed";
+		const detail = latest.reason ?? (latest.exitCode === null ? undefined : `Exited with code ${latest.exitCode}`);
+		return { cause, detail: compactAttentionDetail(detail) };
+	}
+	if (job.candidateError) return {
+		cause: job.candidateError.code === "ENVIRONMENT" ? "Environment blocked" : "Definition blocked",
+		detail: compactAttentionDetail(job.candidateError.message),
+	};
+	if (job.installationError) return { cause: "Installed state unavailable", detail: compactAttentionDetail(job.installationError.message) };
+	if (job.historyError) return { cause: "Run history unavailable", detail: compactAttentionDetail(job.historyError.message) };
+	if (job.nextRunError) return { cause: "Next run unavailable", detail: compactAttentionDetail(job.nextRunError.message) };
+	if (job.installation.healthCategory === "commands") return { cause: "Command unavailable", detail: compactAttentionDetail(job.installation.healthReason) };
+	if (job.installation.health === "unavailable") return { cause: "Scheduler unavailable", detail: compactAttentionDetail(job.installation.healthReason) };
+	if (job.installation.health === "conflict") return { cause: "Adapter conflict", detail: compactAttentionDetail(job.installation.healthReason) };
+	if (job.installation.installed && job.installation.health !== "ok") return { cause: "Installed state unhealthy", detail: compactAttentionDetail(job.installation.healthReason) };
+	if (job.installation.adapterDrift) return { cause: "Adapter drift", detail: "Host adapter differs from the reviewed installed state." };
+	return { cause: "Review required" };
+}
+
 function runState(run: SchedulerRunView): { label: string; icon: string; color: "success" | "warning" | "error" | "muted" | "accent" } {
 	if (run.status === "running") return { label: "Running", icon: "↻", color: "accent" };
 	if (run.status === "succeeded") return { label: "Completed", icon: "✓", color: "success" };
@@ -501,15 +527,18 @@ export class SchedulerDashboardComponent implements Component {
 		const latest = schedulerLatestExecution(job) as SchedulerRunView | undefined;
 		const last = latest ? `last ${runState(latest).label.toLowerCase()} ${formatSchedulerTime(latest.startedAt, this.now)}` : "no recorded runs";
 		const identity = `${marker} ${this.theme.fg(state.color, state.icon)} ${label}`;
-		const status = `${this.theme.fg("dim", `· ${job.scope.kind} ·`)} ${this.theme.fg(state.color, state.label)}`;
+		const attention = state.label === "Needs attention" ? schedulerAttention(job) : undefined;
+		const status = `${this.theme.fg("dim", `· ${job.scope.kind} ·`)} ${this.theme.fg(state.color, `${state.label}${attention ? ` · ${attention.cause}` : ""}`)}`;
 		const schedule = humanizeSchedule(effectiveSchedule(job));
 		const history = this.theme.fg("dim", `· ${next} · ${last}`);
+		const attentionDetail = selected ? attention?.detail : undefined;
 		const singleLine = `${identity} ${status} · ${schedule} ${history}`;
-		if (visibleWidth(singleLine) <= width) return [singleLine];
+		if (!attentionDetail && visibleWidth(singleLine) <= width) return [singleLine];
 
 		const rows = visibleWidth(`${identity} ${status}`) <= width
 			? [`${identity} ${status}`]
 			: [truncateToWidth(identity, width, ""), ...this.indentedRows(status, width)];
+		if (attentionDetail) rows.push(this.indentedDetail(attentionDetail, width));
 		rows.push(...this.indentedRows(`${schedule} ${history}`, width));
 		return rows;
 	}
@@ -518,6 +547,12 @@ export class SchedulerDashboardComponent implements Component {
 		const indent = "    ";
 		if (width <= indent.length) return [truncateToWidth(value, width, "")];
 		return wrapTextWithAnsi(value, width - indent.length).map((line) => `${indent}${line}`);
+	}
+
+	private indentedDetail(value: string, width: number): string {
+		const indent = "    ";
+		if (width <= indent.length) return truncateToWidth(value, width, "");
+		return `${indent}${truncateToWidth(value, width - indent.length, "…")}`;
 	}
 
 	private runLines(width: number, height: number): string[] {
