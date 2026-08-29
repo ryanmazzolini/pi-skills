@@ -18,7 +18,11 @@ function record(overrides = {}) {
 		schemaVersion: SESSION_SUMMARY_CACHE_SCHEMA_VERSION,
 		sessionId: "stable-pi-session-id",
 		createdAt: "2026-08-05T12:00:00.000Z",
+		capturedAtSummary: "2026-08-05T11:00:00.000Z",
 		lastTurnAtSummary: "2026-08-04T12:00:00.000Z",
+		activeLeafIdAtSummary: "stable-leaf",
+		revisionAtSummary: 3,
+		tailDigestAtSummary: "a".repeat(64),
 		card: {
 			title: "Finished migration",
 			state: "complete",
@@ -105,6 +109,39 @@ test("retains the newest session turn across sequential and concurrent writes", 
 	const stored = writes.find((item) => item.result === "stored");
 	assert.equal((await cache.read(older.sessionId)).card.title, stored.title);
 	assert.equal((await readdir(join(root, directoryName))).filter((name) => name.endsWith(".json")).length, 1);
+
+	const changedBranch = record({
+		createdAt: "2026-08-06T16:00:00.000Z",
+		capturedAtSummary: "2026-08-06T15:00:00.000Z",
+		lastTurnAtSummary: "2026-08-06T12:00:00.000Z",
+		activeLeafIdAtSummary: "tool-result-leaf",
+		revisionAtSummary: 4,
+		card: { ...record().card, title: "Changed non-conversational outcome" },
+	});
+	assert.equal(await cache.write(changedBranch), "stored");
+	assert.equal(await cache.write(firstSameTurn), "superseded");
+	assert.deepEqual(await cache.read(older.sessionId), changedBranch);
+
+	const concurrentOlderBranch = record({
+		...changedBranch,
+		capturedAtSummary: "2026-08-06T16:00:00.000Z",
+		activeLeafIdAtSummary: "concurrent-older-leaf",
+		revisionAtSummary: 5,
+		card: { ...record().card, title: "Concurrent older branch" },
+	});
+	const concurrentNewerBranch = record({
+		...changedBranch,
+		capturedAtSummary: "2026-08-06T17:00:00.000Z",
+		activeLeafIdAtSummary: "concurrent-newer-leaf",
+		revisionAtSummary: 6,
+		card: { ...record().card, title: "Concurrent newer branch" },
+	});
+	const branchWrites = await Promise.all([concurrentOlderBranch, concurrentNewerBranch].map(async (input) => {
+		const { stdout } = await execFileAsync(process.execPath, [writer, root, JSON.stringify(input)]);
+		return JSON.parse(stdout);
+	}));
+	assert.equal(branchWrites.find((item) => item.title === "Concurrent newer branch").result, "stored");
+	assert.deepEqual(await cache.read(older.sessionId), concurrentNewerBranch);
 });
 
 test("prunes interrupted published versions before rejecting a stale write", async (t) => {
@@ -142,6 +179,31 @@ test("prunes interrupted published versions before rejecting a stale write", asy
 	assert.equal((await readdir(directory)).filter((name) => name.endsWith(".json")).length, 1);
 });
 
+test("recovers a newer branch record left quarantined by an interrupted repair", async (t) => {
+	const base = await mkdtemp(join(tmpdir(), "intercom-summary-cache-quarantine-"));
+	t.after(() => import("node:fs/promises").then(({ rm }) => rm(base, { recursive: true, force: true })));
+	const root = join(base, "summaries");
+	const cache = new FileSessionSummaryCache(root);
+	const older = record();
+	await cache.write(older);
+	const [directoryName] = await readdir(root);
+	const directory = join(root, directoryName);
+	const [filename] = (await readdir(directory)).filter((name) => name.endsWith(".json"));
+	const newer = record({
+		createdAt: "2026-08-05T13:00:00.000Z",
+		capturedAtSummary: "2026-08-05T12:00:00.000Z",
+		activeLeafIdAtSummary: "new-outcome-leaf",
+		revisionAtSummary: 4,
+		card: { ...older.card, title: "Newer quarantined branch" },
+	});
+	const quarantine = join(directory, `${filename}.00000000-0000-4000-8000-000000000003.quarantine`);
+	await writeFile(quarantine, `${JSON.stringify(newer)}\n`, { mode: 0o600 });
+	await utimes(quarantine, new Date(Date.now() - 60 * 60 * 1_000), new Date(Date.now() - 60 * 60 * 1_000));
+	assert.deepEqual(await cache.read(older.sessionId), newer);
+	assert.deepEqual((await readdir(directory)).filter((name) => name.endsWith(".json")), [filename]);
+	assert.equal((await readdir(directory)).some((name) => name.endsWith(".quarantine")), false);
+});
+
 test("isolates lookup from unrelated cached sessions", async (t) => {
 	const base = await mkdtemp(join(tmpdir(), "intercom-summary-cache-scale-"));
 	t.after(() => import("node:fs/promises").then(({ rm }) => rm(base, { recursive: true, force: true })));
@@ -156,8 +218,52 @@ test("isolates lookup from unrelated cached sessions", async (t) => {
 	assert.deepEqual(await cache.read(target.sessionId), target);
 });
 
+test("replaces a malformed same-turn record with a valid summary", async (t) => {
+	const base = await mkdtemp(join(tmpdir(), "intercom-summary-cache-repair-"));
+	t.after(() => import("node:fs/promises").then(({ rm }) => rm(base, { recursive: true, force: true })));
+	const root = join(base, "summaries");
+	const cache = new FileSessionSummaryCache(root);
+	const original = record();
+	await cache.write(original);
+	const [directoryName] = await readdir(root);
+	const directory = join(root, directoryName);
+	const [filename] = (await readdir(directory)).filter((name) => name.endsWith(".json"));
+	await writeFile(join(directory, filename), "{ malformed\n", { mode: 0o600 });
+	await assert.rejects(cache.read(original.sessionId));
+	const repaired = record({
+		createdAt: "2026-08-05T14:00:00.000Z",
+		capturedAtSummary: "2026-08-05T13:00:00.000Z",
+		card: { ...original.card, title: "Recovered summary" },
+	});
+	assert.equal(await cache.write(repaired), "stored");
+	assert.deepEqual(await cache.read(original.sessionId), repaired);
+
+	await writeFile(join(directory, filename), "{ malformed again\n", { mode: 0o600 });
+	const writer = join(base, "repair-writer.mjs");
+	await writeFile(writer, `
+		import { FileSessionSummaryCache } from ${JSON.stringify(new URL("./summary-cache.ts", import.meta.url).href)};
+		const cache = new FileSessionSummaryCache(process.argv[2]);
+		const input = JSON.parse(process.argv[3]);
+		const result = await cache.write(input);
+		process.stdout.write(JSON.stringify({ result, title: input.card.title }));
+	`);
+	const repairs = ["Concurrent repair A", "Concurrent repair B"].map((title) => ({
+		...repaired,
+		card: { ...repaired.card, title },
+	}));
+	const outcomes = await Promise.all(repairs.map(async (input) => {
+		const { stdout } = await execFileAsync(process.execPath, [writer, root, JSON.stringify(input)]);
+		return JSON.parse(stdout);
+	}));
+	assert.deepEqual(outcomes.map((item) => item.result).sort(), ["same-turn-retained", "stored"]);
+	const stored = outcomes.find((item) => item.result === "stored");
+	assert.equal((await cache.read(original.sessionId)).card.title, stored.title);
+});
+
 test("rejects malformed records and does not follow cache-file symlinks", async (t) => {
 	assert.throws(() => parseSessionSummaryCacheRecord(record({ lastTurnAtSummary: "not-a-date" })), /canonical ISO timestamp/);
+	assert.throws(() => parseSessionSummaryCacheRecord(record({ revisionAtSummary: 0 })), /revisionAtSummary is invalid/);
+	assert.throws(() => parseSessionSummaryCacheRecord(record({ tailDigestAtSummary: "short" })), /tailDigestAtSummary is invalid/);
 	assert.throws(() => parseSessionSummaryCacheRecord(record({ card: { ...record().card, evidenceIds: ["E1"] } })), /card is invalid/);
 	assert.throws(() => parseSessionSummaryCacheRecord(record({ card: { ...record().card, safeToClose: "yes", state: "blocked" } })), /Only a complete session/);
 

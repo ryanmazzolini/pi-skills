@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants, type Stats } from "node:fs";
-import { link, lstat, mkdir, open, opendir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { link, lstat, mkdir, open, opendir, rename, rm } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { parseSessionSummaryCard, type SessionSummaryDisplayCard } from "./session-summary.ts";
 
 export const SESSION_SUMMARY_CACHE_SCHEMA_VERSION = 1;
@@ -12,7 +13,11 @@ export interface SessionSummaryCacheRecord {
 	schemaVersion: typeof SESSION_SUMMARY_CACHE_SCHEMA_VERSION;
 	sessionId: string;
 	createdAt: string;
+	capturedAtSummary: string;
 	lastTurnAtSummary: string;
+	activeLeafIdAtSummary: string | null;
+	revisionAtSummary: number;
+	tailDigestAtSummary: string;
 	card: SessionSummaryDisplayCard;
 }
 
@@ -43,6 +48,21 @@ function boundedString(value: unknown, name: string, maximumBytes: number): stri
 	return value;
 }
 
+function activeLeafId(value: unknown): string | null {
+	return value === null ? null : boundedString(value, "activeLeafIdAtSummary", 256);
+}
+
+function positiveSafeInteger(value: unknown, name: string): number {
+	if (!Number.isSafeInteger(value) || (value as number) < 1) throw new Error(`${name} is invalid`);
+	return value as number;
+}
+
+function sha256Digest(value: unknown, name: string): string {
+	const digest = boundedString(value, name, 64);
+	if (!/^[a-f0-9]{64}$/u.test(digest)) throw new Error(`${name} is invalid`);
+	return digest;
+}
+
 export function parseSessionSummaryCacheRecord(value: unknown): SessionSummaryCacheRecord {
 	if (!isRecord(value) || value.schemaVersion !== SESSION_SUMMARY_CACHE_SCHEMA_VERSION) {
 		throw new Error("Session summary cache record has an unsupported schema");
@@ -54,7 +74,11 @@ export function parseSessionSummaryCacheRecord(value: unknown): SessionSummaryCa
 		schemaVersion: SESSION_SUMMARY_CACHE_SCHEMA_VERSION,
 		sessionId: boundedString(value.sessionId, "sessionId", 1_024),
 		createdAt: canonicalTimestamp(value.createdAt, "createdAt"),
+		capturedAtSummary: canonicalTimestamp(value.capturedAtSummary, "capturedAtSummary"),
 		lastTurnAtSummary: canonicalTimestamp(value.lastTurnAtSummary, "lastTurnAtSummary"),
+		activeLeafIdAtSummary: activeLeafId(value.activeLeafIdAtSummary),
+		revisionAtSummary: positiveSafeInteger(value.revisionAtSummary, "revisionAtSummary"),
+		tailDigestAtSummary: sha256Digest(value.tailDigestAtSummary, "tailDigestAtSummary"),
 		card,
 	};
 }
@@ -83,27 +107,11 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 		for (let attempt = 0; attempt < 2; attempt++) {
 			const latest = await this.pruneCacheFiles(directory);
 			if (!latest) return undefined;
-			let handle;
 			try {
-				handle = await open(join(directory, latest.name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+				return await this.readCacheRecord(join(directory, latest.name), sessionId, latest.timestamp);
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
 				throw error;
-			}
-			try {
-				const info = await handle.stat();
-				const uid = process.getuid?.();
-				if (!info.isFile() || (uid !== undefined && info.uid !== uid) || (info.mode & 0o077) !== 0) {
-					throw new Error("Session summary cache record is not a private current-user regular file");
-				}
-				if (info.size < 1 || info.size > SESSION_SUMMARY_CACHE_MAX_BYTES) throw new Error("Session summary cache record is empty or oversized");
-				const raw = await handle.readFile({ encoding: "utf8" });
-				const record = parseSessionSummaryCacheRecord(JSON.parse(raw) as unknown);
-				return record.sessionId === sessionId && Date.parse(record.lastTurnAtSummary) === latest.timestamp
-					? record
-					: undefined;
-			} finally {
-				await handle.close();
 			}
 		}
 		return undefined;
@@ -122,7 +130,6 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 		const filename = cacheFilename(normalized.lastTurnAtSummary);
 		const target = join(directory, filename);
 		const temporary = join(directory, `.${filename}.${randomUUID()}.tmp`);
-		let created = false;
 		try {
 			const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
 			try {
@@ -130,29 +137,153 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 			} finally {
 				await handle.close();
 			}
-			try {
-				await link(temporary, target);
-				created = true;
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			for (let attempt = 0; attempt < 4; attempt++) {
+				const result = await this.installSameTurnRecord(target, temporary, normalized, incomingTimestamp);
+				const newest = await this.pruneCacheFiles(directory);
+				if (newest?.name !== filename) return "superseded";
+				let retained: SessionSummaryCacheRecord;
+				try {
+					retained = await this.readCacheRecord(target, normalized.sessionId, incomingTimestamp);
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+					throw error;
+				}
+				if (JSON.stringify(retained) === JSON.stringify(normalized)) return result;
+				const retainedResult = this.retainedWriteResult(retained, normalized);
+				if (retainedResult) return retainedResult;
 			}
+			throw new Error("Session summary cache target changed repeatedly after repair");
 		} finally {
 			await rm(temporary, { force: true }).catch(() => {});
 		}
-		const newest = await this.pruneCacheFiles(directory);
-		if (newest?.name !== filename) return "superseded";
-		if (created) return "stored";
-		const retained = await this.read(normalized.sessionId);
-		if (!retained) throw new Error("Same-turn session summary cache record is unavailable");
-		return Date.parse(retained.lastTurnAtSummary) > Date.parse(normalized.lastTurnAtSummary)
-			? "superseded"
-			: "same-turn-retained";
 	}
 
-	private async pruneCacheFiles(directory: string): Promise<{ name: string; timestamp: number } | undefined> {
+	private async readCacheRecord(path: string, sessionId: string | undefined, timestamp: number): Promise<SessionSummaryCacheRecord> {
+		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+		try {
+			const info = await handle.stat();
+			const uid = process.getuid?.();
+			if (!info.isFile() || (uid !== undefined && info.uid !== uid) || (info.mode & 0o077) !== 0) {
+				throw new Error("Session summary cache record is not a private current-user regular file");
+			}
+			if (info.size < 1 || info.size > SESSION_SUMMARY_CACHE_MAX_BYTES) {
+				throw new Error("Session summary cache record is empty or oversized");
+			}
+			const raw = await handle.readFile({ encoding: "utf8" });
+			const record = parseSessionSummaryCacheRecord(JSON.parse(raw) as unknown);
+			if ((sessionId !== undefined && record.sessionId !== sessionId) || Date.parse(record.lastTurnAtSummary) !== timestamp) {
+				throw new Error("Session summary cache record identity is invalid");
+			}
+			return record;
+		} finally {
+			await handle.close();
+		}
+	}
+
+	private retainedWriteResult(
+		retained: SessionSummaryCacheRecord,
+		incoming: SessionSummaryCacheRecord,
+	): SessionSummaryCacheWriteResult | undefined {
+		const sameBranch = retained.activeLeafIdAtSummary === incoming.activeLeafIdAtSummary
+			&& retained.revisionAtSummary === incoming.revisionAtSummary;
+		if (sameBranch) return "same-turn-retained";
+		return Date.parse(retained.capturedAtSummary) >= Date.parse(incoming.capturedAtSummary)
+			? "superseded"
+			: undefined;
+	}
+
+	private async installSameTurnRecord(
+		target: string,
+		temporary: string,
+		incoming: SessionSummaryCacheRecord,
+		timestamp: number,
+	): Promise<SessionSummaryCacheWriteResult> {
+		for (let attempt = 0; attempt < 8; attempt++) {
+			try {
+				await link(temporary, target);
+				return "stored";
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			}
+			let retained: SessionSummaryCacheRecord | undefined;
+			try {
+				retained = await this.readCacheRecord(target, incoming.sessionId, timestamp);
+			} catch {
+				// Move and validate the exact target below; another writer may repair it first.
+			}
+			if (retained) {
+				const result = this.retainedWriteResult(retained, incoming);
+				if (result) return result;
+			}
+			const quarantine = `${target}.${randomUUID()}.quarantine`;
+			try {
+				await rename(target, quarantine);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				throw error;
+			}
+			try {
+				let moved: SessionSummaryCacheRecord | undefined;
+				try {
+					moved = await this.readCacheRecord(quarantine, incoming.sessionId, timestamp);
+				} catch {
+					// An unreadable target is replaced by the valid incoming record.
+				}
+				const movedResult = moved ? this.retainedWriteResult(moved, incoming) : undefined;
+				try {
+					await link(movedResult ? quarantine : temporary, target);
+					return movedResult ?? "stored";
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+				}
+			} finally {
+				await rm(quarantine, { force: true }).catch(() => {});
+			}
+		}
+		throw new Error("Session summary cache target changed repeatedly during repair");
+	}
+
+	private async recoverQuarantine(directory: string, name: string): Promise<boolean> {
+		const path = join(directory, name);
+		let info: Stats;
+		try {
+			info = await lstat(path);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+			throw error;
+		}
+		const uid = process.getuid?.();
+		if (!info.isFile() || (uid !== undefined && info.uid !== uid) || (info.mode & 0o077) !== 0) {
+			throw new Error("Session summary cache quarantine is unsafe");
+		}
+		if (info.mtimeMs > Date.now() - SESSION_SUMMARY_CACHE_TEMP_STALE_MS) return false;
+		const filename = name.slice(0, 16 + ".json".length);
+		const timestamp = Number(filename.slice(0, 16));
+		let record: SessionSummaryCacheRecord;
+		try {
+			record = await this.readCacheRecord(path, undefined, timestamp);
+			if (cacheDirectoryName(record.sessionId) !== basename(directory)) throw new Error("Quarantined cache identity is invalid");
+		} catch {
+			await rm(path, { force: true });
+			return true;
+		}
+		try {
+			await this.installSameTurnRecord(join(directory, filename), path, record, timestamp);
+		} finally {
+			await rm(path, { force: true }).catch(() => {});
+		}
+		return true;
+	}
+
+	private async pruneCacheFiles(directory: string, attempt = 0): Promise<{ name: string; timestamp: number } | undefined> {
 		let newest: { name: string; timestamp: number } | undefined;
+		let repairInProgress = false;
 		const entries = await opendir(directory);
 		for await (const entry of entries) {
+			if (/^\d{16}\.json\.[0-9a-f-]{36}\.quarantine$/u.test(entry.name)) {
+				repairInProgress ||= !(await this.recoverQuarantine(directory, entry.name));
+				continue;
+			}
 			if (/^\.\d{16}\.json\.[0-9a-f-]{36}\.tmp$/u.test(entry.name)) {
 				const path = join(directory, entry.name);
 				try {
@@ -179,6 +310,11 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 			} else {
 				await rm(join(directory, candidate.name), { force: true });
 			}
+		}
+		if (repairInProgress) {
+			if (attempt >= 100) throw new Error("Session summary cache repair remained in progress");
+			await delay(10);
+			return this.pruneCacheFiles(directory, attempt + 1);
 		}
 		return newest;
 	}

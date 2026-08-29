@@ -9,6 +9,7 @@ import intercomExtension, {
 	InboundDelivery,
 	IntercomParams,
 	boundedSessionIdentityDetails,
+	cachedSummaryMatchesTail,
 	deliverInboundMessage,
 	formatAttachments,
 	formatSession,
@@ -17,6 +18,7 @@ import intercomExtension, {
 	sanitizeSelfDeclaredMetadata,
 	selectRotatingSummaryCandidates,
 	selectSessionSummaryCandidates,
+	tailIdentityDigest,
 	validateIntercomAction,
 } from "./index.ts";
 import { FrameDecoder, encodeFrame } from "./client.ts";
@@ -111,6 +113,54 @@ test("selects at most four oldest confirmed 24-hour snapshots for isolated synth
 	assert.equal(selected.omitted, 1);
 	assert.deepEqual(selectSessionSummaryCandidates(result, 0), { selected: [], omitted: 5 });
 	assert.throws(() => selectSessionSummaryCandidates(result, 5), /limit is invalid/);
+});
+
+test("cached summaries require the exact persisted branch identity", () => {
+	const timestamp = Date.parse("2026-07-31T12:00:00.000Z");
+	const record = {
+		schemaVersion: 1,
+		sessionId: "stable-session",
+		createdAt: "2026-08-01T12:00:00.000Z",
+		capturedAtSummary: "2026-08-01T11:00:00.000Z",
+		lastTurnAtSummary: "2026-07-31T12:00:00.000Z",
+		activeLeafIdAtSummary: "leaf-1",
+		revisionAtSummary: 4,
+		tailDigestAtSummary: tailIdentityDigest({ events: [] }),
+		card: {
+			title: "Completed work",
+			state: "complete",
+			mainPoint: "The work is complete.",
+			safeToClose: "yes",
+			decision: null,
+			limitations: [],
+		},
+	};
+	const tail = {
+		targetSessionId: "stable-session",
+		advertisedLastConversationalTimestamp: timestamp,
+		target: {
+			piSession: {
+				sessionId: "stable-session",
+				fileLocator: "/session.jsonl",
+				activeLeafId: "leaf-1",
+				revision: 4,
+			},
+		},
+		snapshot: { lastConversationalTimestamp: timestamp, events: [] },
+	};
+	assert.equal(cachedSummaryMatchesTail(record, tail), true);
+	assert.equal(cachedSummaryMatchesTail(record, {
+		...tail,
+		target: { ...tail.target, piSession: { ...tail.target.piSession, revision: 5 } },
+	}), false);
+	assert.equal(cachedSummaryMatchesTail(record, {
+		...tail,
+		target: { ...tail.target, piSession: { ...tail.target.piSession, activeLeafId: "tool-result-leaf" } },
+	}), false);
+	assert.equal(cachedSummaryMatchesTail(record, {
+		...tail,
+		snapshot: { ...tail.snapshot, events: [{ kind: "bash", outcome: "succeeded" }] },
+	}), false);
 });
 
 test("rotates the first bounded cached summary so projection cannot starve deferred records", () => {
@@ -520,17 +570,18 @@ test("presence advertises only persisted snapshots and follows idle tree and use
 	handlers.get("agent_end")();
 	tracked = await waitFor(async () => {
 		const session = (await observer.listSessions()).find((item) => item.name === "tracked");
-		return session?.piSession?.revision === 1 ? session : undefined;
+		return session?.piSession?.activeLeafId === "first" ? session : undefined;
 	});
-	assert.equal(tracked.piSession.activeLeafId, "first");
+	const firstRevision = tracked.piSession.revision;
 
 	leaf = null;
 	handlers.get("session_tree")();
 	tracked = await waitFor(async () => {
 		const session = (await observer.listSessions()).find((item) => item.name === "tracked");
-		return session?.piSession?.revision === 2 ? session : undefined;
+		return session?.piSession?.activeLeafId === null ? session : undefined;
 	});
-	assert.equal(tracked.piSession.activeLeafId, null);
+	const treeRevision = tracked.piSession.revision;
+	assert.notEqual(treeRevision, firstRevision);
 
 	handlers.get("user_bash")();
 	leaf = "bash-result";
@@ -539,9 +590,9 @@ test("presence advertises only persisted snapshots and follows idle tree and use
 	await appendFile(sessionPath, `${JSON.stringify(bashEntry)}\n`);
 	tracked = await waitFor(async () => {
 		const session = (await observer.listSessions()).find((item) => item.name === "tracked");
-		return session?.piSession?.revision === 3 ? session : undefined;
+		return session?.piSession?.activeLeafId === "bash-result" ? session : undefined;
 	});
-	assert.equal(tracked.piSession.activeLeafId, "bash-result");
+	assert.notEqual(tracked.piSession.revision, treeRevision);
 });
 
 test("first user Bash stays unadvertised until Pi actually persists the session", async (t) => {
@@ -634,7 +685,7 @@ test("a Bash started before first persistence refreshes when it finishes after a
 		return session?.piSession?.activeLeafId === manager.getLeafId() ? session : undefined;
 	});
 	assert.notEqual(bashPresence.piSession.activeLeafId, assistantLeaf);
-	assert.ok(bashPresence.piSession.revision > assistantPresence.piSession.revision);
+	assert.notEqual(bashPresence.piSession.revision, assistantPresence.piSession.revision);
 });
 
 test("real SessionManager lifecycle clears First Mate role until explicit reinvocation", async (t) => {
