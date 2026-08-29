@@ -46,7 +46,7 @@ test("stores one atomic machine-owned JSON record per stable Pi session", async 
 	assert.match(directoryName, /^[a-f0-9]{64}$/);
 	const directory = join(root, directoryName);
 	const [filename] = await readdir(directory);
-	assert.match(filename, /^\d{16}\.json$/);
+	assert.equal(filename, "current.json");
 	assert.equal((await stat(root)).mode & 0o777, 0o700);
 	assert.equal((await stat(directory)).mode & 0o777, 0o700);
 	assert.equal((await stat(join(directory, filename))).mode & 0o777, 0o600);
@@ -142,41 +142,88 @@ test("retains the newest session turn across sequential and concurrent writes", 
 	}));
 	assert.equal(branchWrites.find((item) => item.title === "Concurrent newer branch").result, "stored");
 	assert.deepEqual(await cache.read(older.sessionId), concurrentNewerBranch);
+
+	const newerForkWithOlderConversation = record({
+		createdAt: "2026-08-06T18:30:00.000Z",
+		capturedAtSummary: "2026-08-06T18:00:00.000Z",
+		lastTurnAtSummary: "2026-08-04T10:00:00.000Z",
+		activeLeafIdAtSummary: "newer-fork-older-conversation",
+		revisionAtSummary: 7,
+		card: { ...record().card, title: "New active fork" },
+	});
+	assert.equal(await cache.write(newerForkWithOlderConversation), "stored");
+	assert.deepEqual(await cache.read(older.sessionId), newerForkWithOlderConversation);
+	assert.equal(await cache.write(record({
+		capturedAtSummary: "2026-08-06T17:30:00.000Z",
+		lastTurnAtSummary: "2026-08-07T12:00:00.000Z",
+		activeLeafIdAtSummary: "abandoned-future-turn",
+		revisionAtSummary: 8,
+	})), "superseded");
+	assert.deepEqual(await cache.read(older.sessionId), newerForkWithOlderConversation);
 });
 
-test("prunes interrupted published versions before rejecting a stale write", async (t) => {
+test("migrates timestamp records and prunes temporary files from the previous layout", async (t) => {
 	const base = await mkdtemp(join(tmpdir(), "intercom-summary-cache-interrupted-"));
+	t.after(() => import("node:fs/promises").then(({ rm }) => rm(base, { recursive: true, force: true })));
+	const root = join(base, "summaries");
+	const cache = new FileSessionSummaryCache(root);
+	const stored = record();
+	await cache.write(stored);
+	const [directoryName] = await readdir(root);
+	const directory = join(root, directoryName);
+	const legacy = record({
+		capturedAtSummary: "2026-08-05T12:00:00.000Z",
+		lastTurnAtSummary: "2026-08-03T12:00:00.000Z",
+		activeLeafIdAtSummary: "newer-legacy-fork",
+		revisionAtSummary: 4,
+		card: { ...stored.card, title: "Migrated legacy summary" },
+	});
+	const legacyFilename = `${String(Date.parse(legacy.lastTurnAtSummary)).padStart(16, "0")}.json`;
+	await writeFile(join(directory, legacyFilename), `${JSON.stringify(legacy)}\n`, { mode: 0o600 });
+	const interruptedTemps = [
+		join(directory, ".current.json.00000000-0000-4000-8000-000000000001.tmp"),
+		join(directory, `.${legacyFilename}.00000000-0000-4000-8000-000000000002.tmp`),
+	];
+	for (const path of interruptedTemps) {
+		await writeFile(path, "interrupted temp", { mode: 0o600 });
+		await utimes(path, new Date(Date.now() - 60 * 60 * 1_000), new Date(Date.now() - 60 * 60 * 1_000));
+	}
+	assert.equal((await readdir(directory)).filter((name) => name.endsWith(".tmp")).length, 2);
+	assert.deepEqual(await cache.read(record().sessionId), legacy);
+	assert.deepEqual(await readdir(directory), ["current.json"]);
+});
+
+test("concurrently migrates multiple timestamp records without losing the newest capture", async (t) => {
+	const base = await mkdtemp(join(tmpdir(), "intercom-summary-cache-migration-race-"));
 	t.after(() => import("node:fs/promises").then(({ rm }) => rm(base, { recursive: true, force: true })));
 	const root = join(base, "summaries");
 	const cache = new FileSessionSummaryCache(root);
 	await cache.write(record());
 	const [directoryName] = await readdir(root);
 	const directory = join(root, directoryName);
-	const interrupted = ["2026-08-05T12:00:00.000Z", "2026-08-06T12:00:00.000Z", "2026-08-07T12:00:00.000Z"].map((lastTurnAtSummary, index) => record({
-		createdAt: `2026-08-0${index + 6}T13:00:00.000Z`,
-		lastTurnAtSummary,
+	await rm(join(directory, "current.json"));
+	const legacyRecords = Array.from({ length: 6 }, (_, index) => record({
+		capturedAtSummary: `2026-08-05T${String(12 + index).padStart(2, "0")}:00:00.000Z`,
+		lastTurnAtSummary: `2026-08-0${index + 1}T10:00:00.000Z`,
+		activeLeafIdAtSummary: `legacy-leaf-${index}`,
+		revisionAtSummary: index + 1,
+		card: { ...record().card, title: `Legacy summary ${index}` },
 	}));
-	for (const item of interrupted) {
+	for (const item of legacyRecords) {
 		const filename = `${String(Date.parse(item.lastTurnAtSummary)).padStart(16, "0")}.json`;
 		await writeFile(join(directory, filename), `${JSON.stringify(item)}\n`, { mode: 0o600 });
 	}
-	const publishedFilename = `${String(Date.parse(interrupted.at(-1).lastTurnAtSummary)).padStart(16, "0")}.json`;
-	const unpublishedFilename = `${String(Date.parse("2026-08-08T12:00:00.000Z")).padStart(16, "0")}.json`;
-	const interruptedTemps = [
-		join(directory, `.${publishedFilename}.00000000-0000-4000-8000-000000000001.tmp`),
-		join(directory, `.${unpublishedFilename}.00000000-0000-4000-8000-000000000002.tmp`),
-	];
-	for (const path of interruptedTemps) {
-		await writeFile(path, "interrupted temp", { mode: 0o600 });
-		await utimes(path, new Date(Date.now() - 60 * 60 * 1_000), new Date(Date.now() - 60 * 60 * 1_000));
-	}
-	assert.equal((await readdir(directory)).filter((name) => name.endsWith(".json")).length, 4);
-	assert.equal((await readdir(directory)).filter((name) => name.endsWith(".tmp")).length, 2);
-	assert.deepEqual(await cache.read(record().sessionId), interrupted.at(-1));
-	assert.equal((await readdir(directory)).filter((name) => name.endsWith(".json")).length, 1);
-	assert.equal((await readdir(directory)).filter((name) => name.endsWith(".tmp")).length, 0);
-	assert.equal(await cache.write(record({ lastTurnAtSummary: "2026-08-06T18:00:00.000Z" })), "superseded");
-	assert.equal((await readdir(directory)).filter((name) => name.endsWith(".json")).length, 1);
+	const reader = join(base, "cache-reader.mjs");
+	await writeFile(reader, `
+		import { FileSessionSummaryCache } from ${JSON.stringify(new URL("./summary-cache.ts", import.meta.url).href)};
+		const cache = new FileSessionSummaryCache(process.argv[2]);
+		const result = await cache.read(process.argv[3]);
+		process.stdout.write(JSON.stringify(result));
+	`);
+	await Promise.all(Array.from({ length: 8 }, () =>
+		execFileAsync(process.execPath, [reader, root, record().sessionId])));
+	assert.deepEqual(await cache.read(record().sessionId), legacyRecords.at(-1));
+	assert.deepEqual(await readdir(directory), ["current.json"]);
 });
 
 test("recovers a newer branch record left quarantined by an interrupted repair", async (t) => {
@@ -201,6 +248,19 @@ test("recovers a newer branch record left quarantined by an interrupted repair",
 	await utimes(quarantine, new Date(Date.now() - 60 * 60 * 1_000), new Date(Date.now() - 60 * 60 * 1_000));
 	assert.deepEqual(await cache.read(older.sessionId), newer);
 	assert.deepEqual((await readdir(directory)).filter((name) => name.endsWith(".json")), [filename]);
+	assert.equal((await readdir(directory)).some((name) => name.endsWith(".quarantine")), false);
+
+	const mismatched = record({
+		capturedAtSummary: "2026-08-05T14:00:00.000Z",
+		lastTurnAtSummary: "2026-08-05T13:00:00.000Z",
+		activeLeafIdAtSummary: "mismatched-quarantine",
+		revisionAtSummary: 5,
+	});
+	const wrongTimestamp = String(Date.parse("2026-08-05T14:00:00.000Z")).padStart(16, "0");
+	const mismatchedQuarantine = join(directory, `${wrongTimestamp}.json.00000000-0000-4000-8000-000000000004.quarantine`);
+	await writeFile(mismatchedQuarantine, `${JSON.stringify(mismatched)}\n`, { mode: 0o600 });
+	await utimes(mismatchedQuarantine, new Date(Date.now() - 60 * 60 * 1_000), new Date(Date.now() - 60 * 60 * 1_000));
+	assert.deepEqual(await cache.read(older.sessionId), newer);
 	assert.equal((await readdir(directory)).some((name) => name.endsWith(".quarantine")), false);
 });
 

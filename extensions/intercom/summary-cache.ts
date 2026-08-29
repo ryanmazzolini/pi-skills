@@ -87,11 +87,12 @@ function cacheDirectoryName(sessionId: string): string {
 	return createHash("sha256").update(sessionId).digest("hex");
 }
 
-function cacheFilename(lastTurnAtSummary: string): string {
-	const timestamp = Date.parse(lastTurnAtSummary);
-	if (!Number.isSafeInteger(timestamp) || timestamp < 0) throw new Error("Session summary cache turn timestamp is invalid");
-	return `${String(timestamp).padStart(16, "0")}.json`;
-}
+const CURRENT_CACHE_FILENAME = "current.json";
+const CACHE_TEMP_PATTERN = /^\.current\.json\.[0-9a-f-]{36}\.tmp$/u;
+const CACHE_QUARANTINE_PATTERN = /^current\.json\.[0-9a-f-]{36}\.quarantine$/u;
+const LEGACY_CACHE_PATTERN = /^\d{16}\.json$/u;
+const LEGACY_TEMP_PATTERN = /^\.\d{16}\.json\.[0-9a-f-]{36}\.tmp$/u;
+const LEGACY_QUARANTINE_PATTERN = /^\d{16}\.json\.[0-9a-f-]{36}\.quarantine$/u;
 
 export class FileSessionSummaryCache implements SessionSummaryCache {
 	private readonly rootDir: string;
@@ -105,10 +106,9 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 		const directory = join(this.rootDir, cacheDirectoryName(sessionId));
 		if (!(await this.validateExistingDirectory(directory, "session"))) return undefined;
 		for (let attempt = 0; attempt < 2; attempt++) {
-			const latest = await this.pruneCacheFiles(directory);
-			if (!latest) return undefined;
+			await this.pruneCacheFiles(directory);
 			try {
-				return await this.readCacheRecord(join(directory, latest.name), sessionId, latest.timestamp);
+				return await this.readCacheRecord(join(directory, CURRENT_CACHE_FILENAME), sessionId);
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
 				throw error;
@@ -124,12 +124,9 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 			throw new Error("Session summary cache record is oversized");
 		}
 		const directory = await this.ensureSessionDirectory(normalized.sessionId);
-		const incomingTimestamp = Date.parse(normalized.lastTurnAtSummary);
-		const existingNewest = await this.pruneCacheFiles(directory);
-		if (existingNewest && existingNewest.timestamp > incomingTimestamp) return "superseded";
-		const filename = cacheFilename(normalized.lastTurnAtSummary);
-		const target = join(directory, filename);
-		const temporary = join(directory, `.${filename}.${randomUUID()}.tmp`);
+		await this.pruneCacheFiles(directory);
+		const target = join(directory, CURRENT_CACHE_FILENAME);
+		const temporary = join(directory, `.${CURRENT_CACHE_FILENAME}.${randomUUID()}.tmp`);
 		try {
 			const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
 			try {
@@ -138,12 +135,11 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 				await handle.close();
 			}
 			for (let attempt = 0; attempt < 4; attempt++) {
-				const result = await this.installSameTurnRecord(target, temporary, normalized, incomingTimestamp);
-				const newest = await this.pruneCacheFiles(directory);
-				if (newest?.name !== filename) return "superseded";
+				const result = await this.installCurrentRecord(target, temporary, normalized);
+				await this.pruneCacheFiles(directory);
 				let retained: SessionSummaryCacheRecord;
 				try {
-					retained = await this.readCacheRecord(target, normalized.sessionId, incomingTimestamp);
+					retained = await this.readCacheRecord(target, normalized.sessionId);
 				} catch (error) {
 					if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
 					throw error;
@@ -158,7 +154,7 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 		}
 	}
 
-	private async readCacheRecord(path: string, sessionId: string | undefined, timestamp: number): Promise<SessionSummaryCacheRecord> {
+	private async readCacheRecord(path: string, sessionId: string | undefined): Promise<SessionSummaryCacheRecord> {
 		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
 		try {
 			const info = await handle.stat();
@@ -171,7 +167,7 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 			}
 			const raw = await handle.readFile({ encoding: "utf8" });
 			const record = parseSessionSummaryCacheRecord(JSON.parse(raw) as unknown);
-			if ((sessionId !== undefined && record.sessionId !== sessionId) || Date.parse(record.lastTurnAtSummary) !== timestamp) {
+			if (sessionId !== undefined && record.sessionId !== sessionId) {
 				throw new Error("Session summary cache record identity is invalid");
 			}
 			return record;
@@ -180,24 +176,35 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 		}
 	}
 
+	private recordIdentity(record: SessionSummaryCacheRecord): string {
+		return [
+			record.lastTurnAtSummary,
+			record.activeLeafIdAtSummary ?? "",
+			String(record.revisionAtSummary).padStart(16, "0"),
+			record.tailDigestAtSummary,
+		].join("\0");
+	}
+
 	private retainedWriteResult(
 		retained: SessionSummaryCacheRecord,
 		incoming: SessionSummaryCacheRecord,
 	): SessionSummaryCacheWriteResult | undefined {
-		const sameBranch = retained.activeLeafIdAtSummary === incoming.activeLeafIdAtSummary
-			&& retained.revisionAtSummary === incoming.revisionAtSummary;
-		if (sameBranch) return "same-turn-retained";
-		return Date.parse(retained.capturedAtSummary) >= Date.parse(incoming.capturedAtSummary)
-			? "superseded"
-			: undefined;
+		const retainedCapture = Date.parse(retained.capturedAtSummary);
+		const incomingCapture = Date.parse(incoming.capturedAtSummary);
+		if (retainedCapture !== incomingCapture) return retainedCapture > incomingCapture ? "superseded" : undefined;
+		const retainedIdentity = this.recordIdentity(retained);
+		const incomingIdentity = this.recordIdentity(incoming);
+		if (retainedIdentity === incomingIdentity) return "same-turn-retained";
+		return retainedIdentity > incomingIdentity ? "superseded" : undefined;
 	}
 
-	private async installSameTurnRecord(
+	private async installCurrentRecord(
 		target: string,
 		temporary: string,
 		incoming: SessionSummaryCacheRecord,
-		timestamp: number,
+		depth = 0,
 	): Promise<SessionSummaryCacheWriteResult> {
+		if (depth >= 8) throw new Error("Session summary cache repair nested repeatedly");
 		for (let attempt = 0; attempt < 8; attempt++) {
 			try {
 				await link(temporary, target);
@@ -207,7 +214,7 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 			}
 			let retained: SessionSummaryCacheRecord | undefined;
 			try {
-				retained = await this.readCacheRecord(target, incoming.sessionId, timestamp);
+				retained = await this.readCacheRecord(target, incoming.sessionId);
 			} catch {
 				// Move and validate the exact target below; another writer may repair it first.
 			}
@@ -225,7 +232,7 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 			try {
 				let moved: SessionSummaryCacheRecord | undefined;
 				try {
-					moved = await this.readCacheRecord(quarantine, incoming.sessionId, timestamp);
+					moved = await this.readCacheRecord(quarantine, incoming.sessionId);
 				} catch {
 					// An unreadable target is replaced by the valid incoming record.
 				}
@@ -235,6 +242,11 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 					return movedResult ?? "stored";
 				} catch (error) {
 					if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+					if (movedResult && moved) {
+						// Preserve a moved winner against a writer that published while the target was absent.
+						await this.installCurrentRecord(target, quarantine, moved, depth + 1);
+						return movedResult;
+					}
 				}
 			} finally {
 				await rm(quarantine, { force: true }).catch(() => {});
@@ -257,66 +269,85 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 			throw new Error("Session summary cache quarantine is unsafe");
 		}
 		if (info.mtimeMs > Date.now() - SESSION_SUMMARY_CACHE_TEMP_STALE_MS) return false;
-		const filename = name.slice(0, 16 + ".json".length);
-		const timestamp = Number(filename.slice(0, 16));
 		let record: SessionSummaryCacheRecord;
 		try {
-			record = await this.readCacheRecord(path, undefined, timestamp);
-			if (cacheDirectoryName(record.sessionId) !== basename(directory)) throw new Error("Quarantined cache identity is invalid");
+			record = await this.readCacheRecord(path, undefined);
+			const legacyMatch = /^(\d{16})\.json\./u.exec(name);
+			if (cacheDirectoryName(record.sessionId) !== basename(directory)
+				|| (legacyMatch && Date.parse(record.lastTurnAtSummary) !== Number(legacyMatch[1]))) {
+				throw new Error("Quarantined cache identity is invalid");
+			}
 		} catch {
 			await rm(path, { force: true });
 			return true;
 		}
 		try {
-			await this.installSameTurnRecord(join(directory, filename), path, record, timestamp);
+			await this.installCurrentRecord(join(directory, CURRENT_CACHE_FILENAME), path, record);
 		} finally {
 			await rm(path, { force: true }).catch(() => {});
 		}
 		return true;
 	}
 
-	private async pruneCacheFiles(directory: string, attempt = 0): Promise<{ name: string; timestamp: number } | undefined> {
-		let newest: { name: string; timestamp: number } | undefined;
+	private async migrateLegacyRecord(directory: string, name: string): Promise<void> {
+		const path = join(directory, name);
+		const quarantine = `${path}.${randomUUID()}.quarantine`;
+		try {
+			await rename(path, quarantine);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+			throw error;
+		}
+		try {
+			let record: SessionSummaryCacheRecord;
+			try {
+				record = await this.readCacheRecord(quarantine, undefined);
+				const filenameTimestamp = Number(name.slice(0, 16));
+				if (cacheDirectoryName(record.sessionId) !== basename(directory)
+					|| Date.parse(record.lastTurnAtSummary) !== filenameTimestamp) {
+					throw new Error("Legacy cache identity is invalid");
+				}
+			} catch {
+				return;
+			}
+			await this.installCurrentRecord(join(directory, CURRENT_CACHE_FILENAME), quarantine, record);
+		} finally {
+			await rm(quarantine, { force: true }).catch(() => {});
+		}
+	}
+
+	private async pruneCacheFiles(directory: string, attempt = 0): Promise<void> {
 		let repairInProgress = false;
 		const entries = await opendir(directory);
 		for await (const entry of entries) {
-			if (/^\d{16}\.json\.[0-9a-f-]{36}\.quarantine$/u.test(entry.name)) {
+			if (CACHE_QUARANTINE_PATTERN.test(entry.name) || LEGACY_QUARANTINE_PATTERN.test(entry.name)) {
 				repairInProgress ||= !(await this.recoverQuarantine(directory, entry.name));
 				continue;
 			}
-			if (/^\.\d{16}\.json\.[0-9a-f-]{36}\.tmp$/u.test(entry.name)) {
-				const path = join(directory, entry.name);
-				try {
-					const info = await lstat(path);
-					const uid = process.getuid?.();
-					if (info.isFile()
-						&& (uid === undefined || info.uid === uid)
-						&& (info.mode & 0o077) === 0
-						&& info.mtimeMs <= Date.now() - SESSION_SUMMARY_CACHE_TEMP_STALE_MS) {
-						await rm(path, { force: true });
-					}
-				} catch (error) {
-					if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-				}
+			if (LEGACY_CACHE_PATTERN.test(entry.name)) {
+				await this.migrateLegacyRecord(directory, entry.name);
 				continue;
 			}
-			if (!/^\d{16}\.json$/u.test(entry.name)) continue;
-			const timestamp = Number(entry.name.slice(0, -".json".length));
-			if (!Number.isSafeInteger(timestamp)) continue;
-			const candidate = { name: entry.name, timestamp };
-			if (!newest || candidate.timestamp > newest.timestamp) {
-				if (newest) await rm(join(directory, newest.name), { force: true });
-				newest = candidate;
-			} else {
-				await rm(join(directory, candidate.name), { force: true });
+			if (!CACHE_TEMP_PATTERN.test(entry.name) && !LEGACY_TEMP_PATTERN.test(entry.name)) continue;
+			const path = join(directory, entry.name);
+			try {
+				const info = await lstat(path);
+				const uid = process.getuid?.();
+				if (info.isFile()
+					&& (uid === undefined || info.uid === uid)
+					&& (info.mode & 0o077) === 0
+					&& info.mtimeMs <= Date.now() - SESSION_SUMMARY_CACHE_TEMP_STALE_MS) {
+					await rm(path, { force: true });
+				}
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
 		}
 		if (repairInProgress) {
 			if (attempt >= 100) throw new Error("Session summary cache repair remained in progress");
 			await delay(10);
-			return this.pruneCacheFiles(directory, attempt + 1);
+			await this.pruneCacheFiles(directory, attempt + 1);
 		}
-		return newest;
 	}
 
 	private validateDirectoryInfo(info: Stats, label: "root" | "session"): void {
