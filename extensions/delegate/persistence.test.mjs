@@ -100,6 +100,24 @@ test("reports corrupt records without hiding valid siblings", async (t) => {
   assert.match(diagnostics[0], /run-corrupt/);
 });
 
+test("persists scratch workspaces only at their owned run path", async (t) => {
+  const repository = new FileRunRepository(fixture(t));
+  const run = runRecord(repository);
+  const paths = repository.paths("parent-1", "run-1", "child-1");
+  run.children[0].workspace = {
+    kind: "temporary",
+    sourceCwd: "/tmp/non-git-source",
+    worktreePath: paths.worktreeDir,
+    integration: { state: "working" },
+  };
+
+  await repository.save(run);
+  assert.deepEqual(await repository.list("parent-1"), [run]);
+
+  run.children[0].workspace.worktreePath = "/tmp/unowned-scratch";
+  await assert.rejects(repository.save(run), /invalid temporary workspace ownership/);
+});
+
 test("rejects run and child paths outside their owned run directory", async (t) => {
   const repository = new FileRunRepository(fixture(t));
   const run = runRecord(repository);
