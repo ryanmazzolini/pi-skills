@@ -23,8 +23,8 @@ import {
 
 export const CONFIG_DIRECTORY_NAME = ".pi";
 export const PROJECT_MANIFEST_NAME = "scheduler.json";
-export const GLOBAL_MANIFEST_DIRECTORY = "pi-scheduler";
-export const GLOBAL_MANIFEST_NAME = "jobs.json";
+export const USER_MANIFEST_DIRECTORY = "pi-scheduler";
+export const USER_MANIFEST_NAME = "jobs.json";
 
 const MODULE_CLI_PATH = fileURLToPath(new URL("../../bin/scheduled-jobs.mjs", import.meta.url));
 const DISPLAY_LIMIT = 24_000;
@@ -63,7 +63,7 @@ export function resolveSchedulerCliPath(options: {
 
 const CLI_PATH = resolveSchedulerCliPath();
 
-type ScopeKind = "global" | "project";
+type ScopeKind = "user" | "project";
 type SchedulerAction = "inspect" | "logs" | "install" | "update" | "run" | "enable" | "disable" | "remove";
 
 interface ExecResult {
@@ -140,9 +140,9 @@ function boundedDisplay(value: unknown, limit = DISPLAY_LIMIT): string {
 	return safe.length <= limit ? safe : `${safe.slice(0, limit)}\n… output truncated …`;
 }
 
-export function globalManifestPath(env: NodeJS.ProcessEnv = process.env): string {
+export function userManifestPath(env: NodeJS.ProcessEnv = process.env): string {
 	const home = env.HOME || homedir();
-	return join(resolve(env.XDG_CONFIG_HOME || join(home, ".config")), GLOBAL_MANIFEST_DIRECTORY, GLOBAL_MANIFEST_NAME);
+	return join(resolve(env.XDG_CONFIG_HOME || join(home, ".config")), USER_MANIFEST_DIRECTORY, USER_MANIFEST_NAME);
 }
 
 async function projectManifestPath(
@@ -165,8 +165,8 @@ export async function discoverManifestPaths(
 	options: { signal?: AbortSignal } = {},
 ): Promise<Array<{ scope: ScopeKind; manifestPath: string }>> {
 	const manifests: Array<{ scope: ScopeKind; manifestPath: string }> = [];
-	const global = globalManifestPath(dependencies.env);
-	if (dependencies.exists(global)) manifests.push({ scope: "global", manifestPath: global });
+	const user = userManifestPath(dependencies.env);
+	if (dependencies.exists(user)) manifests.push({ scope: "user", manifestPath: user });
 	const project = await projectManifestPath(cwd, dependencies, options.signal);
 	if (project) manifests.push({ scope: "project", manifestPath: project });
 	return manifests;
@@ -178,7 +178,7 @@ async function attentionManifestPaths(
 	signal?: AbortSignal,
 ): Promise<Array<{ scope: ScopeKind; manifestPath: string }>> {
 	const manifests: Array<{ scope: ScopeKind; manifestPath: string }> = [
-		{ scope: "global", manifestPath: globalManifestPath(dependencies.env) },
+		{ scope: "user", manifestPath: userManifestPath(dependencies.env) },
 	];
 	const project = await projectManifestPath(cwd, dependencies, signal, false);
 	if (project) manifests.push({ scope: "project", manifestPath: project });
@@ -891,7 +891,7 @@ export default function scheduledJobsExtension(pi: ExtensionAPI): void {
 	pi.on("session_shutdown", () => statusMonitor.stop());
 
 	pi.registerCommand("scheduler", {
-		description: "Inspect and operate reviewed global or current-project scheduled jobs",
+		description: "Inspect and operate reviewed user or current-project scheduled jobs",
 		handler: async (args, ctx) => {
 			const target = ctx as ExtensionCommandContext & UiContext;
 			await statusMonitor.updateContext(target);

@@ -17,7 +17,7 @@ import scheduledJobsExtension, {
   createSchedulerStatusMonitor,
   discoverManifestPaths,
   loadDashboardData,
-  globalManifestPath,
+  userManifestPath,
   resolveSchedulerCliPath,
   schedulerDoctorCommand,
   sanitizeDisplay,
@@ -104,7 +104,7 @@ function candidate(digest = "candidate-digest", description = "Fixture") {
   return {
     digest,
     contract: {
-      id: "global:test:job",
+      id: "user:test:job",
       sourcePath: "/tmp/config/pi-scheduler/jobs.json",
       description,
       schedule: "30 17 * * 1-5",
@@ -139,9 +139,9 @@ function inspection({ installed = false, enabled = false, drift = false, health 
 function overviewJob(inspect = inspection()) {
   const current = inspect.installation;
   return {
-    id: "global:test:job",
+    id: "user:test:job",
     key: "test:job",
-    scope: { kind: "global" },
+    scope: { kind: "user" },
     description: "Fixture",
     schedule: "30 17 * * 1-5",
     sourcePath: "/tmp/config/pi-scheduler/jobs.json",
@@ -178,9 +178,9 @@ function overviewJob(inspect = inspection()) {
 
 function declaredJob(overrides = {}) {
   return {
-    id: "global:test:job",
+    id: "user:test:job",
     key: "test:job",
-    scope: "global",
+    scope: "user",
     manifestPath: "/tmp/config/pi-scheduler/jobs.json",
     declaration: { schedule: "30 17 * * 1-5" },
     inspection: inspection(),
@@ -348,7 +348,7 @@ test("ambient status loads once, follows shared attention events, and closes its
 
   writeAttentionFixture(manifestPath, {
     generatedAt: new Date().toISOString(),
-    jobs: [current, { ...current, id: "global:test:other", key: "test:other" }],
+    jobs: [current, { ...current, id: "user:test:other", key: "test:other" }],
   }, env);
   watches.emit(path.basename(schedulerAttentionPath(manifestPath, env)));
   watches.flush();
@@ -374,7 +374,7 @@ test("ambient status loads once, follows shared attention events, and closes its
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: undefined });
 });
 
-test("ambient status observes a newly created global attention file", async (t) => {
+test("ambient status observes a newly created user attention file", async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-discovery-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const manifestPath = path.join(base, "config", "pi-scheduler", "jobs.json");
@@ -461,10 +461,10 @@ test("ambient status does not miss attention written during its initial load", a
   await monitor.stop();
 });
 
-test("ambient status aggregates global and current-project attention", async (t) => {
+test("ambient status aggregates user and current-project attention", async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduler-status-scopes-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const globalManifest = path.join(base, "config", "pi-scheduler", "jobs.json");
+  const userManifest = path.join(base, "config", "pi-scheduler", "jobs.json");
   const projectManifest = "/work/.pi/scheduler.json";
   const env = { HOME: base, XDG_CONFIG_HOME: path.join(base, "config"), XDG_STATE_HOME: path.join(base, "state") };
   const blocked = overviewJob(inspection({ installed: true, enabled: true, health: "unhealthy" }));
@@ -473,7 +473,7 @@ test("ambient status aggregates global and current-project attention", async (t)
   const watches = statusWatchHarness();
   const dependencies = {
     env,
-    exists: (filePath) => new Set([globalManifest, projectManifest]).has(filePath),
+    exists: (filePath) => new Set([userManifest, projectManifest]).has(filePath),
     async exec(command, args) {
       if (command === "git") return commandResult("/work\n");
       if (args[0] === "overview") {
@@ -499,14 +499,14 @@ test("ambient status aggregates global and current-project attention", async (t)
   await monitor.start(ctx);
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 2 stuck" });
 
-  writeAttentionFixture(globalManifest, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
+  writeAttentionFixture(userManifest, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
   writeAttentionFixture(projectManifest, { generatedAt: new Date().toISOString(), jobs: [draft] }, env);
   watches.emit(null);
   watches.flush();
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
 
-  writeAttentionFixture(globalManifest, env);
+  writeAttentionFixture(userManifest, env);
   writeAttentionFixture(projectManifest, env);
   watches.emit(null);
   watches.flush();
@@ -515,7 +515,7 @@ test("ambient status aggregates global and current-project attention", async (t)
   await monitor.stop();
 });
 
-test("discovers the fixed global manifest and ignores project scope outside Git", async () => {
+test("discovers the fixed user manifest and ignores project scope outside Git", async () => {
   const execCalls = [];
   const dependencies = {
     env: { HOME: "/home/test", XDG_CONFIG_HOME: "/config" },
@@ -526,9 +526,9 @@ test("discovers the fixed global manifest and ignores project scope outside Git"
     },
   };
 
-  assert.equal(globalManifestPath(dependencies.env), "/config/pi-scheduler/jobs.json");
+  assert.equal(userManifestPath(dependencies.env), "/config/pi-scheduler/jobs.json");
   assert.deepEqual(await discoverManifestPaths("/work/notes", dependencies), [
-    { scope: "global", manifestPath: "/config/pi-scheduler/jobs.json" },
+    { scope: "user", manifestPath: "/config/pi-scheduler/jobs.json" },
   ]);
   assert.deepEqual(execCalls, [{ command: "git", args: ["-C", "/work/notes", "rev-parse", "--show-toplevel"] }]);
 });
@@ -544,7 +544,7 @@ test("discovers only the exact current Git root project manifest", async () => {
   };
 
   assert.deepEqual(await discoverManifestPaths("/work/project/nested", dependencies), [
-    { scope: "global", manifestPath: "/config/pi-scheduler/jobs.json" },
+    { scope: "user", manifestPath: "/config/pi-scheduler/jobs.json" },
     { scope: "project", manifestPath: "/work/project/.pi/scheduler.json" },
   ]);
 });
@@ -553,7 +553,7 @@ test("sanitizes displayed values and builds an exact doctor command", () => {
   assert.equal(sanitizeDisplay("bad\nlabel\u0000"), "bad�label�");
   assert.equal(
     schedulerDoctorCommand(overviewJob(), "/opt/scheduled-jobs"),
-    "'/opt/scheduled-jobs' doctor 'global:test:job' --manifest '/tmp/config/pi-scheduler/jobs.json' --json",
+    "'/opt/scheduled-jobs' doctor 'user:test:job' --manifest '/tmp/config/pi-scheduler/jobs.json' --json",
   );
 });
 
@@ -595,7 +595,7 @@ test("shows the exact executable contract for install and run reviews", () => {
     [declaredJob({ inspection: inspection({ installed: true }) }), "run"],
   ]) {
     const review = actionReviewText(job, action);
-    assert.match(review, /Scope: global:test:job/);
+    assert.match(review, /Scope: user:test:job/);
     assert.match(review, /Argv: \["\/usr\/local\/bin\/node","\/tmp\/job\.mjs"\]/);
     assert.match(review, /Adapter: launchd \(auto\)/);
     assert.match(review, /required node: \/usr\/local\/bin\/node/);
@@ -644,7 +644,7 @@ test("native action cancellation performs no mutation", async () => {
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
   assert.equal(harness.confirms.length, 1);
-  assert.match(harness.confirms[0].message, /Scope: global:test:job/);
+  assert.match(harness.confirms[0].message, /Scope: user:test:job/);
   assert.equal(scripted.calls.some(({ args }) => args[0] === "install"), false);
 });
 
@@ -660,7 +660,7 @@ test("native actions preserve exact installed digest and revision fencing", asyn
   const call = scripted.calls.find(({ args }) => args[0] === "run");
   assert.deepEqual(call.args.slice(0, 7), [
     "run",
-    "global:test:job",
+    "user:test:job",
     "--expected-installed-digest",
     "installed-digest",
     "--expected-revision",
@@ -903,7 +903,7 @@ test("an unreadable manifest clears its shared attention", async (t) => {
   const value = lifecycleFixture(t);
   writeAttentionFixture(value.manifestPath, {
     generatedAt: new Date().toISOString(),
-    jobs: [{ id: "global:test:job", candidateError: { code: "ENVIRONMENT", message: "blocked" }, installation: { installed: false }, recentRuns: [] }],
+    jobs: [{ id: "user:test:job", candidateError: { code: "ENVIRONMENT", message: "blocked" }, installation: { installed: false }, recentRuns: [] }],
   }, value.env);
   fs.writeFileSync(value.manifestPath, JSON.stringify({ version: 1, jobs: { bad: { command: "removed" } } }));
 
