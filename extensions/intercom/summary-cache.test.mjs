@@ -236,6 +236,14 @@ test("recovers a newer branch record left quarantined by an interrupted repair",
 	const [directoryName] = await readdir(root);
 	const directory = join(root, directoryName);
 	const [filename] = (await readdir(directory)).filter((name) => name.endsWith(".json"));
+	const freshQuarantine = join(directory, `${filename}.00000000-0000-4000-8000-000000000002.quarantine`);
+	await writeFile(freshQuarantine, `${JSON.stringify(older)}\n`, { mode: 0o600 });
+	await rm(join(directory, filename));
+	assert.deepEqual(await cache.read(older.sessionId), older);
+	assert.equal((await readdir(directory)).includes(filename), true);
+	assert.equal((await readdir(directory)).includes(freshQuarantine.slice(directory.length + 1)), true);
+	await rm(freshQuarantine);
+
 	const newer = record({
 		createdAt: "2026-08-05T13:00:00.000Z",
 		capturedAtSummary: "2026-08-05T12:00:00.000Z",
