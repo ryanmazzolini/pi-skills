@@ -145,7 +145,7 @@ test("an installed snapshot reconciles daily-report under the fixed scheduler en
   assert.match(directDoctor.stdout, /GitHub: unavailable/);
   assert.match(directDoctor.stdout, /Shortcut: unavailable/);
 
-  const id = "global:daily-report:fixture";
+  const id = "user:daily-report:fixture";
   const inspected = await run(["inspect", id, "--manifest", value.manifestPath, "--json"], value.runtime);
   const candidateDigest = json(inspected).candidate.digest;
   const installed = await run([
@@ -180,7 +180,7 @@ test("doctor fails when an installed executable becomes unsafe outside the calle
   const manifest = JSON.parse(fs.readFileSync(value.manifestPath, "utf8"));
   manifest.jobs["test:cli"].optionalCommands = ["helper"];
   fs.writeFileSync(value.manifestPath, JSON.stringify(manifest));
-  const id = "global:test:cli";
+  const id = "user:test:cli";
   const inspected = await run(["inspect", id, "--manifest", value.manifestPath, "--json"], value.runtime);
   await run([
     "install", id,
@@ -204,7 +204,7 @@ test("doctor fails when an installed executable becomes unsafe outside the calle
 
 test("CLI completes the disabled install, run, enable, disable, logs, and remove flow", async (t) => {
   const value = fixture(t);
-  const id = "global:test:cli";
+  const id = "user:test:cli";
   const inspected = await run(
     ["inspect", id, "--manifest", value.manifestPath, "--json"],
     value.runtime,
@@ -320,4 +320,16 @@ test("CLI completes the disabled install, run, enable, disable, logs, and remove
   );
   assert.equal(json(removed).result.removed, true);
   assert.equal(json(await run(["status", id, "--json"], value.runtime)).result.installed, false);
+});
+
+test("CLI rejects the removed global job scope", async (t) => {
+  const value = fixture(t);
+  await assert.rejects(
+    run(["status", "global:test:cli", "--json"], value.runtime),
+    (error) => error?.code === "USAGE" && /user: or project:/.test(error.message),
+  );
+  await assert.rejects(
+    run(["run-log", "global:test:cli", "00000000-0000-4000-8000-000000000000", "--json"], value.runtime),
+    (error) => error?.code === "USAGE" && /user: or project:/.test(error.message),
+  );
 });
