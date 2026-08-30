@@ -38,9 +38,9 @@ function run(overrides = {}) {
 
 function job(overrides = {}) {
   return {
-    id: "global:daily-report:work",
+    id: "user:daily-report:work",
     key: "daily-report:work",
-    scope: { kind: "global" },
+    scope: { kind: "user" },
     description: "Reconcile the work report on weekday afternoons",
     schedule: "30 17 * * 1-5",
     sourcePath: "/config/pi-scheduler/jobs.json",
@@ -96,10 +96,10 @@ test("attention rows explain why each task needs review", () => {
   const view = harness(40);
   const data = {
     jobs: [
-      job({ id: "global:test:failed", key: "test:failed", recentRuns: [run({ status: "failed", exitCode: 7, reason: "exited with code 7" })] }),
-      job({ id: "global:test:environment", key: "test:environment", candidateError: { code: "ENVIRONMENT", message: "missing command" }, recentRuns: [] }),
+      job({ id: "user:test:failed", key: "test:failed", recentRuns: [run({ status: "failed", exitCode: 7, reason: "exited with code 7" })] }),
+      job({ id: "user:test:environment", key: "test:environment", candidateError: { code: "ENVIRONMENT", message: "missing command" }, recentRuns: [] }),
       job({
-        id: "global:test:command",
+        id: "user:test:command",
         key: "test:command",
         installation: { installed: true, health: "unhealthy", healthCategory: "commands", enabled: false, definitionDrift: false, adapterDrift: false },
       }),
@@ -109,10 +109,10 @@ test("attention rows explain why each task needs review", () => {
   };
   const rendered = new SchedulerDashboardComponent(data, view.tui, theme, () => {}).render(100).join("\n");
 
-  assert.match(rendered, /test:failed · global · Needs attention · Run failed/);
+  assert.match(rendered, /test:failed · User · Needs attention · Run failed/);
   assert.match(rendered, /exited with code 7/);
-  assert.match(rendered, /test:environment · global · Needs attention · Environment blocked/);
-  assert.match(rendered, /test:command · global · Needs attention · Command unavailable/);
+  assert.match(rendered, /test:environment · User · Needs attention · Environment blocked/);
+  assert.match(rendered, /test:command · User · Needs attention · Command unavailable/);
 
   const selectedEnvironment = new SchedulerDashboardComponent(
     data,
@@ -120,7 +120,7 @@ test("attention rows explain why each task needs review", () => {
     theme,
     () => {},
     new Date(),
-    "global:test:environment",
+    "user:test:environment",
   ).render(54);
   assert.match(selectedEnvironment.join("\n"), /missing command/);
   assert.equal(selectedEnvironment.every((line) => visibleWidth(line) <= 54), true);
@@ -140,7 +140,7 @@ test("renders a width-safe tasks dashboard with next run, history, and source er
   };
   const component = new SchedulerDashboardComponent(data, view.tui, theme, () => {}, now);
   const wide = component.render(100);
-  assert.match(wide.join("\n"), /daily-report:work · global · Active/);
+  assert.match(wide.join("\n"), /daily-report:work · User · Active/);
   assert.match(wide.join("\n"), /Weekdays at 17:30 local time · next Today/);
   assert.match(wide.join("\n"), /! Project tasks · jobs\.bad contains unknown field/);
   assert.equal(wide.length, 20);
@@ -149,20 +149,20 @@ test("renders a width-safe tasks dashboard with next run, history, and source er
   const narrow = component.render(54);
   assert.match(narrow.join("\n"), /Scheduler · \[Tasks\]  Runs/);
   assert.match(narrow.join("\n"), /daily-report:work/);
-  assert.match(narrow.join("\n"), /global · Active/);
+  assert.match(narrow.join("\n"), /User · Active/);
   assert.equal(narrow.every((line) => visibleWidth(line) <= 54), true);
 });
 
 test("task selection follows grouped order and preserves an explicit task", () => {
   const view = harness();
   const draft = job({
-    id: "global:smoke:dashboard",
+    id: "user:smoke:dashboard",
     key: "smoke:dashboard",
     installation: { installed: false, health: "absent" },
     recentRuns: [],
   });
   const blocked = job({
-    id: "global:smoke:diagnostic",
+    id: "user:smoke:diagnostic",
     key: "smoke:diagnostic",
     candidateError: { code: "ENVIRONMENT", message: "missing command" },
     recentRuns: [],
@@ -203,7 +203,7 @@ test("detail emits refresh, action, run, and back intents", () => {
     candidateError: { code: "ENVIRONMENT", message: "missing command" },
     recentRuns: [run({ status: "skipped", reason: "overlap" }), timedOut],
   });
-  const doctor = "'/opt/scheduled-jobs' doctor 'global:daily-report:work' --manifest '/config/pi-scheduler/jobs.json' --json";
+  const doctor = "'/opt/scheduled-jobs' doctor 'user:daily-report:work' --manifest '/config/pi-scheduler/jobs.json' --json";
   const rendered = new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, () => {}, new Date(), doctor).render(120).join("\n");
   assert.match(rendered, /Recovery: run .*scheduled-jobs.* doctor/);
   assert.match(rendered, /Latest execution timed out/);
@@ -260,11 +260,12 @@ test("unhealthy installed state directs recovery through doctor and reviewed act
       adapterDrift: false,
     },
   });
-  const doctor = "scheduled-jobs doctor global:daily-report:work --manifest /config/pi-scheduler/jobs.json --json";
+  const doctor = "scheduled-jobs doctor user:daily-report:work --manifest /config/pi-scheduler/jobs.json --json";
   const rendered = new SchedulerJobDetailComponent(unhealthy, "Definition", view.tui, theme, () => {}, new Date(), doctor).render(120).join("\n");
 
   assert.match(rendered, /Recovery: run scheduled-jobs doctor/);
-  assert.match(rendered, /use only reviewed lifecycle actions/);
+  assert.match(rendered, /then use/);
+  assert.match(rendered, /only reviewed lifecycle actions/);
   assert.doesNotMatch(rendered, /repair the private installed state/);
 });
 

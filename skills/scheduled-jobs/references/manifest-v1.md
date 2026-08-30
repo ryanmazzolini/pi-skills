@@ -1,6 +1,6 @@
 # Manifest v1
 
-A manifest is strict JSON. Unknown fields are rejected. Global jobs live at `${XDG_CONFIG_HOME:-~/.config}/pi-scheduler/jobs.json`; project jobs live at `<exact-git-root>/.pi/scheduler.json`.
+A manifest is strict JSON. Unknown fields are rejected. User jobs live at `${XDG_CONFIG_HOME:-~/.config}/pi-scheduler/jobs.json`; project jobs live at `<exact-git-root>/.pi/scheduler.json`.
 
 ```json
 {
