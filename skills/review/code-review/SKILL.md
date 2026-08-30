@@ -83,13 +83,13 @@ Make the displayed file and line reference a deep link when the review host supp
 
 Group comments by action in this order: **Blocks approval**, **Blocks merge**, then **Non-blocking**. Order comments within each group by impact.
 
-Apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) when drafting each comment. Preserve the technical meaning and review requirements while making it ready to publish.
-
 Each comment should:
 
 1. Lead with a direct statement of the problem.
 2. Explain what the code does, when it happens, and the concrete consequence.
-3. Offer the smallest useful change as a suggestion. Suggest a test when it proves the corrected behavior or prevents a likely regression.
+3. Start a new paragraph, then offer the smallest useful change as a suggestion. Suggest a test when it proves the corrected behavior or prevents a likely regression.
+
+Offer one correction path when the evidence supports a clear default. Give alternatives only when the repository leaves a real design or contract choice unresolved, and say what decides it. Keep the recommendation rationale, risk explanation, and reviewer workflow guidance out of the publishable comment. Keep the required finding classification at the top of the comment.
 
 State the defect and consequence directly. Phrase the remediation as an option rather than a command. Use forms such as “X could…”, “One option is…”, or “This could be avoided by…”. Do not use imperative remediation such as “Render…”, “Include…”, or “Add…”.
 
@@ -124,6 +124,8 @@ Then scan every proposed change or test. Rewrite commands, including sentences u
 
 ## Return the result
 
+Before returning, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review, including its recommendation, risk statement, summaries, notable facts, and comments. Preserve the technical meaning and review requirements while removing internal review jargon, repeated evidence, and implementation detail that does not help the reader understand or act.
+
 Return one section for each reviewed pull request, commit, or diff. For a hosted pull request, make the section title a link to it.
 
 Lead each section with exactly one recommendation:
@@ -132,10 +134,14 @@ Lead each section with exactly one recommendation:
 - **Approve with comments** when the section contains **Blocks merge**, **Non-blocking**, or **Discussion** items but no **Blocks approval** finding or material confidence gap.
 - **Wait before approving** when any **Blocks approval** finding remains or a material confidence gap prevents a risk-proportionate review.
 
-Write it as `**Recommendation: Approve with comments.**` Include `**Change risk: <rating>.**` only when the assessed risk is **Moderate** or **High**, replacing `<rating>` with that value. Omit the risk line for **Low** risk. When the line is present, follow it with one short explanation of the main exposure, containment or recovery path, and evidence that affects the decision. Then add one short recommendation rationale when comments or a material confidence gap exist. For a Low-risk review, mention a containment factor only when it helps explain the recommendation:
+Build the opening in this order:
 
-- For **Wait before approving**, say what the human needs to verify before approving.
-- When **Blocks merge** items remain, name them and say why the human does not need to review their corrections again.
+1. Put the recommendation in its own paragraph, written as `**Recommendation: Approve with comments.**`
+2. For **Moderate** or **High** risk, start a new paragraph with `**Change risk: <rating>.**`, replacing `<rating>` with that value. Continue in the same paragraph with one or two sentences that state what could go wrong and what limits or increases the consequence. Start with the affected user, operation, or data rather than implementation categories. Omit this paragraph for **Low** risk. Keep every validation result under **Notable**; do not repeat or refer vaguely to checks here. Avoid internal shorthand such as “exposure,” “containment,” “residual risk,” “exact-head validation,” or “exact reviewed commit” in the returned review.
+3. Whenever comments or a material confidence gap exist, add a separate short recommendation rationale. State what remains and what the reviewer needs to do. Leave remediation to the inline comments and keep this rationale out of them. For a Low-risk review, mention a concrete limiting factor only when it helps explain the recommendation; do not replace the omitted rating with the phrase “low risk.”
+
+- For **Wait before approving** because of a **Blocks approval** finding, name the behavior or correction the human needs to verify rather than repeating check status. When missing evidence blocks approval, say that approval depends on the evidence named under **Notable** without repeating its details or links.
+- When **Blocks merge** items remain, name the open defects and say why their corrections do not need another review.
 - With only **Non-blocking** items, say that they are optional or suitable for follow-up.
 - With only **Discussion**, say that the open question does not block approval.
 
@@ -145,11 +151,11 @@ The recommendation advises the human reviewer. Do not approve the change or requ
 
 Follow the recommendation with compact prose:
 
-- **Original issue.** For a hosted pull request with an available linked issue, summarize the original problem and requested outcome. Deep-link the issue. State the issue itself rather than narrating that it was retrieved or validated.
+- **Original issue.** This labeled sentence is required for a hosted pull request with an available linked issue; do not replace it with an unlabeled summary. State the original problem and requested outcome as behavior the user or operator should observe. Deep-link the issue. State the issue itself rather than narrating that it was retrieved or validated.
 - **Context.** Use this instead when a hosted pull request has no available linked issue. Name the PR description or other source used and state what required context remains unavailable.
 - **Intent.** Use this for a commit, patch, or local diff with a stated request. Omit it when no intent source is available rather than manufacturing context.
-- **Change.** Explain how the implementation addresses the issue or stated intent. When neither is available, describe only the observed behavior without claiming that it satisfies an unstated outcome. For hosted changes, link the defining implementation and tests to immutable reviewed revisions, and link CI or other validation evidence to the exact reviewed run.
-- **Notable.** Add this only for another fact, trade-off, dependency, or validation gap that materially helps the review. Do not emit an empty placeholder or a separate validation section.
+- **Change.** State what the user, operator, or system can now do and how prior behavior changes before explaining implementation. Use one connected description rather than an inventory of components or files. When no issue or intent is available, describe only the observed behavior without claiming that it satisfies an unstated outcome. For hosted changes, attach immutable implementation links to the behavior they support.
+- **Notable.** Add this only for another fact, trade-off, dependency, or validation gap that materially helps the review. Keep validation results and links to tests, CI, or other validation evidence here and nowhere else. Name each material check and its result. For hosted changes, link tests to the immutable reviewed revision and CI or other validation evidence to the exact reviewed run. For local reviews, identify the commit or run when known. If the source says only that checks passed, omit that claim without narrating why. Also omit absent concerns, empty placeholders, and a separate validation section.
 
 Then return the draft groups in this order, omitting empty groups: **Blocks approval**, **Blocks merge**, **Non-blocking**, **Discussion**, then **Existing issue**. The first three contain publishable inline comments. Put the classification at the top of each inline comment body, and keep the deep-linked file and line outside it as presentation metadata:
 
@@ -163,7 +169,7 @@ Then return the draft groups in this order, omitting empty groups: **Blocks appr
 > Exact comment body
 ```
 
-Each **Existing issue** note must say that the pull request did not introduce the problem. If no groups remain, say that no inline comments are proposed.
+Each **Existing issue** note must say that the pull request did not introduce the problem. Say that no inline comments are proposed only when every group is empty; never append it after a non-empty group.
 
 Apply AI attribution to publishable drafts by default unless overridden explicitly by the user or policy in context. Keep the classification and any attribution inside the quoted comment body. Each draft should match what would be published.
 
