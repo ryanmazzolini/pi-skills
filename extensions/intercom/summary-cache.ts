@@ -268,7 +268,7 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 		if (!info.isFile() || (uid !== undefined && info.uid !== uid) || (info.mode & 0o077) !== 0) {
 			throw new Error("Session summary cache quarantine is unsafe");
 		}
-		if (info.mtimeMs > Date.now() - SESSION_SUMMARY_CACHE_TEMP_STALE_MS) return false;
+		const stale = info.mtimeMs <= Date.now() - SESSION_SUMMARY_CACHE_TEMP_STALE_MS;
 		let record: SessionSummaryCacheRecord;
 		try {
 			record = await this.readCacheRecord(path, undefined);
@@ -278,11 +278,38 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 				throw new Error("Quarantined cache identity is invalid");
 			}
 		} catch {
+			if (!stale) return false;
 			await rm(path, { force: true });
 			return true;
 		}
+		const target = join(directory, CURRENT_CACHE_FILENAME);
+		if (!stale) {
+			const recovery = join(directory, `.${CURRENT_CACHE_FILENAME}.${randomUUID()}.tmp`);
+			try {
+				try {
+					// Keep a stable source if the active writer removes its quarantine while we reconcile it.
+					await link(path, recovery);
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+					for (let attempt = 0; attempt < 100; attempt++) {
+						try {
+							const retained = await this.readCacheRecord(target, record.sessionId);
+							if (this.retainedWriteResult(retained, record)) return true;
+						} catch {
+							// The active writer may still be between rename and publication.
+						}
+						await delay(10);
+					}
+					return false;
+				}
+				await this.installCurrentRecord(target, recovery, record);
+				return true;
+			} finally {
+				await rm(recovery, { force: true }).catch(() => {});
+			}
+		}
 		try {
-			await this.installCurrentRecord(join(directory, CURRENT_CACHE_FILENAME), path, record);
+			await this.installCurrentRecord(target, path, record);
 		} finally {
 			await rm(path, { force: true }).catch(() => {});
 		}
