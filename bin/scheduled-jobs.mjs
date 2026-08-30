@@ -5,8 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CONFIG_DIRECTORY_NAME,
-  GLOBAL_MANIFEST_DIRECTORY,
-  GLOBAL_MANIFEST_NAME,
+  USER_MANIFEST_DIRECTORY,
+  USER_MANIFEST_NAME,
   SchedulerError,
   SchedulerUsageError,
   declarationSummary,
@@ -54,7 +54,7 @@ function usage() {
   scheduled-jobs runs JOB_ID [--limit N] [--json]
   scheduled-jobs run-log JOB_ID RUN_ID [--lines N] [--json]
 
-PATH must be the fixed global manifest or an exact Git-root .pi/scheduler.json.
+PATH must be the fixed user manifest or an exact Git-root .pi/scheduler.json.
 The CLI performs no project discovery and never prompts. Install creates a disabled job.`;
 }
 
@@ -103,9 +103,16 @@ function parseArguments(argv) {
   return { options, positionals };
 }
 
+function requireSupportedJobId(id) {
+  if (!id.startsWith("user:") && !id.startsWith("project:")) {
+    throw new SchedulerUsageError("JOB_ID must use a user: or project: scope.");
+  }
+  return id;
+}
+
 function requireJobId(positionals, command) {
   if (positionals.length !== 1) throw new SchedulerUsageError(`${command} requires one JOB_ID.`);
-  return positionals[0];
+  return requireSupportedJobId(positionals[0]);
 }
 
 function declaredJob(id, manifestPath, env) {
@@ -184,7 +191,8 @@ function commandOverview(positionals, options, runtime, env) {
 
 function commandRunLog(positionals, options, env) {
   if (positionals.length !== 2) throw new SchedulerUsageError("run-log requires one JOB_ID and one RUN_ID.");
-  return { command: "run-log", result: readRunOutput(positionals[0], positionals[1], { env, lines: options.lines ?? 200 }) };
+  const id = requireSupportedJobId(positionals[0]);
+  return { command: "run-log", result: readRunOutput(id, positionals[1], { env, lines: options.lines ?? 200 }) };
 }
 
 function requireAvailableInstallation(installation) {
@@ -276,8 +284,8 @@ function installedSourcePath(id, env) {
 }
 
 function overviewSourcePath(id, env) {
-  if (id.startsWith("global:")) {
-    return path.join(defaultConfigHome(env), GLOBAL_MANIFEST_DIRECTORY, GLOBAL_MANIFEST_NAME);
+  if (id.startsWith("user:")) {
+    return path.join(defaultConfigHome(env), USER_MANIFEST_DIRECTORY, USER_MANIFEST_NAME);
   }
   const sourcePath = installedSourcePath(id, env);
   if (
@@ -289,7 +297,7 @@ function overviewSourcePath(id, env) {
 }
 
 function installedManifestEnvironment(id, manifestPath, env) {
-  if (!id.startsWith("global:") || !manifestPath) return env;
+  if (!id.startsWith("user:") || !manifestPath) return env;
   return { ...env, XDG_CONFIG_HOME: path.dirname(path.dirname(manifestPath)) };
 }
 

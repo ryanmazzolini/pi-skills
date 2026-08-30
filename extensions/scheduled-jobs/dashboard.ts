@@ -28,7 +28,7 @@ export interface SchedulerRunView {
 export interface SchedulerJobOverview {
 	id: string;
 	key: string;
-	scope: { kind: "global" | "project" };
+	scope: { kind: "user" | "project" };
 	description: string;
 	schedule: string;
 	sourcePath: string;
@@ -61,7 +61,7 @@ export interface SchedulerJobOverview {
 }
 
 export interface SchedulerSourceError {
-	scope: "global" | "project";
+	scope: "user" | "project";
 	manifestPath: string;
 	error: SchedulerFailureView;
 }
@@ -283,6 +283,10 @@ function effectiveWorkingDirectory(job: SchedulerJobOverview): string {
 		: job.candidate?.workingDirectory ?? job.sourcePath;
 }
 
+function scopeLabel(scope: "user" | "project"): "User" | "Project" {
+	return scope === "user" ? "User" : "Project";
+}
+
 export function schedulerJobState(job: SchedulerJobOverview): { label: string; icon: string; color: "success" | "warning" | "error" | "muted" | "accent" } {
 	switch (schedulerJobStatus(job)) {
 		case "running": return { label: "Running", icon: "↻", color: "accent" };
@@ -468,7 +472,7 @@ export class SchedulerDashboardComponent implements Component {
 		if (this.data.sourceErrors.length > 0) {
 			chrome.push(this.theme.bold("SOURCE ERRORS"));
 			for (const sourceError of this.data.sourceErrors.slice(0, 2)) {
-				chrome.push(`${this.theme.fg("error", "!")} ${sourceError.scope === "global" ? "Global" : "Project"} tasks · ${this.theme.fg("error", sourceError.error.message)}`);
+				chrome.push(`${this.theme.fg("error", "!")} ${scopeLabel(sourceError.scope)} tasks · ${this.theme.fg("error", sourceError.error.message)}`);
 				chrome.push(this.theme.fg("dim", `  ${sourceError.manifestPath}`));
 			}
 			if (this.data.jobs.length > 0) chrome.push("");
@@ -528,7 +532,7 @@ export class SchedulerDashboardComponent implements Component {
 		const last = latest ? `last ${runState(latest).label.toLowerCase()} ${formatSchedulerTime(latest.startedAt, this.now)}` : "no recorded runs";
 		const identity = `${marker} ${this.theme.fg(state.color, state.icon)} ${label}`;
 		const attention = state.label === "Needs attention" ? schedulerAttention(job) : undefined;
-		const status = `${this.theme.fg("dim", `· ${job.scope.kind} ·`)} ${this.theme.fg(state.color, `${state.label}${attention ? ` · ${attention.cause}` : ""}`)}`;
+		const status = `${this.theme.fg("dim", `· ${scopeLabel(job.scope.kind)} ·`)} ${this.theme.fg(state.color, `${state.label}${attention ? ` · ${attention.cause}` : ""}`)}`;
 		const schedule = humanizeSchedule(effectiveSchedule(job));
 		const history = this.theme.fg("dim", `· ${next} · ${last}`);
 		const attentionDetail = selected ? attention?.detail : undefined;
@@ -696,7 +700,7 @@ export class SchedulerJobDetailComponent implements Component {
 			`Schedule: ${humanizeSchedule(effectiveSchedule(this.job))}`,
 			`Next run: ${formatSchedulerTime(this.job.nextRun, this.now)}`,
 			`Last run: ${latest ? `${runState(latest).label} · ${formatSchedulerTime(latest.startedAt, this.now)} · ${duration(latest.durationMilliseconds)}` : "No recorded runs"}`,
-			`Scope: ${this.job.scope.kind}`,
+			`Scope: ${scopeLabel(this.job.scope.kind)}`,
 			`Source: ${this.job.sourcePath}`,
 			`Working directory: ${effectiveWorkingDirectory(this.job)}`,
 			...this.recoveryLines(),
