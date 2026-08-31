@@ -2,6 +2,16 @@
 
 Use this when reviewing async flows, forms, empty states, destructive actions, or recovery paths.
 
+## Communicate through the flow first
+
+Apply this before the state-specific guidance below. Let status, labels, field values, actions, and layout carry the ordinary state before adding explanatory copy. A requirement to explain an implementation boundary does not justify persistent prose when the control or flow itself communicates the wrong outcome.
+
+Add persistent prose only when it contributes information the surrounding interface cannot carry, such as a material reason, unfamiliar constraint, or verified recovery step. A status chip, heading, or field prefix is still repetition when it only restates the same boundary. For example, prefer **Quantity to put away** and **Remaining quantity** over repeating **Preview** throughout a read-only flow.
+
+Do not invent recovery steps or use a disclaimer to compensate for an action whose label or behavior misstates the flow. Rename, remove, or challenge the misleading action instead. Every visible action must match the state being presented; do not carry an item-correction action into a recommendation or availability state. Preserve specific errors and first-class reasons that help the user understand or act.
+
+Before returning UI text, scan each visible string. Replace service names, internal state, ownership, allocation, persistence, and session language with terms the user encounters in the task. Treat backend messages and existing UI copy as evidence to translate, not text to preserve verbatim.
+
 ## Loading and pending
 
 Loading states should answer: what is happening, what can I still do, and what happens next?
@@ -21,7 +31,9 @@ Avoid:
 
 ## Empty states
 
-Empty states should explain why the area is empty and what the user can do next.
+First distinguish an empty surface from one missing value inside an otherwise usable surface. For a missing value, keep the familiar field and layout, use the product's established empty-value convention, and let the nearby status explain the state. Do not repeat the absence in a sentence.
+
+When the surrounding interface cannot carry useful additional information, an empty state may explain why the area is empty and what the user can do next.
 
 Useful empty states include:
 
@@ -30,7 +42,9 @@ Useful empty states include:
 - permission or availability explanation
 - next best action when creation is expected
 
-Avoid generic "No data" copy when the user's next step is knowable.
+State only what the evidence proves. A missing recommendation, prediction, or response does not prove that the underlying option is impossible or unsafe. Translate a material reason into user terms without exposing internal codes, services, ownership boundaries, or source-system wording. For example, a **No recommendation** status beside **Destination —** can communicate the ordinary state without a sentence about which service returned what.
+
+Show a next action only when the product supports it or the workflow evidence verifies it. When no recovery is known, omit it rather than inventing a retry, escalation, or manual process. Avoid generic "No data" copy when the user's next step is knowable.
 
 ## Error states
 

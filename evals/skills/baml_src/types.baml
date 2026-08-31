@@ -112,6 +112,11 @@ class Scenario {
     semanticCriteria: SemanticCriterion[],
 }
 
+class ScenarioSuite {
+    id: string,
+    scenarios: Scenario[],
+}
+
 class HardAssertionResult {
     description: string,
     passed: bool,
