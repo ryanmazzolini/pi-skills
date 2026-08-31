@@ -11,14 +11,15 @@ import {
 	schedulerAttentionPath,
 } from "../../lib/scheduled-jobs/attention.mjs";
 import {
-	SchedulerDashboardComponent,
-	SchedulerJobDetailComponent,
+	SchedulerPanelComponent,
 	SchedulerTextComponent,
+	schedulerAttention,
 	type SchedulerDashboardData,
-	type SchedulerDashboardResult,
-	type SchedulerDetailResult,
+	type SchedulerDetailView,
 	type SchedulerJobOverview,
+	type SchedulerPanelResult,
 	type SchedulerTextResult,
+	type SchedulerTextView,
 } from "./dashboard.ts";
 
 export const CONFIG_DIRECTORY_NAME = ".pi";
@@ -32,7 +33,7 @@ const SCHEDULER_STATUS_ID = "scheduled-jobs";
 const SCHEDULER_STATUS_DEBOUNCE_MS = 50;
 const SCHEDULER_OVERLAY_OPTIONS = {
 	overlay: true,
-	overlayOptions: { anchor: "center", width: "90%", maxHeight: "85%", margin: 1 },
+	overlayOptions: { anchor: "bottom-center", width: "100%", maxHeight: "100%", margin: 0 },
 } as const;
 
 export function resolveSchedulerCliPath(options: {
@@ -296,10 +297,8 @@ export function createSchedulerStatusMonitor(
 			return;
 		}
 		const theme = target.ui.theme;
-		target.ui.setStatus(
-			SCHEDULER_STATUS_ID,
-			`${theme.fg("error", "!")} ${theme.fg("dim", `Scheduler · ${count} stuck`)}`,
-		);
+		const label = count === 1 ? "1 task needs review" : `${count} tasks need review`;
+		target.ui.setStatus(SCHEDULER_STATUS_ID, theme.fg("error", `! Scheduler: ${label}`));
 	};
 
 	const closeWatcher = () => {
@@ -554,6 +553,31 @@ export function schedulerDoctorCommand(
 	return `${shellQuote(cliPath)} doctor ${shellQuote(overview.id)} --manifest ${shellQuote(overview.manifestPath)} --json`;
 }
 
+function boundedPromptField(value: unknown, limit: number): string {
+	const safe = sanitizeDisplay(value);
+	return safe.length <= limit ? safe : `${safe.slice(0, limit)}…`;
+}
+
+export function schedulerInvestigationPrompt(
+	overview: SchedulerJobOverview,
+	cliPath = CLI_PATH,
+): string {
+	const attention = schedulerAttention(overview);
+	const scope = overview.scope.kind === "user" ? "User" : "Project";
+	const cause = boundedPromptField(attention.cause, 200);
+	const detail = attention.detail ? ` · ${boundedPromptField(attention.detail, 600)}` : "";
+	return boundedDisplay([
+		`Diagnose the scheduled task “${boundedPromptField(overview.key, 300)}”.`,
+		"This is a read-only diagnosis. Do not change files or scheduler state until I approve the exact action.",
+		`Task ID: ${boundedPromptField(overview.id, 500)}`,
+		`Scope: ${scope}`,
+		`Detected issue: ${cause}${detail}`,
+		`Current installed state: ${overview.installation.installed ? `${boundedPromptField(overview.installation.health, 100)} and ${overview.installation.enabled ? "active" : "paused"}` : "not installed"}`,
+		`Read-only diagnosis: ${boundedPromptField(schedulerDoctorCommand(overview, cliPath), 1_500)}`,
+		"Explain the cause and recommend the smallest safe fix.",
+	].join("\n"), 4_096);
+}
+
 export function actionReviewText(job: JobView, action: SchedulerAction): string {
 	const candidate = job.inspection?.candidate;
 	const current = installation(job);
@@ -655,40 +679,36 @@ async function withLoader<T>(
 		: { completed: false };
 }
 
-async function showDashboard(
+async function showSchedulerPanel(
 	ctx: UiContext,
-	data: SchedulerDashboardData,
-	selectedTaskId?: string,
-): Promise<SchedulerDashboardResult> {
-	return ctx.ui.custom<SchedulerDashboardResult>((tui, theme, _keybindings, done) => new SchedulerDashboardComponent(
-		data,
+	dependencies: SchedulerDependencies,
+): Promise<SchedulerPanelResult> {
+	let setPanelHidden: ((hidden: boolean) => void) | undefined;
+	return ctx.ui.custom<SchedulerPanelResult>((tui, theme, _keybindings, done) => new SchedulerPanelComponent(
+		undefined,
 		tui,
 		theme,
+		{
+			loadDashboard: (signal) => loadDashboardData(ctx.cwd, dependencies, { signal }),
+			loadDetail: (id, signal) => loadDetailView(ctx.cwd, id, dependencies, signal),
+			loadOutput: (id, runId, signal) => loadRunOutput(dependencies, id, runId, signal),
+			runAction: async (id) => {
+				setPanelHidden?.(true);
+				try {
+					await runAction(ctx, dependencies, id);
+				} finally {
+					setPanelHidden?.(false);
+				}
+			},
+			investigationPrompt: (job) => schedulerInvestigationPrompt(job),
+		},
 		done,
-		new Date(data.generatedAt),
-		selectedTaskId,
-	), SCHEDULER_OVERLAY_OPTIONS);
-}
-
-async function showDetail(
-	ctx: UiContext,
-	overview: SchedulerJobOverview,
-	definition: string,
-): Promise<SchedulerDetailResult> {
-	return ctx.ui.custom<SchedulerDetailResult>((tui, theme, _keybindings, done) => new SchedulerJobDetailComponent(
-		overview,
-		definition,
-		tui,
-		theme,
-		done,
-		new Date(),
-		schedulerDoctorCommand(overview),
-	), SCHEDULER_OVERLAY_OPTIONS);
-}
-
-interface SchedulerTextView {
-	title: string;
-	text: string;
+	), {
+		...SCHEDULER_OVERLAY_OPTIONS,
+		onHandle: (handle) => {
+			setPanelHidden = (hidden) => handle.setHidden(hidden);
+		},
+	});
 }
 
 async function showText(ctx: UiContext, snapshot: SchedulerTextView): Promise<SchedulerTextResult> {
@@ -727,6 +747,22 @@ async function loadSelectedTask(
 	const overview = dashboard.jobs.find((job) => job.id === id);
 	if (!overview) return undefined;
 	return { dashboard, overview, job: await loadJob(overview, dependencies, signal) };
+}
+
+async function loadDetailView(
+	cwd: string,
+	id: string,
+	dependencies: SchedulerDependencies,
+	signal: AbortSignal,
+): Promise<SchedulerDetailView | undefined> {
+	const loaded = await loadSelectedTask(cwd, id, dependencies, signal);
+	if (!loaded) return undefined;
+	return {
+		dashboard: loaded.dashboard,
+		overview: loaded.overview,
+		definition: inspectionText(loaded.job),
+		doctorCommand: schedulerDoctorCommand(loaded.overview),
+	};
 }
 
 function successMessage(job: JobView, action: SchedulerAction): string {
@@ -812,67 +848,21 @@ async function runAction(
 	}
 }
 
-type SchedulerRoute =
-	| { kind: "dashboard"; selectedTaskId?: string }
-	| { kind: "detail"; id: string }
-	| { kind: "output"; id: string; runId: string; back: "dashboard" | "detail" };
-
-export function createSchedulerCommandHandler(dependencies: SchedulerDependencies) {
+export function createSchedulerCommandHandler(
+	dependencies: SchedulerDependencies,
+	sendUserMessage: (prompt: string) => void = () => {},
+) {
 	return async (_args: string, ctx: UiContext): Promise<void> => {
 		if (!ctx.hasUI) return;
 		if (ctx.mode !== "tui") {
 			ctx.ui.notify("/scheduler requires Pi's interactive TUI.", "error");
 			return;
 		}
-		let route: SchedulerRoute = { kind: "dashboard" };
-		for (;;) {
-			try {
-				if (route.kind === "dashboard") {
-					const loaded = await withLoader(ctx, "Loading scheduler…", (signal) => loadDashboardData(ctx.cwd, dependencies, { signal }));
-					if (!loaded.completed) return;
-					const result = await showDashboard(ctx, loaded.value, route.selectedTaskId);
-					if (result.kind === "close") return;
-					if (result.kind === "refresh") continue;
-					if (result.kind === "actions") {
-						await runAction(ctx, dependencies, result.id);
-						route = { kind: "dashboard", selectedTaskId: result.id };
-						continue;
-					}
-					route = result.kind === "job"
-						? { kind: "detail", id: result.id }
-						: { kind: "output", id: result.id, runId: result.runId, back: "dashboard" };
-					continue;
-				}
-				if (route.kind === "detail") {
-					const detailId: string = route.id;
-					const loaded = await withLoader(ctx, "Loading task details…", (signal) => loadSelectedTask(ctx.cwd, detailId, dependencies, signal));
-					if (!loaded.completed) {
-						route = { kind: "dashboard", selectedTaskId: detailId };
-						continue;
-					}
-					if (!loaded.value) {
-						ctx.ui.notify("The selected scheduler task changed or disappeared.", "warning");
-						route = { kind: "dashboard" };
-						continue;
-					}
-					const result = await showDetail(ctx, loaded.value.overview, inspectionText(loaded.value.job));
-					if (result.kind === "back") route = { kind: "dashboard", selectedTaskId: detailId };
-					else if (result.kind === "refresh") continue;
-					else if (result.kind === "actions") await runAction(ctx, dependencies, detailId);
-					else route = { kind: "output", id: result.id, runId: result.runId, back: "detail" };
-					continue;
-				}
-				const outputRoute: Extract<SchedulerRoute, { kind: "output" }> = route;
-				const loaded = await withLoader(ctx, "Loading run output…", (signal) => loadRunOutput(dependencies, outputRoute.id, outputRoute.runId, signal));
-				if (loaded.completed && await showText(ctx, loaded.value) === "refresh") continue;
-				route = outputRoute.back === "detail"
-					? { kind: "detail", id: outputRoute.id }
-					: { kind: "dashboard" };
-			} catch (error) {
-				ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
-				if (route.kind === "dashboard") return;
-				route = { kind: "dashboard" };
-			}
+		try {
+			const result = await showSchedulerPanel(ctx, dependencies);
+			if (result.kind === "ask-pi") sendUserMessage(result.prompt);
+		} catch (error) {
+			ctx.ui.notify(boundedDisplay(error instanceof Error ? error.message : error), "error");
 		}
 	};
 }
@@ -883,7 +873,7 @@ export default function scheduledJobsExtension(pi: ExtensionAPI): void {
 		exists: existsSync,
 		exec: (command, args, options) => pi.exec(command, args, options),
 	};
-	const handler = createSchedulerCommandHandler(dependencies);
+	const handler = createSchedulerCommandHandler(dependencies, (prompt) => pi.sendUserMessage(prompt));
 	const statusMonitor = createSchedulerStatusMonitor(dependencies);
 
 	pi.on("session_start", (_event, ctx) => statusMonitor.start(ctx as ExtensionCommandContext & UiContext));
