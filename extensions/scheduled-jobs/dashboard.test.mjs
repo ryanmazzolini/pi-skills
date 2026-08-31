@@ -337,6 +337,76 @@ test("the persistent panel owns its initial loading state", () => {
   assert.deepEqual(results, [{ kind: "close" }]);
 });
 
+test("initial load errors can retry without closing the panel", async () => {
+  const view = harness();
+  const data = { jobs: [job()], sourceErrors: [], generatedAt: new Date().toISOString() };
+  let attempts = 0;
+  const results = [];
+  const panel = new SchedulerPanelComponent(
+    undefined,
+    view.tui,
+    theme,
+    {
+      loadDashboard: async () => {
+        attempts++;
+        if (attempts === 1) throw new Error("overview unavailable");
+        return data;
+      },
+      loadDetail: async () => undefined,
+      loadOutput: async () => ({ title: "Output", text: "" }),
+      runAction: async () => {},
+      investigationPrompt: () => "diagnose only",
+    },
+    (result) => results.push(result),
+  );
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(panel.render(80).join("\n"), /overview unavailable/);
+  panel.handleInput("r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(panel.render(80).join("\n"), /Scheduler · \[Tasks\]/);
+  assert.equal(attempts, 2);
+  assert.deepEqual(results, []);
+});
+
+test("internal load errors distinguish back from retry", async () => {
+  const view = harness();
+  const data = { jobs: [job()], sourceErrors: [], generatedAt: new Date().toISOString() };
+  let attempts = 0;
+  const detail = { dashboard: data, overview: data.jobs[0], definition: "Definition", doctorCommand: "doctor" };
+  const panel = new SchedulerPanelComponent(
+    data,
+    view.tui,
+    theme,
+    {
+      loadDashboard: async () => data,
+      loadDetail: async () => {
+        attempts++;
+        if (attempts < 3) throw new Error("detail unavailable");
+        return detail;
+      },
+      loadOutput: async () => ({ title: "Output", text: "" }),
+      runAction: async () => {},
+      investigationPrompt: () => "diagnose only",
+    },
+    () => {},
+  );
+
+  panel.handleInput("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(panel.render(80).join("\n"), /detail unavailable/);
+  panel.handleInput("q");
+  assert.match(panel.render(80).join("\n"), /Scheduler · \[Tasks\]/);
+
+  panel.handleInput("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(panel.render(80).join("\n"), /detail unavailable/);
+  panel.handleInput("r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(panel.render(80).join("\n"), /Scheduler \/ daily-report:work/);
+  assert.equal(attempts, 3);
+});
+
 test("details and output transition inside one mounted panel", async () => {
   const view = harness(30);
   const data = { jobs: [job()], sourceErrors: [], generatedAt: new Date().toISOString() };
