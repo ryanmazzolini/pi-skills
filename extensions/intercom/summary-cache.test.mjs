@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,14 @@ import {
 	SESSION_SUMMARY_CACHE_SCHEMA_VERSION,
 	parseSessionSummaryCacheRecord,
 } from "./summary-cache.ts";
+
+function cardFingerprint(record) {
+	return createHash("sha256").update(JSON.stringify(record.card)).digest("hex");
+}
+
+function preferredCardRecord(...records) {
+	return records.toSorted((left, right) => cardFingerprint(left).localeCompare(cardFingerprint(right))).at(-1);
+}
 
 function record(overrides = {}) {
 	return {
@@ -105,9 +114,10 @@ test("retains the newest session turn across sequential and concurrent writes", 
 		const { stdout } = await execFileAsync(process.execPath, [writer, root, JSON.stringify(input)]);
 		return JSON.parse(stdout);
 	}));
-	assert.deepEqual(writes.map((item) => item.result).sort(), ["same-turn-retained", "stored"]);
-	const stored = writes.find((item) => item.result === "stored");
-	assert.equal((await cache.read(older.sessionId)).card.title, stored.title);
+	const sameTurnWinner = preferredCardRecord(firstSameTurn, secondSameTurn);
+	assert.equal(writes.find((item) => item.title === sameTurnWinner.card.title).result, "stored");
+	assert.equal(writes.every((item) => item.result === "stored" || item.result === "same-turn-retained"), true);
+	assert.equal((await cache.read(older.sessionId)).card.title, sameTurnWinner.card.title);
 	assert.equal((await readdir(join(root, directoryName))).filter((name) => name.endsWith(".json")).length, 1);
 
 	const changedBranch = record({
@@ -160,6 +170,23 @@ test("retains the newest session turn across sequential and concurrent writes", 
 		revisionAtSummary: 8,
 	})), "superseded");
 	assert.deepEqual(await cache.read(older.sessionId), newerForkWithOlderConversation);
+});
+
+test("chooses the same visible summary regardless of write order", async (t) => {
+	const base = await mkdtemp(join(tmpdir(), "intercom-summary-cache-tie-"));
+	t.after(() => import("node:fs/promises").then(({ rm }) => rm(base, { recursive: true, force: true })));
+	const first = record({ card: { ...record().card, title: "Alpha summary" } });
+	const second = record({ card: { ...record().card, title: "Omega summary" } });
+	const winner = preferredCardRecord(first, second);
+	const loser = winner === first ? second : first;
+	const left = new FileSessionSummaryCache(join(base, "left"));
+	const right = new FileSessionSummaryCache(join(base, "right"));
+	assert.equal(await left.write(loser), "stored");
+	assert.equal(await left.write(winner), "stored");
+	assert.equal(await right.write(winner), "stored");
+	assert.equal(await right.write(loser), "same-turn-retained");
+	assert.deepEqual(await left.read(first.sessionId), winner);
+	assert.deepEqual(await right.read(first.sessionId), winner);
 });
 
 test("migrates timestamp records and prunes temporary files from the previous layout", async (t) => {
@@ -344,9 +371,10 @@ test("replaces a malformed same-turn record with a valid summary", async (t) => 
 		const { stdout } = await execFileAsync(process.execPath, [writer, root, JSON.stringify(input)]);
 		return JSON.parse(stdout);
 	}));
-	assert.deepEqual(outcomes.map((item) => item.result).sort(), ["same-turn-retained", "stored"]);
-	const stored = outcomes.find((item) => item.result === "stored");
-	assert.equal((await cache.read(original.sessionId)).card.title, stored.title);
+	const repairWinner = preferredCardRecord(...repairs);
+	assert.equal(outcomes.find((item) => item.title === repairWinner.card.title).result, "stored");
+	assert.equal(outcomes.every((item) => item.result === "stored" || item.result === "same-turn-retained"), true);
+	assert.equal((await cache.read(original.sessionId)).card.title, repairWinner.card.title);
 });
 
 test("rejects malformed records and does not follow cache-file symlinks", async (t) => {
