@@ -64,7 +64,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`code-review`](./skills/review/code-review/SKILL.md) | Find concrete defects in code changes and explain them in plain language |
 | [`diagnosing-bugs`](./skills/debugging/diagnosing-bugs/SKILL.md) | Diagnose hard, flaky, environment-specific, or performance bugs |
 | [`security-review`](./skills/security/security-review/SKILL.md) | Find proven, exploitable security problems in code and delivery paths |
-| [`explain-code`](./skills/explain/explain-code/SKILL.md) | Explain code with concrete, drillable visual traces |
+| [`explain-code`](./skills/ai-authoring/explain-code/SKILL.md) | Explain code from a high-level model through targeted visual traces |
 | [`typescript`](./skills/typescript-nextjs/typescript/SKILL.md) | Apply strict TypeScript patterns and conventions |
 | [`nextjs-app-router`](./skills/typescript-nextjs/nextjs-app-router/SKILL.md) | Work with modern Next.js App Router patterns |
 | [`frontend-react`](./skills/typescript-nextjs/frontend-react/SKILL.md) | Implement and review accessible React and Next.js interfaces |
