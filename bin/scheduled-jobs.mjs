@@ -55,6 +55,7 @@ function usage() {
   scheduled-jobs run-log JOB_ID RUN_ID [--lines N] [--json]
 
 PATH must be the fixed user manifest or an exact Git-root .pi/scheduler.json.
+Legacy global: IDs are accepted only to execute, observe, roll back, or remove an existing installation.
 The CLI performs no project discovery and never prompts. Install creates a disabled job.`;
 }
 
@@ -103,16 +104,29 @@ function parseArguments(argv) {
   return { options, positionals };
 }
 
-function requireSupportedJobId(id) {
-  if (!id.startsWith("user:") && !id.startsWith("project:")) {
-    throw new SchedulerUsageError("JOB_ID must use a user: or project: scope.");
+const LEGACY_INSTALLED_COMMANDS = new Set([
+  "_run-installed",
+  "status",
+  "logs",
+  "runs",
+  "run-log",
+  "enable",
+  "disable",
+  "remove",
+]);
+
+function requireSupportedJobId(id, { allowLegacy = false } = {}) {
+  if (id.startsWith("user:") || id.startsWith("project:")) return id;
+  if (allowLegacy && id.startsWith("global:")) return id;
+  if (id.startsWith("global:")) {
+    throw new SchedulerUsageError("Legacy global: job IDs can only execute or manage an existing installation.");
   }
-  return id;
+  throw new SchedulerUsageError("JOB_ID must use a user: or project: scope.");
 }
 
 function requireJobId(positionals, command) {
   if (positionals.length !== 1) throw new SchedulerUsageError(`${command} requires one JOB_ID.`);
-  return requireSupportedJobId(positionals[0]);
+  return requireSupportedJobId(positionals[0], { allowLegacy: LEGACY_INSTALLED_COMMANDS.has(command) });
 }
 
 function declaredJob(id, manifestPath, env) {
@@ -191,7 +205,7 @@ function commandOverview(positionals, options, runtime, env) {
 
 function commandRunLog(positionals, options, env) {
   if (positionals.length !== 2) throw new SchedulerUsageError("run-log requires one JOB_ID and one RUN_ID.");
-  const id = requireSupportedJobId(positionals[0]);
+  const id = requireSupportedJobId(positionals[0], { allowLegacy: true });
   return { command: "run-log", result: readRunOutput(id, positionals[1], { env, lines: options.lines ?? 200 }) };
 }
 

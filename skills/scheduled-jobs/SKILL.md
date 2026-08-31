@@ -46,6 +46,21 @@ scheduled-jobs remove JOB_ID --expected-installed-digest DIGEST --expected-revis
 
 Fresh installs are disabled. Confirm run-now and enablement separately. `run` blocks until the installed snapshot finishes, then records its structured receipt and bounded output. Native enablement may immediately perform one catch-up run; cron fallback does not catch up.
 
+## Legacy Global installation cutover
+
+A `global:*` ID can only refer to an installation created before User scope replaced Global scope. The CLI lets its scheduled runner continue and accepts `status`, `logs`, `runs`, `run-log`, `enable`, `disable`, and `remove` for cutover and rollback. It rejects Global declarations, inspection, installation, updates, and manual runs.
+
+Migrate one reviewed installation without moving private state or adapter artifacts:
+
+1. Inspect and install the matching `user:*` declaration. Leave the User installation disabled.
+2. Run `status` for the Global installation and show its installed digest, revision, enablement, schedule, adapter, and artifacts before asking to disable it.
+3. Disable Global with those exact tokens.
+4. Enable User with its freshly inspected tokens.
+5. If User enablement fails, run `status` for Global again and ask before re-enabling it.
+6. After User is healthy, run `status` for Global again and ask before removing it.
+
+Do not copy scheduler-owned state or history between IDs. The removed Global installation's old run history is not migrated.
+
 ## Recovery
 
 For a blocked task, run the exact read-only `doctor` command shown in its details before changing source or environment state. Explain the cause before changing anything. The dashboard's `r` key only refreshes observed state; it does not perform recovery.
