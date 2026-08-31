@@ -366,6 +366,28 @@ test("legacy global installations can run, roll back, and be removed", async (t)
   ], value.runtime)).result;
   assert.equal(status.metadata.enabled, true);
 
+  const userId = "user:test:cli";
+  const userCandidate = json(await run([
+    "inspect", userId, "--manifest", value.manifestPath, "--json",
+  ], value.runtime)).candidate;
+  let userStatus = json(await run([
+    "install",
+    userId,
+    "--manifest", value.manifestPath,
+    "--expected-candidate-digest", userCandidate.digest,
+    "--json",
+  ], value.runtime)).result;
+  await assert.rejects(
+    run([
+      "enable",
+      userId,
+      "--expected-installed-digest", userStatus.metadata.digest,
+      "--expected-revision", String(userStatus.metadata.revision),
+      "--json",
+    ], value.runtime),
+    (error) => error?.code === "SCOPE_CONFLICT" && /Disable global:test:cli/.test(error.message),
+  );
+
   const scheduled = json(await run([
     "_run-installed",
     id,
@@ -387,6 +409,26 @@ test("legacy global installations can run, roll back, and be removed", async (t)
     "--json",
   ], value.runtime)).result;
   assert.equal(status.metadata.enabled, false);
+
+  userStatus = json(await run([
+    "enable",
+    userId,
+    "--expected-installed-digest", userStatus.metadata.digest,
+    "--expected-revision", String(userStatus.metadata.revision),
+    "--json",
+  ], value.runtime)).result;
+  assert.equal(userStatus.metadata.enabled, true);
+  await assert.rejects(
+    run([
+      "enable",
+      id,
+      "--expected-installed-digest", status.metadata.digest,
+      "--expected-revision", String(status.metadata.revision),
+      "--json",
+    ], value.runtime),
+    (error) => error?.code === "SCOPE_CONFLICT" && /Disable user:test:cli/.test(error.message),
+  );
+
   assert.equal(json(await run([
     "remove",
     id,
