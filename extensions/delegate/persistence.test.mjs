@@ -128,6 +128,7 @@ test("persists scratch workspaces only at their owned run path", async (t) => {
     kind: "temporary",
     sourceCwd: "/tmp/non-git-source",
     worktreePath: paths.worktreeDir,
+    directoryIdentity: { dev: "1", ino: "2" },
     integration: { state: "working" },
   };
 

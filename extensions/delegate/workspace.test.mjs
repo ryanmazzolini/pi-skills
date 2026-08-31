@@ -452,6 +452,8 @@ test("creates and explicitly cleans an empty scratch workspace for a non-Git sou
   assert.equal(workspace.kind, "temporary");
   assert.equal("repoRoot" in workspace, false);
   assert.equal(workspace.worktreePath, input.worktreePath);
+  assert.match(workspace.directoryIdentity.dev, /^\d+$/);
+  assert.match(workspace.directoryIdentity.ino, /^\d+$/);
   assert.deepEqual(fs.readdirSync(workspace.worktreePath), []);
   assert.equal(fs.statSync(workspace.worktreePath).mode & 0o777, 0o700);
   assert.equal(fs.readFileSync(path.join(source, "input.txt"), "utf8"), "source material\n");
@@ -465,6 +467,9 @@ test("creates and explicitly cleans an empty scratch workspace for a non-Git sou
     entries: ["evidence.log", "raw/", "raw/output.txt"],
     truncated: false,
   });
+  const missingIdentity = structuredClone(workspace);
+  delete missingIdentity.directoryIdentity;
+  await assert.rejects(manager.cleanup(missingIdentity), /no valid persisted identity/);
   await manager.cleanup(workspace);
   assert.equal(fs.existsSync(workspace.worktreePath), false);
   assert.equal(fs.readFileSync(path.join(movedSource, "input.txt"), "utf8"), "source material\n");
@@ -500,6 +505,123 @@ test("refuses scratch paths outside the configured temporary root and replacemen
   assert.equal(fs.readFileSync(path.join(outside, "preserve.txt"), "utf8"), "preserve me\n");
 });
 
+test("refuses scratch inspection and cleanup after the directory is replaced", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-identity-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const manager = new GitWorkspaceManager(store);
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    worktreePath: path.join(store, "run", "worktrees", "child"),
+    patchPath: path.join(store, "run", "patches", "child.patch"),
+    manifestPath: path.join(store, "run", "patches", "child.json"),
+  });
+  fs.rmSync(workspace.worktreePath, { recursive: true });
+  fs.mkdirSync(workspace.worktreePath);
+  fs.writeFileSync(path.join(workspace.worktreePath, "valuable.txt"), "do not delete\n");
+
+  await assert.rejects(manager.inspectScratch(workspace), /identity changed/);
+  await assert.rejects(manager.cleanup(workspace), /identity changed/);
+  await assert.rejects(new GitWorkspaceManager(store).cleanup(workspace), /identity changed/);
+  assert.equal(fs.readFileSync(path.join(workspace.worktreePath, "valuable.txt"), "utf8"), "do not delete\n");
+});
+
+test("recovers cleanup after an owned scratch directory is already quarantined", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-quarantine-recovery-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const manager = new GitWorkspaceManager(store);
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    worktreePath: path.join(store, "run", "worktrees", "child"),
+    patchPath: path.join(store, "run", "patches", "child.patch"),
+    manifestPath: path.join(store, "run", "patches", "child.json"),
+  });
+  fs.writeFileSync(path.join(workspace.worktreePath, "artifact.txt"), "owned\n");
+  const quarantine = `${workspace.worktreePath}.cleanup-${workspace.directoryIdentity.dev}-${workspace.directoryIdentity.ino}`;
+  fs.mkdirSync(quarantine);
+  fs.renameSync(workspace.worktreePath, path.join(quarantine, "workspace"));
+
+  await new GitWorkspaceManager(store).cleanup(workspace);
+  assert.equal(fs.existsSync(workspace.worktreePath), false);
+  assert.equal(fs.existsSync(quarantine), false);
+});
+
+test("reconciles interrupted empty quarantines without deleting unrelated contents", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-empty-quarantine-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new GitWorkspaceManager(store);
+  const prepare = (suffix) => manager.prepare({
+    sourceCwd: source,
+    runId: `run-${suffix}`,
+    childId: `child-${suffix}`,
+    worktreePath: path.join(store, `run-${suffix}`, "worktrees", "child"),
+    patchPath: path.join(store, `run-${suffix}`, "patches", "child.patch"),
+    manifestPath: path.join(store, `run-${suffix}`, "patches", "child.json"),
+  });
+  const quarantine = (workspace) => `${workspace.worktreePath}.cleanup-${workspace.directoryIdentity.dev}-${workspace.directoryIdentity.ino}`;
+
+  const beforeMove = await prepare("before-move");
+  fs.mkdirSync(quarantine(beforeMove));
+  await new GitWorkspaceManager(store).cleanup(beforeMove);
+  assert.equal(fs.existsSync(beforeMove.worktreePath), false);
+  assert.equal(fs.existsSync(quarantine(beforeMove)), false);
+
+  const afterDelete = await prepare("after-delete");
+  fs.rmSync(afterDelete.worktreePath, { recursive: true });
+  fs.mkdirSync(quarantine(afterDelete));
+  await new GitWorkspaceManager(store).cleanup(afterDelete);
+  assert.equal(fs.existsSync(quarantine(afterDelete)), false);
+
+  const withUnrelatedData = await prepare("unrelated");
+  fs.rmSync(withUnrelatedData.worktreePath, { recursive: true });
+  fs.mkdirSync(quarantine(withUnrelatedData));
+  fs.writeFileSync(path.join(quarantine(withUnrelatedData), "valuable.txt"), "preserve me\n");
+  await new GitWorkspaceManager(store).cleanup(withUnrelatedData);
+  assert.equal(fs.readFileSync(path.join(quarantine(withUnrelatedData), "valuable.txt"), "utf8"), "preserve me\n");
+});
+
+test("preserves a replacement moved into the scratch cleanup quarantine", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-quarantine-replacement-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const manager = new GitWorkspaceManager(store);
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    worktreePath: path.join(store, "run", "worktrees", "child"),
+    patchPath: path.join(store, "run", "patches", "child.patch"),
+    manifestPath: path.join(store, "run", "patches", "child.json"),
+  });
+  const original = `${workspace.worktreePath}.original`;
+  fs.renameSync(workspace.worktreePath, original);
+  const quarantine = `${workspace.worktreePath}.cleanup-${workspace.directoryIdentity.dev}-${workspace.directoryIdentity.ino}`;
+  const replacement = path.join(quarantine, "workspace");
+  fs.mkdirSync(replacement, { recursive: true });
+  fs.writeFileSync(path.join(replacement, "valuable.txt"), "do not delete\n");
+
+  await assert.rejects(new GitWorkspaceManager(store).cleanup(workspace), /preserved a replacement/);
+  assert.equal(fs.existsSync(original), true);
+  assert.equal(fs.readFileSync(path.join(replacement, "valuable.txt"), "utf8"), "do not delete\n");
+});
+
 test("refuses scratch cleanup through a replaced ancestor symlink", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-ancestor-test-"));
   const source = path.join(root, "source");
@@ -527,7 +649,7 @@ test("refuses scratch cleanup through a replaced ancestor symlink", async (t) =>
   fs.writeFileSync(path.join(replacementChild, "valuable.txt"), "do not delete\n");
   fs.symlinkSync(replacementParent, path.dirname(workspacePath));
 
-  await assert.rejects(manager.cleanup(workspace), /replaced path/);
+  await assert.rejects(manager.cleanup(workspace), /identity changed/);
   assert.equal(fs.readFileSync(path.join(originalParent, "child", "original.txt"), "utf8"), "original scratch\n");
   assert.equal(fs.readFileSync(path.join(replacementChild, "valuable.txt"), "utf8"), "do not delete\n");
 });
@@ -563,6 +685,35 @@ test("refuses scratch cleanup after the temporary root becomes a symlink, includ
   await assert.rejects(new GitWorkspaceManager(store).cleanup(workspace), /temporary root was replaced/);
   assert.equal(fs.readFileSync(path.join(originalRoot, "parent", "run", "worktrees", "child", "original.txt"), "utf8"), "original scratch\n");
   assert.equal(fs.readFileSync(path.join(replacementChild, "valuable.txt"), "utf8"), "do not delete\n");
+});
+
+test("refuses scratch cleanup after the temporary root is replaced by a real directory across restart", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-root-identity-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const manager = new GitWorkspaceManager(store);
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    worktreePath: path.join(store, "parent", "run", "worktrees", "child"),
+    patchPath: path.join(store, "parent", "run", "patches", "child.patch"),
+    manifestPath: path.join(store, "parent", "run", "patches", "child.json"),
+  });
+  fs.writeFileSync(path.join(workspace.worktreePath, "original.txt"), "original scratch\n");
+
+  const originalRoot = path.join(root, "original-delegate-runs");
+  fs.renameSync(store, originalRoot);
+  fs.mkdirSync(workspace.worktreePath, { recursive: true });
+  fs.writeFileSync(path.join(workspace.worktreePath, "valuable.txt"), "do not delete\n");
+
+  await assert.rejects(manager.cleanup(workspace), /temporary root identity changed/);
+  await assert.rejects(new GitWorkspaceManager(store).cleanup(workspace), /identity changed/);
+  assert.equal(fs.readFileSync(path.join(originalRoot, "parent", "run", "worktrees", "child", "original.txt"), "utf8"), "original scratch\n");
+  assert.equal(fs.readFileSync(path.join(workspace.worktreePath, "valuable.txt"), "utf8"), "do not delete\n");
 });
 
 test("never treats a registered Git worktree as scratch based on persisted fields", async (t) => {
