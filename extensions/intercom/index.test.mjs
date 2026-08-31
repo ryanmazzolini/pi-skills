@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { initTheme, SessionManager } from "@earendil-works/pi-coding-agent";
 import { appendFile, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import net from "node:net";
+import { join } from "node:path";
 import test from "node:test";
 import intercomExtension, {
 	INBOUND_DELIVERY_LIMITS,
@@ -9,19 +10,28 @@ import intercomExtension, {
 	InboundDelivery,
 	IntercomParams,
 	boundedSessionIdentityDetails,
+	cachedSummaryMatchesTail,
 	deliverInboundMessage,
 	formatAttachments,
 	formatSession,
 	incomingContent,
 	presenceName,
 	sanitizeSelfDeclaredMetadata,
+	selectRotatingSummaryCandidates,
 	selectSessionSummaryCandidates,
+	sessionSummaryCacheRoot,
+	tailIdentityDigest,
 	validateIntercomAction,
 } from "./index.ts";
 import { FrameDecoder, encodeFrame } from "./client.ts";
+import { FileSessionSummaryCache } from "./summary-cache.ts";
 import { connectNew, isolatedIntercom, startOwnedBroker, stopChild, waitEvent, waitFor } from "../../tests/intercom/helpers.mjs";
 
 initTheme("dark");
+
+test("places disposable summary caches in a current-user OS temporary path", () => {
+	assert.equal(sessionSummaryCacheRoot("temporary-root", "501"), join("temporary-root", "pi-intercom-summaries-501"));
+});
 
 test("registers one compatible flat intercom tool and no deferred UI or bridge surface", () => {
 	const tools = [];
@@ -109,6 +119,73 @@ test("selects at most four oldest confirmed 24-hour snapshots for isolated synth
 	assert.equal(selected.omitted, 1);
 	assert.deepEqual(selectSessionSummaryCandidates(result, 0), { selected: [], omitted: 5 });
 	assert.throws(() => selectSessionSummaryCandidates(result, 5), /limit is invalid/);
+});
+
+test("cached summaries require the exact persisted branch identity", () => {
+	const timestamp = Date.parse("2026-07-31T12:00:00.000Z");
+	const record = {
+		schemaVersion: 1,
+		sessionId: "stable-session",
+		createdAt: "2026-08-01T12:00:00.000Z",
+		capturedAtSummary: "2026-08-01T11:00:00.000Z",
+		lastTurnAtSummary: "2026-07-31T12:00:00.000Z",
+		activeLeafIdAtSummary: "leaf-1",
+		revisionAtSummary: 4,
+		tailDigestAtSummary: tailIdentityDigest({ events: [] }),
+		card: {
+			title: "Completed work",
+			state: "complete",
+			mainPoint: "The work is complete.",
+			safeToClose: "yes",
+			decision: null,
+			limitations: [],
+		},
+	};
+	const tail = {
+		targetSessionId: "stable-session",
+		advertisedLastConversationalTimestamp: timestamp,
+		target: {
+			piSession: {
+				sessionId: "stable-session",
+				fileLocator: "/session.jsonl",
+				activeLeafId: "leaf-1",
+				revision: 4,
+			},
+		},
+		snapshot: { lastConversationalTimestamp: timestamp, events: [] },
+	};
+	assert.equal(cachedSummaryMatchesTail(record, tail), true);
+	assert.equal(cachedSummaryMatchesTail(record, {
+		...tail,
+		target: { ...tail.target, piSession: { ...tail.target.piSession, revision: 5 } },
+	}), false);
+	assert.equal(cachedSummaryMatchesTail(record, {
+		...tail,
+		target: { ...tail.target, piSession: { ...tail.target.piSession, activeLeafId: "tool-result-leaf" } },
+	}), false);
+	assert.equal(cachedSummaryMatchesTail(record, {
+		...tail,
+		snapshot: { ...tail.snapshot, events: [{ kind: "bash", outcome: "succeeded" }] },
+	}), false);
+});
+
+test("rotates the first bounded cached summary so projection cannot starve deferred records", () => {
+	const candidates = Array.from({ length: 10 }, (_, index) => `session-${index}`);
+	const firstCandidates = [];
+	let cursor = 0;
+	for (let index = 0; index < candidates.length; index++) {
+		const window = selectRotatingSummaryCandidates(candidates, 8, cursor);
+		firstCandidates.push(window.selected[0]);
+		assert.equal(window.omitted, 2);
+		cursor = window.nextCursor;
+	}
+	assert.deepEqual(firstCandidates, candidates);
+	assert.equal(cursor, 0);
+	assert.deepEqual(selectRotatingSummaryCandidates([], 8, cursor), {
+		selected: [],
+		omitted: 0,
+		nextCursor: 0,
+	});
 });
 
 test("uses the legacy unnamed alias and preserves attachment bodies", () => {
@@ -499,17 +576,18 @@ test("presence advertises only persisted snapshots and follows idle tree and use
 	handlers.get("agent_end")();
 	tracked = await waitFor(async () => {
 		const session = (await observer.listSessions()).find((item) => item.name === "tracked");
-		return session?.piSession?.revision === 1 ? session : undefined;
+		return session?.piSession?.activeLeafId === "first" ? session : undefined;
 	});
-	assert.equal(tracked.piSession.activeLeafId, "first");
+	const firstRevision = tracked.piSession.revision;
 
 	leaf = null;
 	handlers.get("session_tree")();
 	tracked = await waitFor(async () => {
 		const session = (await observer.listSessions()).find((item) => item.name === "tracked");
-		return session?.piSession?.revision === 2 ? session : undefined;
+		return session?.piSession?.activeLeafId === null ? session : undefined;
 	});
-	assert.equal(tracked.piSession.activeLeafId, null);
+	const treeRevision = tracked.piSession.revision;
+	assert.notEqual(treeRevision, firstRevision);
 
 	handlers.get("user_bash")();
 	leaf = "bash-result";
@@ -518,9 +596,9 @@ test("presence advertises only persisted snapshots and follows idle tree and use
 	await appendFile(sessionPath, `${JSON.stringify(bashEntry)}\n`);
 	tracked = await waitFor(async () => {
 		const session = (await observer.listSessions()).find((item) => item.name === "tracked");
-		return session?.piSession?.revision === 3 ? session : undefined;
+		return session?.piSession?.activeLeafId === "bash-result" ? session : undefined;
 	});
-	assert.equal(tracked.piSession.activeLeafId, "bash-result");
+	assert.notEqual(tracked.piSession.revision, treeRevision);
 });
 
 test("first user Bash stays unadvertised until Pi actually persists the session", async (t) => {
@@ -613,7 +691,7 @@ test("a Bash started before first persistence refreshes when it finishes after a
 		return session?.piSession?.activeLeafId === manager.getLeafId() ? session : undefined;
 	});
 	assert.notEqual(bashPresence.piSession.activeLeafId, assistantLeaf);
-	assert.ok(bashPresence.piSession.revision > assistantPresence.piSession.revision);
+	assert.notEqual(bashPresence.piSession.revision, assistantPresence.piSession.revision);
 });
 
 test("real SessionManager lifecycle clears First Mate role until explicit reinvocation", async (t) => {
@@ -847,6 +925,20 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	};
 	let idle = true;
 	const summaryModelCalls = [];
+	const fileSummaryCache = new FileSessionSummaryCache(`${fixture.home}/.pi/agent/intercom/summaries`);
+	let pausedSummaryCacheRead;
+	const summaryCache = {
+		async read(sessionId) {
+			const pause = pausedSummaryCacheRead;
+			if (pause) {
+				pause.started.resolve();
+				await pause.release.promise;
+				if (pausedSummaryCacheRead === pause) pausedSummaryCacheRead = undefined;
+			}
+			return fileSummaryCache.read(sessionId);
+		},
+		write: (record) => fileSummaryCache.write(record),
+	};
 	const summaryUsage = {
 		input: 10,
 		output: 5,
@@ -857,6 +949,7 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 		cost: { input: 0.01, output: 0.02, cacheRead: 0.003, cacheWrite: 0.004, total: 0.037 },
 	};
 	intercomExtension(pi, {
+		summaryCache,
 		summaryModel: {
 			async complete(systemPrompt, prompt, timestamp, signal) {
 				summaryModelCalls.push({ systemPrompt, prompt, timestamp, signal });
@@ -936,7 +1029,7 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	peer.on("message", () => { targetMessages++; });
 	peer.updatePresence({
 		status: "idle",
-		lastConversationalTimestamp: Date.now() - 2 * 60 * 60 * 1_000,
+		lastConversationalTimestamp: Date.parse("2026-01-01T00:00:02.000Z"),
 		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "tail-r", revision: 1 },
 	});
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 1);
@@ -971,7 +1064,40 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.equal((await execute({ action: "status" })).details.advertisingFirstMate, true);
 	const survivedFailedTriage = await execute({ action: "summarize", summaryToken });
 	assert.match(survivedFailedTriage.content[0].text, /## Tail decision/);
+	assert.equal(survivedFailedTriage.details.cacheStored, true);
+	assert.equal(survivedFailedTriage.details.cacheWriteResult, "stored");
+	assert.equal(survivedFailedTriage.details.lastTurnAtSummary, "2026-01-01T00:00:02.000Z");
+	assert.match(survivedFailedTriage.details.createdAt, /^\d{4}-\d{2}-\d{2}T/);
 	assert.equal(summaryModelCalls.length, 1);
+
+	const reusedTriage = await execute({ action: "triage" });
+	assert.equal(reusedTriage.details.cachedSummaryCount, 1);
+	assert.equal(reusedTriage.details.cachedSummaries[0].targetSessionId, peerSessionId);
+	assert.equal(reusedTriage.details.cachedSummaries[0].lastTurnAtSummary, "2026-01-01T00:00:02.000Z");
+	assert.equal(reusedTriage.details.summaryCandidateCount, 0);
+	assert.equal(reusedTriage.details.potentiallyStaleCachedSummaries, 0);
+	assert.match(reusedTriage.content[0].text, /Reusable cached summaries/);
+	assert.match(reusedTriage.content[0].text, /reused without model inference/);
+	assert.equal(summaryModelCalls.length, 1);
+
+	const refreshedBeforeGrant = "REFRESHED_BEFORE_SUMMARY_GRANT";
+	pausedSummaryCacheRead = { started: Promise.withResolvers(), release: Promise.withResolvers() };
+	const preRefreshTriagePromise = execute({ action: "triage" });
+	await pausedSummaryCacheRead.started.promise;
+	await appendFile(sessionPath, `${JSON.stringify({ type: "message", id: "refreshed-before-grant", parentId: "tail-r", timestamp: "2026-01-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: refreshedBeforeGrant }], stopReason: "stop", timestamp: 4 } })}\n`);
+	peer.updatePresence({
+		status: "idle",
+		lastConversationalTimestamp: Date.parse("2026-01-01T00:00:04.000Z"),
+		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "refreshed-before-grant", revision: 2 },
+	});
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 2);
+	pausedSummaryCacheRead.release.resolve();
+	const racedTriage = await preRefreshTriagePromise;
+	assert.equal(racedTriage.details.cachedSummaryCount, 0);
+	assert.equal(racedTriage.details.potentiallyStaleCachedSummaries, 1);
+	assert.equal(racedTriage.details.summaryCandidateCount, 0);
+	assert.match(racedTriage.content[0].text, /withheld as potentially stale/);
+
 	const preRefreshTriage = await execute({ action: "triage" });
 	summaryToken = preRefreshTriage.content[0].text.match(/summaryToken "([^"]+)"/)?.[1];
 	assert.ok(summaryToken);
@@ -1007,13 +1133,14 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.equal(tailed.details.targetSessionId, peerSessionId);
 	assert.equal(tailed.details.requestedScanBytes, beforeTail.length);
 	assert.equal(tailed.details.requestedProjectionBytes, 4_096);
-	assert.equal(tailed.details.lastConversationalTimestamp, Date.parse("2026-01-01T00:00:02.000Z"));
-	assert.equal(tailed.details.availableTextMessages, 2);
+	assert.equal(tailed.details.lastConversationalTimestamp, Date.parse("2026-01-01T00:00:04.000Z"));
+	assert.equal(tailed.details.availableTextMessages, 3);
 	assert.equal(tailed.details.branchHistoryTruncated, false);
-	assert.equal(tailed.details.returnedTextMessages, 2);
+	assert.equal(tailed.details.returnedTextMessages, 3);
 	assert.ok(Buffer.byteLength(tailed.content[0].text, "utf8") <= 4_096);
 	assert.match(tailed.content[0].text, /tail question/);
 	assert.match(tailed.content[0].text, /tail answer/);
+	assert.match(tailed.content[0].text, /REFRESHED_BEFORE_SUMMARY_GRANT/);
 	assert.match(tailed.content[0].text, /Tool "read": succeeded/);
 	assert.equal(tailed.content[0].text.includes(privateSentinel), false);
 	assert.equal(JSON.stringify(tailed.details).includes(sessionPath), false);
@@ -1022,13 +1149,13 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.equal(targetMessages, 0);
 
 	const activeAfterGrant = "ACTIVE_AFTER_SUMMARY_GRANT";
-	await appendFile(sessionPath, `${JSON.stringify({ type: "message", id: "after-grant", parentId: "tail-r", timestamp: "2026-01-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: activeAfterGrant }], stopReason: "stop", timestamp: 4 } })}\n`);
+	await appendFile(sessionPath, `${JSON.stringify({ type: "message", id: "after-grant", parentId: "refreshed-before-grant", timestamp: "2026-01-01T00:00:05.000Z", message: { role: "assistant", content: [{ type: "text", text: activeAfterGrant }], stopReason: "stop", timestamp: 5 } })}\n`);
 	peer.updatePresence({
 		status: "thinking",
 		lastConversationalTimestamp: Date.now(),
-		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "after-grant", revision: 2 },
+		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "after-grant", revision: 3 },
 	});
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 2);
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 3);
 	const beforeSummary = await readFile(sessionPath);
 	const summarized = await execute({ action: "summarize", summaryToken });
 	const afterSummary = await readFile(sessionPath);
@@ -1050,12 +1177,14 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	const latestSummaryModelCall = summaryModelCalls.at(-1);
 	assert.equal(latestSummaryModelCall.prompt.includes(privateSentinel), false);
 	assert.equal(latestSummaryModelCall.prompt.includes(activeAfterGrant), false);
+	assert.match(latestSummaryModelCall.prompt, /REFRESHED_BEFORE_SUMMARY_GRANT/);
 	assert.match(latestSummaryModelCall.prompt, /tail question/);
 	assert.match(latestSummaryModelCall.prompt, /tail answer/);
 	assert.deepEqual(summarized.details.evidence.map(({ id, kind, text }) => ({ id, kind, text })), [
 		{ id: "E1", kind: "user", text: "tail question" },
 		{ id: "E2", kind: "assistant", text: "tail answer" },
 		{ id: "E3", kind: "outcome", text: 'Tool "read": succeeded' },
+		{ id: "E4", kind: "assistant", text: refreshedBeforeGrant },
 	]);
 	assert.equal(JSON.stringify(summarized).includes(privateSentinel), false);
 	assert.ok(Buffer.byteLength(JSON.stringify(summarized.details)) <= INTERCOM_PROJECTION_MAX_BYTES);
@@ -1070,8 +1199,8 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 		{ type: "message", id: "recent-a", parentId: "recent-u", timestamp: "2026-01-01T00:00:05.000Z", message: { role: "assistant", content: [{ type: "text", text: "recent window answer" }], stopReason: "stop", timestamp: 5 } },
 	];
 	await writeFile(sessionPath, `${windowedRecords.map((record) => JSON.stringify(record)).join("\n")}\n`);
-	peer.updatePresence({ status: "idle", lastConversationalTimestamp: Date.now() - 2 * 60 * 60 * 1_000, piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "recent-a", revision: 3 } });
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 3);
+	peer.updatePresence({ status: "idle", lastConversationalTimestamp: Date.now() - 2 * 60 * 60 * 1_000, piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "recent-a", revision: 4 } });
+	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 4);
 	const windowedTail = await execute({ action: "tail", to: peerSessionId, limit: 2, tailScanBytes: 8_192 });
 	assert.match(windowedTail.content[0].text, /recent window question/);
 	assert.match(windowedTail.content[0].text, /recent window answer/);

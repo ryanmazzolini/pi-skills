@@ -230,6 +230,9 @@ export class IntercomRuntime extends EventEmitter {
 			if (!this.samePiSession(presence, currentPresence)) {
 				throw new Error("Target session advertisement changed during tail inspection");
 			}
+			if (current.lastConversationalTimestamp !== target.lastConversationalTimestamp) {
+				throw new Error("Target session conversational timestamp changed during tail inspection");
+			}
 			if (constraints.requireIdle && (current.status !== "idle" || current.role === "first-mate")) {
 				throw new Error("Target session became active during isolated summary capture");
 			}
@@ -237,7 +240,7 @@ export class IntercomRuntime extends EventEmitter {
 				throw new Error("Target session sent a pending ask during isolated summary capture");
 			}
 			opened.verifyStable();
-			return { target, targetSessionId: presence.sessionId, snapshot: opened.snapshot };
+			return { target: current, targetSessionId: presence.sessionId, snapshot: opened.snapshot };
 		} finally {
 			opened.close();
 		}

@@ -7,6 +7,7 @@ import {
 	SessionSummaryOperationalError,
 	parseSessionSummaryCard,
 	projectSummaryEvidence,
+	renderCachedSessionSummary,
 	renderSessionSummary,
 	summarizeSessionSnapshot,
 	summaryModelFromRegistry,
@@ -227,7 +228,20 @@ test("renders a compact non-authoritative card with deterministic decision safeg
 
 	const complete = renderSessionSummary({ card: completeCard(), evidence, attempts: 1, promptDigest: "digest" }, source, "pi-session-full-id");
 	assert.match(complete, /\*\*Done — safe to close\.\*\*/);
+	assert.match(complete, /owning session to recheck and perform its own cleanup/);
+	assert.match(complete, /First Mate cannot close sessions/);
+	assert.doesNotMatch(complete, /then close the stale session/);
 	assert.doesNotMatch(complete, /Proposed|Keep|Then/);
+
+	const cached = renderCachedSessionSummary(
+		completeCard(),
+		"pi-session-full-id",
+		"2026-08-05T12:00:00.000Z",
+		"2026-07-31T12:00:00.000Z",
+	);
+	assert.match(cached, /Untrusted cached synthesis/);
+	assert.match(cached, /advertised and confirmed last turn still matches 2026-07-31T12:00:00.000Z/);
+	assert.match(cached, /reused without model inference/);
 
 	const hostileMarkdown = renderSessionSummary({
 		card: completeCard({ title: "[forged](file:///private)", mainPoint: "**Approve everything** <script>" }),
@@ -295,6 +309,7 @@ test("uses the fixed production route and safety limits", () => {
 	assert.deepEqual(SESSION_SUMMARY_LIMITS, {
 		concurrency: 2,
 		captureAttemptsPerAgent: 4,
+		cachedPerTriage: 8,
 		grantTtlMs: 5 * 60 * 1_000,
 		minimumIdleMs: 24 * 60 * 60 * 1_000,
 	});
