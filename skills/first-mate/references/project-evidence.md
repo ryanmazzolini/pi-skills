@@ -34,6 +34,6 @@ Gather only the read-only evidence needed for the question. Do not edit workflow
 
 Identify the correlated inbound ask and reply to that exact ask ID. When multiple asks need disambiguation, call `intercom` with only `action: "pending"`; use the displayed exact ID and sender for `reply`.
 
-Return factual evidence, named conditions, or a clear limitation directly. When the ask requests approval, apply [decision handling](decision-handling.md): auto-authorize only a qualifying very-low-risk action, bundle reversible choices that still need judgment, and return consequential choices to the human individually. Relay an exact human decision after revalidating the correlated ask, preserving its scope and fences.
+Return factual evidence, named conditions, or a clear limitation directly. When the ask requests approval, apply [decision handling](decision-handling.md): auto-authorize only a qualifying very-low-risk action, present reversible choices that still need judgment one at a time, and return consequential choices to the human individually. Relay an exact human decision after revalidating the correlated ask, preserving its scope and fences.
 
 The owning project session verifies current instructions and state, performs any authorized action, and captures a material result. A routed reply confirms transport only; it does not confirm handling or a state change.

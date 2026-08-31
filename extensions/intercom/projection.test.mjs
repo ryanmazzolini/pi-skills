@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { INTERCOM_LIMITS, isMessage } from "./client.ts";
-import { INBOUND_DELIVERY_LIMITS, InboundDelivery, deliverInboundMessage } from "./index.ts";
+import { INBOUND_DELIVERY_LIMITS, InboundDelivery, deliverInboundMessage, selectRotatingSummaryCandidates } from "./index.ts";
 import { connectNew, isolatedIntercom, startOwnedBroker, stopChild, waitEvent } from "../../tests/intercom/helpers.mjs";
 import {
 	INTERCOM_PROJECTION_MAX_BYTES,
@@ -277,6 +277,41 @@ test("First Mate triage projection fairly bounds a multi-peer evidence sweep", (
 		assert.match(projected.text, new RegExp(`latest-${index}`));
 	}
 	assert.doesNotMatch(projected.text, /\/private\//);
+});
+
+test("rotating cached-summary windows keep each first card visible under projection truncation", () => {
+	const candidates = Array.from({ length: 10 }, (_, index) => ({
+		targetSessionId: `cached-${index}`,
+		text: `## Cached ${index}\n${"x".repeat(12_000)}`,
+	}));
+	let cursor = 0;
+	for (let index = 0; index < candidates.length; index++) {
+		const window = selectRotatingSummaryCandidates(candidates, 8, cursor);
+		const projected = projectFirstMateTriage({
+			currentSessionId: "pi-current",
+			inventoryTruncated: false,
+			omittedSessionIds: 0,
+			snapshotTimestamp: Date.parse("2026-07-31T12:00:00.000Z"),
+			idleThresholdMs: 60 * 60 * 1_000,
+			selectedSweep: "none",
+			roleCapability: true,
+			firstMateSessionIds: ["pi-current"],
+			pending: [],
+			tails: [],
+			activePeersSkipped: 0,
+			firstMatePeersSkipped: 0,
+			pendingPeersSkipped: 0,
+			unidentifiedPeers: 0,
+			ambiguousPeers: 0,
+			cachedSummaries: window.selected,
+			cachedSummariesDeferred: window.omitted,
+		});
+		assertBounded(projected.text, "rotating cached summaries");
+		assert.equal(projected.truncated, true);
+		assert.match(projected.text, new RegExp(window.selected[0].targetSessionId));
+		cursor = window.nextCursor;
+	}
+	assert.equal(cursor, 0);
 });
 
 test("tail projection reports omitted outcome events as truncated source context", () => {
