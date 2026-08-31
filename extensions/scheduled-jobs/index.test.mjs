@@ -20,6 +20,7 @@ import scheduledJobsExtension, {
   userManifestPath,
   resolveSchedulerCliPath,
   schedulerDoctorCommand,
+  schedulerInvestigationPrompt,
   sanitizeDisplay,
 } from "./index.ts";
 
@@ -48,12 +49,14 @@ function uiHarness(selectors = [], confirmations = [], customs = []) {
   const confirms = [];
   const customCalls = [];
   const customOptions = [];
+  const panelVisibility = [];
   const notices = [];
   return {
     selects,
     confirms,
     customCalls,
     customOptions,
+    panelVisibility,
     notices,
     ui: {
       async custom(factory, options) {
@@ -71,6 +74,11 @@ function uiHarness(selectors = [], confirmations = [], customs = []) {
             {},
             done,
           );
+          options?.onHandle?.({
+            hide() {},
+            setHidden(hidden) { panelVisibility.push(hidden); },
+            isHidden() { return panelVisibility.at(-1) ?? false; },
+          });
           if (component.constructor.name === "BorderedLoader") return;
           const interaction = customs.shift();
           if (typeof interaction !== "function") {
@@ -99,6 +107,14 @@ function uiHarness(selectors = [], confirmations = [], customs = []) {
 }
 
 const componentTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
+
+async function waitFor(predicate, message = "condition") {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`Timed out waiting for ${message}`);
+}
 
 function candidate(digest = "candidate-digest", description = "Fixture") {
   return {
@@ -334,7 +350,7 @@ test("ambient status loads once, follows shared attention events, and closes its
   await monitor.start(ctx);
   assert.equal(overviewCalls, 1);
   assert.equal(watches.watches[0].options.persistent, false);
-  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler: 1 task needs review" });
 
   writeAttentionFixture(manifestPath, env);
   const attentionName = path.basename(schedulerAttentionPath(manifestPath, env));
@@ -352,7 +368,7 @@ test("ambient status loads once, follows shared attention events, and closes its
   }, env);
   watches.emit(path.basename(schedulerAttentionPath(manifestPath, env)));
   watches.flush();
-  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 2 stuck" });
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler: 2 tasks need review" });
 
   writeAttentionFixture(manifestPath, env);
   watches.watches[0].error(new Error("watch failed"));
@@ -363,7 +379,7 @@ test("ambient status loads once, follows shared attention events, and closes its
   writeAttentionFixture(manifestPath, { generatedAt: new Date().toISOString(), jobs: [current] }, env);
   watches.emit(path.basename(schedulerAttentionPath(manifestPath, env)));
   watches.flush();
-  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler: 1 task needs review" });
   manifestExists = false;
   writeAttentionFixture(manifestPath, env);
   await monitor.reconcile(ctx);
@@ -411,7 +427,7 @@ test("ambient status observes a newly created user attention file", async (t) =>
   watches.emit(`.${attentionName}.123.atomic.tmp`);
   watches.flush();
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler: 1 task needs review" });
 
   await monitor.stop();
 });
@@ -457,7 +473,7 @@ test("ambient status does not miss attention written during its initial load", a
   assert.equal(watches.timers.length, 1);
   watches.flush();
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler: 1 task needs review" });
   await monitor.stop();
 });
 
@@ -497,14 +513,14 @@ test("ambient status aggregates user and current-project attention", async (t) =
   };
 
   await monitor.start(ctx);
-  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 2 stuck" });
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler: 2 tasks need review" });
 
   writeAttentionFixture(userManifest, { generatedAt: new Date().toISOString(), jobs: [blocked] }, env);
   writeAttentionFixture(projectManifest, { generatedAt: new Date().toISOString(), jobs: [draft] }, env);
   watches.emit(null);
   watches.flush();
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler · 1 stuck" });
+  assert.deepEqual(statuses.at(-1), { id: "scheduled-jobs", value: "! Scheduler: 1 task needs review" });
 
   writeAttentionFixture(userManifest, env);
   writeAttentionFixture(projectManifest, env);
@@ -549,12 +565,27 @@ test("discovers only the exact current Git root project manifest", async () => {
   ]);
 });
 
-test("sanitizes displayed values and builds an exact doctor command", () => {
+test("sanitizes displayed values and builds exact diagnostic context", () => {
   assert.equal(sanitizeDisplay("bad\nlabel\u0000"), "bad�label�");
   assert.equal(
     schedulerDoctorCommand(overviewJob(), "/opt/scheduled-jobs"),
     "'/opt/scheduled-jobs' doctor 'user:test:job' --manifest '/tmp/config/pi-scheduler/jobs.json' --json",
   );
+  const blocked = overviewJob(inspection({ installed: true, enabled: true, health: "unhealthy" }));
+  blocked.installation.healthReason = "required command missing\nnode";
+  const prompt = schedulerInvestigationPrompt(blocked, "/opt/scheduled-jobs");
+  assert.match(prompt, /Diagnose the scheduled task “test:job”/);
+  assert.match(prompt, /Detected issue: Installed state unhealthy · required command missing node/);
+  assert.match(prompt, /Read-only diagnosis: '\/opt\/scheduled-jobs' doctor/);
+  assert.match(prompt, /Do not change files or scheduler state until I approve/);
+  assert.doesNotMatch(prompt, /\nnode/);
+
+  blocked.recentRuns = [{ status: "failed", reason: "x".repeat(10_000) }];
+  const longPrompt = schedulerInvestigationPrompt(blocked, "/opt/scheduled-jobs");
+  assert.ok(longPrompt.length <= 4_096);
+  assert.match(longPrompt, /Do not change files or scheduler state until I approve/);
+  assert.match(longPrompt, /Read-only diagnosis: '\/opt\/scheduled-jobs' doctor/);
+  assert.match(longPrompt, /recommend the smallest safe fix/);
 });
 
 test("maps only applicable actions from health, drift, and enablement", () => {
@@ -637,8 +668,12 @@ test("pause, resume, and removal use concise lifecycle reviews", () => {
 test("native action cancellation performs no mutation", async () => {
   const scripted = scriptedDependencies();
   const harness = uiHarness(["Install disabled"], [false], [
-    (component) => component.handleInput("a"),
-    (component) => component.handleInput("q"),
+    async (component) => {
+      await waitFor(() => component.render(100).join("\n").includes("test:job"), "scheduler dashboard");
+      component.handleInput("a");
+      await waitFor(() => harness.confirms.length === 1, "install confirmation");
+      component.handleInput("q");
+    },
   ]);
 
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
@@ -651,8 +686,13 @@ test("native action cancellation performs no mutation", async () => {
 test("native actions preserve exact installed digest and revision fencing", async () => {
   const scripted = scriptedDependencies({ inspect: inspection({ installed: true, revision: 4 }) });
   const harness = uiHarness(["Run installed snapshot now"], [true], [
-    (component) => component.handleInput("a"),
-    (component) => component.handleInput("q"),
+    async (component) => {
+      await waitFor(() => component.render(100).join("\n").includes("test:job"), "scheduler dashboard");
+      component.handleInput("a");
+      await waitFor(() => scripted.calls.some(({ args }) => args[0] === "run"), "run action");
+      await waitFor(() => component.render(100).join("\n").includes("test:job"), "dashboard refresh");
+      component.handleInput("q");
+    },
   ]);
 
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
@@ -669,6 +709,7 @@ test("native actions preserve exact installed digest and revision fencing", asyn
   ]);
   assert.equal(harness.confirms.length, 1);
   assert.match(harness.confirms[0].message, /Lifecycle revision: 4/);
+  assert.deepEqual(harness.panelVisibility, [true, false]);
 });
 
 test("stale native mutations report a reload route", async () => {
@@ -679,8 +720,12 @@ test("stale native mutations report a reload route", async () => {
     },
   });
   const harness = uiHarness(["Install disabled"], [true], [
-    (component) => component.handleInput("a"),
-    (component) => component.handleInput("q"),
+    async (component) => {
+      await waitFor(() => component.render(100).join("\n").includes("test:job"), "scheduler dashboard");
+      component.handleInput("a");
+      await waitFor(() => harness.notices.some(({ message }) => /state changed/.test(message)), "stale-state notice");
+      component.handleInput("q");
+    },
   ]);
 
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
@@ -688,7 +733,35 @@ test("stale native mutations report a reload route", async () => {
   assert.equal(harness.notices.some(({ message }) => /state changed.*Refresh and review/.test(message)), true);
 });
 
-test("detail refresh is owned by the linear command handler", async () => {
+test("Ask Pi reviews bounded evidence and sends it through the current session", async () => {
+  const scripted = scriptedDependencies({ inspect: inspection({ installed: true, enabled: true, health: "unhealthy" }) });
+  const sent = [];
+  let review = "";
+  let narrowReview = "";
+  const harness = uiHarness([], [], [
+    async (component) => {
+      await waitFor(() => component.render(100).join("\n").includes("test:job"), "scheduler dashboard");
+      component.handleInput("i");
+      review = component.render(100).join("\n");
+      narrowReview = component.render(20).join("\n");
+      component.handleInput("\r");
+    },
+  ]);
+
+  await createSchedulerCommandHandler(scripted.dependencies, (prompt) => sent.push(prompt))(
+    "",
+    { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui },
+  );
+
+  assert.match(review, /Scheduler \/ Ask Pi \/ test:job/);
+  assert.match(review, /Do not change files or scheduler state[\s\S]*until I approve/);
+  assert.match(narrowReview.replace(/[\s│]/g, ""), /Thisisaread-onlydiagnosis\.Donotchangefilesorschedulerstate/);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Task ID: user:test:job/);
+  assert.equal(harness.customOptions.filter((options) => options?.overlay).length, 1);
+});
+
+test("detail refresh stays inside one persistent panel", async () => {
   let overviewCalls = 0;
   let inspectionCalls = 0;
   const scripted = scriptedDependencies();
@@ -699,16 +772,24 @@ test("detail refresh is owned by the linear command handler", async () => {
     return originalExec(command, args, options);
   };
   const harness = uiHarness([], [], [
-    (component) => component.handleInput("\r"),
-    (component) => component.handleInput("r"),
-    (component) => component.handleInput("q"),
-    (component) => component.handleInput("q"),
+    async (component) => {
+      await waitFor(() => component.render(100).join("\n").includes("test:job"), "scheduler dashboard");
+      component.handleInput("\r");
+      await waitFor(() => component.render(100).join("\n").includes("Scheduler / test:job"), "task details");
+      component.handleInput("r");
+      await waitFor(() => inspectionCalls === 2 && component.render(100).join("\n").includes("Scheduler / test:job"), "detail refresh");
+      component.handleInput("q");
+      assert.match(component.render(100).join("\n"), /Scheduler · \[Tasks\]/);
+      component.handleInput("q");
+    },
   ]);
 
   await createSchedulerCommandHandler(scripted.dependencies)("", { cwd: "/work", hasUI: true, mode: "tui", ui: harness.ui });
 
-  assert.equal(overviewCalls, 4);
+  assert.equal(overviewCalls, 3);
   assert.equal(inspectionCalls, 2);
+  assert.equal(harness.customOptions.filter((options) => options?.overlay).length, 1);
+  assert.equal(harness.customOptions.find((options) => options?.overlay)?.overlayOptions.anchor, "bottom-center");
 });
 
 test("refuses the command without UI before discovery or CLI execution", async () => {
@@ -830,12 +911,16 @@ test("drives install, run, enable, disable, and remove through the real CLI cont
     ["Install disabled", "Run installed snapshot now", "Resume schedule", "Pause schedule", "Remove installed schedule"],
     [true, true, true, true, true],
     [
-      (component) => component.handleInput("a"),
-      (component) => component.handleInput("a"),
-      (component) => component.handleInput("a"),
-      (component) => component.handleInput("a"),
-      (component) => component.handleInput("a"),
-      (component) => component.handleInput("q"),
+      async (component) => {
+        await waitFor(() => component.render(100).join("\n").includes("test:job"), "scheduler dashboard");
+        for (let completed = 1; completed <= 5; completed++) {
+          component.handleInput("a");
+          await waitFor(() => harness.confirms.length === completed, `confirmation ${completed}`);
+          await waitFor(() => harness.notices.length === completed, `completion notice ${completed}`);
+          await waitFor(() => component.render(100).join("\n").includes("test:job"), `dashboard refresh ${completed}`);
+        }
+        component.handleInput("q");
+      },
     ],
   );
   const handler = createSchedulerCommandHandler(dependencies);
