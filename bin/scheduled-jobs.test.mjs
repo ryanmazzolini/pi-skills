@@ -5,11 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { resolveExecutable } from "../lib/scheduled-jobs/index.mjs";
+import { loadDeclarations, resolveCandidate, resolveExecutable } from "../lib/scheduled-jobs/index.mjs";
+import { installJob } from "../lib/scheduled-jobs/lifecycle.mjs";
 import { readRunHistory } from "../lib/scheduled-jobs/runtime.mjs";
 import { run } from "./scheduled-jobs.mjs";
 
 const DAILY_REPORT_CLI = fileURLToPath(new URL("../skills/notes/daily-report/scripts/daily-report.mjs", import.meta.url));
+const SCHEDULED_JOBS_CLI = fileURLToPath(new URL("./scheduled-jobs.mjs", import.meta.url));
 
 function fixture(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "scheduled-jobs-cli-test-"));
@@ -94,6 +96,32 @@ function fixture(t) {
 
 function json(result) {
   return JSON.parse(result.stdout);
+}
+
+function installLegacyGlobalJob(value) {
+  const declaration = loadDeclarations({ manifestPath: value.manifestPath, env: value.env })[0];
+  const legacy = {
+    ...declaration,
+    id: `global:${declaration.key}`,
+    scope: { kind: "global", identity: "global", root: declaration.scope.root },
+  };
+  const runnerPath = fs.realpathSync(SCHEDULED_JOBS_CLI);
+  const candidateOptions = {
+    adapter: "auto",
+    env: value.env,
+    platform: value.runtime.platform,
+    runnerPath,
+  };
+  const candidate = resolveCandidate(legacy, candidateOptions);
+  return installJob({
+    id: legacy.id,
+    loadDeclaration: () => legacy,
+    expectedCandidateDigest: candidate.digest,
+    candidateOptions,
+    env: value.env,
+    runnerPath,
+    adapterOptions: value.runtime.adapterOptions,
+  });
 }
 
 test("an installed snapshot reconciles daily-report under the fixed scheduler environment", async (t) => {
@@ -322,14 +350,64 @@ test("CLI completes the disabled install, run, enable, disable, logs, and remove
   assert.equal(json(await run(["status", id, "--json"], value.runtime)).result.installed, false);
 });
 
-test("CLI rejects the removed global job scope", async (t) => {
+test("legacy global installations can run, roll back, and be removed", async (t) => {
   const value = fixture(t);
-  await assert.rejects(
-    run(["status", "global:test:cli", "--json"], value.runtime),
-    (error) => error?.code === "USAGE" && /user: or project:/.test(error.message),
-  );
-  await assert.rejects(
-    run(["run-log", "global:test:cli", "00000000-0000-4000-8000-000000000000", "--json"], value.runtime),
-    (error) => error?.code === "USAGE" && /user: or project:/.test(error.message),
-  );
+  const id = "global:test:cli";
+  let status = installLegacyGlobalJob(value);
+  assert.equal(status.metadata.enabled, false);
+  assert.equal(json(await run(["status", id, "--json"], value.runtime)).result.installed, true);
+
+  status = json(await run([
+    "enable",
+    id,
+    "--expected-installed-digest", status.metadata.digest,
+    "--expected-revision", String(status.metadata.revision),
+    "--json",
+  ], value.runtime)).result;
+  assert.equal(status.metadata.enabled, true);
+
+  const scheduled = json(await run([
+    "_run-installed",
+    id,
+    "--expected-installed-digest", status.metadata.digest,
+    "--expected-revision", String(status.metadata.revision),
+    "--json",
+  ], value.runtime)).result;
+  assert.equal(scheduled.status, "ok");
+  const runs = json(await run(["runs", id, "--limit", "10", "--json"], value.runtime)).result.runs;
+  assert.equal(runs[0].trigger, "scheduled");
+  assert.match(json(await run(["run-log", id, runs[0].runId, "--lines", "20", "--json"], value.runtime)).result.content, /cli lifecycle output/);
+  assert.match(json(await run(["logs", id, "--lines", "20", "--json"], value.runtime)).result.content, /cli lifecycle output/);
+
+  status = json(await run([
+    "disable",
+    id,
+    "--expected-installed-digest", status.metadata.digest,
+    "--expected-revision", String(status.metadata.revision),
+    "--json",
+  ], value.runtime)).result;
+  assert.equal(status.metadata.enabled, false);
+  assert.equal(json(await run([
+    "remove",
+    id,
+    "--expected-installed-digest", status.metadata.digest,
+    "--expected-revision", String(status.metadata.revision),
+    "--json",
+  ], value.runtime)).result.removed, true);
+});
+
+test("legacy global IDs cannot create or change declarations", async (t) => {
+  const value = fixture(t);
+  for (const argv of [
+    ["inspect", "global:test:cli", "--manifest", value.manifestPath],
+    ["doctor", "global:test:cli", "--manifest", value.manifestPath],
+    ["install", "global:test:cli", "--manifest", value.manifestPath],
+    ["update", "global:test:cli", "--manifest", value.manifestPath],
+    ["run", "global:test:cli"],
+  ]) {
+    await assert.rejects(
+      run([...argv, "--json"], value.runtime),
+      (error) => error?.code === "USAGE" && /existing installation/.test(error.message),
+    );
+  }
 });
