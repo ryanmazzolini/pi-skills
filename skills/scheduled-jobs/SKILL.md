@@ -48,7 +48,7 @@ Fresh installs are disabled. Confirm run-now and enablement separately. `run` bl
 
 ## Legacy Global installation cutover
 
-A `global:*` ID can only refer to an installation created before User scope replaced Global scope. The CLI lets its scheduled runner continue and accepts `status`, `logs`, `runs`, `run-log`, `enable`, `disable`, and `remove` for cutover and rollback. It rejects Global declarations, inspection, installation, updates, and manual runs.
+A `global:*` ID can only refer to an installation created before User scope replaced Global scope. The CLI lets its scheduled runner continue and accepts `status`, `logs`, `runs`, `run-log`, `enable`, `disable`, and `remove` for cutover and rollback. It rejects Global declarations, inspection, installation, updates, and manual runs. Enabling either identity fails with `SCOPE_CONFLICT` unless its counterpart is absent or proven disabled.
 
 Migrate one reviewed installation without moving private state or adapter artifacts:
 
