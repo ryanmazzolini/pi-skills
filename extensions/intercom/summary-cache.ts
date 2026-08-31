@@ -185,6 +185,10 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 		].join("\0");
 	}
 
+	private cardFingerprint(record: SessionSummaryCacheRecord): string {
+		return createHash("sha256").update(JSON.stringify(record.card)).digest("hex");
+	}
+
 	private retainedWriteResult(
 		retained: SessionSummaryCacheRecord,
 		incoming: SessionSummaryCacheRecord,
@@ -194,8 +198,8 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 		if (retainedCapture !== incomingCapture) return retainedCapture > incomingCapture ? "superseded" : undefined;
 		const retainedIdentity = this.recordIdentity(retained);
 		const incomingIdentity = this.recordIdentity(incoming);
-		if (retainedIdentity === incomingIdentity) return "same-turn-retained";
-		return retainedIdentity > incomingIdentity ? "superseded" : undefined;
+		if (retainedIdentity !== incomingIdentity) return retainedIdentity > incomingIdentity ? "superseded" : undefined;
+		return this.cardFingerprint(retained) >= this.cardFingerprint(incoming) ? "same-turn-retained" : undefined;
 	}
 
 	private async installCurrentRecord(
