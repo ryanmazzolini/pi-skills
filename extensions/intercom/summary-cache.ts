@@ -277,8 +277,10 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 				|| (legacyMatch && Date.parse(record.lastTurnAtSummary) !== Number(legacyMatch[1]))) {
 				throw new Error("Quarantined cache identity is invalid");
 			}
-		} catch {
-			if (!stale) return false;
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code !== undefined && code !== "ENOENT") throw error;
+			// A private regular file that fails record validation can never be the retained winner.
 			await rm(path, { force: true });
 			return true;
 		}
@@ -308,11 +310,8 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 				await rm(recovery, { force: true }).catch(() => {});
 			}
 		}
-		try {
-			await this.installCurrentRecord(target, path, record);
-		} finally {
-			await rm(path, { force: true }).catch(() => {});
-		}
+		await this.installCurrentRecord(target, path, record);
+		await rm(path, { force: true }).catch(() => {});
 		return true;
 	}
 
@@ -325,6 +324,7 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
 			throw error;
 		}
+		let removeQuarantine = false;
 		try {
 			let record: SessionSummaryCacheRecord;
 			try {
@@ -334,12 +334,16 @@ export class FileSessionSummaryCache implements SessionSummaryCache {
 					|| Date.parse(record.lastTurnAtSummary) !== filenameTimestamp) {
 					throw new Error("Legacy cache identity is invalid");
 				}
-			} catch {
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (code !== undefined && code !== "ENOENT") throw error;
+				removeQuarantine = true;
 				return;
 			}
 			await this.installCurrentRecord(join(directory, CURRENT_CACHE_FILENAME), quarantine, record);
+			removeQuarantine = true;
 		} finally {
-			await rm(quarantine, { force: true }).catch(() => {});
+			if (removeQuarantine) await rm(quarantine, { force: true }).catch(() => {});
 		}
 	}
 

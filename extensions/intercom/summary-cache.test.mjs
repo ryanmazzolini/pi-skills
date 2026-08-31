@@ -286,6 +286,27 @@ test("isolates lookup from unrelated cached sessions", async (t) => {
 	assert.deepEqual(await cache.read(target.sessionId), target);
 });
 
+test("immediately replaces a fresh malformed quarantine", async (t) => {
+	const base = await mkdtemp(join(tmpdir(), "intercom-summary-cache-malformed-quarantine-"));
+	t.after(() => import("node:fs/promises").then(({ rm }) => rm(base, { recursive: true, force: true })));
+	const root = join(base, "summaries");
+	const cache = new FileSessionSummaryCache(root);
+	const original = record();
+	await cache.write(original);
+	const [directoryName] = await readdir(root);
+	const directory = join(root, directoryName);
+	await rm(join(directory, "current.json"));
+	const quarantine = join(directory, "current.json.00000000-0000-4000-8000-000000000005.quarantine");
+	await writeFile(quarantine, "{ malformed\n", { mode: 0o600 });
+	const repaired = record({
+		capturedAtSummary: "2026-08-05T12:00:00.000Z",
+		card: { ...original.card, title: "Replacement after malformed quarantine" },
+	});
+	assert.equal(await cache.write(repaired), "stored");
+	assert.deepEqual(await cache.read(original.sessionId), repaired);
+	assert.deepEqual(await readdir(directory), ["current.json"]);
+});
+
 test("replaces a malformed same-turn record with a valid summary", async (t) => {
 	const base = await mkdtemp(join(tmpdir(), "intercom-summary-cache-repair-"));
 	t.after(() => import("node:fs/promises").then(({ rm }) => rm(base, { recursive: true, force: true })));
