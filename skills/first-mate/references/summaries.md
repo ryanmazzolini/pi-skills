@@ -4,7 +4,7 @@ Read this when current deterministic triage returns unchanged cached summaries o
 
 ## Reuse only an exact persisted-branch match
 
-Intercom stores compact summary cards centrally under `~/.pi/agent/intercom/summaries/` as machine-owned JSON, using one hashed directory per stable Pi session ID and retaining one current session-turn file inside it. Each validated record includes `createdAt`, snapshot-capture time, `lastTurnAtSummary`, active-leaf, presence-revision, and bounded newest-tail digest metadata. It contains the compact card, not source-session evidence or closure authority.
+Intercom stores compact summaries as private JSON in the current user's OS temporary directory. It uses one hashed directory per stable Pi session ID and retains one current record inside it. The OS may remove this disposable cache during reboot, periodic cleanup, or storage pressure; a cache miss safely regenerates the summary. Each validated record includes `createdAt`, snapshot-capture time, `lastTurnAtSummary`, active-leaf, presence-revision, and bounded newest-tail digest metadata. It contains the compact summary, not source-session evidence or closure authority.
 
 Triage may reuse a record only when all of these identify the same turn exactly:
 

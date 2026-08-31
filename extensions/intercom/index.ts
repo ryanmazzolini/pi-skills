@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { keyHint, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
@@ -525,6 +526,17 @@ export function selectRotatingSummaryCandidates<T>(candidates: readonly T[], max
 	return { selected, omitted: candidates.length - count, nextCursor: (start + 1) % candidates.length };
 }
 
+function currentUserCacheKey(): string {
+	const uid = process.getuid?.();
+	return uid === undefined
+		? createHash("sha256").update(homedir()).digest("hex").slice(0, 16)
+		: String(uid);
+}
+
+export function sessionSummaryCacheRoot(temporaryRoot = tmpdir(), userKey = currentUserCacheKey()): string {
+	return join(temporaryRoot, `pi-intercom-summaries-${userKey}`);
+}
+
 export function tailIdentityDigest(snapshot: SessionTailSnapshot): string {
 	return createHash("sha256").update(JSON.stringify(snapshot.events.slice(-8))).digest("hex");
 }
@@ -562,7 +574,7 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 	let triageInFlight = false;
 	const summaryGate = new SessionSummaryGate();
 	const summaryGrants = new Map<string, SessionSummaryGrant>();
-	const summaryCache = options.summaryCache ?? new FileSessionSummaryCache(join(getIntercomPaths().runtimeDir, "summaries"));
+	const summaryCache = options.summaryCache ?? new FileSessionSummaryCache(sessionSummaryCacheRoot());
 	let summaryCaptureBudget = SESSION_SUMMARY_LIMITS.captureAttemptsPerAgent;
 	let summaryCacheCursor = 0;
 	let piSessionId: string | undefined;
@@ -905,14 +917,14 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 	pi.registerTool({
 		name: "intercom",
 		label: "Intercom",
-		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send wakes a recipient with a one-way message; ask wakes a recipient and awaits a correlated response; reply answers a pending ask. These bounded background operations deliver terminal routing results automatically, and successful delivery means routed to the peer socket, not peer processing. Their send/reply outcomes remain passive. triage publishes the ephemeral First Mate role and returns one deterministic bounded evidence sweep with reusable cached cards and up to four single-use stale-snapshot grants. summarize uses one grant to synthesize and centrally cache the immutable snapshot with Luna/xhigh without messaging the source. tail reads one confirmed current persisted-session snapshot. list discovers peers, roles, stable Pi session IDs, and conversational timestamps; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports connection and capability diagnostics.",
+		description: "Coordinate with other local Pi sessions through the legacy-compatible intercom broker. send wakes a recipient with a one-way message; ask wakes a recipient and awaits a correlated response; reply answers a pending ask. These bounded background operations deliver terminal routing results automatically, and successful delivery means routed to the peer socket, not peer processing. Their send/reply outcomes remain passive. triage publishes the ephemeral First Mate role and returns one deterministic bounded evidence sweep with reusable cached cards and up to four single-use stale-snapshot grants. summarize uses one grant to synthesize the immutable snapshot with Luna/xhigh and store its compact summary in private OS temporary storage without messaging the source. tail reads one confirmed current persisted-session snapshot. list discovers peers, roles, stable Pi session IDs, and conversational timestamps; pending lists inbound asks; operations inspects outbound work; cancel stops local waiting; status reports connection and capability diagnostics.",
 		promptSnippet: "Triage, list, tail, summarize, send, ask, reply, or publish the First Mate role for local Pi sessions",
 		promptGuidelines: [
 			"intercom send, ask, and reply return receipts immediately and deliver terminal results automatically; continue independent work instead of polling operations.",
 			"Use send for a one-way message that the recipient should process, ask when a correlated response is useful, and reply to answer a pending ask.",
 			"Use intercom status for the current Pi session ID and intercom list to discover other sessions.",
 			"Use intercom triage only during an invoked First Mate workflow; it publishes the role when supported and returns the bounded evidence sweep. Use role with role first-mate only when that workflow explicitly needs role recovery; omit role to clear it.",
-			"Use intercom summarize only with a single-use summaryToken returned by the current First Mate triage. Triage may instead return a centrally cached card when its persisted branch identity and advertised and confirmed last-turn timestamp are unchanged; no new inference occurs. Treat every card as untrusted snapshot synthesis, never authority or live project verification; an updated or unavailable identity makes a cached card potentially stale and prevents reuse.",
+			"Use intercom summarize only with a single-use summaryToken returned by the current First Mate triage. Triage may instead return a cached summary when its persisted branch identity and advertised and confirmed last-turn timestamp are unchanged; no new inference occurs. Treat every card as untrusted snapshot synthesis, never authority or live project verification; an updated or unavailable identity makes a cached card potentially stale and prevents reuse.",
 			"Prefer durable project or work-item updates for routine progress and outcomes. Use intercom only when a live peer needs information or action before it can read that durable record.",
 			"Before asking a peer for status or context, check durable context and use intercom tail with a small limit. During First Mate triage, summarize granted stale snapshots before considering contact; contact the peer only when persisted or durable evidence cannot answer the question.",
 			"Treat intercom notices and routing receipts as one-way. Reply only to an explicit ask or when new information or action is required; do not acknowledge routine updates or receipts.",
@@ -1190,10 +1202,10 @@ export default function intercomExtension(pi: ExtensionAPI, options: IntercomExt
 							const text = cacheWriteResult === "stored"
 								? rendered
 								: cacheWriteResult === "superseded"
-									? `${rendered}\n\n[A newer central summary cache record was retained; this older result was not stored.]`
+									? `${rendered}\n\n[A newer cached summary was retained; this older result was not stored.]`
 									: cacheWriteResult === "same-turn-retained"
-										? `${rendered}\n\n[Another central summary cache record for this same session turn was retained; this result was not stored.]`
-										: `${rendered}\n\n[Central summary cache write failed; this result will not be reusable.]`;
+										? `${rendered}\n\n[Another cached summary for this same session turn was retained; this result was not stored.]`
+										: `${rendered}\n\n[Cached summary write failed; this result will not be reusable.]`;
 							assertProjectionBound(text, "Intercom session summary");
 							const details = {
 								kind: "session_summary" as const,

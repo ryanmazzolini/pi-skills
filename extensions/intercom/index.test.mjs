@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { initTheme, SessionManager } from "@earendil-works/pi-coding-agent";
 import { appendFile, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import net from "node:net";
+import { join } from "node:path";
 import test from "node:test";
 import intercomExtension, {
 	INBOUND_DELIVERY_LIMITS,
@@ -18,6 +19,7 @@ import intercomExtension, {
 	sanitizeSelfDeclaredMetadata,
 	selectRotatingSummaryCandidates,
 	selectSessionSummaryCandidates,
+	sessionSummaryCacheRoot,
 	tailIdentityDigest,
 	validateIntercomAction,
 } from "./index.ts";
@@ -26,6 +28,10 @@ import { FileSessionSummaryCache } from "./summary-cache.ts";
 import { connectNew, isolatedIntercom, startOwnedBroker, stopChild, waitEvent, waitFor } from "../../tests/intercom/helpers.mjs";
 
 initTheme("dark");
+
+test("places disposable summary caches in a current-user OS temporary path", () => {
+	assert.equal(sessionSummaryCacheRoot("temporary-root", "501"), join("temporary-root", "pi-intercom-summaries-501"));
+});
 
 test("registers one compatible flat intercom tool and no deferred UI or bridge surface", () => {
 	const tools = [];
