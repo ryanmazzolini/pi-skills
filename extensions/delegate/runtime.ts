@@ -120,7 +120,13 @@ export interface ScratchContentsSummary {
 	error?: string;
 }
 
+export interface ScratchDirectoryIdentity {
+	dev: string;
+	ino: string;
+}
+
 export interface ScratchTemporaryWorkspace extends TemporaryWorkspaceBase {
+	directoryIdentity: ScratchDirectoryIdentity;
 	contents?: ScratchContentsSummary;
 }
 
@@ -1151,6 +1157,7 @@ export class DelegateRuntime {
 				if (integration.state !== "working") throw new Error(`Child ${child.id} scratch workspace is ${integration.state}`);
 				try {
 					await this.requireWorkspaceManager().cleanup(child.workspace);
+					delete child.workspace.contents;
 					child.workspace.integration = { state: "cleaned", cleanedAt: this.timestamp() };
 				} catch (error) {
 					child.workspace.integration = {
@@ -1565,15 +1572,19 @@ export class DelegateRuntime {
 			if (child.workspace.kind !== "temporary"
 				|| isGitTemporaryWorkspace(child.workspace)
 				|| child.workspace.integration.state === "cleaned") continue;
+			const workspace = child.workspace;
+			let contents: ScratchContentsSummary;
 			try {
-				child.workspace.contents = await this.requireWorkspaceManager().inspectScratch(child.workspace);
+				contents = await this.requireWorkspaceManager().inspectScratch(workspace);
 			} catch (error) {
-				child.workspace.contents = {
+				contents = {
 					entries: [],
 					truncated: false,
 					error: `Could not inspect scratch contents: ${clipUtf8(error instanceof Error ? error.message : String(error), 2048).value}`,
 				};
 			}
+			if (workspace.integration.state === "cleaned") continue;
+			workspace.contents = contents;
 			changed = true;
 		}
 		return changed;

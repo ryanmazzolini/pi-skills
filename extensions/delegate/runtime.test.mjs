@@ -869,6 +869,8 @@ function fakeWorkspaceManager(options = {}) {
       if (options.applyError) throw options.applyError;
     },
     async inspectScratch() {
+      if (options.scratchInspectStarted) options.scratchInspectStarted.resolve();
+      if (options.scratchInspectGate) await options.scratchInspectGate.promise;
       return options.scratchContents ?? { entries: [], truncated: false };
     },
     async cleanup(workspace, expectedRevision) {
@@ -951,9 +953,36 @@ test("preserves finalized scratch work until explicit cleanup", async () => {
 
   const cleaned = await runtime.cleanup(handle.runId);
   assert.equal(cleaned.children[0].workspace.integration.state, "cleaned");
+  assert.equal(cleaned.children[0].workspace.contents, undefined);
+  assert.equal(projectRun(cleaned).children[0].workspace.contents, undefined);
   assert.equal(workspaces.cleaned.length, 1);
   assert.equal(runNeedsControl(cleaned), false);
   await assert.rejects(runtime.cleanup(handle.runId), /already cleaned/);
+});
+
+test("does not restore a stale scratch inventory when cleanup finishes during inspection", async () => {
+  const inspectStarted = deferred();
+  const inspectGate = deferred();
+  const workspaces = fakeWorkspaceManager({
+    scratch: true,
+    scratchContents: { entries: ["stale.txt"], truncated: false },
+    scratchInspectStarted: inspectStarted,
+    scratchInspectGate: inspectGate,
+  });
+  const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+  const handle = await runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+
+  children.launches[0].done.resolve(success("evidence ready"));
+  await inspectStarted.promise;
+  const cleaned = await runtime.cleanup(handle.runId);
+  assert.equal(cleaned.children[0].workspace.integration.state, "cleaned");
+  inspectGate.resolve();
+  await settle();
+
+  const final = runtime.get(handle.runId);
+  assert.equal(final.children[0].workspace.contents, undefined);
+  assert.equal(projectRun(final).children[0].workspace.contents, undefined);
 });
 
 test("reviews and applies an exact temporary workspace revision", async () => {

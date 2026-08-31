@@ -8,6 +8,7 @@ import {
 	type DiffSummary,
 	type GitTemporaryWorkspace,
 	type ScratchContentsSummary,
+	type ScratchDirectoryIdentity,
 	type ScratchTemporaryWorkspace,
 	type TemporaryWorkspace,
 	isGitTemporaryWorkspace,
@@ -178,6 +179,17 @@ async function pathIdentity(path: string): Promise<PathIdentity | undefined> {
 
 function samePathIdentity(left: PathIdentity | undefined, right: PathIdentity): boolean {
 	return left?.dev === right.dev && left.ino === right.ino;
+}
+
+function persistedPathIdentity(identity: PathIdentity): ScratchDirectoryIdentity {
+	return { dev: identity.dev.toString(), ino: identity.ino.toString() };
+}
+
+function hasPersistedPathIdentity(value: unknown): value is ScratchDirectoryIdentity {
+	if (!value || typeof value !== "object") return false;
+	const identity = value as Partial<ScratchDirectoryIdentity>;
+	return typeof identity.dev === "string" && /^\d+$/.test(identity.dev)
+		&& typeof identity.ino === "string" && /^\d+$/.test(identity.ino);
 }
 
 async function detectRepositoryRoot(cwd: string): Promise<string | undefined> {
@@ -611,10 +623,13 @@ async function createScratchWorkspace(
 		throw new Error(`Scratch workspace parent escapes the delegate temporary root: ${input.worktreePath}`);
 	}
 	await mkdir(candidate, { mode: 0o700 });
+	const directoryIdentity = await pathIdentity(candidate);
+	if (!directoryIdentity) throw new Error(`Scratch workspace disappeared during creation: ${input.worktreePath}`);
 	return {
 		kind: "temporary",
 		sourceCwd,
 		worktreePath: input.worktreePath,
+		directoryIdentity: persistedPathIdentity(directoryIdentity),
 		integration: { state: "working" },
 	};
 }
@@ -630,7 +645,7 @@ async function ownedScratchDirectory(
 	}
 	let info;
 	try {
-		info = await lstat(candidate);
+		info = await lstat(candidate, { bigint: true });
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 		throw error;
@@ -644,6 +659,15 @@ async function ownedScratchDirectory(
 		if (registration) {
 			throw new WorkspaceConflictError(`Scratch path is a registered Git worktree: ${workspace.worktreePath}`);
 		}
+	}
+	if (!hasPersistedPathIdentity(workspace.directoryIdentity)) {
+		throw new WorkspaceConflictError(`Scratch workspace has no valid persisted identity: ${workspace.worktreePath}`);
+	}
+	const currentIdentity = await pathIdentity(candidate);
+	if (!currentIdentity
+		|| currentIdentity.dev.toString() !== workspace.directoryIdentity.dev
+		|| currentIdentity.ino.toString() !== workspace.directoryIdentity.ino) {
+		throw new WorkspaceConflictError(`Scratch workspace identity changed: ${workspace.worktreePath}`);
 	}
 	const canonicalCandidate = await realpath(candidate);
 	const expectedCandidate = resolve(temporaryRoot.canonicalPath, relative(configuredRoot, candidate));
@@ -681,13 +705,102 @@ async function inspectScratchWorkspace(
 		}
 	}
 	if (directories.length > 0) truncated = true;
+	if (!await ownedScratchDirectory(workspace, temporaryRoot)) {
+		throw new WorkspaceConflictError(`Scratch workspace changed during inspection: ${workspace.worktreePath}`);
+	}
 	return { entries, truncated };
 }
 
+function scratchQuarantineRoot(workspace: ScratchTemporaryWorkspace, candidate: string): string {
+	if (!hasPersistedPathIdentity(workspace.directoryIdentity)) {
+		throw new WorkspaceConflictError(`Scratch workspace has no valid persisted identity: ${workspace.worktreePath}`);
+	}
+	return `${candidate}.cleanup-${workspace.directoryIdentity.dev}-${workspace.directoryIdentity.ino}`;
+}
+
+async function cleanupQuarantinedScratch(
+	workspace: ScratchTemporaryWorkspace,
+	candidate: string,
+	quarantineRoot: string,
+): Promise<boolean> {
+	let rootInfo;
+	try {
+		rootInfo = await lstat(quarantineRoot);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw error;
+	}
+	if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
+		throw new WorkspaceConflictError(`Scratch cleanup quarantine was replaced: ${quarantineRoot}`);
+	}
+	const quarantined = join(quarantineRoot, "workspace");
+	if (!await pathExists(quarantined)) {
+		const candidateExists = await pathExists(candidate);
+		const entries = await readdir(quarantineRoot);
+		if (!candidateExists) {
+			if (entries.length === 0) await rmdir(quarantineRoot).catch(() => {});
+			return true;
+		}
+		if (entries.length > 0) {
+			throw new WorkspaceConflictError(`Scratch cleanup quarantine contains unrelated data: ${quarantineRoot}`);
+		}
+		try {
+			await rmdir(quarantineRoot);
+			return false;
+		} catch {
+			throw new WorkspaceConflictError(`Scratch cleanup quarantine changed concurrently: ${quarantineRoot}`);
+		}
+	}
+	const repository = await detectRepositoryRoot(quarantined);
+	if (repository) {
+		const registration = await findRegisteredWorktree(repository, quarantined)
+			?? await findRegisteredWorktree(repository, candidate);
+		if (registration) throw new WorkspaceConflictError(`Scratch cleanup preserved a registered Git worktree at ${quarantined}`);
+	}
+	const identity = await pathIdentity(quarantined);
+	if (!identity
+		|| identity.dev.toString() !== workspace.directoryIdentity.dev
+		|| identity.ino.toString() !== workspace.directoryIdentity.ino) {
+		throw new WorkspaceConflictError(`Scratch cleanup preserved a replacement at ${quarantined}`);
+	}
+	await rm(quarantined, { recursive: true });
+	try {
+		await rmdir(quarantineRoot);
+	} catch {
+		throw new WorkspaceConflictError(`Scratch cleanup quarantine contains unrelated data: ${quarantineRoot}`);
+	}
+	return true;
+}
+
 async function cleanupScratchWorkspace(workspace: ScratchTemporaryWorkspace, temporaryRoot: TemporaryRoot): Promise<void> {
+	const configuredRoot = temporaryRoot.configuredPath;
+	const candidatePath = resolve(workspace.worktreePath);
+	if (!pathIsInside(configuredRoot, candidatePath) || candidatePath === configuredRoot) {
+		throw new WorkspaceConflictError(`Scratch workspace is outside the delegate temporary root: ${workspace.worktreePath}`);
+	}
+	if (!hasPersistedPathIdentity(workspace.directoryIdentity)) {
+		await ownedScratchDirectory(workspace, temporaryRoot);
+		throw new WorkspaceConflictError(`Scratch workspace has no valid persisted identity: ${workspace.worktreePath}`);
+	}
+	const quarantineRoot = scratchQuarantineRoot(workspace, candidatePath);
+	if (await cleanupQuarantinedScratch(workspace, candidatePath, quarantineRoot)) return;
 	const candidate = await ownedScratchDirectory(workspace, temporaryRoot);
 	if (!candidate) return;
-	await rm(candidate, { recursive: true });
+	try {
+		await mkdir(quarantineRoot, { mode: 0o700 });
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+			throw new WorkspaceConflictError(`Scratch cleanup quarantine appeared concurrently: ${quarantineRoot}`);
+		}
+		throw error;
+	}
+	try {
+		await rename(candidate, join(quarantineRoot, "workspace"));
+	} catch (error) {
+		await rmdir(quarantineRoot).catch(() => {});
+		throw error;
+	}
+	await cleanupQuarantinedScratch(workspace, candidate, quarantineRoot);
 }
 
 export class GitWorkspaceManager implements WorkspaceManager {
