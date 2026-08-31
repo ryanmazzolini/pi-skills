@@ -77,12 +77,14 @@ export type SchedulerDashboardResult =
 	| { kind: "refresh" }
 	| { kind: "job"; id: string }
 	| { kind: "actions"; id: string }
+	| { kind: "investigate"; id: string }
 	| { kind: "run"; id: string; runId: string };
 
 export type SchedulerDetailResult =
 	| { kind: "back" }
 	| { kind: "refresh" }
 	| { kind: "actions" }
+	| { kind: "investigate" }
 	| { kind: "run"; id: string; runId: string };
 
 export type SchedulerTextResult = "back" | "refresh";
@@ -153,6 +155,7 @@ interface SchedulerPanelOptions {
 	chrome?: string[];
 	body: (width: number, height: number) => string[];
 	compactBody?: (width: number) => string[];
+	preferredBodyHeight?: (width: number) => number;
 	hints: SchedulerHotkeyHint[];
 }
 
@@ -181,11 +184,13 @@ function schedulerHotkeyFooter(hints: SchedulerHotkeyHint[], width: number, them
 function renderSchedulerPanel(width: number, tui: TuiView, theme: Theme, options: SchedulerPanelOptions): string[] {
 	const safeWidth = Math.max(1, width);
 	const innerWidth = Math.max(1, safeWidth - 2);
-	const panelHeight = schedulerPanelLines(tui);
-	const innerHeight = Math.max(0, panelHeight - 2);
 	const header = truncateToWidth(options.header, innerWidth, "");
 	const chrome = (options.chrome ?? []).map((line) => truncateToWidth(line, innerWidth, ""));
 	const footer = schedulerHotkeyFooter(options.hints, innerWidth, theme);
+	const maximumHeight = schedulerPanelLines(tui);
+	const preferredBodyHeight = Math.max(1, options.preferredBodyHeight?.(innerWidth) ?? maximumHeight);
+	const panelHeight = Math.min(maximumHeight, Math.max(3, preferredBodyHeight + chrome.length + 4));
+	const innerHeight = Math.max(0, panelHeight - 2);
 	const bodyHeight = Math.max(0, innerHeight - chrome.length - 2);
 	if (bodyHeight < 1) {
 		const compactBody = options.compactBody?.(innerWidth) ?? options.body(innerWidth, 1);
@@ -287,6 +292,10 @@ function scopeLabel(scope: "user" | "project"): "User" | "Project" {
 	return scope === "user" ? "User" : "Project";
 }
 
+function scopeDescription(scope: "user" | "project"): string {
+	return scope === "user" ? "available in all your projects" : "declared by this repository";
+}
+
 export function schedulerJobState(job: SchedulerJobOverview): { label: string; icon: string; color: "success" | "warning" | "error" | "muted" | "accent" } {
 	switch (schedulerJobStatus(job)) {
 		case "running": return { label: "Running", icon: "↻", color: "accent" };
@@ -303,7 +312,7 @@ function compactAttentionDetail(value: string | null | undefined): string | unde
 	return value?.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim() || undefined;
 }
 
-function schedulerAttention(job: SchedulerJobOverview): { cause: string; detail?: string } {
+export function schedulerAttention(job: SchedulerJobOverview): { cause: string; detail?: string } {
 	const latest = schedulerLatestExecution(job) as SchedulerRunView | undefined;
 	if (latest && ["failed", "timed-out", "interrupted"].includes(latest.status)) {
 		const cause = latest.status === "timed-out" ? "Run timed out" : latest.status === "interrupted" ? "Run interrupted" : "Run failed";
@@ -379,6 +388,7 @@ export class SchedulerDashboardComponent implements Component {
 	private tab: DashboardTab = "tasks";
 	private selectedTask = 0;
 	private selectedRun = 0;
+	private taskScroll = 0;
 	private readonly data: SchedulerDashboardData;
 	private readonly tui: TuiView;
 	private readonly theme: Theme;
@@ -420,6 +430,11 @@ export class SchedulerDashboardComponent implements Component {
 		if ((data === "a" || data === "A") && this.tab === "tasks") {
 			const job = orderedTasks(this.data)[this.selectedTask];
 			if (job) this.done({ kind: "actions", id: job.id });
+			return;
+		}
+		if ((data === "i" || data === "I") && this.tab === "tasks") {
+			const job = orderedTasks(this.data)[this.selectedTask];
+			if (job && schedulerJobState(job).label === "Needs attention") this.done({ kind: "investigate", id: job.id });
 			return;
 		}
 		const count = this.tab === "tasks" ? orderedTasks(this.data).length : allRuns(this.data).length;
@@ -477,16 +492,21 @@ export class SchedulerDashboardComponent implements Component {
 			}
 			if (this.data.jobs.length > 0) chrome.push("");
 		}
+		const selectedTask = orderedTasks(this.data)[this.selectedTask];
 		return renderSchedulerPanel(width, this.tui, this.theme, {
 			header: wrapsHeader ? headerCore : header,
 			chrome,
 			body: (bodyWidth, bodyHeight) => this.tab === "tasks" ? this.taskLines(bodyWidth, bodyHeight) : this.runLines(bodyWidth, bodyHeight),
 			compactBody: (bodyWidth) => this.tab === "tasks" ? this.taskLines(bodyWidth, 1) : this.runLines(bodyWidth, 1),
+			preferredBodyHeight: (bodyWidth) => this.preferredBodyHeight(bodyWidth),
 			hints: [
 				{ key: "↑/↓ j/k", label: "select", priority: 3 },
 				{ key: "Enter", label: this.tab === "tasks" ? "details" : "output", priority: 1 },
 				{ key: "Tab", label: this.tab === "tasks" ? "runs" : "tasks", priority: 2 },
 				...(this.tab === "tasks" ? [{ key: "a", label: "actions", priority: 1 }] : []),
+				...(this.tab === "tasks" && selectedTask && schedulerJobState(selectedTask).label === "Needs attention"
+					? [{ key: "i", label: "ask Pi", priority: 1 }]
+					: []),
 				{ key: "r", label: "refresh", priority: 4 },
 				{ key: "q/Esc", label: "close", priority: 0 },
 			],
@@ -502,10 +522,23 @@ export class SchedulerDashboardComponent implements Component {
 				: ["No scheduler tasks declared. Use /skill:scheduled-jobs to create one."];
 		}
 		this.selectedTask = Math.min(this.selectedTask, orderedTasks(this.data).length - 1);
+		if (height < 7) return this.taskRows(orderedTasks(this.data)[this.selectedTask]!, true, width).slice(0, height);
+
+		const preview = this.taskPreviewLines(width);
+		const listHeight = Math.max(1, height - preview.length - 1);
 		const display = this.taskDisplayLines(width);
-		const selectedLine = Math.max(0, display.findIndex((line) => line.taskIndex === this.selectedTask));
-		const start = Math.min(Math.max(0, selectedLine - Math.floor(height / 2)), Math.max(0, display.length - height));
-		return display.slice(start, start + height).map(({ text }) => text);
+		const selectedStart = Math.max(0, display.findIndex((line) => line.taskIndex === this.selectedTask));
+		const selectedEnd = Math.max(selectedStart, display.findLastIndex((line) => line.taskIndex === this.selectedTask));
+		if (selectedStart < this.taskScroll) this.taskScroll = selectedStart;
+		else if (selectedEnd >= this.taskScroll + listHeight) this.taskScroll = selectedEnd - listHeight + 1;
+		this.taskScroll = Math.min(Math.max(0, this.taskScroll), Math.max(0, display.length - listHeight));
+		const visible = display.slice(this.taskScroll, this.taskScroll + listHeight).map(({ text }) => text);
+		return [
+			...visible,
+			...Array.from({ length: listHeight - visible.length }, () => ""),
+			this.theme.fg("borderMuted", "─".repeat(width)),
+			...preview,
+		].slice(0, height);
 	}
 
 	private taskDisplayLines(width: number): SchedulerDisplayLine[] {
@@ -535,28 +568,29 @@ export class SchedulerDashboardComponent implements Component {
 		const status = `${this.theme.fg("dim", `· ${scopeLabel(job.scope.kind)} ·`)} ${this.theme.fg(state.color, `${state.label}${attention ? ` · ${attention.cause}` : ""}`)}`;
 		const schedule = humanizeSchedule(effectiveSchedule(job));
 		const history = this.theme.fg("dim", `· ${next} · ${last}`);
-		const attentionDetail = selected ? attention?.detail : undefined;
-		const singleLine = `${identity} ${status} · ${schedule} ${history}`;
-		if (!attentionDetail && visibleWidth(singleLine) <= width) return [singleLine];
-
-		const rows = visibleWidth(`${identity} ${status}`) <= width
-			? [`${identity} ${status}`]
-			: [truncateToWidth(identity, width, ""), ...this.indentedRows(status, width)];
-		if (attentionDetail) rows.push(this.indentedDetail(attentionDetail, width));
-		rows.push(...this.indentedRows(`${schedule} ${history}`, width));
-		return rows;
+		return [
+			truncateToWidth(`${identity} ${status}`, width, ""),
+			truncateToWidth(`    ${schedule} ${history}`, width, ""),
+		];
 	}
 
-	private indentedRows(value: string, width: number): string[] {
-		const indent = "    ";
-		if (width <= indent.length) return [truncateToWidth(value, width, "")];
-		return wrapTextWithAnsi(value, width - indent.length).map((line) => `${indent}${line}`);
+	private taskPreviewLines(width: number): string[] {
+		const job = orderedTasks(this.data)[this.selectedTask];
+		if (!job) return [];
+		const attention = schedulerJobState(job).label === "Needs attention" ? schedulerAttention(job) : undefined;
+		const reason = attention?.detail ?? attention?.cause ?? "No issue needs investigation.";
+		return [
+			this.theme.bold("Selected task"),
+			truncateToWidth(job.description, width, "…"),
+			truncateToWidth(this.theme.fg("dim", `${scopeLabel(job.scope.kind)} settings · ${scopeDescription(job.scope.kind)}`), width, "…"),
+			truncateToWidth(this.theme.fg(attention ? "error" : "dim", reason), width, "…"),
+		];
 	}
 
-	private indentedDetail(value: string, width: number): string {
-		const indent = "    ";
-		if (width <= indent.length) return truncateToWidth(value, width, "");
-		return `${indent}${truncateToWidth(value, width - indent.length, "…")}`;
+	private preferredBodyHeight(width: number): number {
+		if (this.tab === "runs") return Math.min(Math.max(1, allRuns(this.data).length + 1), 14);
+		if (this.data.jobs.length === 0) return 1;
+		return Math.min(this.taskDisplayLines(width).length, 12) + this.taskPreviewLines(width).length + 1;
 	}
 
 	private runLines(width: number, height: number): string[] {
@@ -634,6 +668,10 @@ export class SchedulerJobDetailComponent implements Component {
 			this.done({ kind: "actions" });
 			return;
 		}
+		if ((data === "i" || data === "I") && schedulerJobState(this.job).label === "Needs attention") {
+			this.done({ kind: "investigate" });
+			return;
+		}
 		if (this.tab === "runs") {
 			const runs = this.job.recentRuns;
 			if ((matchesKey(data, "up") || data === "k") && this.selectedRun > 0) this.selectedRun--;
@@ -679,12 +717,14 @@ export class SchedulerJobDetailComponent implements Component {
 				return lines.slice(start, start + bodyHeight);
 			},
 			compactBody: (bodyWidth) => [tabs, ...body(bodyWidth)],
+			preferredBodyHeight: (bodyWidth) => Math.min(Math.max(1, body(bodyWidth).length), 18),
 			hints: [
 				{ key: "Tab", label: "switch", priority: 1 },
 				{ key: "↑/↓ j/k", label: this.tab === "runs" ? "select" : "scroll", priority: 3 },
 				...(this.tab === "runs" ? [{ key: "Enter", label: "output", priority: 1 }] : []),
 				{ key: "r", label: "refresh", priority: 4 },
 				{ key: "a", label: "actions", priority: 2 },
+				...(state.label === "Needs attention" ? [{ key: "i", label: "ask Pi", priority: 1 }] : []),
 				{ key: "q/Esc", label: "tasks", priority: 0 },
 			],
 		});
@@ -700,7 +740,7 @@ export class SchedulerJobDetailComponent implements Component {
 			`Schedule: ${humanizeSchedule(effectiveSchedule(this.job))}`,
 			`Next run: ${formatSchedulerTime(this.job.nextRun, this.now)}`,
 			`Last run: ${latest ? `${runState(latest).label} · ${formatSchedulerTime(latest.startedAt, this.now)} · ${duration(latest.durationMilliseconds)}` : "No recorded runs"}`,
-			`Scope: ${scopeLabel(this.job.scope.kind)}`,
+			`Scope: ${scopeLabel(this.job.scope.kind)} · ${scopeDescription(this.job.scope.kind)}`,
 			`Source: ${this.job.sourcePath}`,
 			`Working directory: ${effectiveWorkingDirectory(this.job)}`,
 			...this.recoveryLines(),
@@ -803,6 +843,10 @@ export class SchedulerTextComponent implements Component {
 				const start = Math.max(0, content.length - bodyHeight - this.scroll);
 				return content.slice(start, start + bodyHeight);
 			},
+			preferredBodyHeight: (bodyWidth) => Math.min(
+				Math.max(1, this.text.split("\n").flatMap((line) => wrapTextWithAnsi(line || " ", bodyWidth)).length),
+				18,
+			),
 			hints: [
 				{ key: "↑/↓ j/k", label: "scroll", priority: 3 },
 				{ key: "End", label: "latest", priority: 2 },
@@ -814,4 +858,342 @@ export class SchedulerTextComponent implements Component {
 
 	invalidate(): void {}
 
+}
+
+export interface SchedulerDetailView {
+	dashboard: SchedulerDashboardData;
+	overview: SchedulerJobOverview;
+	definition: string;
+	doctorCommand: string;
+}
+
+export interface SchedulerTextView {
+	title: string;
+	text: string;
+}
+
+export interface SchedulerPanelServices {
+	loadDashboard: (signal: AbortSignal) => Promise<SchedulerDashboardData>;
+	loadDetail: (id: string, signal: AbortSignal) => Promise<SchedulerDetailView | undefined>;
+	loadOutput: (id: string, runId: string, signal: AbortSignal) => Promise<SchedulerTextView>;
+	runAction: (id: string) => Promise<void>;
+	investigationPrompt: (job: SchedulerJobOverview) => string;
+}
+
+export type SchedulerPanelResult =
+	| { kind: "close" }
+	| { kind: "ask-pi"; prompt: string };
+
+class SchedulerLoadingComponent implements Component {
+	private readonly label: string;
+	private readonly tui: TuiView;
+	private readonly theme: Theme;
+	private readonly cancel: () => void;
+
+	constructor(label: string, tui: TuiView, theme: Theme, cancel: () => void) {
+		this.label = label;
+		this.tui = tui;
+		this.theme = theme;
+		this.cancel = cancel;
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || matchesKey(data, "left") || data === "q") this.cancel();
+	}
+
+	render(width: number): string[] {
+		return renderSchedulerPanel(width, this.tui, this.theme, {
+			header: this.theme.bold("Scheduler"),
+			body: () => [this.theme.fg("accent", this.label)],
+			preferredBodyHeight: () => 1,
+			hints: [{ key: "q/Esc", label: "cancel", priority: 0 }],
+		});
+	}
+
+	invalidate(): void {}
+}
+
+class SchedulerHandoffComponent implements Component {
+	private scroll = 0;
+	private readonly title: string;
+	private readonly prompt: string;
+	private readonly tui: TuiView;
+	private readonly theme: Theme;
+	private readonly done: (result: "back" | "send") => void;
+
+	constructor(
+		title: string,
+		prompt: string,
+		tui: TuiView,
+		theme: Theme,
+		done: (result: "back" | "send") => void,
+	) {
+		this.title = title;
+		this.prompt = prompt;
+		this.tui = tui;
+		this.theme = theme;
+		this.done = done;
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape") || matchesKey(data, "left") || data === "q") {
+			this.done("back");
+			return;
+		}
+		if (matchesKey(data, "up") || data === "k") this.scroll = Math.max(0, this.scroll - 1);
+		else if (matchesKey(data, "down") || data === "j") this.scroll++;
+		else if (matchesKey(data, "pageUp")) this.scroll = Math.max(0, this.scroll - 8);
+		else if (matchesKey(data, "pageDown")) this.scroll += 8;
+		else if (matchesKey(data, "home")) this.scroll = 0;
+		else if (matchesKey(data, "end")) this.scroll = Number.MAX_SAFE_INTEGER;
+		else if (matchesKey(data, "return")) {
+			this.done("send");
+			return;
+		} else return;
+		this.tui.requestRender();
+	}
+
+	render(width: number): string[] {
+		const content = (bodyWidth: number) => this.prompt.split("\n").flatMap((line) => wrapTextWithAnsi(line || " ", bodyWidth));
+		return renderSchedulerPanel(width, this.tui, this.theme, {
+			header: this.theme.bold(`Scheduler / Ask Pi / ${this.title}`),
+			chrome: [this.theme.fg("borderMuted", "─".repeat(Math.max(1, width - 2)))],
+			body: (bodyWidth, bodyHeight) => {
+				const lines = content(bodyWidth);
+				this.scroll = Math.min(this.scroll, Math.max(0, lines.length - bodyHeight));
+				return lines.slice(this.scroll, this.scroll + bodyHeight);
+			},
+			preferredBodyHeight: (bodyWidth) => Math.min(Math.max(1, content(bodyWidth).length), 18),
+			hints: [
+				{ key: "↑/↓ j/k", label: "scroll", priority: 2 },
+				{ key: "Enter", label: "send to Pi", priority: 0 },
+				{ key: "q/Esc", label: "back", priority: 1 },
+			],
+		});
+	}
+
+	invalidate(): void {}
+}
+
+export class SchedulerPanelComponent implements Component {
+	private current: Component;
+	private pending?: AbortController;
+	private closed = false;
+	private readonly tui: TuiView;
+	private readonly theme: Theme;
+	private readonly services: SchedulerPanelServices;
+	private readonly done: (result: SchedulerPanelResult) => void;
+
+	constructor(
+		data: SchedulerDashboardData | undefined,
+		tui: TuiView,
+		theme: Theme,
+		services: SchedulerPanelServices,
+		done: (result: SchedulerPanelResult) => void,
+	) {
+		this.tui = tui;
+		this.theme = theme;
+		this.services = services;
+		this.done = done;
+		this.current = data
+			? this.dashboardComponent(data)
+			: new SchedulerLoadingComponent("Loading scheduler…", this.tui, this.theme, () => this.close({ kind: "close" }));
+		if (!data) this.loadInitialDashboard();
+	}
+
+	handleInput(data: string): void {
+		this.current.handleInput?.(data);
+	}
+
+	render(width: number): string[] {
+		return this.current.render(width);
+	}
+
+	invalidate(): void {
+		this.current.invalidate();
+	}
+
+	dispose(): void {
+		this.closed = true;
+		this.pending?.abort();
+		this.pending = undefined;
+	}
+
+	private replace(component: Component): void {
+		if (this.closed) return;
+		this.current = component;
+		this.tui.requestRender();
+	}
+
+	private close(result: SchedulerPanelResult): void {
+		if (this.closed) return;
+		this.closed = true;
+		this.pending?.abort();
+		this.pending = undefined;
+		this.done(result);
+	}
+
+	private dashboardComponent(data: SchedulerDashboardData, selectedTaskId?: string): SchedulerDashboardComponent {
+		let component: SchedulerDashboardComponent;
+		component = new SchedulerDashboardComponent(
+			data,
+			this.tui,
+			this.theme,
+			(result) => this.handleDashboardResult(data, component, result),
+			new Date(data.generatedAt),
+			selectedTaskId,
+		);
+		return component;
+	}
+
+	private detailComponent(view: SchedulerDetailView): SchedulerJobDetailComponent {
+		return new SchedulerJobDetailComponent(
+			view.overview,
+			view.definition,
+			this.tui,
+			this.theme,
+			(result) => this.handleDetailResult(view, result),
+			new Date(view.dashboard.generatedAt),
+			view.doctorCommand,
+		);
+	}
+
+	private handleDashboardResult(
+		data: SchedulerDashboardData,
+		dashboard: SchedulerDashboardComponent,
+		result: SchedulerDashboardResult,
+	): void {
+		if (result.kind === "close") {
+			this.close({ kind: "close" });
+			return;
+		}
+		if (result.kind === "refresh") {
+			this.load("Refreshing scheduler…", this.services.loadDashboard, (next) => this.replace(this.dashboardComponent(next)));
+			return;
+		}
+		if (result.kind === "job") {
+			this.loadDetail(result.id);
+			return;
+		}
+		if (result.kind === "actions") {
+			void this.runAction(result.id, () => this.refreshDashboard(result.id));
+			return;
+		}
+		if (result.kind === "investigate") {
+			const job = data.jobs.find((candidate) => candidate.id === result.id);
+			if (job) this.showHandoff(job, dashboard);
+			return;
+		}
+		this.loadOutput(result.id, result.runId, dashboard);
+	}
+
+	private handleDetailResult(view: SchedulerDetailView, result: SchedulerDetailResult): void {
+		if (result.kind === "back") {
+			this.replace(this.dashboardComponent(view.dashboard, view.overview.id));
+			return;
+		}
+		if (result.kind === "refresh") {
+			this.loadDetail(view.overview.id);
+			return;
+		}
+		if (result.kind === "actions") {
+			void this.runAction(view.overview.id, () => this.loadDetail(view.overview.id));
+			return;
+		}
+		if (result.kind === "investigate") {
+			this.showHandoff(view.overview, this.detailComponent(view));
+			return;
+		}
+		this.loadOutput(result.id, result.runId, this.detailComponent(view));
+	}
+
+	private loadInitialDashboard(): void {
+		const controller = new AbortController();
+		this.pending = controller;
+		void this.services.loadDashboard(controller.signal).then(
+			(data) => {
+				if (this.closed || this.pending !== controller || controller.signal.aborted) return;
+				this.pending = undefined;
+				this.replace(this.dashboardComponent(data));
+			},
+			(error) => {
+				if (this.closed || this.pending !== controller || controller.signal.aborted) return;
+				this.pending = undefined;
+				this.showError(error instanceof Error ? error.message : String(error), () => this.close({ kind: "close" }));
+			},
+		);
+	}
+
+	private refreshDashboard(selectedTaskId?: string): void {
+		this.load("Refreshing scheduler…", this.services.loadDashboard, (data) => this.replace(this.dashboardComponent(data, selectedTaskId)));
+	}
+
+	private loadDetail(id: string): void {
+		this.load("Loading task details…", (signal) => this.services.loadDetail(id, signal), (view) => {
+			if (!view) {
+				this.showError("The selected scheduler task changed or disappeared.", () => this.refreshDashboard());
+				return;
+			}
+			this.replace(this.detailComponent(view));
+		});
+	}
+
+	private loadOutput(id: string, runId: string, back: Component): void {
+		this.load("Loading run output…", (signal) => this.services.loadOutput(id, runId, signal), (snapshot) => {
+			this.replace(new SchedulerTextComponent(snapshot.title, snapshot.text, this.tui, this.theme, (result) => {
+				if (result === "back") this.replace(back);
+				else this.loadOutput(id, runId, back);
+			}));
+		});
+	}
+
+	private showHandoff(job: SchedulerJobOverview, back: Component): void {
+		const prompt = this.services.investigationPrompt(job);
+		this.replace(new SchedulerHandoffComponent(job.key, prompt, this.tui, this.theme, (result) => {
+			if (result === "back") this.replace(back);
+			else this.close({ kind: "ask-pi", prompt });
+		}));
+	}
+
+	private async runAction(id: string, refresh: () => void): Promise<void> {
+		try {
+			await this.services.runAction(id);
+			if (!this.closed) refresh();
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error), refresh);
+		}
+	}
+
+	private load<T>(
+		label: string,
+		operation: (signal: AbortSignal) => Promise<T>,
+		onComplete: (value: T) => void,
+	): void {
+		this.pending?.abort();
+		const previous = this.current;
+		const controller = new AbortController();
+		this.pending = controller;
+		this.replace(new SchedulerLoadingComponent(label, this.tui, this.theme, () => {
+			if (this.pending !== controller) return;
+			controller.abort();
+			this.pending = undefined;
+			this.replace(previous);
+		}));
+		void operation(controller.signal).then(
+			(value) => {
+				if (this.closed || this.pending !== controller || controller.signal.aborted) return;
+				this.pending = undefined;
+				onComplete(value);
+			},
+			(error) => {
+				if (this.closed || this.pending !== controller || controller.signal.aborted) return;
+				this.pending = undefined;
+				this.showError(error instanceof Error ? error.message : String(error), () => this.replace(previous));
+			},
+		);
+	}
+
+	private showError(message: string, back: () => void): void {
+		this.replace(new SchedulerTextComponent("Scheduler error", message, this.tui, this.theme, () => back()));
+	}
 }

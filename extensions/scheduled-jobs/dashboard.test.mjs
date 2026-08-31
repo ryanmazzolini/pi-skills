@@ -4,6 +4,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import {
   SchedulerDashboardComponent,
   SchedulerJobDetailComponent,
+  SchedulerPanelComponent,
   SchedulerTextComponent,
   formatSchedulerTime,
   humanizeSchedule,
@@ -143,7 +144,9 @@ test("renders a width-safe tasks dashboard with next run, history, and source er
   assert.match(wide.join("\n"), /daily-report:work · User · Active/);
   assert.match(wide.join("\n"), /Weekdays at 17:30 local time · next Today/);
   assert.match(wide.join("\n"), /! Project tasks · jobs\.bad contains unknown field/);
-  assert.equal(wide.length, 20);
+  assert.match(wide.join("\n"), /Selected task/);
+  assert.match(wide.join("\n"), /User settings · available in all your projects/);
+  assert.ok(wide.length < 20, "the panel should fit its content instead of filling 85% of the terminal");
   assert.equal(wide.every((line) => visibleWidth(line) <= 100), true);
 
   const narrow = component.render(54);
@@ -151,6 +154,30 @@ test("renders a width-safe tasks dashboard with next run, history, and source er
   assert.match(narrow.join("\n"), /daily-report:work/);
   assert.match(narrow.join("\n"), /User · Active/);
   assert.equal(narrow.every((line) => visibleWidth(line) <= 54), true);
+});
+
+test("task rows stay fixed while the selected preview changes", () => {
+  const view = harness(40);
+  const data = {
+    jobs: [
+      job({ id: "user:test:first", key: "test:first", recentRuns: [run({ status: "failed", exitCode: 7, reason: "exited with code 7" })] }),
+      job({ id: "user:test:second", key: "test:second", candidateError: { code: "ENVIRONMENT", message: "missing report command" }, recentRuns: [] }),
+      job({ id: "user:test:third", key: "test:third" }),
+    ],
+    sourceErrors: [],
+    generatedAt: new Date().toISOString(),
+  };
+  const component = new SchedulerDashboardComponent(data, view.tui, theme, () => {});
+  const before = component.render(100);
+  const positionsBefore = data.jobs.map(({ key }) => before.findIndex((line) => line.includes(key)));
+
+  component.handleInput("j");
+  const after = component.render(100);
+  const positionsAfter = data.jobs.map(({ key }) => after.findIndex((line) => line.includes(key)));
+
+  assert.deepEqual(positionsAfter, positionsBefore);
+  assert.equal(after.length, before.length);
+  assert.match(after.join("\n"), /missing report command/);
 });
 
 test("task selection follows grouped order and preserves an explicit task", () => {
@@ -281,6 +308,126 @@ test("text output is synchronous and emits explicit refresh", () => {
   const back = [];
   new SchedulerTextComponent("Run output", "one", view.tui, theme, (result) => back.push(result)).handleInput("q");
   assert.deepEqual(back, ["back"]);
+});
+
+test("the persistent panel owns its initial loading state", () => {
+  const view = harness();
+  let loadSignal;
+  const results = [];
+  const panel = new SchedulerPanelComponent(
+    undefined,
+    view.tui,
+    theme,
+    {
+      loadDashboard: (signal) => {
+        loadSignal = signal;
+        return new Promise(() => {});
+      },
+      loadDetail: async () => undefined,
+      loadOutput: async () => ({ title: "Output", text: "" }),
+      runAction: async () => {},
+      investigationPrompt: () => "diagnose only",
+    },
+    (result) => results.push(result),
+  );
+
+  assert.match(panel.render(80).join("\n"), /Loading scheduler/);
+  panel.handleInput("q");
+  assert.equal(loadSignal.aborted, true);
+  assert.deepEqual(results, [{ kind: "close" }]);
+});
+
+test("details and output transition inside one mounted panel", async () => {
+  const view = harness(30);
+  const data = { jobs: [job()], sourceErrors: [], generatedAt: new Date().toISOString() };
+  let resolveDetail;
+  let resolveOutput;
+  const results = [];
+  const panel = new SchedulerPanelComponent(
+    data,
+    view.tui,
+    theme,
+    {
+      loadDashboard: async () => data,
+      loadDetail: () => new Promise((resolve) => { resolveDetail = resolve; }),
+      loadOutput: () => new Promise((resolve) => { resolveOutput = resolve; }),
+      runAction: async () => {},
+      investigationPrompt: () => "diagnose only",
+    },
+    (result) => results.push(result),
+  );
+
+  panel.handleInput("\r");
+  assert.match(panel.render(80).join("\n"), /Loading task details/);
+  resolveDetail({ dashboard: data, overview: data.jobs[0], definition: "Definition", doctorCommand: "doctor" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(panel.render(80).join("\n"), /Scheduler \/ daily-report:work/);
+
+  panel.handleInput("q");
+  assert.match(panel.render(80).join("\n"), /Scheduler · \[Tasks\]/);
+  panel.handleInput("\t");
+  assert.match(panel.render(80).join("\n"), /Scheduler · Tasks  \[Runs\]/);
+  panel.handleInput("\r");
+  assert.match(panel.render(80).join("\n"), /Loading run output/);
+  resolveOutput({ title: "Run output", text: "finished cleanly" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(panel.render(80).join("\n"), /finished cleanly/);
+  panel.handleInput("q");
+  assert.match(panel.render(80).join("\n"), /Scheduler · Tasks  \[Runs\]/);
+  assert.deepEqual(results, []);
+});
+
+test("Ask Pi keeps its safety instruction visible and lets narrow terminals review all evidence", () => {
+  const view = harness();
+  const blocked = job({ recentRuns: [run({ status: "failed", reason: "exited with code 7", exitCode: 7 })] });
+  const data = { jobs: [blocked], sourceErrors: [], generatedAt: new Date().toISOString() };
+  const panel = new SchedulerPanelComponent(
+    data,
+    view.tui,
+    theme,
+    {
+      loadDashboard: async () => data,
+      loadDetail: async () => undefined,
+      loadOutput: async () => ({ title: "Output", text: "" }),
+      runAction: async () => {},
+      investigationPrompt: () => `SAFETY FIRST\n${Array.from({ length: 30 }, (_, index) => `evidence ${index}`).join("\n")}\nTAIL EVIDENCE`,
+    },
+    () => {},
+  );
+
+  panel.handleInput("i");
+  assert.match(panel.render(20).join("\n"), /SAFETY FIRST/);
+  assert.doesNotMatch(panel.render(20).join("\n"), /TAIL EVIDENCE/);
+  panel.handleInput("\u001b[F");
+  assert.match(panel.render(20).join("\n"), /TAIL EVIDENCE/);
+});
+
+test("cancelling an internal load returns to the previous panel state", () => {
+  const view = harness();
+  const data = { jobs: [job()], sourceErrors: [], generatedAt: new Date().toISOString() };
+  let detailSignal;
+  const panel = new SchedulerPanelComponent(
+    data,
+    view.tui,
+    theme,
+    {
+      loadDashboard: async () => data,
+      loadDetail: (_id, signal) => {
+        detailSignal = signal;
+        return new Promise(() => {});
+      },
+      loadOutput: async () => ({ title: "Output", text: "" }),
+      runAction: async () => {},
+      investigationPrompt: () => "diagnose only",
+    },
+    () => {},
+  );
+
+  panel.handleInput("\r");
+  assert.match(panel.render(80).join("\n"), /Loading task details/);
+  panel.handleInput("q");
+  assert.equal(detailSignal.aborted, true);
+  assert.match(panel.render(80).join("\n"), /Scheduler · \[Tasks\]/);
 });
 
 test("scheduler surfaces remain width-safe with short terminal budgets", () => {
