@@ -1119,7 +1119,11 @@ export class SchedulerPanelComponent implements Component {
 			(error) => {
 				if (this.closed || this.pending !== controller || controller.signal.aborted) return;
 				this.pending = undefined;
-				this.showError(error instanceof Error ? error.message : String(error), () => this.close({ kind: "close" }));
+				this.showError(
+					error instanceof Error ? error.message : String(error),
+					() => this.close({ kind: "close" }),
+					() => this.loadInitialDashboard(),
+				);
 			},
 		);
 	}
@@ -1188,12 +1192,19 @@ export class SchedulerPanelComponent implements Component {
 			(error) => {
 				if (this.closed || this.pending !== controller || controller.signal.aborted) return;
 				this.pending = undefined;
-				this.showError(error instanceof Error ? error.message : String(error), () => this.replace(previous));
+				this.showError(
+					error instanceof Error ? error.message : String(error),
+					() => this.replace(previous),
+					() => this.load(label, operation, onComplete),
+				);
 			},
 		);
 	}
 
-	private showError(message: string, back: () => void): void {
-		this.replace(new SchedulerTextComponent("Scheduler error", message, this.tui, this.theme, () => back()));
+	private showError(message: string, back: () => void, refresh: () => void = back): void {
+		this.replace(new SchedulerTextComponent("Scheduler error", message, this.tui, this.theme, (result) => {
+			if (result === "refresh") refresh();
+			else back();
+		}));
 	}
 }
