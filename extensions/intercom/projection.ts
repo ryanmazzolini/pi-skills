@@ -321,7 +321,7 @@ export function projectFirstMateTriage(input: FirstMateTriageProjectionInput): T
 	}
 	let cachedShown = 0;
 	if ((input.cachedSummaries?.length ?? 0) > 0) {
-		fixed += "\n\n**Reusable cached summaries (advertised and confirmed last turn unchanged):**";
+		fixed += "\n\n**Reusable cached summaries (persisted branch identity, advertised last turn, and confirmed last turn all match the cached record):**";
 		for (const candidate of input.cachedSummaries ?? []) {
 			const block = `\n\nPi session ID: ${JSON.stringify(candidate.targetSessionId)}\n${candidate.text}`;
 			if (byteLength(fixed) + byteLength(block) > 32 * 1024) break;
@@ -334,7 +334,7 @@ export function projectFirstMateTriage(input: FirstMateTriageProjectionInput): T
 	const cachedDeferred = (input.cachedSummariesDeferred ?? 0) + cachedOmittedByProjection;
 	if (cachedDeferred > 0) fixed += `\n${cachedDeferred} additional unchanged cached summaries were deferred.`;
 	if ((input.potentiallyStaleCachedSummaries ?? 0) > 0) {
-		fixed += `\n${input.potentiallyStaleCachedSummaries} cached summary record(s) did not match the current advertised and confirmed last turn and were withheld as potentially stale.`;
+		fixed += `\n${input.potentiallyStaleCachedSummaries} cached summary record(s) did not match the current persisted branch identity or advertised and confirmed last turn and were withheld as potentially stale.`;
 	}
 	if ((input.summaryCacheUnavailable ?? 0) > 0) {
 		fixed += `\n${input.summaryCacheUnavailable} cached summary record(s) were unreadable and were not reused.`;
