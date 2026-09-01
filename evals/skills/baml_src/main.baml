@@ -135,7 +135,7 @@ function BuildEvalReport(
         judgeModel: if (skip_judge) {
             null
         } else {
-            "openai-responses/gpt-5"
+            "openai-responses/gpt-5.6-terra"
         },
         repetitions: repetitions,
         runs: runs,
