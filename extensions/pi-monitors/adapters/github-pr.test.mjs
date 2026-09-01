@@ -157,8 +157,8 @@ function fixture({
     cancelSchedule: timer.cancelSchedule,
   });
   let runtime;
-  createPiMonitorsExtension(pi, [{ id: adapter.id, bind(api, services) { runtime = adapter.bind(api, services); return runtime; } }]);
-  return { handlers, tools, commands, renderers, sent, statuses, notifications, execCalls, entries, timer, pi, ctx, runtime };
+  const hostRuntime = createPiMonitorsExtension(pi, [{ id: adapter.id, bind(api, services) { runtime = adapter.bind(api, services); return runtime; } }]);
+  return { handlers, tools, commands, renderers, sent, statuses, notifications, execCalls, entries, timer, pi, ctx, runtime, hostRuntime };
 }
 
 async function start(f, reason = "startup") {
@@ -582,6 +582,8 @@ test("stops without a model turn when feedback exceeds the safety limit", async 
   assert.equal(f.sent.length, 0);
   assert.equal(activeRecord(f), undefined);
   assert.match(f.notifications.at(-1).message, /safety limit/);
+  assert.equal(f.runtime.snapshot().recent[0].health, "degraded");
+  assert.match(f.runtime.snapshot().recent[0].status, /safety limit/);
 });
 
 test("stops instead of repeatedly polling an oversized GitHub response", async () => {
@@ -596,6 +598,25 @@ test("stops instead of repeatedly polling an oversized GitHub response", async (
   };
   await assert.rejects(f.tools[0].execute("call", { url: PR_URL }, undefined, undefined, f.ctx), /response limit/);
   assert.equal(activeRecord(f), undefined);
+});
+
+test("collects final feedback before stopping a closed pull request", async () => {
+  const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
+  const f = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(f);
+  await f.tools[0].execute("call", { url: PR_URL }, undefined, undefined, f.ctx);
+
+  snapshot.comments = [issueComment()];
+  snapshot.pull.state = "closed";
+  await f.timer.latest(60_000).callback();
+  await settleDelivery();
+
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0][0].content, /Please cover the error path/);
+  assert.match(f.runtime.snapshot().active[0].status, /Finishing:.*closed/);
+  await acknowledgeLast(f);
+  assert.equal(f.runtime.snapshot().active.length, 0);
+  assert.match(f.runtime.snapshot().recent[0].status, /closed/);
 });
 
 test("preserves queued feedback through closure and restart before stopping", async () => {
@@ -629,6 +650,50 @@ test("preserves queued feedback through closure and restart before stopping", as
   assert.equal(activeRecord(restored), undefined);
 });
 
+test("an in-flight poll cannot recreate a monitor stopped by the user", async () => {
+  const otherUrl = "https://github.com/acme/gadgets/pull/7";
+  const widgetSnapshot = { pull: { state: "open", title: "Widgets" }, comments: [], reviews: [], reviewComments: [] };
+  const gadgetSnapshot = { pull: { state: "open", title: "Gadgets" }, comments: [], reviews: [], reviewComments: [] };
+  let blockPoll = false;
+  let markPollStarted;
+  const pollStarted = new Promise((resolve) => { markPollStarted = resolve; });
+  let releasePoll;
+  const pollGate = new Promise((resolve) => { releasePoll = resolve; });
+  const f = fixture({
+    pullRequests: new Map([
+      [PR_URL, { number: 42, url: PR_URL, title: "Widgets", state: "OPEN" }],
+      [otherUrl, { number: 7, url: otherUrl, title: "Gadgets", state: "OPEN" }],
+    ]),
+    snapshots: new Map([[PR_URL, widgetSnapshot], [otherUrl, gadgetSnapshot]]),
+    beforeExec: async (_command, args) => {
+      if (!blockPoll || args[0] !== "api" || !args.at(-1).endsWith("repos/acme/widgets/pulls/42")) return;
+      blockPoll = false;
+      markPollStarted();
+      await pollGate;
+    },
+  });
+  await start(f);
+  await f.runtime.register(PR_URL, f.ctx);
+  await f.runtime.register(otherUrl, f.ctx);
+  widgetSnapshot.pull.title = "Changed while stopping";
+  blockPoll = true;
+
+  f.timer.latest(60_000).callback();
+  await pollStarted;
+  await f.runtime.stop("github-pr:acme/widgets#42");
+  releasePoll();
+  await settleDelivery();
+
+  assert.deepEqual(f.runtime.snapshot().active.map((monitor) => monitor.id), ["github-pr:acme/gadgets#7"]);
+  assert.equal(activeRecord(f, "github-pr:acme/widgets#42"), undefined);
+  assert.equal(f.runtime.snapshot().recent[0].health, "healthy");
+  assert.equal(f.runtime.snapshot().recent[0].status, "stopped by user");
+  const restored = fixture({ entries: structuredClone(f.entries), snapshots: new Map([[PR_URL, widgetSnapshot], [otherUrl, gadgetSnapshot]]) });
+  await start(restored, "reload");
+  await settleDelivery();
+  assert.deepEqual(restored.runtime.snapshot().active.map((monitor) => monitor.id), ["github-pr:acme/gadgets#7"]);
+});
+
 test("stops and removes durable state when GitHub reports closure", async () => {
   const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
   const f = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
@@ -640,6 +705,13 @@ test("stops and removes durable state when GitHub reports closure", async () => 
   assert.equal(f.runtime.snapshot().active.length, 0);
   assert.equal(activeRecord(f), undefined);
   assert.match(f.notifications.at(-1).message, /closed/);
+  assert.equal(f.runtime.snapshot().recent.length, 1);
+  assert.match(f.runtime.snapshot().recent[0].status, /closed/);
+
+  const restored = fixture({ entries: structuredClone(f.entries), snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(restored, "reload");
+  assert.equal(restored.hostRuntime.snapshot().recent.length, 1);
+  assert.match(restored.hostRuntime.snapshot().recent[0].status, /closed/);
 });
 
 test("shutdown aborts polling and clears its timer", async () => {

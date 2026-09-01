@@ -462,6 +462,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 	private readonly lifecycleAbort = new AbortController();
 	private readonly execTimeoutMs: number;
 	private readonly now: () => number;
+	private recent: MonitorView[] = [];
 	private ctx: ExtensionContext | undefined;
 	private disposed = false;
 
@@ -489,6 +490,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 	async startSession(ctx: ExtensionContext): Promise<void> {
 		this.ctx = ctx;
 		this.monitors.clear();
+		this.recent = [];
 		const storedRecords = [...this.stateStore.load()];
 		for (const record of storedRecords.slice(MAX_MONITORS)) this.stateStore.remove(record.id);
 		if (storedRecords.length > MAX_MONITORS) ctx.ui.notify(`GitHub PR monitoring restored only the first ${MAX_MONITORS} pull requests`, "warning");
@@ -504,7 +506,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			});
 		}
 		for (const monitor of [...this.monitors.values()]) {
-			if (monitor.stoppedReason && !this.delivery.hasPending(monitor.recordId)) this.finalizeStop(monitor);
+			if (monitor.stoppedReason && !this.delivery.hasPending(monitor.recordId)) this.finalizeStop(monitor, true);
 		}
 		this.notifyChange();
 		if (this.hasPollableMonitors()) this.pollRestoredMonitors();
@@ -568,7 +570,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			this.persist(monitor);
 		}
 		if (monitor.stoppedReason && monitor.pending.size === 0 && !this.delivery.hasPending(monitor.recordId)) {
-			this.finalizeStop(monitor);
+			this.finalizeStop(monitor, true);
 		} else {
 			this.notifyChange();
 		}
@@ -610,7 +612,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 				...(this.checkScheduler.nextCheckAt ? { nextCheckAt: this.checkScheduler.nextCheckAt } : {}),
 			};
 		});
-		return { active, recent: [] };
+		return { active, recent: this.recent };
 	}
 
 	subscribe(listener: () => void): () => void {
@@ -630,7 +632,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 	async stop(requestedId: string): Promise<boolean> {
 		const monitor = this.monitors.get(requestedId);
 		if (!monitor) return false;
-		this.stopMonitor(monitor, "stopped by user", false);
+		this.stopMonitor(monitor, "stopped by user", false, true);
 		return true;
 	}
 
@@ -736,10 +738,8 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 	private async pollMonitor(monitor: Monitor, signal: AbortSignal): Promise<void> {
 		const base = `repos/${monitor.pr.owner}/${monitor.pr.repo}`;
 		const pull = await this.execJson("gh", ["api", "--hostname", "github.com", `${base}/pulls/${monitor.pr.number}`], "GitHub PR state", signal);
-		if (!pull || typeof pull !== "object" || cleanLine((pull as RestPull).state).toLowerCase() !== "open") {
-			this.stopMonitor(monitor, "GitHub reports that it is closed", true);
-			return;
-		}
+		if (!this.isPollable(monitor)) return;
+		if (!pull || typeof pull !== "object") throw new Error("GitHub returned malformed pull request state");
 		const returnedNumber = (pull as RestPull).number;
 		const returnedUrl = optionalString((pull as RestPull).html_url);
 		let returnedUrlMatches = false;
@@ -752,15 +752,19 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			this.stopMonitor(monitor, "GitHub returned a different pull request", true);
 			return;
 		}
+		const open = cleanLine((pull as RestPull).state).toLowerCase() === "open";
 		const title = cleanLine((pull as RestPull).title).slice(0, 500);
 		const titleChanged = Boolean(title) && title !== monitor.pr.title;
-		if (titleChanged) monitor.pr = { ...monitor.pr, title };
 		let remaining = MAX_SEEN;
 		const comments = await this.fetchCollection<RestComment>(`${base}/issues/${monitor.pr.number}/comments`, "conversation comments", remaining, signal);
+		if (!this.isPollable(monitor)) return;
 		remaining -= comments.length;
 		const reviews = await this.fetchCollection<RestReview>(`${base}/pulls/${monitor.pr.number}/reviews`, "reviews", remaining, signal);
+		if (!this.isPollable(monitor)) return;
 		remaining -= reviews.length;
 		const reviewComments = await this.fetchCollection<RestReviewComment>(`${base}/pulls/${monitor.pr.number}/comments`, "review comments", remaining, signal);
+		if (!this.isPollable(monitor)) return;
+		if (titleChanged) monitor.pr = { ...monitor.pr, title };
 		monitor.highVolume = comments.length + reviews.length + reviewComments.length > HIGH_VOLUME_FEEDBACK;
 		const collected = collectFeedback(monitor.pr, comments, reviews, reviewComments, monitor.seen);
 		let changed = titleChanged;
@@ -769,7 +773,11 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			changed = true;
 		}
 		for (const event of collected.events) monitor.pending.set(event.key, event);
-		if (changed) this.persist(monitor);
+		if (!open) {
+			this.stopMonitor(monitor, "GitHub reports that it is closed", true);
+		} else if (changed) {
+			this.persist(monitor);
+		}
 	}
 
 	private async fetchCollection<T>(endpoint: string, label: string, limit: number, signal: AbortSignal): Promise<T[]> {
@@ -835,7 +843,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		});
 	}
 
-	private stopMonitor(monitor: Monitor, reason: string, notify: boolean): void {
+	private stopMonitor(monitor: Monitor, reason: string, notify: boolean, recordOutcome = notify): void {
 		if (this.monitors.get(monitor.recordId) !== monitor) return;
 		if (notify) {
 			this.deliverPending(monitor);
@@ -850,16 +858,37 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		}
 		monitor.stoppedReason = reason;
 		if (notify) this.ctx?.ui.notify(`Stopped monitoring ${pullRequestKey(monitor.pr)}: ${reason}`, "warning");
-		this.finalizeStop(monitor);
+		this.finalizeStop(monitor, recordOutcome);
 	}
 
-	private finalizeStop(monitor: Monitor): void {
+	private finalizeStop(monitor: Monitor, recordOutcome: boolean): void {
 		if (this.monitors.get(monitor.recordId) !== monitor) return;
+		if (recordOutcome) {
+			const completedAt = new Date(this.now()).toISOString();
+			const healthy = monitor.stoppedReason === "stopped by user" || monitor.stoppedReason === "GitHub reports that it is closed";
+			const completed: MonitorView = {
+				id: monitor.recordId,
+				kind: "github-pr",
+				label: `${monitor.pr.owner}/${monitor.pr.repo}#${monitor.pr.number}`,
+				lifecycle: "completed",
+				health: healthy ? "healthy" : "degraded",
+				attentionCount: 0,
+				status: monitor.stoppedReason ?? "stopped",
+				detail: [`PR: ${monitor.pr.url}`, `Title: ${monitor.pr.title}`],
+				completedAt,
+			};
+			this.recent = [completed, ...this.recent.filter((candidate) => candidate.id !== monitor.recordId)].slice(0, 10);
+			this.notifyChange();
+		}
 		this.stateStore.remove(monitor.recordId);
 		this.monitors.delete(monitor.recordId);
 		monitor.pending.clear();
 		if (!this.hasPollableMonitors()) this.checkScheduler.stop();
 		this.notifyChange();
+	}
+
+	private isPollable(monitor: Monitor): boolean {
+		return this.monitors.get(monitor.recordId) === monitor && monitor.stoppedReason === undefined;
 	}
 
 	private hasPollableMonitors(): boolean {
