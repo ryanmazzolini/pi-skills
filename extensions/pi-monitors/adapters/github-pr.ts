@@ -698,10 +698,14 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			this.persist(monitor);
 			const outcome = await this.checkScheduler.start(signal);
 			if (signal.aborted || this.disposed) throw new Error("monitor_github_pr registration was cancelled");
-			if (!this.monitors.has(monitor.recordId)) throw new Error(monitor.stoppedReason ?? "monitor_github_pr stopped during registration");
+			if (this.monitors.get(monitor.recordId) !== monitor || monitor.stoppedReason) {
+				throw new Error(monitor.stoppedReason ?? "monitor_github_pr stopped during registration");
+			}
 			return { pr: monitor.pr, queued: monitor.pending.size, ...(outcome.ok ? {} : { warning: outcome.error }) };
 		} catch (error) {
-			if (this.monitors.get(monitor.recordId) === monitor) this.stopMonitor(monitor, "registration was cancelled", false);
+			if (this.monitors.get(monitor.recordId) === monitor && !monitor.stoppedReason) {
+				this.stopMonitor(monitor, "registration was cancelled", false);
+			}
 			if (signal.aborted || this.disposed) throw new Error("monitor_github_pr registration was cancelled");
 			throw error;
 		}
