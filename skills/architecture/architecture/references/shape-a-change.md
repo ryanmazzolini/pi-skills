@@ -24,7 +24,7 @@ For UI work, say what the person sees and can do. For an API, CLI, event, or lib
 
 Model only data and rules needed for the approved experience. Show domain nouns and required values, lifecycle and invariants, source or storage, which experience step each shape supports, and one ordinary example when useful. Use the repository's normal types, records, states, events, schemas, props, or fixtures.
 
-When a consequential representation or access pattern needs comparison, read [data-structures.md](data-structures.md) before recommending the shape. Finish when the user can see what exists, what changes, what remains true, and why each shape is needed now.
+Finish when the user can see what exists, what changes, what remains true, and why each shape is needed now.
 
 ## Interface
 

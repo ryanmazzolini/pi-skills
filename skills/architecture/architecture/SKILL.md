@@ -1,6 +1,6 @@
 ---
 name: "architecture"
-description: "Route architecture work to the right lens. Use when shaping a code change, choosing a data structure, designing a module interface, simplifying code structure, reviewing system trade-offs or relational database concurrency, choosing the simplest sufficient implementation, or clarifying domain language."
+description: "Route architecture work to the right lens. Use when shaping or reviewing consequential choices across code, data, interfaces, domain language, and systems."
 license: "MIT; portions adapted from mattpocock/skills and DietrichGebert/ponytail"
 ---
 
