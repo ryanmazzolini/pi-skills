@@ -39,6 +39,8 @@ Remove repeated context, process narration, and detail that does not help the re
 
 When explaining an unfamiliar process, system, or trade-off, begin with one concrete example. Reuse that example when comparing options or introducing lower-level details.
 
+When rewriting a technical explanation because it is dense or did not land, read [`explain-code`](../explain-code/SKILL.md). Return the high-level layer or the specific drill-down the user requested, then give explicit breadcrumbs for useful areas they can explore next. Do not reproduce every layer of the source explanation at once.
+
 Before asking a question, explain the situation that makes the answer necessary. Then ask one short, focused question.
 
 When describing a change, state what changed, what happened before, and why the new behavior is better.
