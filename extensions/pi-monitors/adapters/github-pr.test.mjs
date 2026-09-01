@@ -200,6 +200,14 @@ test("accepts only canonical GitHub pull request URLs", () => {
   ]) assert.throws(() => parsePullRequestUrl(invalid));
 });
 
+test("exposes monitor registration guidance to PR workflows", () => {
+  const f = fixture();
+  assert.match(
+    f.tools[0].promptGuidelines[0],
+    /creates or updates an open GitHub pull request, or completes a review of one/,
+  );
+});
+
 test("stays dormant until monitor_github_pr is called explicitly", async () => {
   const f = fixture();
   await start(f);
