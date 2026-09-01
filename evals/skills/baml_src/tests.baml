@@ -216,6 +216,21 @@ testset "contracts" {
         assert.is_true(rejected_shell);
     }
 
+    test "defines progressively disclosed architecture scenarios" {
+        let scenarios = ArchitectureScenarios();
+        let data_structure = SelectScenarios(scenarios, "architecture-compounding-data-representation")[0];
+        let other_engine = SelectScenarios(scenarios, "architecture-non-postgresql-concurrency")[0];
+        let postgresql = SelectScenarios(scenarios, "architecture-postgresql-lock-convoy")[0];
+        assert
+            .equal(
+                ValidateScenarioSkillTarget(scenarios),
+                "skills/architecture/architecture/SKILL.md",
+            );
+        assert.is_true(LoadSkillText(data_structure).includes("Green feature tests prove behavior"));
+        assert.is_true(!LoadSkillText(other_engine).includes("PostgreSQL"));
+        assert.is_true(LoadSkillText(postgresql).includes("PostgreSQL Concurrency Sources"));
+    }
+
     test "defines the commit-simple scenario in BAML" {
         let scenarios = CommitSimpleScenarios();
         let scenario = SelectScenarios(scenarios, "commit-simple-result-first-context")[0];
@@ -396,6 +411,32 @@ testset "contracts" {
         let results = EvaluateHardAssertions(scenario, [read_call, search_call]);
         assert.is_true(results[1].passed);
         assert.is_true(results[3].passed);
+    }
+
+    test "filtered ordering requires each local read before either external tool" {
+        let assertion = ToolBeforeAssertion {
+            kind: "tool-before",
+            tool: "read",
+            argumentIncludes: "transaction-flows.md",
+            beforeTools: ["web_search", "fetch_content"],
+            description: "The agent reads transaction flows before external retrieval.",
+        };
+        let runtime_call = TestCall(1, "read", 0);
+        runtime_call.path = "runtime.md";
+        let fetch_call = TestCall(2, "fetch_content", 0);
+        let search_call = TestCall(2, "web_search", 0);
+        let late_flow_call = TestCall(3, "read", 0);
+        late_flow_call.path = "transaction-flows.md";
+        let early_flow_call = TestCall(1, "read", 0);
+        early_flow_call.path = "transaction-flows.md";
+        let later_search_call = TestCall(2, "web_search", 0);
+        let later_fetch_call = TestCall(3, "fetch_content", 0);
+        let fetch_first = EvaluateToolBefore(assertion, [runtime_call, fetch_call, late_flow_call]);
+        let search_first = EvaluateToolBefore(assertion, [runtime_call, search_call, late_flow_call]);
+        let local_first = EvaluateToolBefore(assertion, [early_flow_call, later_search_call, later_fetch_call]);
+        assert.is_true(!fetch_first.passed);
+        assert.is_true(!search_first.passed);
+        assert.is_true(local_first.passed);
     }
 
     test "source bounds count every URL in a fetch batch" {

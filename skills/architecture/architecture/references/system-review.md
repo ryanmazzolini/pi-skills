@@ -14,6 +14,8 @@ Review in this order:
 
 Make shared service and API contracts explicit and versioned when compatibility depends on them. Add observability where failures would otherwise be silent or slow to diagnose.
 
+When reliability or operational trade-offs need external evidence, retrieve current guidance from the [AWS Well-Architected Reliability Pillar](https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/welcome.html) and relevant [Google SRE books](https://sre.google/books/). Use them as review lenses; use authoritative platform and engine documentation for exact semantics.
+
 Lead with the recommendation. Then give only the highest-impact risks, each with evidence, consequence, and smallest useful next step. Put deeper assumptions, alternatives, rollout, and operating details under named sections. Read [presentation.md](presentation.md) when a component, sequence, before/after, or rollout view would materially improve the decision.
 
 Stop when the reader can approve, reject, or redirect the architecture and can see the material unknowns. Do not turn the review into an implementation plan unless asked.
