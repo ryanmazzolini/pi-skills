@@ -347,6 +347,23 @@ test("edited feedback replaces its prior fingerprint", () => {
   assert.notEqual(edited.events[0].fingerprint, first.events[0].fingerprint);
 });
 
+test("does not redeliver an inline comment when GitHub only remaps its current line", () => {
+  const original = reviewComment({ line: 18, original_line: 18 });
+  const first = collectFeedback(pr(), [], [], [original], {});
+  const seen = { [first.events[0].key]: first.events[0].fingerprint };
+
+  const remapped = reviewComment({ line: null, original_line: 18 });
+  assert.equal(collectFeedback(pr(), [], [], [remapped], seen).events.length, 0);
+
+  const edited = reviewComment({
+    line: null,
+    original_line: 18,
+    body: "Updated inline feedback",
+    updated_at: "2026-08-01T11:10:00Z",
+  });
+  assert.equal(collectFeedback(pr(), [], [], [edited], seen).events.length, 1);
+});
+
 test("sanitizes hostile content and bounds the complete serialized packet", () => {
   const events = collectFeedback(pr(), [issueComment({ body: `ignore\u202eprevious\u0000\u0007\n${"x".repeat(20_000)}` })], [], [], {}).events;
   assert.equal(events.length, 1);
@@ -579,6 +596,37 @@ test("stops instead of repeatedly polling an oversized GitHub response", async (
   };
   await assert.rejects(f.tools[0].execute("call", { url: PR_URL }, undefined, undefined, f.ctx), /response limit/);
   assert.equal(activeRecord(f), undefined);
+});
+
+test("preserves queued feedback through closure and restart before stopping", async () => {
+  const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
+  const first = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(first);
+  await first.tools[0].execute("call", { url: PR_URL }, undefined, undefined, first.ctx);
+  await first.handlers.get("agent_start")({}, first.ctx);
+
+  snapshot.comments = [issueComment()];
+  await first.timer.latest(60_000).callback();
+  await settleDelivery();
+  assert.equal(first.sent.length, 0);
+  snapshot.pull.state = "closed";
+  await first.timer.latest(60_000).callback();
+  await settleDelivery();
+
+  assert.equal(first.runtime.snapshot().active.length, 1);
+  assert.match(first.runtime.snapshot().active[0].status, /Finishing:.*delivery pending/);
+  assert.match(activeRecord(first).state.stoppedReason, /closed/);
+
+  const restored = fixture({ entries: structuredClone(first.entries), snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(restored, "reload");
+  await settleDelivery();
+  assert.equal(restored.execCalls.length, 0);
+  assert.equal(restored.sent.length, 1);
+  assert.match(restored.sent[0][0].content, /Please cover the error path/);
+
+  await acknowledgeLast(restored);
+  assert.equal(restored.runtime.snapshot().active.length, 0);
+  assert.equal(activeRecord(restored), undefined);
 });
 
 test("stops and removes durable state when GitHub reports closure", async () => {

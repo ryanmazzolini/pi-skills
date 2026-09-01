@@ -408,6 +408,7 @@ export class PiMonitorsRuntime {
 				deliver: (recordId, notification) => this.deliver(adapterId, recordId, notification),
 				acknowledge: (recordId, message) => this.acknowledge(adapterId, recordId, message),
 				hasDelivered: (recordId, fingerprint) => this.hasDelivered(adapterId, recordId, fingerprint),
+				hasPending: (recordId) => this.hasPending(adapterId, recordId),
 			}),
 			createLease: (options) => {
 				const lease = new FileMonitorLease(options);
@@ -638,6 +639,11 @@ export class PiMonitorsRuntime {
 		const record = this.activeRecords.get(recordId);
 		if (!record || record.adapterId !== adapterId) return false;
 		return fingerprint ? record.deliveredFingerprints.includes(fingerprint) : record.deliveredFingerprints.length > 0;
+	}
+
+	private hasPending(adapterId: string, recordId: string): boolean {
+		const record = this.activeRecords.get(recordId);
+		return record?.adapterId === adapterId && record.pendingNotification !== undefined;
 	}
 
 	private matchesNotification(

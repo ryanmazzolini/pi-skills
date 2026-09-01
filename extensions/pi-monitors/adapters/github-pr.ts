@@ -66,6 +66,7 @@ interface PersistedMonitorState {
 	active: true;
 	pr: PullRequest;
 	seen: string;
+	stoppedReason?: string;
 }
 
 interface DeliveryItem {
@@ -279,7 +280,8 @@ function decodeSeen(value: unknown): Record<string, string> | undefined {
 function isPersistedMonitorState(value: unknown): value is PersistedMonitorState {
 	if (!value || typeof value !== "object") return false;
 	const state = value as Partial<PersistedMonitorState>;
-	return state.version === 1 && state.active === true && isPullRequest(state.pr) && decodeSeen(state.seen) !== undefined;
+	return state.version === 1 && state.active === true && isPullRequest(state.pr) && decodeSeen(state.seen) !== undefined
+		&& (state.stoppedReason === undefined || optionalString(state.stoppedReason, 500) === state.stoppedReason);
 }
 
 function feedbackFromComment(pr: PullRequest, kind: FeedbackKind, raw: RestComment): Feedback | undefined {
@@ -334,16 +336,15 @@ export function collectFeedback(
 	for (const raw of reviewComments) {
 		const base = feedbackFromComment(pr, "review_comment", raw);
 		if (!base) continue;
-		const line = typeof raw.line === "number" && Number.isSafeInteger(raw.line) && raw.line > 0
-			? raw.line
-			: typeof raw.original_line === "number" && Number.isSafeInteger(raw.original_line) && raw.original_line > 0
-				? raw.original_line
-				: undefined;
+		const currentLine = typeof raw.line === "number" && Number.isSafeInteger(raw.line) && raw.line > 0 ? raw.line : undefined;
+		const originalLine = typeof raw.original_line === "number" && Number.isSafeInteger(raw.original_line) && raw.original_line > 0
+			? raw.original_line
+			: currentLine;
 		const event: Feedback = {
 			...base,
 			path: optionalString(raw.path, 1_000),
-			line,
-			fingerprint: hash("review_comment", raw.node_id, raw.id, raw.updated_at, raw.body, raw.path, raw.line, raw.original_line, raw.in_reply_to_id),
+			line: currentLine ?? originalLine,
+			fingerprint: hash("review_comment", raw.node_id, raw.id, raw.updated_at, raw.body, raw.path, originalLine, raw.in_reply_to_id),
 		};
 		if (!hasSeen(seen, event.key, event.fingerprint)) events.push(event);
 	}
@@ -477,7 +478,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			intervalMs: options.pollIntervalMs ?? POLL_INTERVAL_MS,
 			maxBackoffMs: options.maxBackoffMs ?? MAX_BACKOFF_MS,
 			check: (signal) => this.pollAll(signal),
-			canCheck: () => !this.disposed && this.monitors.size > 0,
+			canCheck: () => !this.disposed && this.hasPollableMonitors(),
 			onChange: () => this.notifyChange(),
 			now: this.now,
 			...(options.schedule ? { schedule: options.schedule } : {}),
@@ -494,10 +495,19 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		for (const record of storedRecords.slice(0, MAX_MONITORS)) {
 			const seen = decodeSeen(record.state.seen);
 			if (!seen || record.id !== recordId(record.state.pr)) continue;
-			this.monitors.set(record.id, { recordId: record.id, pr: record.state.pr, seen, pending: new Map() });
+			this.monitors.set(record.id, {
+				recordId: record.id,
+				pr: record.state.pr,
+				seen,
+				pending: new Map(),
+				...(record.state.stoppedReason ? { stoppedReason: record.state.stoppedReason } : {}),
+			});
+		}
+		for (const monitor of [...this.monitors.values()]) {
+			if (monitor.stoppedReason && !this.delivery.hasPending(monitor.recordId)) this.finalizeStop(monitor);
 		}
 		this.notifyChange();
-		if (this.monitors.size > 0) this.pollRestoredMonitors();
+		if (this.hasPollableMonitors()) this.pollRestoredMonitors();
 	}
 
 	private pollRestoredMonitors(): void {
@@ -551,9 +561,17 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		const monitor = [...this.monitors.values()].find((candidateMonitor) => pullRequestKey(candidateMonitor.pr) === prKeys[0]);
 		if (!monitor || !this.delivery.acknowledge(monitor.recordId, message)) return;
 		this.applyDelivered(monitor, candidate.details);
-		this.persist(monitor);
-		this.deliverPending(monitor);
-		this.notifyChange();
+		if (monitor.pending.size > 0) {
+			this.persist(monitor);
+			this.deliverPending(monitor);
+		} else if (!monitor.stoppedReason) {
+			this.persist(monitor);
+		}
+		if (monitor.stoppedReason && monitor.pending.size === 0 && !this.delivery.hasPending(monitor.recordId)) {
+			this.finalizeStop(monitor);
+		} else {
+			this.notifyChange();
+		}
 	}
 
 	async dispose(): Promise<void> {
@@ -570,14 +588,19 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 	snapshot(): { active: readonly MonitorView[]; recent: readonly MonitorView[] } {
 		const active = [...this.monitors.values()].map((monitor): MonitorView => {
 			const pending = monitor.pending.size;
+			const stopping = monitor.stoppedReason !== undefined;
 			return {
 				id: monitor.recordId,
 				kind: "github-pr",
 				label: `${monitor.pr.owner}/${monitor.pr.repo}#${monitor.pr.number}`,
 				lifecycle: "active",
 				health: monitor.lastError ? "degraded" : "healthy",
-				attentionCount: pending,
-				status: pending ? `${pending} feedback item${pending === 1 ? "" : "s"} queued` : monitor.lastError ? "Polling will retry" : "Monitoring for feedback",
+				attentionCount: pending || (this.delivery.hasPending(monitor.recordId) ? 1 : 0),
+				status: stopping
+					? `Finishing: ${monitor.stoppedReason}; feedback delivery pending`
+					: pending
+						? `${pending} feedback item${pending === 1 ? "" : "s"} queued`
+						: monitor.lastError ? "Polling will retry" : "Monitoring for feedback",
 				detail: [
 					`PR: ${monitor.pr.url}`,
 					`Title: ${monitor.pr.title}`,
@@ -597,8 +620,9 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 	}
 
 	async refresh(requestedId?: string): Promise<boolean> {
+		if (requestedId && this.monitors.get(requestedId)?.stoppedReason !== undefined) return false;
 		if (requestedId && !this.monitors.has(requestedId)) return false;
-		if (this.monitors.size === 0) return false;
+		if (!this.hasPollableMonitors()) return false;
 		await this.checkScheduler.start();
 		return true;
 	}
@@ -686,6 +710,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		let highVolume = 0;
 		for (const monitor of [...this.monitors.values()]) {
 			if (signal.aborted || this.disposed) break;
+			if (monitor.stoppedReason) continue;
 			try {
 				await this.pollMonitor(monitor, signal);
 				monitor.lastError = undefined;
@@ -806,18 +831,39 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			active: true,
 			pr: monitor.pr,
 			seen: encodeSeen(monitor.seen),
+			...(monitor.stoppedReason ? { stoppedReason: monitor.stoppedReason } : {}),
 		});
 	}
 
 	private stopMonitor(monitor: Monitor, reason: string, notify: boolean): void {
 		if (this.monitors.get(monitor.recordId) !== monitor) return;
+		if (notify) {
+			this.deliverPending(monitor);
+			if (monitor.pending.size > 0 || this.delivery.hasPending(monitor.recordId)) {
+				monitor.stoppedReason = reason;
+				this.persist(monitor);
+				this.ctx?.ui.notify(`Stopped monitoring ${pullRequestKey(monitor.pr)}: ${reason}`, "warning");
+				if (!this.hasPollableMonitors()) this.checkScheduler.stop();
+				this.notifyChange();
+				return;
+			}
+		}
 		monitor.stoppedReason = reason;
+		if (notify) this.ctx?.ui.notify(`Stopped monitoring ${pullRequestKey(monitor.pr)}: ${reason}`, "warning");
+		this.finalizeStop(monitor);
+	}
+
+	private finalizeStop(monitor: Monitor): void {
+		if (this.monitors.get(monitor.recordId) !== monitor) return;
 		this.stateStore.remove(monitor.recordId);
 		this.monitors.delete(monitor.recordId);
 		monitor.pending.clear();
-		if (notify) this.ctx?.ui.notify(`Stopped monitoring ${pullRequestKey(monitor.pr)}: ${reason}`, "warning");
-		if (this.monitors.size === 0) this.checkScheduler.stop();
+		if (!this.hasPollableMonitors()) this.checkScheduler.stop();
 		this.notifyChange();
+	}
+
+	private hasPollableMonitors(): boolean {
+		return [...this.monitors.values()].some((monitor) => monitor.stoppedReason === undefined);
 	}
 
 	private notifyChange(): void {
