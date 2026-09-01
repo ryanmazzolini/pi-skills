@@ -256,6 +256,25 @@ test("detail emits refresh, action, run, and back intents", () => {
   assert.deepEqual(back, [{ kind: "back" }]);
 });
 
+test("detail run selection stays visible inside the capped viewport", () => {
+  const view = harness(40);
+  const recentRuns = Array.from({ length: 20 }, (_, index) => run({
+    runId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    reason: `receipt-${String(index + 1).padStart(2, "0")}`,
+  }));
+  const current = job({ recentRuns });
+  const outcomes = [];
+  const component = new SchedulerJobDetailComponent(current, "Definition", view.tui, theme, (result) => outcomes.push(result));
+  component.handleInput("\t");
+  for (let index = 1; index < recentRuns.length; index++) component.handleInput("j");
+
+  const rendered = component.render(120).join("\n");
+  assert.match(rendered, /›.*receipt-20/);
+  assert.doesNotMatch(rendered, /receipt-01/);
+  component.handleInput("\r");
+  assert.deepEqual(outcomes, [{ kind: "run", id: current.id, runId: recentRuns.at(-1).runId }]);
+});
+
 test("detail scroll keys follow content direction and End reaches the bottom", () => {
   const view = harness(12);
   const definition = Array.from({ length: 20 }, (_, index) => `definition line ${String(index + 1).padStart(2, "0")}`).join("\n");
