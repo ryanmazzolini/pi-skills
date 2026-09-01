@@ -23,7 +23,7 @@ Decide whether the changes belong in one commit or several. Draft a Conventional
 
 Give every non-trivial commit a human-readable body that lets a reviewer understand the result without reopening the diff. Keep it proportional to the change. A trivial commit may omit the body.
 
-Write the body about the result, not the process. Explain why the result matters, what changed, and any relevant trade-offs, compatibility, risks, or verification. Do not describe the conversation, prompting, agent workflow, or how the change was produced.
+Lead the body with the resulting behavior or operational result. Then explain what changed, what happened before, why it was a problem, and how the implementation produces the result. When correctness depends on a failure, rollback, or retry path, name enough of that path to make the causal chain clear. Include relevant trade-offs, compatibility, risks, or verification. Do not describe the conversation, prompting, agent workflow, or how the change was produced.
 
 Record the body with multiple `-m` flags or an editor.
 
