@@ -14,7 +14,7 @@ description: Create or update a draft pull request from the current branch. Use 
 5. Understand why the change exists. If the diff and commits do not explain it, read the related issue or work item. Identify what happened before, why it was a problem, and what happens now.
 6. Draft the title and body using the guidance below. Follow the writing guidance in the active project and user instructions.
 7. Show the full title and body, base branch, review evidence, and validation status. End the response by asking for confirmation or edits; do not stop after presenting the draft or status.
-8. After explicit approval, push if needed and create or update the PR. Create new PRs as drafts. Show the PR URL and offer next steps.
+8. After explicit approval, push if needed and create or update the PR. Create new PRs as drafts. After a successful create or update, call `monitor_github_pr` with the canonical PR URL when the tool is available. Then show the PR URL and offer next steps.
 
 ## Scope
 
