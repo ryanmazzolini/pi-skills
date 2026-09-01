@@ -468,6 +468,50 @@ test("active stores persist bounded adapter state and roll back failed writes", 
   subject.pi.appendEntry = previousAppend;
 });
 
+test("purges durable records that the current adapter version cannot load", async () => {
+  let firstStore;
+  const first = fixture([{
+    id: "versioned",
+    bind(_pi, services) {
+      firstStore = services.createActiveStore({ version: 1, decodeState: (value) => value });
+      return {
+        async startSession() {}, async rebindBranch() {}, async messageEnded() {}, async dispose() {},
+        snapshot: () => ({ active: [], recent: [] }), subscribe: () => () => undefined,
+        async refresh() { return false; }, async stop() { return false; },
+      };
+    },
+  }]);
+  const firstCtx = {
+    cwd: "/work",
+    sessionManager: { getBranch: () => first.entries },
+    ui: { theme: { fg: (_color, text) => text }, setStatus() {} },
+  };
+  await first.handlers.get("session_start")({}, firstCtx);
+  firstStore.save("versioned:old", { value: 1 });
+
+  let loaded;
+  const restored = fixture([{
+    id: "versioned",
+    bind(_pi, services) {
+      const store = services.createActiveStore({ version: 2, decodeState: (value) => value });
+      return {
+        async startSession() { loaded = store.load(); }, async rebindBranch() {}, async messageEnded() {}, async dispose() {},
+        snapshot: () => ({ active: [], recent: [] }), subscribe: () => () => undefined,
+        async refresh() { return false; }, async stop() { return false; },
+      };
+    },
+  }]);
+  const restoredCtx = {
+    cwd: "/work",
+    sessionManager: { getBranch: () => [...first.entries, ...restored.entries] },
+    ui: { theme: { fg: (_color, text) => text }, setStatus() {} },
+  };
+  await restored.handlers.get("session_start")({}, restoredCtx);
+
+  assert.deepEqual(loaded, []);
+  assert.deepEqual(restored.entries.at(-1).data.active, []);
+});
+
 test("delivery persists a receipt before sending and deduplicates acknowledgement", async () => {
   let store;
   let delivery;
