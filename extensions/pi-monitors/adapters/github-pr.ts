@@ -27,6 +27,7 @@ const MAX_ENCODED_SEEN_BYTES = 48 * 1024;
 const MAX_DECODED_SEEN_BYTES = 512 * 1024;
 const MAX_MONITORS = 10;
 const HIGH_VOLUME_FEEDBACK = 300;
+const CLOSED_REASON = "GitHub reports that it is closed";
 
 type FeedbackKind = "comment" | "review" | "review_comment";
 
@@ -479,7 +480,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			intervalMs: options.pollIntervalMs ?? POLL_INTERVAL_MS,
 			maxBackoffMs: options.maxBackoffMs ?? MAX_BACKOFF_MS,
 			check: (signal) => this.pollAll(signal),
-			canCheck: () => !this.disposed && this.hasPollableMonitors(),
+			canCheck: () => !this.disposed && this.hasCheckableMonitors(),
 			onChange: () => this.notifyChange(),
 			now: this.now,
 			...(options.schedule ? { schedule: options.schedule } : {}),
@@ -506,10 +507,12 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			});
 		}
 		for (const monitor of [...this.monitors.values()]) {
-			if (monitor.stoppedReason && !this.delivery.hasPending(monitor.recordId)) this.finalizeStop(monitor, true);
+			if (monitor.stoppedReason && !this.delivery.hasPending(monitor.recordId) && monitor.stoppedReason !== CLOSED_REASON) {
+				this.finalizeStop(monitor, true);
+			}
 		}
 		this.notifyChange();
-		if (this.hasPollableMonitors()) this.pollRestoredMonitors();
+		if (this.hasCheckableMonitors()) this.pollRestoredMonitors();
 	}
 
 	private pollRestoredMonitors(): void {
@@ -563,14 +566,11 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		const monitor = [...this.monitors.values()].find((candidateMonitor) => pullRequestKey(candidateMonitor.pr) === prKeys[0]);
 		if (!monitor || !this.delivery.acknowledge(monitor.recordId, message)) return;
 		this.applyDelivered(monitor, candidate.details);
-		if (monitor.pending.size > 0) {
-			this.persist(monitor);
-			this.deliverPending(monitor);
-		} else if (!monitor.stoppedReason) {
-			this.persist(monitor);
-		}
+		this.persist(monitor);
+		if (monitor.pending.size > 0) this.deliverPending(monitor);
 		if (monitor.stoppedReason && monitor.pending.size === 0 && !this.delivery.hasPending(monitor.recordId)) {
-			this.finalizeStop(monitor, true);
+			if (monitor.stoppedReason === CLOSED_REASON) this.pollRestoredMonitors();
+			else this.finalizeStop(monitor, true);
 		} else {
 			this.notifyChange();
 		}
@@ -712,13 +712,14 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		let highVolume = 0;
 		for (const monitor of [...this.monitors.values()]) {
 			if (signal.aborted || this.disposed) break;
-			if (monitor.stoppedReason) continue;
+			const finalDrain = this.needsFinalDrain(monitor);
+			if (monitor.stoppedReason && !finalDrain) continue;
 			try {
-				await this.pollMonitor(monitor, signal);
+				await this.pollMonitor(monitor, signal, finalDrain);
 				monitor.lastError = undefined;
 			} catch (error) {
 				if (signal.aborted) break;
-				if (error instanceof FeedbackLimitError) {
+				if (error instanceof FeedbackLimitError && !finalDrain) {
 					this.stopMonitor(monitor, error.message, true);
 					continue;
 				}
@@ -735,10 +736,11 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		return { ok: true };
 	}
 
-	private async pollMonitor(monitor: Monitor, signal: AbortSignal): Promise<void> {
+	private async pollMonitor(monitor: Monitor, signal: AbortSignal, finalDrain = false): Promise<void> {
+		const remainsCurrent = () => finalDrain ? this.needsFinalDrain(monitor) : this.isPollable(monitor);
 		const base = `repos/${monitor.pr.owner}/${monitor.pr.repo}`;
 		const pull = await this.execJson("gh", ["api", "--hostname", "github.com", `${base}/pulls/${monitor.pr.number}`], "GitHub PR state", signal);
-		if (!this.isPollable(monitor)) return;
+		if (!remainsCurrent()) return;
 		if (!pull || typeof pull !== "object") throw new Error("GitHub returned malformed pull request state");
 		const returnedNumber = (pull as RestPull).number;
 		const returnedUrl = optionalString((pull as RestPull).html_url);
@@ -749,6 +751,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			} catch {}
 		}
 		if (returnedNumber !== monitor.pr.number || !returnedUrlMatches) {
+			if (finalDrain) throw new Error("GitHub returned a different pull request");
 			this.stopMonitor(monitor, "GitHub returned a different pull request", true);
 			return;
 		}
@@ -757,13 +760,13 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		const titleChanged = Boolean(title) && title !== monitor.pr.title;
 		let remaining = MAX_SEEN;
 		const comments = await this.fetchCollection<RestComment>(`${base}/issues/${monitor.pr.number}/comments`, "conversation comments", remaining, signal);
-		if (!this.isPollable(monitor)) return;
+		if (!remainsCurrent()) return;
 		remaining -= comments.length;
 		const reviews = await this.fetchCollection<RestReview>(`${base}/pulls/${monitor.pr.number}/reviews`, "reviews", remaining, signal);
-		if (!this.isPollable(monitor)) return;
+		if (!remainsCurrent()) return;
 		remaining -= reviews.length;
 		const reviewComments = await this.fetchCollection<RestReviewComment>(`${base}/pulls/${monitor.pr.number}/comments`, "review comments", remaining, signal);
-		if (!this.isPollable(monitor)) return;
+		if (!remainsCurrent()) return;
 		if (titleChanged) monitor.pr = { ...monitor.pr, title };
 		monitor.highVolume = comments.length + reviews.length + reviewComments.length > HIGH_VOLUME_FEEDBACK;
 		const collected = collectFeedback(monitor.pr, comments, reviews, reviewComments, monitor.seen);
@@ -773,8 +776,13 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			changed = true;
 		}
 		for (const event of collected.events) monitor.pending.set(event.key, event);
-		if (!open) {
-			this.stopMonitor(monitor, "GitHub reports that it is closed", true);
+		if (finalDrain) {
+			if (changed) this.persist(monitor);
+			this.deliverPending(monitor);
+			if (monitor.pending.size === 0 && !this.delivery.hasPending(monitor.recordId)) this.finalizeStop(monitor, true);
+			else this.notifyChange();
+		} else if (!open) {
+			this.stopMonitor(monitor, CLOSED_REASON, true);
 		} else if (changed) {
 			this.persist(monitor);
 		}
@@ -865,7 +873,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		if (this.monitors.get(monitor.recordId) !== monitor) return;
 		if (recordOutcome) {
 			const completedAt = new Date(this.now()).toISOString();
-			const healthy = monitor.stoppedReason === "stopped by user" || monitor.stoppedReason === "GitHub reports that it is closed";
+			const healthy = monitor.stoppedReason === "stopped by user" || monitor.stoppedReason === CLOSED_REASON;
 			const completed: MonitorView = {
 				id: monitor.recordId,
 				kind: "github-pr",
@@ -889,6 +897,17 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 
 	private isPollable(monitor: Monitor): boolean {
 		return this.monitors.get(monitor.recordId) === monitor && monitor.stoppedReason === undefined;
+	}
+
+	private needsFinalDrain(monitor: Monitor): boolean {
+		return this.monitors.get(monitor.recordId) === monitor
+			&& monitor.stoppedReason === CLOSED_REASON
+			&& monitor.pending.size === 0
+			&& !this.delivery.hasPending(monitor.recordId);
+	}
+
+	private hasCheckableMonitors(): boolean {
+		return [...this.monitors.values()].some((monitor) => monitor.stoppedReason === undefined || this.needsFinalDrain(monitor));
 	}
 
 	private hasPollableMonitors(): boolean {
