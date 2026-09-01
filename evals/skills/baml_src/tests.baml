@@ -216,6 +216,42 @@ testset "contracts" {
         assert.is_true(rejected_shell);
     }
 
+    test "defines the commit-simple scenario in BAML" {
+        let scenarios = CommitSimpleScenarios();
+        let scenario = SelectScenarios(scenarios, "commit-simple-result-first-context")[0];
+        assert.equal(ValidateScenarioSkillTarget(scenarios), "skills/commit/commit-simple/SKILL.md");
+        let commit_call = TestCall(1, "bash", 0);
+        commit_call.command = "git commit -m draft";
+        let assertions = EvaluateHardAssertions(scenario, [commit_call]);
+        let rejected_commit = false;
+        for (let assertion in assertions) {
+            if (assertion.description.includes("does not commit")) {
+                assert.equal(assertion.passed, false);
+                rejected_commit = true;
+            };
+        }
+        ;
+        assert.is_true(rejected_commit);
+    }
+
+    test "defines the commit-pr scenario in BAML" {
+        let scenarios = CommitPrScenarios();
+        let scenario = SelectScenarios(scenarios, "commit-pr-result-first-description")[0];
+        assert.equal(ValidateScenarioSkillTarget(scenarios), "skills/commit/commit-pr/SKILL.md");
+        let create_call = TestCall(1, "bash", 0);
+        create_call.command = "gh pr create --draft";
+        let assertions = EvaluateHardAssertions(scenario, [create_call]);
+        let rejected_creation = false;
+        for (let assertion in assertions) {
+            if (assertion.description.includes("does not create the PR")) {
+                assert.equal(assertion.passed, false);
+                rejected_creation = true;
+            };
+        }
+        ;
+        assert.is_true(rejected_creation);
+    }
+
     test "selects a suite or one globally unique scenario" {
         let suites = ScenarioSuites();
         let hci = SelectScenarioSuites(suites, "hci", null);
@@ -385,6 +421,26 @@ testset "contracts" {
         let results = EvaluateHardAssertions(scenario, [read_call, view_call]);
         assert.is_true(results[2].passed);
         assert.is_true(results[3].passed);
+    }
+
+    test "tool count exclusions distinguish full diffs from stats" {
+        let assertion = ToolCountAssertion {
+            kind: "tool-count",
+            tool: "bash",
+            commandSegmentIncludes: "git diff main...HEAD",
+            commandSegmentExcludes: "--stat",
+            min: 1,
+            description: "The agent inspects the full branch diff.",
+        };
+        let stat_call = TestCall(1, "bash", 0);
+        stat_call.command = "git diff main...HEAD --stat";
+        let full_call = TestCall(2, "bash", 0);
+        full_call.command = "git diff main...HEAD";
+        let combined_call = TestCall(3, "bash", 0);
+        combined_call.command = "git diff main...HEAD --stat && git diff main...HEAD";
+        assert.is_true(!EvaluateToolCount(assertion, [stat_call]).passed);
+        assert.is_true(EvaluateToolCount(assertion, [full_call]).passed);
+        assert.is_true(EvaluateToolCount(assertion, [combined_call]).passed);
     }
 
     test "publication command allowlist rejects alternate and compound mutations" {
