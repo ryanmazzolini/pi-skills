@@ -216,6 +216,21 @@ testset "contracts" {
         assert.is_true(rejected_shell);
     }
 
+    test "defines progressively disclosed architecture scenarios" {
+        let scenarios = ArchitectureScenarios();
+        let data_structure = SelectScenarios(scenarios, "architecture-compounding-data-representation")[0];
+        let other_engine = SelectScenarios(scenarios, "architecture-non-postgresql-concurrency")[0];
+        let postgresql = SelectScenarios(scenarios, "architecture-postgresql-lock-convoy")[0];
+        assert
+            .equal(
+                ValidateScenarioSkillTarget(scenarios),
+                "skills/architecture/architecture/SKILL.md",
+            );
+        assert.is_true(LoadSkillText(data_structure).includes("Green feature tests prove behavior"));
+        assert.is_true(!LoadSkillText(other_engine).includes("PostgreSQL"));
+        assert.is_true(LoadSkillText(postgresql).includes("PostgreSQL Concurrency Sources"));
+    }
+
     test "selects a suite or one globally unique scenario" {
         let suites = ScenarioSuites();
         let hci = SelectScenarioSuites(suites, "hci", null);

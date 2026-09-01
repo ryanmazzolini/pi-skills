@@ -1,0 +1,302 @@
+function ArchitectureScenarios() -> Scenario[] {
+    [
+        Scenario {
+            id: "architecture-compounding-data-representation",
+            title: "Challenges a passing but increasingly incoherent representation",
+            skillPath: "skills/architecture/architecture/SKILL.md",
+            skillReferences: ["skills/architecture/architecture/references/data-structures.md"],
+            turns: [
+                "Review the representation for the next reservation feature before implementation. Read requirements.md and current-model.md. Recommend one direction, compare credible alternatives, and explain the important trade-offs. Do not edit files.",
+            ],
+            files: {
+                "requirements.md": "# Reservation requirements\n\nThe service sells individually identified seats and general-admission sections. A customer can hold several seats or a quantity from one section for five minutes, then purchase or release the whole hold. Availability lookup is the hottest read. Expiry and purchase must not make inventory available twice. The expected venue has 80,000 seats and up to 20,000 active holds during a popular sale.",
+                "current-model.md": "# Current model\n\nThe process keeps `availableSeatIds`, `heldSeatIds`, and `soldSeatIds` as separate mutable sets. A second map stores each hold with copied seat IDs and an expiry. General-admission availability is another mutable counter, while holds copy their reserved quantity. Every feature test passes. Adding group holds now requires updating several sets, counters, and hold records together, and interrupted cleanup can leave a seat both available and held.",
+            },
+            searchResponses: [],
+            fetchResponses: {},
+            bashResponses: [],
+            maxToolCalls: 8,
+            hardAssertions: [
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "read",
+                    argumentIncludes: "requirements.md",
+                    min: 1,
+                    description: "The agent reads the required operations and scale before choosing a representation.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "read",
+                    argumentIncludes: "current-model.md",
+                    min: 1,
+                    description: "The agent inspects the passing but duplicated current representation.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "web_search",
+                    max: 0,
+                    description: "The local representation evidence is sufficient.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "fetch_content",
+                    max: 0,
+                    description: "The local representation evidence is sufficient.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "edit",
+                    max: 0,
+                    description: "The agent stops at the representation decision.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "write",
+                    max: 0,
+                    description: "The agent does not create an implementation before approval.",
+                },
+            ],
+            semanticCriteria: [
+                SemanticCriterion {
+                    id: "compare-credible-representations",
+                    description: "Compares at least two representations that could reasonably win, using ordinary availability lookup and the hardest important purchase, release, or expiry operation rather than presenting one predetermined implementation.",
+                },
+                SemanticCriterion {
+                    id: "make-authority-and-invalid-states-explicit",
+                    description: "Recommends one authoritative representation for seat or quantity state and explains how it prevents or detects duplicated availability, partial hold transitions, and other invalid states.",
+                },
+                SemanticCriterion {
+                    id: "use-access-patterns-and-realistic-scale",
+                    description: "Grounds the recommendation in the hot availability read, required mutations, atomic whole-hold transitions, and supplied venue and hold scale; it does not rely on passing tests as proof that the current representation is sound.",
+                },
+            ],
+        },
+        Scenario {
+            id: "architecture-non-postgresql-concurrency",
+            title: "Uses the deployed relational engine without importing another engine's semantics",
+            skillPath: "skills/architecture/architecture/SKILL.md",
+            skillReferences: ["skills/architecture/architecture/references/relational-databases/concurrency.md"],
+            turns: [
+                "Review this relational concurrency change before implementation. Read database.md and writers.md, retrieve the authoritative engine, framework, and driver documentation needed for exact behavior, and compare at least two credible coordination strategies before recommending one direction with validation. Do not edit files.",
+            ],
+            files: {
+                "database.md": "# Database runtime\n\nProduction uses MySQL 8.4 with InnoDB, Rails 8.1, and the mysql2 driver. The application pool has 20 connections shared by request and job workers. No engine-specific architecture reference exists in the loaded skill.",
+                "writers.md": "# Competing writers\n\nThe checkout request locks an order, calls the payment service, then updates inventory. The stock-adjustment job locks inventory, recalculates availability, then updates the order. Production has observed deadlock retries and pool checkout delay during promotions. Both paths retry once in different layers. The intended invariant is that a completed order and decremented inventory become visible together.",
+            },
+            searchResponses: [
+                "Source-discovery results only. Read the matching official MySQL 8.4, Rails, and driver pages before relying on exact behavior:\n1. https://dev.mysql.com/doc/refman/8.4/en/innodb-locking.html — InnoDB locking.\n2. https://dev.mysql.com/doc/refman/8.4/en/innodb-deadlocks.html — InnoDB deadlocks.\n3. https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html — InnoDB isolation levels.\n4. https://api.rubyonrails.org/classes/ActiveRecord/Transactions/ClassMethods.html — Active Record transactions.\n5. https://github.com/brianmario/mysql2#readme — mysql2 driver documentation.",
+            ],
+            fetchResponses: {
+                "https://dev.mysql.com/doc/refman/8.4/en/innodb-locking.html": "Official MySQL 8.4 reference: InnoDB locking behavior depends on statement type, indexes, and isolation level. Consult the documented lock types and search behavior for the exact statements.",
+                "https://dev.mysql.com/doc/refman/8.4/en/innodb-locking-reads.html": "Official MySQL 8.4 reference: locking reads and their transaction requirements are defined here.",
+                "https://dev.mysql.com/doc/refman/8.4/en/innodb-deadlocks.html": "Official MySQL 8.4 reference: transactions should use a consistent operation order, remain small and short, and handle a deadlock victim by retrying the complete transaction.",
+                "https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html": "Official MySQL 8.4 reference: InnoDB supports documented transaction isolation levels whose consistent-read and locking-read behavior must be evaluated for the deployed level.",
+                "https://guides.rubyonrails.org/active_record_transactions.html": "Official Rails guide: transaction blocks, rollback behavior, and nested transaction behavior are defined here.",
+                "https://guides.rubyonrails.org/active_record_querying.html#locking-records": "Official Rails guide: Active Record locking queries and with_lock are defined here.",
+                "https://api.rubyonrails.org/classes/ActiveRecord/Transactions/ClassMethods.html": "Official Rails API: transaction boundaries, rollback, and nested transaction behavior are defined here.",
+                "https://github.com/brianmario/mysql2#readme": "Official mysql2 repository documentation: adapter behavior and supported options are documented here; verify concrete error mapping in the installed version.",
+            },
+            bashResponses: [],
+            maxToolCalls: 12,
+            hardAssertions: [
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "read",
+                    argumentIncludes: "database.md",
+                    min: 1,
+                    description: "The agent identifies the deployed engine, version, framework, driver, and pool.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "read",
+                    argumentIncludes: "writers.md",
+                    min: 1,
+                    description: "The agent inspects every supplied writer before recommending coordination.",
+                },
+                ToolBeforeAssertion {
+                    kind: "tool-before",
+                    tool: "read",
+                    beforeTools: ["web_search", "fetch_content"],
+                    description: "The agent reads local engine and writer evidence before external retrieval.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "web_search",
+                    max: 3,
+                    description: "The agent keeps source discovery bounded.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "fetch_content",
+                    argumentIncludes: "dev.mysql.com/doc/refman/8.4",
+                    min: 1,
+                    description: "The agent reads version-matched official engine documentation.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "fetch_content",
+                    argumentIncludes: "api.rubyonrails.org",
+                    min: 1,
+                    description: "The agent verifies framework transaction behavior separately.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "fetch_content",
+                    argumentIncludes: "github.com/brianmario/mysql2",
+                    min: 1,
+                    description: "The agent verifies deployed-driver behavior separately.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "edit",
+                    max: 0,
+                    description: "The agent stops at the concurrency decision.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "write",
+                    max: 0,
+                    description: "The agent does not implement before approval.",
+                },
+            ],
+            semanticCriteria: [
+                SemanticCriterion {
+                    id: "stay-with-the-deployed-engine",
+                    description: "Uses MySQL 8.4 and its official sources for exact semantics without introducing PostgreSQL settings, syntax, diagnostics, or error behavior.",
+                },
+                SemanticCriterion {
+                    id: "trace-invariant-order-and-resource-cost",
+                    description: "Makes the order and inventory invariant explicit, identifies the opposing lock order and payment call inside the transaction, and accounts for deadlock retries and shared-pool consumption.",
+                },
+                SemanticCriterion {
+                    id: "recommend-bounded-coordination-and-validation",
+                    description: "Compares credible coordination options, recommends one direction with a single retry owner after rollback, and proposes deterministic separate-connection coverage plus relevant pool or contention observation.",
+                },
+            ],
+        },
+        Scenario {
+            id: "architecture-postgresql-lock-convoy",
+            title: "Bounds a PostgreSQL lock convoy through versioned authority",
+            skillPath: "skills/architecture/architecture/SKILL.md",
+            skillReferences: [
+                "skills/architecture/architecture/references/system-review.md",
+                "skills/architecture/architecture/references/relational-databases/concurrency.md",
+                "skills/architecture/architecture/references/relational-databases/postgresql/concurrency.md",
+            ],
+            turns: [
+                "Review this production lock convoy and recommend an architecture direction before implementation. Read runtime.md, transaction-flows.md, and incident.md. Retrieve authoritative documentation for the deployed PostgreSQL, framework, and driver versions for any exact semantics you rely on. Include the failure-path tests needed to prove completion state rolls back on contention and a later retry succeeds after the blocker clears. Do not edit files.",
+            ],
+            files: {
+                "runtime.md": "# Runtime\n\nProduction uses PostgreSQL 16, Rails 8.1, the ruby-pg 1.6 driver, and Sidekiq. Request and background workers share a 25-connection application pool. The reconciliation queue can run 20 jobs concurrently.",
+                "transaction-flows.md": "# Transaction flows\n\nEach message is processed inside a transaction that records completion. An outer application-named lock suppresses another job for the same message key. Reconciliation then discovers a connected group of receipt and transfer rows and takes a second application-named lock for every discovered ID before updating those rows. Repair callers use the same reconciliation service and are allowed to wait. A nested movement path can discover another receipt after the first lock set was chosen.",
+                "incident.md": "# Incident\n\nTen background sessions waited on one reconciliation lock while retaining application connections. The holder was idle in its open transaction for 24 minutes. Request traffic then timed out acquiring connections. Retrying the inner lock error could be mistaken for successful same-key duplicate suppression, leaving message-completion behavior unclear.",
+            },
+            searchResponses: [
+                "Source-discovery results only. PostgreSQL sources are already routed by the loaded source map. Framework and driver behavior are documented at:\n1. https://api.rubyonrails.org/classes/ActiveRecord/Transactions/ClassMethods.html — Active Record transactions.\n2. https://api.rubyonrails.org/classes/ActiveRecord/ConnectionAdapters/ConnectionPool.html — connection-pool ownership.\n3. https://api.rubyonrails.org/classes/ActiveRecord/Locking/Pessimistic.html — pessimistic locking.\n4. https://github.com/ged/ruby-pg#readme — ruby-pg driver documentation.",
+            ],
+            fetchResponses: {
+                "https://www.postgresql.org/docs/16/explicit-locking.html": "Official PostgreSQL 16 documentation: locks, advisory-lock scope, deadlock behavior, and lock lifetime are defined here. Applications acquiring several locks should use a consistent order and avoid long transactions.",
+                "https://www.postgresql.org/docs/16/transaction-iso.html": "Official PostgreSQL 16 documentation: isolation levels and serialization failures are defined here.",
+                "https://www.postgresql.org/docs/16/runtime-config-client.html": "Official PostgreSQL 16 documentation: statement, lock, and idle-in-transaction timeout settings have distinct scope and behavior. Verify role and session configuration before recommending values.",
+                "https://www.postgresql.org/docs/16/sql-select.html": "Official PostgreSQL 16 documentation: locking-clause behavior, including NOWAIT and SKIP LOCKED, is defined here and must be chosen according to the caller's consistency contract.",
+                "https://www.postgresql.org/docs/16/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS": "Official PostgreSQL 16 documentation: advisory-lock functions and session or transaction scope are defined here.",
+                "https://www.postgresql.org/docs/16/view-pg-locks.html": "Official PostgreSQL 16 documentation: pg_locks exposes current lock state and documented wait relationships.",
+                "https://www.postgresql.org/docs/16/monitoring-stats.html#MONITORING-PG-STAT-ACTIVITY-VIEW": "Official PostgreSQL 16 documentation: pg_stat_activity exposes backend transaction and wait state.",
+                "https://www.postgresql.org/docs/16/errcodes-appendix.html": "Official PostgreSQL 16 documentation: SQLSTATE meanings are defined here for driver and framework mapping.",
+                "https://guides.rubyonrails.org/active_record_transactions.html": "Official Rails guide: transaction blocks, rollback behavior, and nested transactions are defined here.",
+                "https://api.rubyonrails.org/classes/ActiveRecord/Transactions/ClassMethods.html": "Official Rails API documentation: transaction boundaries, rollback, and nested transactions are defined here.",
+                "https://api.rubyonrails.org/classes/ActiveRecord/ConnectionAdapters/ConnectionPool.html": "Official Rails API documentation: Active Record connection-pool ownership and checkout behavior are defined here.",
+                "https://api.rubyonrails.org/classes/ActiveRecord/Locking/Pessimistic.html": "Official Rails API documentation: Active Record exposes pessimistic locking through locking query clauses and with_lock. Adapter exceptions and transaction behavior must be verified separately.",
+                "https://github.com/ged/ruby-pg#readme": "Official ruby-pg repository documentation: driver behavior and error exposure are documented here; verify concrete mappings in the installed version.",
+            },
+            bashResponses: [],
+            maxToolCalls: 12,
+            hardAssertions: [
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "read",
+                    argumentIncludes: "runtime.md",
+                    min: 1,
+                    description: "The agent identifies the deployed database version and shared resource budget.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "read",
+                    argumentIncludes: "transaction-flows.md",
+                    min: 1,
+                    description: "The agent reads the layered coordination and nested discovery flow.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "read",
+                    argumentIncludes: "incident.md",
+                    min: 1,
+                    description: "The agent grounds the review in observed contention and pool exhaustion.",
+                },
+                ToolBeforeAssertion {
+                    kind: "tool-before",
+                    tool: "read",
+                    beforeTools: ["fetch_content"],
+                    description: "The agent reads local runtime and incident evidence before authoritative source retrieval.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "web_search",
+                    max: 1,
+                    description: "The agent uses at most one discovery pass for framework sources not listed in the engine map.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "fetch_content",
+                    argumentIncludes: "postgresql.org/docs/16",
+                    min: 1,
+                    description: "The agent retrieves documentation for the deployed PostgreSQL major version.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "fetch_content",
+                    argumentIncludes: "api.rubyonrails.org",
+                    min: 1,
+                    description: "The agent verifies framework transaction and pool behavior separately.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "fetch_content",
+                    argumentIncludes: "github.com/ged/ruby-pg",
+                    min: 1,
+                    description: "The agent verifies deployed-driver behavior separately.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "edit",
+                    max: 0,
+                    description: "The agent stops at the architecture recommendation.",
+                },
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "write",
+                    max: 0,
+                    description: "The agent does not implement before approval.",
+                },
+            ],
+            semanticCriteria: [
+                SemanticCriterion {
+                    id: "use-versioned-semantic-authority",
+                    description: "Bases exact PostgreSQL claims on supplied PostgreSQL 16 documentation and treats Rails or adapter behavior as a separate authority rather than relying on generic SQL intuition or current-version assumptions.",
+                },
+                SemanticCriterion {
+                    id: "explain-convoy-and-coordination-scope",
+                    description: "Explains how layered locks, expanding discovery, long transaction lifetime, and blocking waiters amplify into shared-pool exhaustion; it compares credible coordination scopes rather than prescribing one lock primitive without analysis.",
+                },
+                SemanticCriterion {
+                    id: "separate-contention-duplicate-and-retry-semantics",
+                    description: "Keeps contention distinct from successful duplicate suppression, requires rollback before a single bounded retry owner, and preserves atomic message-completion behavior.",
+                },
+                SemanticCriterion {
+                    id: "bound-and-verify-the-failure-path",
+                    description: "Defines wait and transaction bounds by caller type, includes containment and pool or lock observability, and proposes deterministic separate-connection coverage for contention, rollback, and success after release.",
+                },
+            ],
+        },
+    ]
+}

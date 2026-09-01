@@ -2,6 +2,7 @@ function ScenarioSuites() -> ScenarioSuite[] {
     [
         ScenarioSuite { id: "research", scenarios: ResearchScenarios() },
         ScenarioSuite { id: "hci", scenarios: HciScenarios() },
+        ScenarioSuite { id: "architecture", scenarios: ArchitectureScenarios() },
     ]
 }
 
