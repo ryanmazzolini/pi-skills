@@ -12,7 +12,7 @@ Review in this order:
 4. **Capacity:** what changes at 10× load, data volume, tenancy, or team usage, and which limit is evidenced now?
 5. **Complexity:** can deletion, simplification, or a proven technology solve the problem before another moving part is added?
 
-Make shared service and API contracts explicit and versioned when compatibility depends on them. Add observability where failures would otherwise be silent or slow to diagnose. When relational transactions or lock contention are material, read [relational-databases/concurrency.md](relational-databases/concurrency.md).
+Make shared service and API contracts explicit and versioned when compatibility depends on them. Add observability where failures would otherwise be silent or slow to diagnose.
 
 When reliability or operational trade-offs need external evidence, retrieve current guidance from the [AWS Well-Architected Reliability Pillar](https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/welcome.html) and relevant [Google SRE books](https://sre.google/books/). Use them as review lenses; use authoritative platform and engine documentation for exact semantics.
 
