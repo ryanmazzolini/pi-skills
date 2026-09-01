@@ -20,7 +20,7 @@ Use the smallest visual that fits the behavior:
 - a branch diagram for decisions, retries, or failures;
 - example rows for a query or data shape.
 
-Keep one reading direction, label arrows with actions or data, and omit elements that do not help answer the question. Follow every visual with a prose interpretation that preserves its meaning without the spatial layout. Keep simple visuals inline. When spatial detail cannot stay legible inline, use one self-contained HTML file with inline CSS and SVG; use tldraw only when the reader needs to rearrange or explore the space.
+Keep one reading direction, label arrows with actions or data, and omit elements that do not help answer the question. Follow every visual with a prose interpretation that preserves its meaning without the spatial layout. Keep tiny linear traces inline as text. Prefer Mermaid for multi-node sequence, state, branch, or relationship diagrams when the output surface renders it. When Mermaid is unavailable, preserve the same view as a compact text sketch. When Mermaid cannot express the spatial detail legibly, use one self-contained HTML file with inline CSS and SVG; use tldraw only when the reader needs to rearrange or explore the space.
 
 Use literal, concrete language and one stable term for each concept. Define necessary jargon rather than replacing precise terms with vague ones. Use an analogy only after the literal explanation, and state where it stops matching. When re-pitching an explanation that did not land, restore the missing context and change the example or visual instead of merely shortening the same answer.
 
