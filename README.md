@@ -129,6 +129,7 @@ The scheduler uses launchd on macOS, systemd user timers on Linux, or `crontab` 
 
 Pi gets a few extras that are not skills:
 
+- `session-id` keeps the active Pi session ID visible in the footer.
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
 - `intercom` provides local peer messaging, capability-gated bounded read-only tails, exact-branch cached and single-use isolated stale-snapshot summaries, and an ephemeral First Mate presence role.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
