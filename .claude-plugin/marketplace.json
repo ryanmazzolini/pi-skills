@@ -50,15 +50,6 @@
       ]
     },
     {
-      "name": "explain",
-      "source": "./skills/explain",
-      "description": "Code explanations with diagrams and analogies",
-      "strict": false,
-      "skills": [
-        "./explain-code"
-      ]
-    },
-    {
       "name": "agent-browser",
       "source": "./skills/agent-browser",
       "description": "Browser automation via the agent-browser CLI",
@@ -70,11 +61,12 @@
     {
       "name": "ai-authoring",
       "source": "./skills/ai-authoring",
-      "description": "Clear human-facing prose and reliable agent instructions",
+      "description": "Clear prose, layered technical explanations, and reliable agent instructions",
       "strict": false,
       "skills": [
         "./clear-writing",
-        "./writing-for-agents"
+        "./writing-for-agents",
+        "./explain-code"
       ]
     },
     {

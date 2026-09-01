@@ -58,6 +58,8 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	assert.match(tools[0].promptGuidelines.join("\n"), /status for the current Pi session ID/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /Prefer durable project or work-item updates/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /use intercom tail with a small limit/);
+	assert.match(tools[0].promptGuidelines.join("\n"), /Missing persisted or durable evidence does not by itself authorize contact/);
+	assert.ok(tools[0].promptGuidelines.includes("When inspecting or reviewing another session, use persisted evidence read-only. Do not send, ask, or reply to that session unless the user explicitly requests contact, or you explain why contact is a last resort and the user approves the specific contact."));
 	assert.match(tools[0].promptGuidelines.join("\n"), /single-use summaryToken/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /do not acknowledge routine updates or receipts/);
 	assert.equal(events.some((event) => event.name === "session_start"), true);
