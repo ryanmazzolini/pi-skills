@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createPiMonitorsExtension } from "../index.ts";
+import { MONITOR_BATCH_MESSAGE_TYPE } from "../types.ts";
 import {
   collectFeedback,
   createGithubPrMonitorAdapter,
@@ -278,6 +279,46 @@ test("supports idempotent registration and many PRs with one polling timer", asy
   assert.equal(f.execCalls.filter((call) => call.args[0] === "pr").length, 2);
   assert.equal(f.timer.timers.filter((timer) => timer.delayMs === 60_000 && !timer.cancelled).length, 1);
   assert.equal(f.runtime.snapshot().active.length, 2);
+});
+
+test("registration cancellation keeps existing monitors scheduled", async () => {
+  const otherUrl = "https://github.com/acme/gadgets/pull/7";
+  let blockPoll = false;
+  let markPollStarted;
+  const pollStarted = new Promise((resolve) => { markPollStarted = resolve; });
+  const f = fixture({
+    pullRequests: new Map([
+      [PR_URL, { number: 42, url: PR_URL, title: "Widgets", state: "OPEN" }],
+      [otherUrl, { number: 7, url: otherUrl, title: "Gadgets", state: "OPEN" }],
+    ]),
+    snapshots: new Map([
+      [PR_URL, { pull: { state: "open", title: "Widgets" }, comments: [], reviews: [], reviewComments: [] }],
+      [otherUrl, { pull: { state: "open", title: "Gadgets" }, comments: [], reviews: [], reviewComments: [] }],
+    ]),
+    beforeExec: async (_command, args, options) => {
+      if (!blockPoll || args[0] !== "api" || !args.at(-1).endsWith("repos/acme/widgets/pulls/42")) return;
+      blockPoll = false;
+      markPollStarted();
+      await new Promise((resolve) => {
+        if (options.signal.aborted) resolve();
+        else options.signal.addEventListener("abort", resolve, { once: true });
+      });
+      throw new Error("poll aborted");
+    },
+  });
+  await start(f);
+  await f.runtime.register(PR_URL, f.ctx);
+  blockPoll = true;
+  const controller = new AbortController();
+  const registration = f.runtime.register(otherUrl, f.ctx, controller.signal);
+  await pollStarted;
+  controller.abort();
+  await assert.rejects(registration, /cancelled/);
+  for (let attempt = 0; attempt < 10 && f.runtime.snapshot().active.length !== 1; attempt++) await settleDelivery();
+  await settleDelivery();
+
+  assert.deepEqual(f.runtime.snapshot().active.map((monitor) => monitor.id), ["github-pr:acme/widgets#42"]);
+  assert.equal(f.timer.timers.filter((timer) => timer.delayMs === 60_000 && !timer.cancelled).length, 1);
 });
 
 test("restores monitors and delivered feedback from shared branch state", async () => {
@@ -711,6 +752,65 @@ test("restores every remaining feedback packet before finalizing a closed monito
   assert.equal(deliveredKeys.size, comments.length);
   assert.equal(activeRecord(restored), undefined);
   assert.match(restored.runtime.snapshot().recent[0].status, /closed/);
+});
+
+test("reconciles delivered feedback items before draining a restored closed monitor", async () => {
+  for (const batched of [false, true]) {
+    const original = issueComment();
+    const added = issueComment({
+      id: 102,
+      node_id: "IC_102",
+      body: "New feedback after the durable packet.",
+      updated_at: "2026-08-01T11:05:00Z",
+      html_url: `${PR_URL}#issuecomment-102`,
+    });
+    const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
+    const first = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
+    await start(first);
+    await first.runtime.register(PR_URL, first.ctx);
+    snapshot.comments = [original];
+    snapshot.pull.state = "closed";
+    await first.timer.latest(60_000).callback();
+    await settleDelivery();
+    const delivered = first.sent[0][0];
+    const directEntry = {
+      type: "custom_message",
+      customType: delivered.customType,
+      content: delivered.content,
+      details: delivered.details,
+    };
+    const deliveredEntry = batched ? {
+      type: "custom_message",
+      customType: MONITOR_BATCH_MESSAGE_TYPE,
+      content: "Delivered monitor batch",
+      details: {
+        version: 1,
+        items: [{
+          adapterId: "github-pr",
+          eventId: "github-pr:acme/widgets#42",
+          fingerprint: delivered.details.deliveryId,
+          customType: delivered.customType,
+          content: delivered.content,
+          display: true,
+          details: delivered.details,
+        }],
+      },
+    } : directEntry;
+    const deliveredBranch = [...first.entries, deliveredEntry];
+
+    snapshot.comments = [original, added];
+    const restored = fixture({ entries: deliveredBranch, snapshots: new Map([[PR_URL, snapshot]]) });
+    await start(restored, "reload");
+    await settleDelivery();
+
+    assert.equal(restored.sent.length, 1, batched ? "batch" : "direct");
+    assert.doesNotMatch(restored.sent[0][0].content, /Please cover the error path/);
+    assert.match(restored.sent[0][0].content, /New feedback after the durable packet/);
+    assert.deepEqual(restored.sent[0][0].details.items.map((item) => item.key), ["comment:102"]);
+    await acknowledgeLast(restored);
+    await settleDelivery();
+    assert.equal(restored.runtime.snapshot().active.length, 0);
+  }
 });
 
 test("an in-flight poll cannot recreate a monitor stopped by the user", async () => {

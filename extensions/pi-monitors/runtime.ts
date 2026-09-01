@@ -13,6 +13,7 @@ import {
 import { FILES_CHANGED_EVENT, FilesystemWakeups } from "./filesystem.ts";
 import { FileMonitorLease, type MonitorLease } from "./leases.ts";
 import { RuntimeCheckScheduler, type MonitorCheckScheduler } from "./scheduler.ts";
+import { MONITOR_BATCH_MESSAGE_TYPE } from "./types.ts";
 import type {
 	ActiveMonitorRecord,
 	ActiveMonitorStore,
@@ -28,7 +29,7 @@ import type {
 } from "./types.ts";
 
 const STATUS_ID = "pi-monitors";
-const BATCH_MESSAGE_TYPE = "pi-monitors-notification-batch";
+const BATCH_MESSAGE_TYPE = MONITOR_BATCH_MESSAGE_TYPE;
 const PENDING_DELIVERY_ENTRY_TYPE = "pi-monitors-pending-delivery";
 const MAX_NOTIFICATION_CONTENT_BYTES = 48 * 1024;
 const MAX_NOTIFICATION_DETAILS_BYTES = 64 * 1024;
