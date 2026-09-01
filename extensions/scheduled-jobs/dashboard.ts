@@ -712,7 +712,12 @@ export class SchedulerJobDetailComponent implements Component {
 			],
 			body: (bodyWidth, bodyHeight) => {
 				const lines = body(bodyWidth);
-				const start = this.tab === "runs" ? 0 : Math.min(this.scroll, Math.max(0, lines.length - bodyHeight));
+				const start = this.tab === "runs"
+					? Math.min(
+						Math.max(0, this.selectedRun - Math.floor(bodyHeight / 2)),
+						Math.max(0, lines.length - bodyHeight),
+					)
+					: Math.min(this.scroll, Math.max(0, lines.length - bodyHeight));
 				if (this.tab !== "runs") this.scroll = start;
 				return lines.slice(start, start + bodyHeight);
 			},
