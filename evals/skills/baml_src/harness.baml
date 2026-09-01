@@ -1,7 +1,7 @@
 client<llm> SubjectClient {
     provider: openai-responses,
     options: {
-        model: "gpt-5-mini",
+        model: "gpt-5.6-luna",
         api_key: env.OPENAI_API_KEY,
     },
 }

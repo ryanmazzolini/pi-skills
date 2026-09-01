@@ -131,7 +131,7 @@ function BuildEvalReport(
         skillPath: skill_path,
         scenarioSkillTarget: scenario_skill_target,
         bamlVersion: BamlVersion(),
-        subjectModel: "openai-responses/gpt-5-mini",
+        subjectModel: "openai-responses/gpt-5.6-luna",
         judgeModel: if (skip_judge) {
             null
         } else {
