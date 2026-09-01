@@ -4,6 +4,12 @@ import type { MonitorLease, MonitorLeaseOptions } from "./leases.ts";
 import type { MonitorCheckScheduler, MonitorCheckSchedulerOptions } from "./scheduler.ts";
 
 export const MONITOR_BATCH_MESSAGE_TYPE = "pi-monitors-notification-batch";
+export const MONITOR_ADAPTER_DISCOVERY_EVENT = "pi-monitors:discover-adapters:v1";
+
+export interface PiMonitorAdapterDiscovery {
+	version: 1;
+	register(adapter: unknown): void;
+}
 
 export type MonitorLifecycle = "active" | "completed";
 export type MonitorHealth = "healthy" | "degraded";
