@@ -1,7 +1,7 @@
 client<llm> JudgeClient {
     provider: openai-responses,
     options: {
-        model: "gpt-5",
+        model: "gpt-5.6-terra",
         api_key: env.OPENAI_API_KEY,
     },
 }
