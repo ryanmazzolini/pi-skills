@@ -3,6 +3,7 @@ import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { keyHint, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
+import { MONITOR_BATCH_MESSAGE_TYPE } from "../types.ts";
 import type {
 	ActiveMonitorStore,
 	EventDelivery,
@@ -493,18 +494,21 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		this.monitors.clear();
 		this.recent = [];
 		const storedRecords = [...this.stateStore.load()];
+		const branch = ctx.sessionManager.getBranch();
 		for (const record of storedRecords.slice(MAX_MONITORS)) this.stateStore.remove(record.id);
 		if (storedRecords.length > MAX_MONITORS) ctx.ui.notify(`GitHub PR monitoring restored only the first ${MAX_MONITORS} pull requests`, "warning");
 		for (const record of storedRecords.slice(0, MAX_MONITORS)) {
 			const seen = decodeSeen(record.state.seen);
 			if (!seen || record.id !== recordId(record.state.pr)) continue;
-			this.monitors.set(record.id, {
+			const monitor: Monitor = {
 				recordId: record.id,
 				pr: record.state.pr,
 				seen,
 				pending: new Map(),
 				...(record.state.stoppedReason ? { stoppedReason: record.state.stoppedReason } : {}),
-			});
+			};
+			this.monitors.set(record.id, monitor);
+			if (this.reconcileDeliveredBranch(monitor, branch)) this.persist(monitor);
 		}
 		for (const monitor of [...this.monitors.values()]) {
 			if (monitor.stoppedReason && !this.delivery.hasPending(monitor.recordId) && monitor.stoppedReason !== CLOSED_REASON) {
@@ -694,8 +698,10 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			pending: new Map(),
 		};
 		this.monitors.set(monitor.recordId, monitor);
+		let sharedPollStarted = false;
 		try {
 			this.persist(monitor);
+			sharedPollStarted = true;
 			const outcome = await this.checkScheduler.start(signal);
 			if (signal.aborted || this.disposed) throw new Error("monitor_github_pr registration was cancelled");
 			if (this.monitors.get(monitor.recordId) !== monitor || monitor.stoppedReason) {
@@ -706,6 +712,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			if (this.monitors.get(monitor.recordId) === monitor && !monitor.stoppedReason) {
 				this.stopMonitor(monitor, "registration was cancelled", false);
 			}
+			if (sharedPollStarted && signal.aborted && !this.disposed && this.hasCheckableMonitors()) this.pollRestoredMonitors();
 			if (signal.aborted || this.disposed) throw new Error("monitor_github_pr registration was cancelled");
 			throw error;
 		}
@@ -834,6 +841,37 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			});
 			return;
 		}
+	}
+
+	private reconcileDeliveredBranch(monitor: Monitor, branch: readonly unknown[]): boolean {
+		let changed = false;
+		const reconcile = (value: unknown) => {
+			if (!isMessageDetails(value) || !this.delivery.hasDelivered(monitor.recordId, value.deliveryId)) return;
+			if (!value.items.some((item) => item.prKey === pullRequestKey(monitor.pr)
+				&& !hasSeen(monitor.seen, item.key, item.fingerprint))) return;
+			this.applyDelivered(monitor, value);
+			changed = true;
+		};
+		for (const value of branch) {
+			if (!value || typeof value !== "object") continue;
+			const entry = value as { role?: unknown; type?: unknown; customType?: unknown; details?: unknown };
+			if (entry.role !== "custom" && entry.type !== "custom_message") continue;
+			if (entry.customType === MESSAGE_TYPE) {
+				reconcile(entry.details);
+				continue;
+			}
+			if (entry.customType !== MONITOR_BATCH_MESSAGE_TYPE || !entry.details || typeof entry.details !== "object") continue;
+			const items = (entry.details as { items?: unknown }).items;
+			if (!Array.isArray(items) || items.length > MAX_SEEN) continue;
+			for (const itemValue of items) {
+				if (!itemValue || typeof itemValue !== "object") continue;
+				const item = itemValue as { adapterId?: unknown; eventId?: unknown; customType?: unknown; details?: unknown };
+				if (item.adapterId === ADAPTER_ID && item.eventId === monitor.recordId && item.customType === MESSAGE_TYPE) {
+					reconcile(item.details);
+				}
+			}
+		}
+		return changed;
 	}
 
 	private applyDelivered(monitor: Monitor, details: MessageDetails): void {

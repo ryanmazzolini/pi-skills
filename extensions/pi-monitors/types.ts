@@ -3,6 +3,8 @@ import type { FilesystemWatchOptions } from "./filesystem.ts";
 import type { MonitorLease, MonitorLeaseOptions } from "./leases.ts";
 import type { MonitorCheckScheduler, MonitorCheckSchedulerOptions } from "./scheduler.ts";
 
+export const MONITOR_BATCH_MESSAGE_TYPE = "pi-monitors-notification-batch";
+
 export type MonitorLifecycle = "active" | "completed";
 export type MonitorHealth = "healthy" | "degraded";
 
