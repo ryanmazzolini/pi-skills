@@ -291,7 +291,7 @@ function feedbackFromComment(pr: PullRequest, kind: FeedbackKind, raw: RestComme
 	const updatedAt = optionalString(raw.updated_at) ?? optionalString(raw.created_at) ?? "";
 	return {
 		key: `${kind}:${id}`,
-		fingerprint: hash(kind, raw.node_id, id, updatedAt, raw.body, raw.html_url),
+		fingerprint: hash(kind, raw.node_id, id, raw.body, raw.html_url),
 		kind,
 		prKey: pullRequestKey(pr),
 		pr,
@@ -344,7 +344,7 @@ export function collectFeedback(
 			...base,
 			path: optionalString(raw.path, 1_000),
 			line: currentLine ?? originalLine,
-			fingerprint: hash("review_comment", raw.node_id, raw.id, raw.updated_at, raw.body, raw.path, originalLine, raw.in_reply_to_id),
+			fingerprint: hash("review_comment", raw.node_id, raw.id, raw.body, raw.path, originalLine, raw.in_reply_to_id),
 		};
 		if (!hasSeen(seen, event.key, event.fingerprint)) events.push(event);
 	}

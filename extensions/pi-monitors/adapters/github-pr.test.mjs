@@ -337,29 +337,32 @@ test("a new session starts empty", async () => {
   assert.equal(f.execCalls.length, 0);
 });
 
-test("edited feedback replaces its prior fingerprint", () => {
+test("ignores metadata-only comment touches while preserving body edits", () => {
   const first = collectFeedback(pr(), [issueComment()], [], [], {});
   const seen = { [first.events[0].key]: first.events[0].fingerprint };
   assert.equal(collectFeedback(pr(), [issueComment()], [], [], seen).events.length, 0);
-  const edited = collectFeedback(pr(), [issueComment({ body: "Updated request", updated_at: "2026-08-01T11:05:00Z" })], [], [], seen);
+  const touched = issueComment({ updated_at: "2026-08-01T11:04:00Z" });
+  assert.equal(collectFeedback(pr(), [touched], [], [], seen).events.length, 0);
+  const edited = collectFeedback(pr(), [issueComment({ body: "Updated request" })], [], [], seen);
   assert.equal(edited.events.length, 1);
   assert.equal(edited.events[0].key, first.events[0].key);
   assert.notEqual(edited.events[0].fingerprint, first.events[0].fingerprint);
 });
 
-test("does not redeliver an inline comment when GitHub only remaps its current line", () => {
+test("ignores inline location and timestamp remapping while preserving body edits", () => {
   const original = reviewComment({ line: 18, original_line: 18 });
   const first = collectFeedback(pr(), [], [], [original], {});
   const seen = { [first.events[0].key]: first.events[0].fingerprint };
 
   const remapped = reviewComment({ line: null, original_line: 18 });
   assert.equal(collectFeedback(pr(), [], [], [remapped], seen).events.length, 0);
+  const touched = reviewComment({ line: null, original_line: 18, updated_at: "2026-08-01T11:05:00Z" });
+  assert.equal(collectFeedback(pr(), [], [], [touched], seen).events.length, 0);
 
   const edited = reviewComment({
     line: null,
     original_line: 18,
     body: "Updated inline feedback",
-    updated_at: "2026-08-01T11:10:00Z",
   });
   assert.equal(collectFeedback(pr(), [], [], [edited], seen).events.length, 1);
 });
