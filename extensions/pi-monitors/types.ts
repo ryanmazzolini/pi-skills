@@ -52,6 +52,7 @@ export interface EventDelivery {
 	deliver(recordId: string, notification: EventNotification): boolean;
 	acknowledge(recordId: string, message: unknown): boolean;
 	hasDelivered(recordId: string, fingerprint?: string): boolean;
+	hasPending(recordId: string): boolean;
 }
 
 export interface ActiveMonitorStore<T> {
