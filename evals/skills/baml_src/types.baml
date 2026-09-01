@@ -54,6 +54,7 @@ class ToolCountAssertion {
 class ToolBeforeAssertion {
     kind: "tool-before",
     tool: string,
+    argumentIncludes: string?,
     beforeTools: string[],
     description: string,
 }
