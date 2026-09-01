@@ -926,8 +926,9 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		monitor.highVolume = comments.length + reviews.length + reviewComments.length > HIGH_VOLUME_FEEDBACK;
 		const collected = collectFeedback(monitor.pr, comments, reviews, reviewComments, monitor.seen);
 		let changed = titleChanged;
-		if (finalDrain && outcome && outcome !== terminalOutcome(monitor.stoppedReason)) {
-			monitor.stoppedReason = terminalReason(outcome);
+		if (finalDrain && outcome !== terminalOutcome(monitor.stoppedReason)) {
+			if (outcome) monitor.stoppedReason = terminalReason(outcome);
+			else delete monitor.stoppedReason;
 			changed = true;
 		}
 		if (monitor.initialPollPending && monitor.baselineExistingFeedback) {
@@ -950,7 +951,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		if (finalDrain) {
 			if (changed) this.persist(monitor);
 			this.deliverPending(monitor);
-			if (monitor.pending.size === 0 && !this.delivery.hasPending(monitor.recordId)) outcomesReady.add(monitor);
+			if (outcome && monitor.pending.size === 0 && !this.delivery.hasPending(monitor.recordId)) outcomesReady.add(monitor);
 			else this.notifyChange();
 		} else if (outcome) {
 			this.stopMonitor(monitor, terminalReason(outcome), true);
