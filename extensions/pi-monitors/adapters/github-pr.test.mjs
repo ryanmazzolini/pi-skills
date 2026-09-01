@@ -281,6 +281,43 @@ test("supports idempotent registration and many PRs with one polling timer", asy
   assert.equal(f.runtime.snapshot().active.length, 2);
 });
 
+test("concurrent registration waits for the initial poll outcome", async () => {
+  const snapshot = {
+    pull: { state: "closed", title: "Closed during registration" },
+    comments: [issueComment()],
+    reviews: [],
+    reviewComments: [],
+  };
+  let markPollStarted;
+  const pollStarted = new Promise((resolve) => { markPollStarted = resolve; });
+  let releasePoll;
+  const pollGate = new Promise((resolve) => { releasePoll = resolve; });
+  let blockPoll = true;
+  const f = fixture({
+    snapshots: new Map([[PR_URL, snapshot]]),
+    beforeExec: async (_command, args) => {
+      if (!blockPoll || args[0] !== "api" || !args.at(-1).endsWith("repos/acme/widgets/pulls/42")) return;
+      blockPoll = false;
+      markPollStarted();
+      await pollGate;
+    },
+  });
+  await start(f);
+  const first = f.runtime.register(PR_URL, f.ctx);
+  await pollStarted;
+  let secondSettled = false;
+  const second = f.runtime.register(PR_URL, f.ctx).finally(() => { secondSettled = true; });
+  await settleDelivery();
+  assert.equal(secondSettled, false);
+  releasePoll();
+
+  const results = await Promise.allSettled([first, second]);
+  assert.equal(results.every((result) => result.status === "rejected" && /closed/.test(String(result.reason))), true);
+  await settleDelivery();
+  assert.equal(f.sent.length, 1);
+  assert.match(f.runtime.snapshot().active[0].status, /Finishing:.*closed/);
+});
+
 test("registration cancellation keeps existing monitors scheduled", async () => {
   const otherUrl = "https://github.com/acme/gadgets/pull/7";
   let blockPoll = false;
