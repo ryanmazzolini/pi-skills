@@ -85,8 +85,10 @@ function EvaluateToolBefore(
 ) -> HardAssertionResult {
     let required_index = -1;
     let later_index = -1;
+    let argument_text = assertion.argumentIncludes ?? "";
     for (let call in calls) {
-        if (required_index < 0 && call.tool == assertion.tool) {
+        let argument_matches = argument_text.length() == 0 || ToolArgumentText(call).includes(argument_text);
+        if (required_index < 0 && call.tool == assertion.tool && argument_matches) {
             required_index = call.index;
         };
         if (later_index < 0 && assertion.beforeTools.includes(call.tool)) {
@@ -95,14 +97,19 @@ function EvaluateToolBefore(
     }
     ;
     let passed = required_index >= 0 && (later_index < 0 || required_index < later_index);
+    let required_label = if (argument_text.length() == 0) {
+        assertion.tool
+    } else {
+        `${assertion.tool} matching ${argument_text}`
+    };
     HardAssertionResult {
         description: assertion.description,
         passed: passed,
         evidence: [
             if (required_index < 0) {
-                `No ${assertion.tool} call was observed.`
+                `No ${required_label} call was observed.`
             } else {
-                `First ${assertion.tool} call: tool call ${required_index}.`
+                `First ${required_label} call: tool call ${required_index}.`
             },
             if (later_index < 0) {
                 `No ${assertion.beforeTools.join("/")} call was observed.`

@@ -116,8 +116,16 @@ function ArchitectureScenarios() -> Scenario[] {
                 ToolBeforeAssertion {
                     kind: "tool-before",
                     tool: "read",
+                    argumentIncludes: "database.md",
                     beforeTools: ["web_search", "fetch_content"],
-                    description: "The agent reads local engine and writer evidence before external retrieval.",
+                    description: "The agent identifies the deployed stack before external retrieval.",
+                },
+                ToolBeforeAssertion {
+                    kind: "tool-before",
+                    tool: "read",
+                    argumentIncludes: "writers.md",
+                    beforeTools: ["web_search", "fetch_content"],
+                    description: "The agent reads every supplied writer before external retrieval.",
                 },
                 ToolCountAssertion {
                     kind: "tool-count",
@@ -236,8 +244,23 @@ function ArchitectureScenarios() -> Scenario[] {
                 ToolBeforeAssertion {
                     kind: "tool-before",
                     tool: "read",
-                    beforeTools: ["fetch_content"],
-                    description: "The agent reads local runtime and incident evidence before authoritative source retrieval.",
+                    argumentIncludes: "runtime.md",
+                    beforeTools: ["web_search", "fetch_content"],
+                    description: "The agent identifies the deployed stack before external retrieval.",
+                },
+                ToolBeforeAssertion {
+                    kind: "tool-before",
+                    tool: "read",
+                    argumentIncludes: "transaction-flows.md",
+                    beforeTools: ["web_search", "fetch_content"],
+                    description: "The agent reads the transaction flows before external retrieval.",
+                },
+                ToolBeforeAssertion {
+                    kind: "tool-before",
+                    tool: "read",
+                    argumentIncludes: "incident.md",
+                    beforeTools: ["web_search", "fetch_content"],
+                    description: "The agent reads the incident evidence before external retrieval.",
                 },
                 ToolCountAssertion {
                     kind: "tool-count",
