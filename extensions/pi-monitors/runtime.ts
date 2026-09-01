@@ -111,7 +111,8 @@ function isPersistedQueuedDelivery(value: unknown): value is PersistedQueuedDeli
 
 export class PiMonitorsRuntime {
 	private readonly pi: ExtensionAPI;
-	private readonly sessions: ReadonlyArray<{ id: string; session: PiMonitorSession }>;
+	private readonly adapterIds = new Set<string>();
+	private readonly sessions: Array<{ id: string; session: PiMonitorSession }> = [];
 	private readonly checkSchedulers = new Set<MonitorCheckScheduler>();
 	private readonly filesystemWakeups: FilesystemWakeups;
 	private readonly leases = new Set<MonitorLease>();
@@ -119,7 +120,7 @@ export class PiMonitorsRuntime {
 	private readonly sentNotifications = new Set<string>();
 	private readonly queuedDeliveries = new Map<string, QueuedDelivery>();
 	private readonly cleanups = new Set<() => Promise<void> | void>();
-	private readonly unsubscribes: Array<() => void>;
+	private readonly unsubscribes: Array<() => void> = [];
 	private context: ExtensionContext | undefined;
 	private activeRecords = new Map<string, ActiveMonitorRecord>();
 	private recent: MonitorRecord[] = [];
@@ -139,21 +140,14 @@ export class PiMonitorsRuntime {
 		this.pi = pi;
 		const ids = new Set<string>();
 		for (const adapter of adapters) {
-			if (!adapter.id.trim()) throw new Error("Monitor adapters require a non-empty ID");
-			if (adapter.id.length > MAX_ADAPTER_ID_LENGTH || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(adapter.id)) {
-				throw new Error("Monitor adapter IDs must be bounded printable strings");
-			}
-			if (ids.has(adapter.id)) throw new Error(`Duplicate monitor adapter ID: ${adapter.id}`);
+			this.validateAdapter(adapter, ids);
 			ids.add(adapter.id);
 		}
 		this.filesystemWakeups = new FilesystemWakeups({
 			emit: (event) => pi.events.emit(FILES_CHANGED_EVENT, event),
 		});
 		try {
-			this.sessions = adapters.map((adapter) => ({
-				id: adapter.id,
-				session: adapter.bind(pi, this.servicesFor(adapter.id)),
-			}));
+			for (const adapter of adapters) this.addAdapter(adapter);
 		} catch (error) {
 			this.filesystemWakeups.dispose();
 			for (const scheduler of this.checkSchedulers) scheduler.stop();
@@ -162,7 +156,6 @@ export class PiMonitorsRuntime {
 			this.leases.clear();
 			throw error;
 		}
-		this.unsubscribes = this.sessions.map(({ session }) => session.subscribe(() => this.requestPublish()));
 
 		pi.on("session_start", async (_event, ctx) => this.startSession(ctx));
 		pi.on("session_tree", async (_event, ctx) => this.rebindBranch(ctx));
@@ -205,6 +198,24 @@ export class PiMonitorsRuntime {
 		if (this.disposed) return () => undefined;
 		this.cleanups.add(cleanup);
 		return () => this.cleanups.delete(cleanup);
+	}
+
+	addAdapter(adapter: PiMonitorAdapter): void {
+		if (this.disposed || this.context) throw new Error("Monitor adapters must register before session startup");
+		this.validateAdapter(adapter, this.adapterIds);
+		this.adapterIds.add(adapter.id);
+		let session: PiMonitorSession | undefined;
+		try {
+			session = adapter.bind(this.pi, this.servicesFor(adapter.id));
+			const unsubscribe = session.subscribe(() => this.requestPublish());
+			this.sessions.push({ id: adapter.id, session });
+			this.unsubscribes.push(unsubscribe);
+		} catch (error) {
+			this.adapterIds.delete(adapter.id);
+			const failedSession = session;
+			if (failedSession) void Promise.resolve().then(() => failedSession.dispose()).catch(() => undefined);
+			throw error;
+		}
 	}
 
 	async refresh(monitorId?: string): Promise<void> {
@@ -376,6 +387,14 @@ export class PiMonitorsRuntime {
 			this.leases.clear();
 		}
 		if (errors.length > 0) throw new AggregateError(errors, "Monitor shutdown failed");
+	}
+
+	private validateAdapter(adapter: PiMonitorAdapter, ids: ReadonlySet<string>): void {
+		if (!adapter.id.trim()) throw new Error("Monitor adapters require a non-empty ID");
+		if (adapter.id.length > MAX_ADAPTER_ID_LENGTH || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(adapter.id)) {
+			throw new Error("Monitor adapter IDs must be bounded printable strings");
+		}
+		if (ids.has(adapter.id)) throw new Error(`Duplicate monitor adapter ID: ${adapter.id}`);
 	}
 
 	private servicesFor(adapterId: string): PiMonitorServices {
