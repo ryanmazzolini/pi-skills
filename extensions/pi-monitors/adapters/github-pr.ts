@@ -539,10 +539,11 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		this.ctx = ctx;
 		const identity = parsePullRequestUrl(rawUrl);
 		const id = recordId(identity);
-		const existing = this.monitors.get(id);
-		if (existing) return { pr: existing.pr, queued: existing.pending.size, ...(existing.lastError ? { warning: existing.lastError } : {}) };
 		let pending = this.registrations.get(id);
 		if (!pending) {
+			const existing = this.monitors.get(id);
+			if (existing?.stoppedReason) throw new Error(existing.stoppedReason);
+			if (existing) return { pr: existing.pr, queued: existing.pending.size, ...(existing.lastError ? { warning: existing.lastError } : {}) };
 			const reserved = [...this.registrations.keys()].filter((recordId) => !this.monitors.has(recordId)).length;
 			if (this.monitors.size + reserved >= MAX_MONITORS) {
 				throw new Error(`monitor_github_pr supports at most ${MAX_MONITORS} pull requests per session`);
