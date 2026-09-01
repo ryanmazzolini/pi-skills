@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { FILES_CHANGED_EVENT } from "./filesystem.ts";
 import { createPiMonitorsExtension } from "./index.ts";
+import { MONITOR_ADAPTER_DISCOVERY_EVENT } from "./types.ts";
 
 function fixture(adapters) {
   const handlers = new Map();
@@ -14,8 +15,10 @@ function fixture(adapters) {
   const eventListeners = new Map();
   const pi = {
     on(name, handler) {
-      assert.equal(handlers.has(name), false, `duplicate ${name} handler`);
-      handlers.set(name, handler);
+      const previous = handlers.get(name);
+      handlers.set(name, previous
+        ? async (...args) => { await previous(...args); return handler(...args); }
+        : handler);
     },
     registerCommand(name, command) {
       commands.set(name, command);
@@ -134,6 +137,123 @@ test("binds adapters once and forwards Pi lifecycle events in registration order
     "agent_settled",
     "session_shutdown",
   ]);
+});
+
+test("discovers external adapters before starting their session", async () => {
+  const calls = [];
+  const subject = fixture([adapter("builtin", calls)]);
+  let discoveryCount = 0;
+  subject.pi.events.on(MONITOR_ADAPTER_DISCOVERY_EVENT, (discovery) => {
+    discoveryCount++;
+    assert.equal(discovery.version, 1);
+    discovery.register(adapter("external", calls));
+  });
+  const ctx = {
+    cwd: "/work",
+    sessionManager: { getBranch: () => [] },
+    ui: { theme: { fg: (_color, text) => text }, setStatus() {} },
+  };
+
+  await subject.handlers.get("session_start")({}, ctx);
+
+  assert.equal(discoveryCount, 1);
+  assert.deepEqual(calls, [
+    "builtin:bind",
+    "external:bind",
+    "builtin:start:/work",
+    "external:start:/work",
+  ]);
+});
+
+test("validates discovered adapters and closes registration after startup", async () => {
+  const calls = [];
+  const subject = fixture([adapter("builtin", calls)]);
+  let discovery;
+  let invalidError;
+  let duplicateError;
+  subject.pi.events.on(MONITOR_ADAPTER_DISCOVERY_EVENT, (value) => {
+    discovery = value;
+    try { discovery.register({ id: "invalid" }); } catch (error) { invalidError = error; }
+    try { discovery.register(adapter("builtin", calls)); } catch (error) { duplicateError = error; }
+  });
+  const ctx = {
+    cwd: "/work",
+    sessionManager: { getBranch: () => [] },
+    ui: { theme: { fg: (_color, text) => text }, setStatus() {} },
+  };
+
+  await subject.handlers.get("session_start")({}, ctx);
+
+  assert.match(invalidError.message, /require an ID and bind function/);
+  assert.match(duplicateError.message, /Duplicate monitor adapter ID: builtin/);
+  assert.throws(
+    () => discovery.register(adapter("late", calls)),
+    /must register before session startup/,
+  );
+  assert.deepEqual(calls, ["builtin:bind", "builtin:start:/work"]);
+});
+
+test("reserves discovered adapter IDs during binding", async () => {
+  const calls = [];
+  const subject = fixture([adapter("builtin", calls)]);
+  let nestedError;
+  subject.pi.events.on(MONITOR_ADAPTER_DISCOVERY_EVENT, (discovery) => {
+    discovery.register({
+      id: "external",
+      bind(pi, services) {
+        try { discovery.register(adapter("external", calls)); } catch (error) { nestedError = error; }
+        return adapter("external", calls).bind(pi, services);
+      },
+    });
+  });
+  const ctx = {
+    cwd: "/work",
+    sessionManager: { getBranch: () => [] },
+    ui: { theme: { fg: (_color, text) => text }, setStatus() {} },
+  };
+
+  await subject.handlers.get("session_start")({}, ctx);
+
+  assert.match(nestedError.message, /Duplicate monitor adapter ID: external/);
+  assert.deepEqual(calls, [
+    "builtin:bind",
+    "external:bind",
+    "builtin:start:/work",
+    "external:start:/work",
+  ]);
+});
+
+test("disposes a discovered session when subscription fails", async () => {
+  const calls = [];
+  const subject = fixture([adapter("builtin", calls)]);
+  let registrationError;
+  let disposed = 0;
+  subject.pi.events.on(MONITOR_ADAPTER_DISCOVERY_EVENT, (discovery) => {
+    try {
+      discovery.register({
+        id: "broken-subscription",
+        bind() {
+          return {
+            subscribe() { throw new Error("subscription failed"); },
+            async dispose() { disposed++; },
+          };
+        },
+      });
+    } catch (error) {
+      registrationError = error;
+    }
+  });
+  const ctx = {
+    cwd: "/work",
+    sessionManager: { getBranch: () => [] },
+    ui: { theme: { fg: (_color, text) => text }, setStatus() {} },
+  };
+
+  await subject.handlers.get("session_start")({}, ctx);
+  await waitFor(() => disposed === 1, "failed discovered session disposal");
+
+  assert.match(registrationError.message, /subscription failed/);
+  assert.deepEqual(calls, ["builtin:bind", "builtin:start:/work"]);
 });
 
 test("rejects invalid adapter IDs before binding any adapter", () => {
