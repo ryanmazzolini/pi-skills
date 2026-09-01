@@ -311,7 +311,8 @@ function overviewSourcePath(id, env) {
 }
 
 function installedManifestEnvironment(id, manifestPath, env) {
-  if (!id.startsWith("user:") || !manifestPath) return env;
+  const usesUserManifest = id.startsWith("user:") || id.startsWith("global:");
+  if (!usesUserManifest || !manifestPath) return env;
   return { ...env, XDG_CONFIG_HOME: path.dirname(path.dirname(manifestPath)) };
 }
 
