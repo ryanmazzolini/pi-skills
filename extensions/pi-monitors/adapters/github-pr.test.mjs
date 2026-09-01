@@ -547,6 +547,26 @@ test("rejects closed PRs without creating shared state", async () => {
   assert.equal(f.timer.timers.length, 0);
 });
 
+test("rejects registration when the pull request closes during its first poll", async () => {
+  const snapshot = {
+    pull: { state: "closed", title: "Closed during registration" },
+    comments: [issueComment()],
+    reviews: [],
+    reviewComments: [],
+  };
+  const f = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(f);
+
+  await assert.rejects(f.tools[0].execute("call", { url: PR_URL }, undefined, undefined, f.ctx), /closed/);
+  await settleDelivery();
+  assert.equal(f.sent.length, 1);
+  assert.match(f.runtime.snapshot().active[0].status, /Finishing:.*closed/);
+  await acknowledgeLast(f);
+  await settleDelivery();
+  assert.equal(f.runtime.snapshot().active.length, 0);
+  assert.match(f.runtime.snapshot().recent[0].status, /closed/);
+});
+
 test("retains 2,000 delivered fingerprints inside shared state bounds", async () => {
   const commentPages = Array.from({ length: 20 }, (_, page) => Array.from({ length: 100 }, (_value, index) => {
     const id = page * 100 + index + 1;
