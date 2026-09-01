@@ -55,7 +55,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 | Skill | What it helps with |
 |---|---|
-| [`architecture`](./skills/architecture/architecture/SKILL.md) | Route shaping, interface design, simplification, system review, implementation choice, and domain-language work |
+| [`architecture`](./skills/architecture/architecture/SKILL.md) | Route shaping, data-structure and relational-concurrency decisions, interface design, simplification, system review, implementation choice, and domain-language work |
 
 ### Coding and review
 
