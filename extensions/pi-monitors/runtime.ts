@@ -390,15 +390,19 @@ export class PiMonitorsRuntime {
 				}
 				return {
 					load: () => [...this.activeRecords.values()]
-						.filter((record) => record.adapterId === adapterId && record.adapterVersion === options.version)
+						.filter((record) => record.adapterId === adapterId)
 						.flatMap((record) => {
+							if (record.adapterVersion !== options.version) {
+								this.removeActiveRecord(adapterId, record.id);
+								return [];
+							}
 							try {
 								const cloned = cloneActiveRecord(record);
 								const state = options.decodeState(cloned.state);
-								return state === undefined ? [] : [{ ...cloned, state }];
-							} catch {
-								return [];
-							}
+								if (state !== undefined) return [{ ...cloned, state }];
+							} catch {}
+							this.removeActiveRecord(adapterId, record.id);
+							return [];
 						}),
 					save: (id, state) => this.saveActiveRecord(adapterId, options, id, state),
 					remove: (id) => this.removeActiveRecord(adapterId, id),
