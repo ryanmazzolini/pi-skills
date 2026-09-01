@@ -765,6 +765,32 @@ test("collects final feedback and observes a merge before terminal delivery", as
   assert.match(f.runtime.snapshot().recent[0].status, /merged/);
 });
 
+test("resumes monitoring when a pull request reopens before terminal delivery", async () => {
+  const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
+  const f = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(f);
+  await f.tools[0].execute("call", { url: PR_URL }, undefined, undefined, f.ctx);
+
+  snapshot.comments = [issueComment()];
+  snapshot.pull.state = "closed";
+  await f.timer.latest(60_000).callback();
+  await settleDelivery();
+  assert.match(f.runtime.snapshot().active[0].status, /Finishing:.*closed/);
+
+  snapshot.pull.state = "open";
+  await acknowledgeLast(f);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.runtime.snapshot().active.length, 1);
+  assert.equal(f.runtime.snapshot().active[0].status, "Monitoring for feedback");
+  assert.equal(activeRecord(f).state.stoppedReason, undefined);
+
+  snapshot.pull.state = "closed";
+  await f.timer.latest(60_000).callback();
+  await settleDelivery();
+  assert.equal(f.sent[1][0].customType, "github_pr_outcome");
+  assert.equal(f.sent[1][0].details.outcome, "closed");
+});
+
 test("preserves queued feedback through closure and restart before stopping", async () => {
   const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
   const first = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
