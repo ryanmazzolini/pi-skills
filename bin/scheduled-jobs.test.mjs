@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadDeclarations, resolveCandidate, resolveExecutable } from "../lib/scheduled-jobs/index.mjs";
+import { schedulerAttentionPath } from "../lib/scheduled-jobs/attention.mjs";
 import { installJob } from "../lib/scheduled-jobs/lifecycle.mjs";
 import { readRunHistory } from "../lib/scheduled-jobs/runtime.mjs";
 import { run } from "./scheduled-jobs.mjs";
@@ -388,14 +389,28 @@ test("legacy global installations can run, roll back, and be removed", async (t)
     (error) => error?.code === "SCOPE_CONFLICT" && /Disable global:test:cli/.test(error.message),
   );
 
+  const attentionPath = schedulerAttentionPath(value.manifestPath, value.env);
+  fs.rmSync(attentionPath, { force: true });
+  const hiddenRuntime = {
+    ...value.runtime,
+    env: {
+      HOME: value.env.HOME,
+      USER: value.env.USER,
+      TMPDIR: value.env.TMPDIR,
+      PATH: status.snapshot.environment.PATH,
+      LANG: value.env.LANG,
+    },
+  };
   const scheduled = json(await run([
     "_run-installed",
     id,
+    "--state-root", status.snapshot.contract.scheduler.root,
     "--expected-installed-digest", status.metadata.digest,
     "--expected-revision", String(status.metadata.revision),
     "--json",
-  ], value.runtime)).result;
+  ], hiddenRuntime)).result;
   assert.equal(scheduled.status, "ok");
+  assert.equal(fs.existsSync(attentionPath), true);
   const runs = json(await run(["runs", id, "--limit", "10", "--json"], value.runtime)).result.runs;
   assert.equal(runs[0].trigger, "scheduled");
   assert.match(json(await run(["run-log", id, runs[0].runId, "--lines", "20", "--json"], value.runtime)).result.content, /cli lifecycle output/);
