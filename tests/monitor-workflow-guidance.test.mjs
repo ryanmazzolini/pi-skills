@@ -13,12 +13,13 @@ test("PR creation and review workflows register available monitors", async () =>
 
   assert.match(
     commitPr,
-    /After a successful create or update, call `monitor_github_pr` with the canonical PR URL when the tool is available/,
+    /after updating an existing PR, also pass `notifyExistingFeedback: false`/,
   );
   assert.match(
     codeReview,
-    /Before returning a review of an open GitHub pull request, call `monitor_github_pr` with its canonical URL when the tool is available/,
+    /call `monitor_github_pr` with its canonical URL and `notifyExistingFeedback: false` when the tool is available/,
   );
+  assert.match(codeReview, /records existing feedback without triggering another turn/);
   assert.match(codeReview, /register each open GitHub pull request in review order until the tool reports its session limit/);
   assert.match(codeReview, /Continue the review and identify any pull request that remains unmonitored/);
   assert.match(codeReview, /does not publish GitHub changes/);

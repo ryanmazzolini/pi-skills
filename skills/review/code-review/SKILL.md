@@ -19,7 +19,7 @@ Read the diff, then inspect enough surrounding code, tests, repository instructi
 
 Account for every changed file and any behavior that crosses file boundaries.
 
-Before returning a review of an open GitHub pull request, call `monitor_github_pr` with its canonical URL when the tool is available. For a stack, register each open GitHub pull request in review order until the tool reports its session limit. Continue the review and identify any pull request that remains unmonitored. Monitoring belongs to the current session and does not publish GitHub changes.
+Before returning a review of an open GitHub pull request, call `monitor_github_pr` with its canonical URL and `notifyExistingFeedback: false` when the tool is available. This records existing feedback without triggering another turn, then notifies the session only about later feedback. For a stack, register each open GitHub pull request in review order until the tool reports its session limit. Continue the review and identify any pull request that remains unmonitored. Monitoring belongs to the current session and does not publish GitHub changes.
 
 Reviews are read-only by default. Do not change the reviewed code or publish comments unless the user explicitly asks and the active workflow permits it.
 
