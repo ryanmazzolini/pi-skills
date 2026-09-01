@@ -649,8 +649,48 @@ test("preserves queued feedback through closure and restart before stopping", as
   assert.match(restored.sent[0][0].content, /Please cover the error path/);
 
   await acknowledgeLast(restored);
+  await settleDelivery();
   assert.equal(restored.runtime.snapshot().active.length, 0);
   assert.equal(activeRecord(restored), undefined);
+});
+
+test("restores every remaining feedback packet before finalizing a closed monitor", async () => {
+  const comments = Array.from({ length: 12 }, (_, index) => issueComment({
+    id: index + 1,
+    node_id: `IC_${index + 1}`,
+    body: `Feedback ${index + 1}: ${"x".repeat(7_000)}`,
+  }));
+  const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
+  const first = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(first);
+  await first.tools[0].execute("call", { url: PR_URL }, undefined, undefined, first.ctx);
+  snapshot.comments = comments;
+  snapshot.pull.state = "closed";
+  await first.timer.latest(60_000).callback();
+  await settleDelivery();
+
+  assert.equal(first.sent.length, 1);
+  assert.equal(first.sent[0][0].details.truncated, true);
+  assert.equal(first.sent[0][0].details.items.length < comments.length, true);
+
+  const restored = fixture({ entries: structuredClone(first.entries), snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(restored, "reload");
+  await settleDelivery();
+  const deliveredKeys = new Set();
+  let packetIndex = 0;
+  while (restored.runtime.snapshot().active.length > 0) {
+    assert.equal(packetIndex < comments.length, true);
+    assert.equal(restored.sent.length, packetIndex + 1);
+    for (const item of restored.sent[packetIndex][0].details.items) deliveredKeys.add(item.key);
+    await acknowledgeLast(restored);
+    packetIndex++;
+    await settleDelivery();
+  }
+
+  assert.equal(packetIndex > 1, true);
+  assert.equal(deliveredKeys.size, comments.length);
+  assert.equal(activeRecord(restored), undefined);
+  assert.match(restored.runtime.snapshot().recent[0].status, /closed/);
 });
 
 test("an in-flight poll cannot recreate a monitor stopped by the user", async () => {
