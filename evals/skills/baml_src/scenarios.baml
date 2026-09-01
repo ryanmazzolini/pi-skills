@@ -3,6 +3,8 @@ function ScenarioSuites() -> ScenarioSuite[] {
         ScenarioSuite { id: "research", scenarios: ResearchScenarios() },
         ScenarioSuite { id: "hci", scenarios: HciScenarios() },
         ScenarioSuite { id: "architecture", scenarios: ArchitectureScenarios() },
+        ScenarioSuite { id: "commit-simple", scenarios: CommitSimpleScenarios() },
+        ScenarioSuite { id: "commit-pr", scenarios: CommitPrScenarios() },
     ]
 }
 

@@ -45,6 +45,8 @@ class ToolCountAssertion {
     kind: "tool-count",
     tool: string,
     argumentIncludes: string?,
+    commandSegmentIncludes: string?,
+    commandSegmentExcludes: string?,
     min: int?,
     max: int?,
     fromTurn: int?,

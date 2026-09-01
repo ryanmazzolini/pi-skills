@@ -38,6 +38,27 @@ function ToolArgumentText(call: ToolCallRecord) -> string {
     .join("\n")
 }
 
+function CommandHasMatchingSegment(
+    command: string,
+    included_text: string,
+    excluded_text: string,
+) -> bool {
+    for (let and_group in command.split("&&")) {
+        for (let segment in and_group.split(";")) {
+            let includes_required = segment.includes(included_text);
+            let includes_excluded
+                = excluded_text.length() > 0
+                && segment.includes(excluded_text);
+            if (includes_required && !includes_excluded) {
+                return true;
+            };
+        }
+        ;
+    }
+    ;
+    false
+}
+
 function EvaluateToolCount(
     assertion: ToolCountAssertion,
     calls: ToolCallRecord[],
@@ -46,9 +67,19 @@ function EvaluateToolCount(
     let from_turn = assertion.fromTurn ?? -1;
     let argument_text = assertion.argumentIncludes ?? "";
     for (let call in calls) {
+        let call_arguments = ToolArgumentText(call);
         let after_turn = call.turn >= from_turn;
-        let argument_matches = argument_text.length() == 0 || ToolArgumentText(call).includes(argument_text);
-        if (call.tool == assertion.tool && after_turn && argument_matches) {
+        let argument_matches = argument_text.length() == 0 || call_arguments.includes(argument_text);
+        let segment_matches = if (assertion.commandSegmentIncludes == null) {
+            true
+        } else {
+            CommandHasMatchingSegment(
+                call.command ?? "",
+                assertion.commandSegmentIncludes ?? "",
+                assertion.commandSegmentExcludes ?? "",
+            )
+        };
+        if (call.tool == assertion.tool && after_turn && argument_matches && segment_matches) {
             matching.push(call);
         };
     }
