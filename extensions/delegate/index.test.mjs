@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import delegateExtension, { agentDeskTarget, currentDelegationRun, currentHeldRun, delegateLaunchText, existingDirectory, heldEntryData, heldEntryState, heldEntryTitle, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
+import delegateExtension, { agentDeskTarget, currentDelegationRun, currentHeldRun, defaultDelegateTemporaryRoot, delegateLaunchText, existingDirectory, heldEntryData, heldEntryState, heldEntryTitle, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
+
+test("places new temporary delegate workspaces below the canonical OS temporary root", async () => {
+  assert.equal(await defaultDelegateTemporaryRoot(), path.join(fs.realpathSync(os.tmpdir()), "pi-delegate"));
+});
 
 test("canonicalizes a symlinked delegated working directory before resource and workspace resolution", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-cwd-test-"));
