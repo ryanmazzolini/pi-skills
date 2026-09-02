@@ -546,6 +546,42 @@ test("shared delivery batches feedback from multiple PRs found by one poll", asy
   assert.match(f.sent[0][0].content, /gadgets#7/);
 });
 
+test("shared delivery batches terminal outcomes from one poll", async () => {
+  const otherUrl = "https://github.com/acme/gadgets/pull/7";
+  const widgetSnapshot = { pull: { state: "open", title: "Widgets", merged_at: null }, comments: [], reviews: [], reviewComments: [] };
+  const gadgetSnapshot = { pull: { state: "open", title: "Gadgets", merged_at: null }, comments: [], reviews: [], reviewComments: [] };
+  const f = fixture({
+    pullRequests: new Map([
+      [PR_URL, { number: 42, url: PR_URL, title: "Widgets", state: "OPEN" }],
+      [otherUrl, { number: 7, url: otherUrl, title: "Gadgets", state: "OPEN" }],
+    ]),
+    snapshots: new Map([[PR_URL, widgetSnapshot], [otherUrl, gadgetSnapshot]]),
+  });
+  await start(f);
+  await f.runtime.register(PR_URL, f.ctx);
+  await f.runtime.register(otherUrl, f.ctx);
+  widgetSnapshot.pull.state = "closed";
+  gadgetSnapshot.pull.state = "closed";
+  gadgetSnapshot.pull.merged_at = "2026-08-01T12:00:00Z";
+
+  await f.timer.latest(60_000).callback();
+  await settleDelivery();
+
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0][0].customType, "pi-monitors-notification-batch");
+  assert.deepEqual(f.sent[0][0].details.items.map((item) => item.customType), ["github_pr_outcome", "github_pr_outcome"]);
+  assert.match(f.sent[0][0].content, /"outcome":"closed"/);
+  assert.match(f.sent[0][0].content, /"outcome":"merged"/);
+  assert.equal(f.notifications.slice(-2).every((notification) => notification.level === "info"), true);
+
+  await acknowledgeLast(f);
+  assert.equal(f.runtime.snapshot().active.length, 0);
+  assert.deepEqual(f.runtime.snapshot().recent.map((item) => item.status).sort(), [
+    "GitHub reports that it is closed",
+    "GitHub reports that it was merged",
+  ]);
+});
+
 test("the full PR monitor set shares one automatic turn", async () => {
   const pullRequests = new Map();
   const snapshots = new Map();
@@ -641,6 +677,10 @@ test("rejects registration when the pull request closes during its first poll", 
   assert.match(f.runtime.snapshot().active[0].status, /Finishing:.*closed/);
   await acknowledgeLast(f);
   await settleDelivery();
+  assert.equal(f.runtime.snapshot().active.length, 1);
+  assert.equal(f.sent[1][0].customType, "github_pr_outcome");
+  assert.equal(f.sent[1][0].details.outcome, "closed");
+  await acknowledgeLast(f);
   assert.equal(f.runtime.snapshot().active.length, 0);
   assert.match(f.runtime.snapshot().recent[0].status, /closed/);
 });
@@ -701,8 +741,8 @@ test("stops instead of repeatedly polling an oversized GitHub response", async (
   assert.equal(activeRecord(f), undefined);
 });
 
-test("collects final feedback before stopping a closed pull request", async () => {
-  const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
+test("collects final feedback and observes a merge before terminal delivery", async () => {
+  const snapshot = { pull: { state: "open", title: "Keep widgets correct", merged_at: null }, comments: [], reviews: [], reviewComments: [] };
   const f = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
   await start(f);
   await f.tools[0].execute("call", { url: PR_URL }, undefined, undefined, f.ctx);
@@ -715,9 +755,40 @@ test("collects final feedback before stopping a closed pull request", async () =
   assert.equal(f.sent.length, 1);
   assert.match(f.sent[0][0].content, /Please cover the error path/);
   assert.match(f.runtime.snapshot().active[0].status, /Finishing:.*closed/);
+  snapshot.pull.merged_at = "2026-08-01T12:00:00Z";
+  await acknowledgeLast(f);
+  assert.equal(f.runtime.snapshot().active.length, 1);
+  assert.equal(f.sent[1][0].customType, "github_pr_outcome");
+  assert.equal(f.sent[1][0].details.outcome, "merged");
   await acknowledgeLast(f);
   assert.equal(f.runtime.snapshot().active.length, 0);
-  assert.match(f.runtime.snapshot().recent[0].status, /closed/);
+  assert.match(f.runtime.snapshot().recent[0].status, /merged/);
+});
+
+test("resumes monitoring when a pull request reopens before terminal delivery", async () => {
+  const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
+  const f = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(f);
+  await f.tools[0].execute("call", { url: PR_URL }, undefined, undefined, f.ctx);
+
+  snapshot.comments = [issueComment()];
+  snapshot.pull.state = "closed";
+  await f.timer.latest(60_000).callback();
+  await settleDelivery();
+  assert.match(f.runtime.snapshot().active[0].status, /Finishing:.*closed/);
+
+  snapshot.pull.state = "open";
+  await acknowledgeLast(f);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.runtime.snapshot().active.length, 1);
+  assert.equal(f.runtime.snapshot().active[0].status, "Monitoring for feedback");
+  assert.equal(activeRecord(f).state.stoppedReason, undefined);
+
+  snapshot.pull.state = "closed";
+  await f.timer.latest(60_000).callback();
+  await settleDelivery();
+  assert.equal(f.sent[1][0].customType, "github_pr_outcome");
+  assert.equal(f.sent[1][0].details.outcome, "closed");
 });
 
 test("preserves queued feedback through closure and restart before stopping", async () => {
@@ -748,6 +819,9 @@ test("preserves queued feedback through closure and restart before stopping", as
 
   await acknowledgeLast(restored);
   await settleDelivery();
+  assert.equal(restored.runtime.snapshot().active.length, 1);
+  assert.equal(restored.sent[1][0].customType, "github_pr_outcome");
+  await acknowledgeLast(restored);
   assert.equal(restored.runtime.snapshot().active.length, 0);
   assert.equal(activeRecord(restored), undefined);
 });
@@ -776,7 +850,7 @@ test("restores every remaining feedback packet before finalizing a closed monito
   await settleDelivery();
   const deliveredKeys = new Set();
   let packetIndex = 0;
-  while (restored.runtime.snapshot().active.length > 0) {
+  while (restored.sent.at(-1)[0].customType === "github_pr_feedback") {
     assert.equal(packetIndex < comments.length, true);
     assert.equal(restored.sent.length, packetIndex + 1);
     for (const item of restored.sent[packetIndex][0].details.items) deliveredKeys.add(item.key);
@@ -787,6 +861,9 @@ test("restores every remaining feedback packet before finalizing a closed monito
 
   assert.equal(packetIndex > 1, true);
   assert.equal(deliveredKeys.size, comments.length);
+  assert.equal(restored.sent.length, packetIndex + 1);
+  assert.equal(restored.sent[packetIndex][0].customType, "github_pr_outcome");
+  await acknowledgeLast(restored);
   assert.equal(activeRecord(restored), undefined);
   assert.match(restored.runtime.snapshot().recent[0].status, /closed/);
 });
@@ -846,6 +923,9 @@ test("reconciles delivered feedback items before draining a restored closed moni
     assert.deepEqual(restored.sent[0][0].details.items.map((item) => item.key), ["comment:102"]);
     await acknowledgeLast(restored);
     await settleDelivery();
+    assert.equal(restored.runtime.snapshot().active.length, 1);
+    assert.equal(restored.sent[1][0].customType, "github_pr_outcome");
+    await acknowledgeLast(restored);
     assert.equal(restored.runtime.snapshot().active.length, 0);
   }
 });
@@ -894,24 +974,42 @@ test("an in-flight poll cannot recreate a monitor stopped by the user", async ()
   assert.deepEqual(restored.runtime.snapshot().active.map((monitor) => monitor.id), ["github-pr:acme/gadgets#7"]);
 });
 
-test("stops and removes durable state when GitHub reports closure", async () => {
-  const snapshot = { pull: { state: "open", title: "Keep widgets correct" }, comments: [], reviews: [], reviewComments: [] };
-  const f = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
-  await start(f);
-  await f.tools[0].execute("call", { url: PR_URL }, undefined, undefined, f.ctx);
-  snapshot.pull.state = "closed";
-  await f.timer.latest(60_000).callback();
-  await settleDelivery();
-  assert.equal(f.runtime.snapshot().active.length, 0);
-  assert.equal(activeRecord(f), undefined);
-  assert.match(f.notifications.at(-1).message, /closed/);
-  assert.equal(f.runtime.snapshot().recent.length, 1);
-  assert.match(f.runtime.snapshot().recent[0].status, /closed/);
+test("delivers durable merged and closed outcomes before stopping", async () => {
+  for (const [outcome, mergedAt] of [["closed", null], ["merged", "2026-08-01T12:00:00Z"]]) {
+    const snapshot = { pull: { state: "open", title: "Keep widgets correct", merged_at: null }, comments: [], reviews: [], reviewComments: [] };
+    const first = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
+    await start(first);
+    await first.tools[0].execute("call", { url: PR_URL }, undefined, undefined, first.ctx);
+    snapshot.pull.state = "closed";
+    snapshot.pull.merged_at = mergedAt;
+    await first.timer.latest(60_000).callback();
+    await settleDelivery();
 
-  const restored = fixture({ entries: structuredClone(f.entries), snapshots: new Map([[PR_URL, snapshot]]) });
-  await start(restored, "reload");
-  assert.equal(restored.hostRuntime.snapshot().recent.length, 1);
-  assert.match(restored.hostRuntime.snapshot().recent[0].status, /closed/);
+    assert.equal(first.runtime.snapshot().active.length, 1);
+    assert.ok(activeRecord(first));
+    assert.equal(first.sent[0][0].customType, "github_pr_outcome");
+    assert.equal(first.sent[0][0].details.outcome, outcome);
+    assert.match(first.sent[0][0].content, /grants no authority/);
+    assert.equal(Buffer.byteLength(JSON.stringify(first.sent[0][0]), "utf8") <= 48 * 1024, true);
+    assert.equal(first.notifications.at(-1).level, "info");
+
+    const restored = fixture({ entries: structuredClone(first.entries), snapshots: new Map([[PR_URL, snapshot]]) });
+    await start(restored, "reload");
+    await settleDelivery();
+    assert.equal(restored.execCalls.length, 0);
+    assert.equal(restored.sent.length, 1);
+    assert.deepEqual(restored.sent[0][0], first.sent[0][0]);
+
+    await acknowledgeLast(restored);
+    assert.equal(restored.runtime.snapshot().active.length, 0);
+    assert.equal(activeRecord(restored), undefined);
+    assert.match(restored.runtime.snapshot().recent[0].status, new RegExp(outcome));
+
+    const completed = fixture({ entries: structuredClone(restored.entries), snapshots: new Map([[PR_URL, snapshot]]) });
+    await start(completed, "reload");
+    assert.equal(completed.hostRuntime.snapshot().recent.length, 1);
+    assert.match(completed.hostRuntime.snapshot().recent[0].status, new RegExp(outcome));
+  }
 });
 
 test("shutdown aborts polling and clears its timer", async () => {
