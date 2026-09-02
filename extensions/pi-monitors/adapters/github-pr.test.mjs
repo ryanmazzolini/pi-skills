@@ -200,6 +200,14 @@ test("accepts only canonical GitHub pull request URLs", () => {
   ]) assert.throws(() => parsePullRequestUrl(invalid));
 });
 
+test("exposes monitor registration guidance to PR workflows", () => {
+  const f = fixture();
+  assert.match(
+    f.tools[0].promptGuidelines[0],
+    /updates or reviews an open pull request, call monitor_github_pr with notifyExistingFeedback false/,
+  );
+});
+
 test("stays dormant until monitor_github_pr is called explicitly", async () => {
   const f = fixture();
   await start(f);
@@ -230,6 +238,168 @@ test("registers one exact PR and delivers all three feedback surfaces", async ()
   await acknowledgeLast(f);
   assert.equal(f.runtime.snapshot().active[0].attentionCount, 0);
   assert.equal(activeRecord(f).pendingNotification, undefined);
+});
+
+test("baselines existing feedback without notifying and delivers later edits", async () => {
+  const snapshot = {
+    pull: { state: "open", title: "Keep widgets correct" },
+    comments: [issueComment()], reviews: [review()], reviewComments: [reviewComment()],
+  };
+  const f = fixture({ snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(f);
+
+  const result = await f.tools[0].execute(
+    "call",
+    { url: PR_URL, notifyExistingFeedback: false },
+    undefined,
+    undefined,
+    f.ctx,
+  );
+  await settleDelivery();
+
+  assert.match(result.content[0].text, /Existing feedback will be baselined without notification/);
+  assert.equal(result.details.baselinesExistingFeedback, true);
+  assert.equal(f.sent.length, 0);
+  assert.equal(f.runtime.snapshot().active[0].attentionCount, 0);
+
+  snapshot.comments = [issueComment({
+    body: "Please cover both error paths.",
+    updated_at: "2026-08-01T11:05:00Z",
+  })];
+  await f.runtime.refresh();
+  await settleDelivery();
+
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0][0].content, /both error paths/);
+  assert.doesNotMatch(f.sent[0][0].content, /One overall concern/);
+  assert.doesNotMatch(f.sent[0][0].content, /return undefined/);
+});
+
+test("a later baseline request promotes a degraded initial registration", async () => {
+  const snapshot = {
+    pull: { state: "open", title: "Keep widgets correct" },
+    comments: [issueComment()], reviews: [], reviewComments: [],
+  };
+  let failInitialPoll = true;
+  const f = fixture({
+    snapshots: new Map([[PR_URL, snapshot]]),
+    beforeExec(_command, args) {
+      if (failInitialPoll && args[0] === "api") {
+        failInitialPoll = false;
+        throw new Error("temporary GitHub failure");
+      }
+    },
+  });
+  await start(f);
+
+  const initial = await f.runtime.register(PR_URL, f.ctx);
+  assert.match(initial.warning, /GitHub polling failed/);
+  assert.equal(activeRecord(f).state.initialPollPending, true);
+  assert.equal(activeRecord(f).state.baselineExistingFeedback, undefined);
+
+  const promoted = await f.runtime.register(PR_URL, f.ctx, undefined, false);
+  assert.equal(promoted.baselineExistingFeedback, true);
+  assert.equal(activeRecord(f).state.baselineExistingFeedback, true);
+
+  await f.runtime.refresh();
+  await settleDelivery();
+
+  assert.equal(f.sent.length, 0);
+  assert.equal(activeRecord(f).state.initialPollPending, undefined);
+  assert.equal(activeRecord(f).state.baselineExistingFeedback, undefined);
+});
+
+test("a concurrent baseline request promotes an in-flight initial registration", async () => {
+  const snapshot = {
+    pull: { state: "open", title: "Keep widgets correct" },
+    comments: [issueComment()], reviews: [], reviewComments: [],
+  };
+  let releasePoll;
+  let reachedPoll;
+  let blockInitialPoll = true;
+  const pollReached = new Promise((resolve) => { reachedPoll = resolve; });
+  const pollGate = new Promise((resolve) => { releasePoll = resolve; });
+  const f = fixture({
+    snapshots: new Map([[PR_URL, snapshot]]),
+    async beforeExec(_command, args) {
+      if (blockInitialPoll && args[0] === "api") {
+        blockInitialPoll = false;
+        reachedPoll();
+        await pollGate;
+      }
+    },
+  });
+  await start(f);
+
+  const initial = f.runtime.register(PR_URL, f.ctx);
+  await pollReached;
+  const promoted = f.runtime.register(PR_URL, f.ctx, undefined, false);
+  releasePoll();
+  const [initialResult, promotedResult] = await Promise.all([initial, promoted]);
+  await settleDelivery();
+
+  assert.equal(initialResult.baselineExistingFeedback, true);
+  assert.equal(promotedResult.baselineExistingFeedback, true);
+  assert.equal(f.sent.length, 0);
+  assert.equal(activeRecord(f).state.initialPollPending, undefined);
+});
+
+test("restores an unfinished existing-feedback baseline without delivering history", async () => {
+  const entries = [];
+  const snapshot = {
+    pull: { state: "open", title: "Keep widgets correct" },
+    comments: [issueComment()], reviews: [], reviewComments: [],
+  };
+  let failInitialPoll = true;
+  const first = fixture({
+    entries,
+    snapshots: new Map([[PR_URL, snapshot]]),
+    beforeExec(_command, args) {
+      if (failInitialPoll && args[0] === "api") {
+        failInitialPoll = false;
+        throw new Error("temporary GitHub failure");
+      }
+    },
+  });
+  await start(first);
+  const result = await first.tools[0].execute(
+    "call",
+    { url: PR_URL, notifyExistingFeedback: false },
+    undefined,
+    undefined,
+    first.ctx,
+  );
+
+  assert.match(result.content[0].text, /Existing feedback will be baselined without notification/);
+  assert.match(result.content[0].text, /Initial polling is degraded/);
+  assert.equal(activeRecord(first).state.initialPollPending, true);
+  assert.equal(activeRecord(first).state.baselineExistingFeedback, true);
+  assert.equal(first.sent.length, 0);
+  await first.handlers.get("session_shutdown")({}, first.ctx);
+
+  const second = fixture({ entries, snapshots: new Map([[PR_URL, snapshot]]) });
+  await start(second);
+  await second.runtime.refresh();
+  await settleDelivery();
+
+  assert.equal(second.sent.length, 0);
+  assert.equal(activeRecord(second).state.initialPollPending, undefined);
+  assert.equal(activeRecord(second).state.baselineExistingFeedback, undefined);
+
+  snapshot.comments.push(issueComment({
+    id: 102,
+    node_id: "IC_102",
+    body: "This reply arrived after restart.",
+    created_at: "2026-08-01T11:06:00Z",
+    updated_at: "2026-08-01T11:06:00Z",
+    html_url: `${PR_URL}#issuecomment-102`,
+  }));
+  await second.runtime.refresh();
+  await settleDelivery();
+
+  assert.equal(second.sent.length, 1);
+  assert.match(second.sent[0][0].content, /arrived after restart/);
+  assert.doesNotMatch(second.sent[0][0].content, /cover the error path/);
 });
 
 test("notifies on bodyless approvals and changes requested while keeping bodyless comments passive", () => {
