@@ -1,4 +1,5 @@
 import { realpath, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
 	getAgentDir,
@@ -237,6 +238,10 @@ export function agentDeskTarget(runId?: string, childId?: string): AgentDeskTarg
 		...(runId ? { runId } : {}),
 		...(childId ? { childId } : {}),
 	};
+}
+
+export async function defaultDelegateTemporaryRoot(): Promise<string> {
+	return join(await realpath(tmpdir()), "pi-delegate");
 }
 
 export async function existingDirectory(parentCwd: string, value: string | undefined): Promise<string> {
@@ -754,9 +759,11 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 		if (runtime) await runtime.dispose();
 
 		const delegateRunsRoot = join(getAgentDir(), "delegate-runs");
+		const delegateTemporaryRoot = await defaultDelegateTemporaryRoot();
 		const repository = createFileRunRepository(
 			delegateRunsRoot,
 			(message) => ctx.ui.notify(message, "warning"),
+			delegateTemporaryRoot,
 		);
 		const delivery = createParentDelivery({
 			current: () => currentContext
@@ -796,7 +803,7 @@ export default function delegateExtension(pi: ExtensionAPI): void {
 			repository,
 			children: createPiChildSessionAdapter(),
 			delivery,
-			workspaces: createGitWorkspaceManager(delegateRunsRoot),
+			workspaces: createGitWorkspaceManager(delegateTemporaryRoot, delegateRunsRoot),
 			maxActiveChildren: DEFAULT_MAX_ACTIVE_CHILDREN,
 		});
 		delegateUi = createDelegateUi(runtime);

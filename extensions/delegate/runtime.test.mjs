@@ -34,7 +34,6 @@ function memoryRepository(initial = [], storageRoot = "/tmp/delegate") {
       return {
         runFile: `${root}/run.json`,
         childSessionDir: `${root}/children/${childId}`,
-        worktreeDir: `${root}/worktrees/${childId}`,
         patchFile: `${root}/patches/${childId}.patch`,
         manifestFile: `${root}/patches/${childId}.manifest.json`,
       };
@@ -813,15 +812,24 @@ function fakeWorkspaceManager(options = {}) {
   let currentRevision = options.revision ?? "tree-reviewed";
   let prepareCount = 0;
   let cleanupFailures = options.cleanupFailures ?? 0;
+  let expired = options.expired ?? false;
   const manager = {
     async prepare(input) {
       prepareCount++;
       if (options.failPrepareAt === prepareCount) throw new Error("worktree creation failed");
+      const envelopePath = `/tmp/delegate/${input.runId}/${input.childId}`;
+      const envelope = {
+        rootPath: envelopePath,
+        ownerToken: `owner-${input.childId}`,
+        directoryIdentity: { dev: "1", ino: `${prepareCount}` },
+      };
+      const worktreePath = `${envelopePath}/workspace`;
       const workspace = options.scratch
         ? {
           kind: "temporary",
           sourceCwd: input.sourceCwd,
-          worktreePath: input.worktreePath,
+          worktreePath,
+          envelope,
           integration: { state: "working" },
         }
         : {
@@ -829,7 +837,8 @@ function fakeWorkspaceManager(options = {}) {
           sourceCwd: input.sourceCwd,
           repoRoot: input.sourceCwd,
           relativeCwd: "",
-          worktreePath: input.worktreePath,
+          worktreePath,
+          envelope,
           branch: `pi-delegate/${input.runId}/${input.childId}`,
           baseCommit: "base-commit",
           patchPath: input.patchPath,
@@ -873,6 +882,9 @@ function fakeWorkspaceManager(options = {}) {
       if (options.scratchInspectGate) await options.scratchInspectGate.promise;
       return options.scratchContents ?? { entries: [], truncated: false };
     },
+    async expire() {
+      return expired;
+    },
     async cleanup(workspace, expectedRevision) {
       cleaned.push({ workspace, expectedRevision });
       if (options.cleanupConflict) throw new WorkspaceConflictError("temporary workspace changed before cleanup");
@@ -890,6 +902,7 @@ function fakeWorkspaceManager(options = {}) {
     applied,
     cleaned,
     setRevision(value) { currentRevision = value; },
+    setExpired(value) { expired = value; },
   };
 }
 
@@ -943,7 +956,7 @@ test("preserves finalized scratch work until explicit cleanup", async () => {
   const completed = runtime.get(handle.runId);
   const view = projectRun(completed);
   assert.equal(view.children[0].workspace.backing, "scratch");
-  assert.equal(view.children[0].workspace.pathRef, "/tmp/delegate/parent-1/run-1/worktrees/child-2");
+  assert.equal(view.children[0].workspace.pathRef, "/tmp/delegate/run-1/child-2/workspace");
   assert.equal(view.children[0].workspace.state, "working");
   assert.deepEqual(view.children[0].workspace.contents, ["evidence.log", "raw/", "raw/output.txt"]);
   assert.equal(view.children[0].workspace.contentsTruncated, false);
@@ -985,6 +998,20 @@ test("does not restore a stale scratch inventory when cleanup finishes during in
   assert.equal(projectRun(final).children[0].workspace.contents, undefined);
 });
 
+test("transitions a finalized temporary workspace to expired through explicit cleanup", async () => {
+  const workspaces = fakeWorkspaceManager();
+  const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+  const handle = await runtime.start(startInput({ workspace: "temporary" }));
+  await settle();
+  children.launches[0].done.resolve(success("done"));
+  await settle();
+  workspaces.setExpired(true);
+
+  const expired = await runtime.cleanup(handle.runId);
+  assert.equal(expired.children[0].workspace.integration.state, "expired");
+  assert.equal(runNeedsControl(expired), false);
+});
+
 test("reviews and applies an exact temporary workspace revision", async () => {
   const workspaces = fakeWorkspaceManager();
   const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
@@ -992,7 +1019,7 @@ test("reviews and applies an exact temporary workspace revision", async () => {
   await settle();
   assert.equal(workspaces.prepared.length, 1);
   assert.equal(children.launches[0].input.child.workspace.kind, "temporary");
-  assert.equal(children.launches[0].input.child.workspace.worktreePath, "/tmp/delegate/parent-1/run-1/worktrees/child-2");
+  assert.equal(children.launches[0].input.child.workspace.worktreePath, "/tmp/delegate/run-1/child-2/workspace");
 
   children.launches[0].done.resolve(success("implementation complete"));
   await settle();

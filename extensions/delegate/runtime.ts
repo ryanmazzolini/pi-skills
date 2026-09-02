@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-export const RUN_SCHEMA_VERSION = 3;
+export const RUN_SCHEMA_VERSION = 4;
 export const DEFAULT_RESULT_LIMIT_BYTES = 32 * 1024;
 export const DEFAULT_MAX_ACTIVE_CHILDREN = 10;
 
@@ -90,7 +90,8 @@ export type IntegrationState =
 	| { state: "applied"; revision: string; appliedAt: string; cleanupError?: string }
 	| { state: "conflict"; review: WorkspaceReview; message: string }
 	| { state: "discarded"; revision: string; discardedAt: string; cleanupError?: string }
-	| { state: "cleaned"; cleanedAt: string };
+	| { state: "cleaned"; cleanedAt: string }
+	| { state: "expired"; expiredAt: string };
 
 export interface ExistingWorkspace {
 	kind: "existing";
@@ -98,10 +99,17 @@ export interface ExistingWorkspace {
 	owner: "external";
 }
 
+export interface TemporaryWorkspaceEnvelope {
+	rootPath: string;
+	ownerToken: string;
+	directoryIdentity: ScratchDirectoryIdentity;
+}
+
 interface TemporaryWorkspaceBase {
 	kind: "temporary";
 	sourceCwd: string;
 	worktreePath: string;
+	envelope?: TemporaryWorkspaceEnvelope;
 	integration: IntegrationState;
 }
 
@@ -126,7 +134,7 @@ export interface ScratchDirectoryIdentity {
 }
 
 export interface ScratchTemporaryWorkspace extends TemporaryWorkspaceBase {
-	directoryIdentity: ScratchDirectoryIdentity;
+	directoryIdentity?: ScratchDirectoryIdentity;
 	contents?: ScratchContentsSummary;
 }
 
@@ -135,6 +143,12 @@ export type ChildWorkspace = ExistingWorkspace | TemporaryWorkspace;
 
 export function isGitTemporaryWorkspace(workspace: TemporaryWorkspace): workspace is GitTemporaryWorkspace {
 	return "repoRoot" in workspace;
+}
+
+export function hasTemporaryWorkspaceEnvelope(
+	workspace: TemporaryWorkspace,
+): workspace is TemporaryWorkspace & { envelope: TemporaryWorkspaceEnvelope } {
+	return workspace.envelope !== undefined;
 }
 
 export function childWorkspaceCwd(workspace: ChildWorkspace): string {
@@ -276,7 +290,6 @@ export interface RunView {
 export interface RunPaths {
 	runFile: string;
 	childSessionDir: string;
-	worktreeDir: string;
 	patchFile: string;
 	manifestFile: string;
 }
@@ -365,7 +378,6 @@ export interface WorkspacePreparationInput {
 	sourceCwd: string;
 	runId: string;
 	childId: string;
-	worktreePath: string;
 	patchPath: string;
 	manifestPath: string;
 }
@@ -386,6 +398,7 @@ export interface WorkspaceManager {
 	assertRevision(workspace: GitTemporaryWorkspace, revision: string): Promise<void>;
 	apply(workspace: GitTemporaryWorkspace, review: WorkspaceReview): Promise<void>;
 	inspectScratch(workspace: ScratchTemporaryWorkspace): Promise<ScratchContentsSummary>;
+	expire(workspace: TemporaryWorkspace): Promise<boolean>;
 	cleanup(workspace: TemporaryWorkspace, expectedRevision?: string): Promise<void>;
 }
 
@@ -692,7 +705,8 @@ export function runNeedsControl(run: DelegationRun): boolean {
 			(child.workspace.integration.state !== "no_changes"
 				&& child.workspace.integration.state !== "applied"
 				&& child.workspace.integration.state !== "discarded"
-				&& child.workspace.integration.state !== "cleaned")
+				&& child.workspace.integration.state !== "cleaned"
+				&& child.workspace.integration.state !== "expired")
 			|| ("cleanupError" in child.workspace.integration && !!child.workspace.integration.cleanupError)
 		))
 	);
@@ -789,7 +803,6 @@ export class DelegateRuntime {
 						sourceCwd: input.cwd,
 						runId,
 						childId,
-						worktreePath: paths.worktreeDir,
 						patchPath: paths.patchFile,
 						manifestPath: paths.manifestFile,
 					});
@@ -1008,6 +1021,7 @@ export class DelegateRuntime {
 			const run = this.requireRun(runId);
 			const child = this.selectGitTemporary(run, selected.id, "review");
 			if (!isFinalChild(child.state)) throw new Error(`Child ${child.id} is ${child.state}; review requires finalized work`);
+			if (await this.expireWorkspace(run, child)) return clone(run);
 			const integration = child.workspace.integration;
 			if (integration.state === "applied" || integration.state === "discarded" || integration.state === "no_changes") {
 				throw new Error(`Child ${child.id} workspace is already ${integration.state}`);
@@ -1053,6 +1067,7 @@ export class DelegateRuntime {
 		return this.serializeWorkspace(selected.id, async () => {
 			const run = this.requireRun(runId);
 			const child = this.selectGitTemporary(run, selected.id, "apply");
+			if (await this.expireWorkspace(run, child)) return clone(run);
 			const integration = child.workspace.integration;
 			if (integration.state !== "review_pending" && integration.state !== "conflict") {
 				throw new Error(`Child ${child.id} workspace is ${integration.state}; apply requires reviewed changes`);
@@ -1105,6 +1120,7 @@ export class DelegateRuntime {
 		return this.serializeWorkspace(selected.id, async () => {
 			const run = this.requireRun(runId);
 			const child = this.selectGitTemporary(run, selected.id, "discard");
+			if (await this.expireWorkspace(run, child)) return clone(run);
 			const integration = child.workspace.integration;
 			if (integration.state !== "review_pending" && integration.state !== "conflict") {
 				throw new Error(`Child ${child.id} workspace is ${integration.state}; discard requires reviewed changes`);
@@ -1150,6 +1166,8 @@ export class DelegateRuntime {
 		return this.serializeWorkspace(selected.id, async () => {
 			const run = this.requireRun(runId);
 			const child = this.selectTemporary(run, selected.id, "cleanup");
+			if (child.workspace.integration.state === "expired") return clone(run);
+			if (await this.expireWorkspace(run, child)) return clone(run);
 			const integration = child.workspace.integration;
 			if (!isGitTemporaryWorkspace(child.workspace)) {
 				if (!isFinalChild(child.state)) throw new Error(`Child ${child.id} is ${child.state}; scratch cleanup requires finalized work`);
@@ -1571,7 +1589,8 @@ export class DelegateRuntime {
 		for (const child of run.children) {
 			if (child.workspace.kind !== "temporary"
 				|| isGitTemporaryWorkspace(child.workspace)
-				|| child.workspace.integration.state === "cleaned") continue;
+				|| child.workspace.integration.state === "cleaned"
+				|| child.workspace.integration.state === "expired") continue;
 			const workspace = child.workspace;
 			let contents: ScratchContentsSummary;
 			try {
@@ -1583,7 +1602,7 @@ export class DelegateRuntime {
 					error: `Could not inspect scratch contents: ${clipUtf8(error instanceof Error ? error.message : String(error), 2048).value}`,
 				};
 			}
-			if (workspace.integration.state === "cleaned") continue;
+			if (workspace.integration.state === "cleaned" || workspace.integration.state === "expired") continue;
 			workspace.contents = contents;
 			changed = true;
 		}
@@ -1715,6 +1734,20 @@ export class DelegateRuntime {
 		const child = candidates[0]!;
 		if (child.workspace.kind !== "temporary") throw new Error(`Child ${child.id} does not use a temporary workspace`);
 		return child as DelegatedChild & { workspace: TemporaryWorkspace };
+	}
+
+	private async expireWorkspace(
+		run: DelegationRun,
+		child: DelegatedChild & { workspace: TemporaryWorkspace },
+	): Promise<boolean> {
+		if (child.workspace.integration.state === "expired") return true;
+		if (!await this.requireWorkspaceManager().expire(child.workspace)) return false;
+		delete (child.workspace as ScratchTemporaryWorkspace).contents;
+		child.workspace.integration = { state: "expired", expiredAt: this.timestamp() };
+		run.updatedAt = this.timestamp();
+		await this.persist(run);
+		this.emit(run);
+		return true;
 	}
 
 	private selectGitTemporary(
