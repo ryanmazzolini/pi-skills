@@ -81,7 +81,7 @@ After the ticket folder and first PR worktree are ready, load the model-invoked 
 - `HERDR_ENV=1`
 - the Pi session is still rooted outside the ticket folder
 
-Propose the ticket folder as the Herdr cwd so the session can reach every repo worktree, and use the ticket slug as the workspace label. The default starts a fresh Pi session with a concise continuation brief, preserves human focus, and keeps the source pane open. Let the `herdr` skill control its separate confirmation and verification. Focusing the destination or closing the source requires the additional, distinct approval defined by that skill.
+Explicitly state that this handoff requires a new, separate Herdr workspace. Propose the ticket folder as its cwd so the session can reach every repo worktree, and use the ticket slug as the workspace label. The default starts a fresh Pi session with a concise continuation brief, preserves human focus, and keeps the source pane open. Let the `herdr` skill control its separate confirmation and verification. Focusing the destination or closing the source requires the additional, distinct approval defined by that skill.
 
 ## Keep consent explicit
 
