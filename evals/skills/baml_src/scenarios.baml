@@ -5,6 +5,7 @@ function ScenarioSuites() -> ScenarioSuite[] {
         ScenarioSuite { id: "architecture", scenarios: ArchitectureScenarios() },
         ScenarioSuite { id: "commit-simple", scenarios: CommitSimpleScenarios() },
         ScenarioSuite { id: "commit-pr", scenarios: CommitPrScenarios() },
+        ScenarioSuite { id: "herdr", scenarios: HerdrScenarios() },
     ]
 }
 

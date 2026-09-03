@@ -1,6 +1,6 @@
 ---
 name: "herdr"
-description: "Control Herdr when the user explicitly asks, keep the current pane isolated while cleaning a completed ticket workspace, or hand off active Pi work after ticket-workspace prepares it. Requires HERDR_ENV=1."
+description: "Control Herdr when the user explicitly asks, infer a fresh Pi destination in an existing tabbed workspace or a new workspace, or keep the current pane isolated while cleaning completed ticket work. Requires HERDR_ENV=1."
 ---
 
 # Herdr
@@ -39,6 +39,8 @@ When the user invokes `ticket-workspace-cleanup` from a Herdr pane, perform that
 
 Do not create or reuse a handoff destination, prompt another agent, send cleanup or closure commands to another Pi session, change focus, or close a pane. Keep the calling Pi alive. After the approved local cleanup and any separately approved upstream cleanup are verified, report the calling pane ID as ready for manual closure and stop without running more commands from a removed working directory.
 
-## Hand off Pi work
+## Continue Pi work
 
-When continuing active work in another Herdr workspace, read [references/pi-session-transfer.md](references/pi-session-transfer.md). Do not use a handoff to retire completed work. Start a fresh Pi session with a concise continuation brief. The default handoff preserves the source pane and human focus. Focusing the destination or closing the source requires the distinct approval described there.
+When continuing active work in a fresh Herdr session, read [references/pi-session-transfer.md](references/pi-session-transfer.md). Infer an existing destination workspace when one unambiguously represents the project; create a named tab there instead of creating another workspace. A ticket, branch, worktree, or ticket folder is not required. Create a workspace only for work that needs a separate workspace.
+
+Do not use this flow to retire completed work. Start a fresh Pi session with a concise continuation brief. The default preserves the source pane and human focus. Focusing the destination or closing the source requires the distinct approval described in the reference.
