@@ -53,37 +53,33 @@ Report a finding only when all of these are clear:
 
 Confirm suspected findings against the implementation and existing tests. When available, use a test, CI for the reviewed revision, or a focused reproduction.
 
-Treat deterministic check failures as evidence rather than duplicating them as comments. Mention a material failed or unavailable check under **Notable**; report the underlying defect only when it independently meets the requirements above.
+Treat deterministic check failures as evidence rather than duplicating them as comments. Include a material failed or unavailable check when it affects the decision; report the underlying defect only when it independently meets the requirements above.
 
-Do not report unsupported risks, generic requests for tests or documentation, or low-value style preferences.
+Keep findings focused on supported risks with specific next steps. Generic requests for tests or documentation and low-value style preferences stay outside the review.
 
-A pre-existing problem is not a pull-request finding. Flag one only when it is concrete, material, directly relevant to the reviewed behavior, and likely to receive a specific follow-up. Do not include an adjacent issue merely because the review exposed it. Put a qualifying note after introduced findings under **Existing issue**, say that the pull request did not introduce it, and link to the relevant code at an immutable revision and to its tracking item when available. It does not affect the pull-request recommendation and is not a proposed inline comment on the pull request.
+Treat a pre-existing problem as an **Existing issue** only when it is concrete, material, directly relevant to the reviewed behavior, and likely to receive a specific follow-up. Present it as a non-blocking inline comment after introduced findings and state that the pull request did not introduce it. It leaves the pull-request recommendation unchanged. Publication requires the same valid changed-line anchor as any other inline comment.
 
-Before classifying findings or recommending an action, assess the risk of merging the reviewed revision. Use **Low**, **Moderate**, or **High** as a concise judgment, not a score. Consider:
+Before classifying findings or recommending an action, assess the risk to the business if the reviewed revision merges unchanged. Start with the concrete consequence visible in the available evidence. Ground the affected users, operations, systems, or records; the scale and frequency; the path to detection and recovery; and any wider business effect in the issue, code, tests, documentation, or repository context. When a missing fact could change the classification, name that fact and the decision it affects.
 
-- the worst credible consequence and how many users, systems, or records it could affect;
-- whether failure is easy to detect, contain, reverse, or repair;
-- exposure involving data integrity, security, money, contracts, concurrency, asynchronous ordering, migrations, or compatibility;
-- rollout controls, observability, and exact-head validation that reduce the risk; and
-- complexity or novelty that makes an undiscovered defect more likely.
+Use **Low**, **Moderate**, or **High** internally to calibrate the review. Consider the worst supported consequence, the supported reach and likelihood, how readily people can detect and recover from it, and the controls that limit it. Complexity and novelty affect confidence that undiscovered defects remain; they do not increase the business impact of a proven finding.
 
-Judge the residual risk with those controls in place. High risk does not prevent approval when the evidence and safeguards are sufficient. Low risk does not excuse a material unmet outcome. Do not inflate the rating with unsupported possibilities.
+Classify each introduced finding by the consequence of merging without its correction:
 
-Classify each introduced finding in the current reviewed revision by what it blocks. A small or already-understood correction may justify **Blocks merge**, but it does not remove the finding until the reviewed head contains it.
+- **Non-blocking** means merging without the correction presents an acceptable business risk. The correction is optional or suitable for follow-up.
+- **Blocks merge** is the normal classification for a proven defect that should be corrected before merge. The reviewer may approve while leaving the correction with the pull-request author.
+- **Blocks approval** means the evidence establishes a significant business consequence if the author merges the current revision after approval. The reviewer should see the correction first.
 
-- **Blocks approval** means the reviewer should see the correction before approving. Use it when the consequence is material in the context of the change, the correction may alter a design or contract, or validation of the correction is necessary for confidence. Higher-risk changes require stronger justification before using **Blocks merge** instead.
-- **Blocks merge** means the defect must be addressed, but its consequence is limited and the expected correction is isolated and clear enough not to need another review. The human may approve with the comment open.
-- **Non-blocking** means the pull request can merge without addressing the comment. Treat it as an optional improvement or follow-up.
+Choose the classification before considering the remediation. Use the correction's size or simplicity only to shape the suggestion.
 
-A material confidence gap may block approval even when it is not a proven defect. Use this only when specific missing evidence prevents confidence proportional to the change risk, such as unavailable exact-head validation for a destructive migration. Put it under **Notable**, name the evidence needed, and do not turn it into an inline finding or a generic request for more tests. Do not create a separate confidence gap for evidence already required to resolve a **Blocks approval** finding; name that verification in the finding or recommendation rationale instead.
+A significant unresolved question may also prevent approval without becoming an inline finding. Treat it as a material confidence gap when a specific missing contract, fact, or validation result prevents a risk-proportionate decision. Name the missing evidence and the decision it would settle. A lower-consequence question may become a **Discussion** item when it meets the PR-level criteria below.
 
 ## Write the comment
 
-Write each introduced finding as a proposed inline comment on the smallest changed line or range that establishes the defect. Use the old side for deleted lines when the host supports it. Do not anchor comments to unchanged surrounding code.
+Write each introduced finding and **Existing issue** as a proposed inline comment on the smallest changed line or range that establishes the defect. Use the old side for deleted lines when the host supports it. Do not anchor comments to unchanged surrounding code.
 
 Make the displayed file and line reference a deep link when the review host supports one. Use an immutable blob link pinned to the reviewed head, or to the base for deleted lines. A host-provided diff link is suitable only when it is pinned to the reviewed revision. Fall back to a plain path for local-only reviews rather than inventing a link. Display ranges as `path/to/file:81-86`; keep host-specific anchors such as `#L81-L86` in the URL.
 
-Group comments by action in this order: **Blocks approval**, **Blocks merge**, then **Non-blocking**. Order comments within each group by impact.
+Order comments by action—**Blocks approval**, **Blocks merge**, **Non-blocking**, then **Existing issue**—and then by impact. Use group headings when they make several comments easier to navigate.
 
 Each comment should:
 
@@ -126,67 +122,36 @@ Then scan every proposed change or test. Rewrite commands, including sentences u
 
 ## Return the result
 
-Before returning, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review, including its recommendation, risk statement, summaries, notable facts, and comments. Preserve the technical meaning and review requirements while removing internal review jargon, repeated evidence, and implementation detail that does not help the reader understand or act.
+Before returning, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review. Return the shortest result that gives the human enough context to decide and act.
 
-Return one section for each reviewed pull request, commit, or diff. For a hosted pull request, make the section title a link to it.
+Give each reviewed pull request, commit, or diff exactly one recommendation:
 
-Lead each section with exactly one recommendation:
+- **Approve** when the evidence is sufficient and no introduced finding or **Discussion** item remains. **Existing issue** notes leave this recommendation unchanged.
+- **Approve with comments** when **Blocks merge**, **Non-blocking**, or **Discussion** items remain without a **Blocks approval** finding or material confidence gap.
+- **Wait before approving** when a **Blocks approval** finding or material confidence gap remains.
 
-- **Approve** when no introduced findings or **Discussion** remain and the evidence is sufficient for the change risk. **Existing issue** notes do not affect this recommendation.
-- **Approve with comments** when the section contains **Blocks merge**, **Non-blocking**, or **Discussion** items but no **Blocks approval** finding or material confidence gap.
-- **Wait before approving** when any **Blocks approval** finding remains or a material confidence gap prevents a risk-proportionate review.
+Let proposed comments carry their own consequences. Add context, risk, validation, or recommendation rationale when it changes the decision, explains material uncertainty, tells the reviewer what to verify, or synthesizes several findings. State the supported consequence rather than a general risk category. Routine successful checks can remain implicit; link evidence that materially changes confidence.
 
-Build the opening in this order:
+Show every proposed inline comment as a changed-line link followed by a blockquote containing the exact publishable body. Keep the classification and any required AI attribution inside that body. Let the recommendation and comment classifications carry the decision. Reserve wrapper headings, separate classification summaries, and grouping for multiple targets or findings that need them. Separate targets in a stack and assign each finding to the change that introduced it.
 
-1. Put the recommendation in its own paragraph, written as `**Recommendation: Approve with comments.**`
-2. For **Moderate** or **High** risk, start a new paragraph with `**Change risk: <rating>.**`, replacing `<rating>` with that value. Continue in the same paragraph with one or two sentences that state what could go wrong and what limits or increases the consequence. Start with the affected user, operation, or data rather than implementation categories. Omit this paragraph for **Low** risk. Keep every validation result under **Notable**; do not repeat or refer vaguely to checks here. Avoid internal shorthand such as “exposure,” “containment,” “residual risk,” “exact-head validation,” or “exact reviewed commit” in the returned review.
-3. Whenever comments or a material confidence gap exist, add a separate short recommendation rationale. State what remains and what the reviewer needs to do. Leave remediation to the inline comments and keep this rationale out of them. For a Low-risk review, mention a concrete limiting factor only when it helps explain the recommendation; do not replace the omitted rating with the phrase “low risk.”
+Use **Existing issue** as the comment's classification, state that it predates the reviewed change, and link its tracking item when available.
 
-- For **Wait before approving** because of a **Blocks approval** finding, name the behavior or correction the human needs to verify rather than repeating check status. When missing evidence blocks approval, say that approval depends on the evidence named under **Notable** without repeating its details or links.
-- When **Blocks merge** items remain, name the open defects and say why their corrections do not need another review.
-- With only **Non-blocking** items, say that they are optional or suitable for follow-up.
-- With only **Discussion**, say that the open question does not block approval.
+The recommendation advises the human reviewer. Publishing, approving, and requesting changes remain separate actions that require their applicable authorization.
 
-This distinction allows a human to approve a narrow required correction without implying that the current revision is ready to merge. The risk statement explains why the same type of defect may warrant a different action in a more consequential or harder-to-recover change.
-
-The recommendation advises the human reviewer. Do not approve the change or request changes on their behalf.
-
-Follow the recommendation with compact prose:
-
-- **Original issue.** This labeled sentence is required for a hosted pull request with an available linked issue; do not replace it with an unlabeled summary. State the original problem and requested outcome as behavior the user or operator should observe. Deep-link the issue. State the issue itself rather than narrating that it was retrieved or validated.
-- **Context.** Use this instead when a hosted pull request has no available linked issue. Name the PR description or other source used and state what required context remains unavailable.
-- **Intent.** Use this for a commit, patch, or local diff with a stated request. Omit it when no intent source is available rather than manufacturing context.
-- **Change.** State what the user, operator, or system can now do and how prior behavior changes before explaining implementation. Use one connected description rather than an inventory of components or files. When no issue or intent is available, describe only the observed behavior without claiming that it satisfies an unstated outcome. For hosted changes, attach immutable implementation links to the behavior they support.
-- **Notable.** Add this only for another fact, trade-off, dependency, or validation gap that materially helps the review. Keep validation results and links to tests, CI, or other validation evidence here and nowhere else. Name each material check and its result. For hosted changes, link tests to the immutable reviewed revision and CI or other validation evidence to the exact reviewed run. For local reviews, identify the commit or run when known. If the source says only that checks passed, omit that claim without narrating why. Also omit absent concerns, empty placeholders, and a separate validation section.
-
-Then return the draft groups in this order, omitting empty groups: **Blocks approval**, **Blocks merge**, **Non-blocking**, **Discussion**, then **Existing issue**. The first three contain publishable inline comments. Put the classification at the top of each inline comment body, and keep the deep-linked file and line outside it as presentation metadata:
-
-```markdown
-### Blocks merge
-
-[`path/to/file:line`](immutable-or-diff-link)
-
-> **Blocks merge**
->
-> Exact comment body
-```
-
-Each **Existing issue** note must say that the pull request did not introduce the problem. Say that no inline comments are proposed only when every group is empty; never append it after a non-empty group.
-
-Apply AI attribution to publishable drafts by default unless overridden explicitly by the user or policy in context. Keep the classification and any attribution inside the quoted comment body. Each draft should match what would be published.
-
-When another skill supplies an output schema, follow its structure while preserving the issue validation, per-target separation, recommendation, finding requirements, grouping, and prose above.
+When another skill supplies an output schema, follow its structure while preserving the issue validation, per-target separation, recommendation, finding, and publication requirements above.
 
 ## PR-level discussion
 
-A pull request may have at most one proposed top-level discussion comment. Use this exception only when every topic:
+A pull request may have at most one proposed top-level discussion comment. Use this exception when the available evidence still supports approval and every topic:
 
 - concerns an architecture decision or repository rule that materially affects the pull request;
 - spans several changes or cannot be fairly anchored to one changed line;
 - links to the decision and the defining changes; and
 - needs context from the author before the reviewer can draw a conclusion.
 
-Combine multiple qualifying topics into short, readable paragraphs in the same comment. State the observed relationship and ask one focused question for each topic. Do not add an action classification, prescribe a remedy, or change the recommendation to **Wait before approving** because of an unresolved discussion.
+A question that prevents a risk-proportionate decision is a material confidence gap instead of a **Discussion** item.
+
+Combine multiple qualifying topics into short, readable paragraphs in the same comment. State the observed relationship and ask one focused question for each topic. Keep action classifications and remedies with findings.
 
 Present it only when it exists:
 
@@ -198,14 +163,14 @@ Present it only when it exists:
 
 Deep-link each referenced decision and defining change inside the discussion body at an immutable reviewed revision.
 
-Do not use a top-level comment because an ordinary finding lacks a valid inline anchor.
+Reserve top-level comments for the qualifying PR-level discussion above.
 
 ## Publish comments
 
 Before publishing:
 
 1. Show the exact destination and body unless the user already approved that text.
-2. If the host cannot attach an introduced finding to a relevant changed line, stop and explain that it cannot be published inline. Do not move it to unchanged code or a top-level comment.
-3. Publish a proposed **Discussion** only as the single top-level comment described above. Treat **Existing issue** items as reviewer notes unless the user chooses a separate destination.
+2. If the host cannot attach a proposed comment to a relevant changed line, stop and explain that it cannot be published inline. Keep its destination on a changed line rather than moving it to unchanged code or a top-level comment.
+3. Publish a proposed **Discussion** only as the single top-level comment described above.
 4. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body. Never approve or request changes.
 5. Read each published comment back and verify its target, content, and formatting.
