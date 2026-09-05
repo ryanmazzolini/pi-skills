@@ -5,12 +5,13 @@ import path from "node:path";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { projectRun } from "./runtime.ts";
-import { AgentDeskOverlayComponent, createDelegateUi, describeLatestActivity, listDeskAssignments, readChildHistory, RunOverlayComponent } from "./ui.ts";
+import { AgentDeskOverlayComponent, createDelegateUi, describeLatestActivity, listDeskAssignments, readChildHistory, RunOverlayComponent, stateIcon } from "./ui.ts";
 
 const theme = {
   fg: (_color, text) => text,
   bg: (_color, text) => text,
   bold: (text) => text,
+  getThinkingBorderColor: (_level) => (text) => text,
 };
 
 function run(state = "running", observedAt = new Date(0).toISOString(), count = 1) {
@@ -122,6 +123,156 @@ test("quiet active work reports activity age only after the stale threshold", ()
   component.dispose();
 });
 
+test("retry countdown uses the deadline, not the heartbeat, and never claims quiet work", () => {
+  const activeRun = run("running", new Date(10_000).toISOString());
+  const child = activeRun.children[0];
+  child.latestActivity = {
+    kind: "retry", summary: "rate limited\nprovider detail",
+    observedAt: new Date(10_000).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  assert.equal(describeLatestActivity(activeRun, 12_001), "Retry 2/3 in 18s · rate limited");
+  assert.equal(describeLatestActivity(activeRun, 29_999), "Retry 2/3 in 1s · rate limited");
+  assert.equal(describeLatestActivity(activeRun, 35_000), "Retry 2/3 pending · rate limited");
+  child.latestActivity.observedAt = new Date(28_000).toISOString();
+  assert.equal(describeLatestActivity(activeRun, 29_000), "Retry 2/3 in 1s · rate limited");
+  delete child.latestActivity.retry;
+  assert.equal(describeLatestActivity(activeRun, 35_000), "Retrying · rate limited");
+});
+
+test("retry rows use a static warning cue and emphasize only the countdown", (t) => {
+  let now = 12_000;
+  const activeRun = run("running", new Date(0).toISOString());
+  activeRun.children[0].latestActivity = {
+    kind: "retry", summary: "rate limited", observedAt: new Date(0).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  const calls = [];
+  const styledTheme = {
+    ...theme,
+    fg(color, text) { calls.push({ color, text }); return text; },
+    bold(text) { calls.push({ bold: text }); return text; },
+  };
+  const harness = runtimeFor(activeRun);
+  const component = createDelegateUi(harness.runtime).createStatus(
+    { requestRender() {} }, styledTheme, { now: () => now },
+  );
+  t.after(() => component.dispose());
+  const before = component.render(120).join("\n");
+  assert.match(before, /↻ Reader 1 · Retry 2\/3 in 18s · rate limited/);
+  assert.doesNotMatch(before, /Still running|quiet/);
+  assert.ok(calls.some((call) => call.color === "warning" && call.text === "↻"));
+  assert.ok(calls.some((call) => call.bold === "Retry 2/3 in 18s"));
+  assert.ok(calls.some((call) => call.color === "text" && call.text === "rate limited"));
+  now += 1_000;
+  assert.match(component.render(120).join("\n"), /↻ Reader 1 · Retry 2\/3 in 17s/);
+  const narrow = component.render(40);
+  assert.match(narrow.join("\n"), /retrying/);
+  assert.match(narrow.join("\n"), /\/agents/);
+  assert.ok(narrow.every((line) => visibleWidth(line) <= 40));
+});
+
+test("retry details remain visible in narrow Desk and detail rows, then clear on recovery", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 12_000 });
+  const activeRun = run("running", new Date(0).toISOString());
+  const child = activeRun.children[0];
+  child.label = "Security review of a very long module name";
+  child.resolved.model.id = "model-name-that-would-hide-the-retry-countdown";
+  child.latestActivity = {
+    kind: "retry", summary: "rate limited\nprovider detail", observedAt: new Date(0).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  const ansiTheme = {
+    ...theme,
+    fg: (_color, text) => `\u001b[33m${text}\u001b[39m`,
+    bold: (text) => `\u001b[1m${text}\u001b[22m`,
+  };
+  const harness = runtimeFor(activeRun);
+  const desk = new AgentDeskOverlayComponent(
+    harness.runtime, {}, { requestRender() {}, terminal: { rows: 6 } }, ansiTheme, () => {}, { async resume() {} },
+  );
+  const pinned = createDelegateUi(harness.runtime).createStatus({ requestRender() {} }, ansiTheme);
+  t.after(() => { desk.dispose(); pinned.dispose(); });
+  for (const width of [40, 60, 120]) {
+    const lines = desk.render(width);
+    assert.match(lines.join("\n"), /Retry 2\/3 in 18s/);
+    assert.ok(lines.every((line) => visibleWidth(line) <= width && !/[\r\n]/.test(line)));
+  }
+  assert.match(pinned.render(80).join("\n"), /Retry 2\/3 in 18s/);
+  desk.handleInput("\r");
+  assert.match(desk.render(40).join("\n"), /Retry 2\/3 in 18s/);
+  t.mock.timers.tick(1_000);
+  assert.match(desk.render(40).join("\n"), /Retry 2\/3 in 17s/);
+  child.latestActivity = { kind: "thinking", summary: "Thinking", observedAt: new Date().toISOString() };
+  harness.emit(activeRun);
+  assert.doesNotMatch(desk.render(120).join("\n"), /Retry|↻/);
+  assert.doesNotMatch(pinned.render(120).join("\n"), /retrying|Retry|↻/);
+});
+
+test("Desk repaints a retry countdown even when an interrupted row is selected", (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 12_000 });
+  const activeRun = run("running", new Date(0).toISOString(), 2);
+  activeRun.children[0].state = "interrupted";
+  activeRun.children[1].latestActivity = {
+    kind: "retry", summary: "rate limited", observedAt: new Date(0).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  let renders = 0;
+  const desk = new AgentDeskOverlayComponent(
+    runtimeFor(activeRun).runtime, {}, { requestRender() { renders++; }, terminal: { rows: 24 } }, theme, () => {}, { async resume() {} },
+  );
+  t.after(() => desk.dispose());
+  assert.equal(desk.selectedChildId, activeRun.children[0].id);
+  assert.match(desk.render(100).join("\n"), /Retry 2\/3 in 18s/);
+  t.mock.timers.tick(1_000);
+  assert.ok(renders > 0);
+  assert.match(desk.render(100).join("\n"), /Retry 2\/3 in 17s/);
+});
+
+test("pinned retry rows precede ordinary work without displacing failures or attention", (t) => {
+  const activeRun = run("running", new Date(12_000).toISOString(), 9);
+  activeRun.children[6].latestActivity = {
+    kind: "retry", summary: "rate limited", observedAt: new Date(0).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  activeRun.children[7].state = "failed";
+  activeRun.children[8].state = "needs_attention";
+  const pinned = createDelegateUi(runtimeFor(activeRun).runtime).createStatus({ requestRender() {} }, theme, { now: () => 12_000 });
+  t.after(() => pinned.dispose());
+  const lines = pinned.render(120);
+  assert.match(lines[1], /Reader 9/);
+  assert.match(lines[2], /Reader 8/);
+  assert.match(lines[3], /Reader 7 · Retry 2\/3 in 18s/);
+  assert.match(lines.at(-1), /3 more/);
+});
+
+test("working icons use each child's thinking level; other states keep status colours", () => {
+  const styledTheme = {
+    ...theme,
+    fg: (color, text) => `<${color}>${text}</${color}>`,
+    getThinkingBorderColor: (level) => (text) => `<thinking:${level}>${text}</thinking:${level}>`,
+  };
+  const child = run().children[0];
+  for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
+    child.resolved.reasoning = level;
+    for (const kind of ["thinking", "tool", "message"]) {
+      child.latestActivity.kind = kind;
+      assert.match(stateIcon(child, styledTheme, true, 0), new RegExp(`^<thinking:${level}>⠋`));
+    }
+  }
+  child.state = "queued";
+  assert.equal(stateIcon(child, styledTheme, true, 0), "<muted>○</muted>");
+  assert.equal(stateIcon(child, styledTheme, true, 200), "<muted>○</muted>");
+  child.state = "running";
+  child.latestActivity.kind = "retry";
+  assert.equal(stateIcon(child, styledTheme, true, 0), "<warning>↻</warning>");
+  assert.equal(stateIcon(child, styledTheme, true, 200), "<warning>↻</warning>");
+  for (const [state, expected] of [["failed", "<error>✗</error>"], ["completed", "<success>✓</success>"], ["needs_attention", "<warning>?</warning>"]]) {
+    child.state = state;
+    assert.equal(stateIcon(child, styledTheme), expected);
+  }
+});
+
 test("pinned status prioritizes attention, caps rows, and collapses on narrow terminals", () => {
   const activeRun = run("running", new Date(19_000).toISOString(), 9);
   activeRun.children[7].state = "needs_attention";
@@ -157,6 +308,7 @@ test("pinned status prioritizes attention, caps rows, and collapses on narrow te
 
 test("extreme narrow status remains width-safe with ANSI styling", () => {
   const ansiTheme = {
+    ...theme,
     fg: (_color, text) => `\u001b[31m${text}\u001b[0m`,
     bg: (_color, text) => text,
     bold: (text) => `\u001b[1m${text}\u001b[0m`,
@@ -706,6 +858,7 @@ test("agent desk shows queued, starting, running, and re-interrupted resume stat
 test("agent desk stays ANSI-safe on narrow and short terminals", () => {
   const many = run("running", new Date().toISOString(), 12);
   const ansiTheme = {
+    ...theme,
     fg: (_color, text) => `\u001b[31m${text}\u001b[0m`,
     bg: (_color, text) => `\u001b[40m${text}\u001b[0m`,
     bold: (text) => `\u001b[1m${text}\u001b[0m`,
