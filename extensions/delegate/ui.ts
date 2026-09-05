@@ -460,6 +460,21 @@ function padAnsi(value: string, width: number): string {
 	return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
 }
 
+function fitFooterHints(width: number, alternatives: string[], exitHint: string): string {
+	return [...alternatives, exitHint].find((text) => visibleWidth(text) <= width)
+		?? truncateToWidth("Esc", Math.max(1, width), "");
+}
+
+function completionProblem(child: RunView["children"][number]): string | undefined {
+	if (child.state === "failed" || child.error) return "failed";
+	if (child.state === "needs_attention") return "awaiting attention";
+	if (child.state === "interrupted") return "interrupted";
+	if (child.state === "cancelled") return "cancelled";
+	if (child.workspace?.state === "conflict") return "workspace conflict";
+	if (child.workspace?.cleanupError) return "cleanup failed";
+	return undefined;
+}
+
 function boundedDisplay(value: string, maxChars = 16_000): string {
 	return value.length <= maxChars ? value : `${value.slice(0, maxChars)}\n[Display truncated]`;
 }
@@ -686,7 +701,7 @@ export class AgentDeskOverlayComponent implements Component {
 				truncateToWidth(header, innerWidth),
 				this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 				this.theme.fg("dim", "No agent assignments in this session."),
-				this.theme.fg("dim", "Esc close"),
+				this.theme.fg("dim", fitFooterHints(innerWidth, [], "Esc close")),
 			], safeWidth, this.theme);
 		}
 
@@ -699,8 +714,14 @@ export class AgentDeskOverlayComponent implements Component {
 			? [this.assignmentLine(selected, true)]
 			: display.slice(start, start + bodyHeight).map(({ text }) => text);
 		const padded = Array.from({ length: bodyHeight }, (_, index) => visible[index] ?? "");
-		const resume = selected.child.state === "interrupted" && !this.resumePending.has(selected.child.id) ? " · r/R resume" : "";
-		const footer = this.theme.fg("dim", `↑/↓ j/k select · Enter live status${resume} · Esc close`);
+		const canResume = selected.child.state === "interrupted" && !this.resumePending.has(selected.child.id);
+		const resume = canResume ? " · r/R resume" : "";
+		const compactResume = canResume ? " · r resume" : "";
+		const footer = this.theme.fg("dim", fitFooterHints(innerWidth, [
+			`↑/↓ j/k select · Enter live status${resume} · Esc close`,
+			`↑/↓ select · Enter view${compactResume} · Esc close`,
+			`Enter view${compactResume} · Esc close`,
+		], "Esc close"));
 		return framedOverlay([
 			truncateToWidth(header, innerWidth),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
@@ -1003,8 +1024,8 @@ export class RunOverlayComponent implements Component {
 				? this.visibleTranscript(allTranscript, availableTranscriptLines)
 				: [];
 			const footer = availableTranscriptLines > 0
-				? this.footerHints(allTranscript.length > availableTranscriptLines)
-				: this.theme.fg("dim", "Compact detail · Esc agents");
+				? this.footerHints(allTranscript.length > availableTranscriptLines, innerWidth)
+				: this.theme.fg("dim", fitFooterHints(innerWidth, ["Compact detail · Esc agents"], "Esc agents"));
 			return framedOverlay([
 				truncateToWidth(header, innerWidth),
 				truncateToWidth(this.childHeader(run, child), innerWidth),
@@ -1018,7 +1039,7 @@ export class RunOverlayComponent implements Component {
 			const transcript = this.transcriptLines(run, child, innerWidth);
 			const visibleTranscript = this.visibleTranscript(transcript, transcriptHeight);
 			const paddedTranscript = Array.from({ length: transcriptHeight }, (_, index) => visibleTranscript[index] ?? "");
-			const hints = this.footerHints(transcript.length > transcriptHeight);
+			const hints = this.footerHints(transcript.length > transcriptHeight, innerWidth);
 			return framedOverlay([
 				truncateToWidth(header, innerWidth),
 				truncateToWidth(this.childHeader(run, child), innerWidth),
@@ -1033,7 +1054,7 @@ export class RunOverlayComponent implements Component {
 		const transcriptHeight = Math.max(1, bodyHeight - 1);
 		const transcript = this.transcriptLines(run, child, rightWidth);
 		const visibleTranscript = this.visibleTranscript(transcript, transcriptHeight);
-		const hints = this.footerHints(transcript.length > transcriptHeight);
+		const hints = this.footerHints(transcript.length > transcriptHeight, innerWidth);
 		const indexOffset = Math.min(
 			Math.max(0, this.selected - bodyHeight + 1),
 			Math.max(0, run.children.length - bodyHeight),
@@ -1080,17 +1101,18 @@ export class RunOverlayComponent implements Component {
 		return Math.max(1, this.bodyHeight() - 1);
 	}
 
-	private footerHints(scrollable: boolean): string {
-		const text = this.options.detailOnly
-			? scrollable
-				? "↑/↓ j/k scroll · PgUp/PgDn page · End live · Enter detail · Esc agents"
-				: "All transcript lines visible · Enter detail · Esc agents"
-			: !this.transcriptFocused
-				? "↑/↓ j/k select · Enter transcript · Esc close"
-				: scrollable
-					? "↑/↓ j/k scroll · PgUp/PgDn page · End live · Enter detail · Esc agents"
-					: "All transcript lines visible · Enter detail · Esc agents";
-		return this.theme.fg("dim", text);
+	private footerHints(scrollable: boolean, width: number): string {
+		const selecting = !this.options.detailOnly && !this.transcriptFocused;
+		const alternatives = selecting
+			? ["↑/↓ j/k select · Enter transcript · Esc close", "↑/↓ select · Enter view · Esc close", "Enter view · Esc close"]
+			: scrollable
+				? [
+					"↑/↓ j/k scroll · PgUp/PgDn page · End live · Enter detail · Esc agents",
+					"↑/↓ scroll · End live · Esc agents",
+					"End live · Esc agents",
+				]
+				: ["All transcript lines visible · Enter detail · Esc agents", "Enter detail · Esc agents"];
+		return this.theme.fg("dim", fitFooterHints(width, alternatives, selecting ? "Esc close" : "Esc agents"));
 	}
 
 	private childHeader(_run: DelegationRun, child: DelegatedChild): string {
@@ -1208,7 +1230,10 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 		renderCompletion(view, expanded, theme) {
 			let text = `${view.status === "completed" ? theme.fg("success", "✓") : theme.fg("warning", view.status === "needs_attention" ? "?" : "◐")} `;
 			text += `${theme.bold(`${view.children.length + (view.omittedChildren ?? 0)} agent${view.children.length + (view.omittedChildren ?? 0) === 1 ? "" : "s"}`)} ${theme.fg("dim", view.status)}`;
-			const visibleChildren = expanded ? view.children : view.children.slice(0, 6);
+			const ordered = expanded ? view.children : [...view.children].sort((left, right) =>
+				Number(!!completionProblem(right)) - Number(!!completionProblem(left)),
+			);
+			const visibleChildren = expanded ? ordered : ordered.slice(0, 6);
 			for (const child of visibleChildren) {
 				text += `\n  ${theme.fg("accent", child.label)} ${theme.fg("dim", child.state)}`;
 				if (child.attention) text += `\n  ${theme.fg("warning", `?  ${child.attention.question}`)}`;
@@ -1231,8 +1256,18 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 					}
 				}
 			}
-			const hidden = view.children.length - visibleChildren.length + (view.omittedChildren ?? 0);
-			if (hidden > 0) text += `\n  ${theme.fg("dim", `… ${hidden} more · /agents`)}`;
+			const hiddenChildren = ordered.slice(visibleChildren.length);
+			const hidden = hiddenChildren.length + (view.omittedChildren ?? 0);
+			if (hidden > 0) {
+				const problems = new Map<string, number>();
+				for (const child of hiddenChildren) {
+					const problem = completionProblem(child);
+					if (problem) problems.set(problem, (problems.get(problem) ?? 0) + 1);
+				}
+				const summary = [...problems].map(([problem, count]) => `${count} ${problem}`).join(" · ");
+				const warning = summary ? ` · ${theme.fg("warning", `including ${summary}`)}` : "";
+				text += `\n  ${theme.fg("dim", `… ${hidden} more`)}${warning}${theme.fg("dim", " · /agents")}`;
+			}
 			if (expanded) {
 				text += `\n${theme.fg("dim", `Run: ${view.runId}`)}`;
 				text += `\n${theme.fg("dim", `Record: ${view.recordRef}`)}`;
