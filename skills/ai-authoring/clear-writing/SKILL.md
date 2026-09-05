@@ -23,7 +23,7 @@ Use concrete subjects and direct verbs. Prefer plain, specific words over abstra
 
 Prefer facts to shorthand. Write requirements as actions or conditions, not names for bodies of work. Do not assume readers share a label because the source uses it. Keep a label only when the context shows readers know its meaning, when the text defines and reuses it, or when the reader needs the exact name. Otherwise write the facts. Before returning, remove each label while keeping its explanation. If the reader can still understand and act, and the label does not save a repeated explanation, leave it out.
 
-For example, replace “this request is urgent” with “send the answer before 3 pm today.” Replace “finish the opening checks” with “unlock both exits and test the smoke alarm.”
+If the source gives a deadline of 3 pm today, replace “this request is urgent” with “send the answer before 3 pm today.” If it defines the opening checks as unlocking both exits and testing the smoke alarm, replace “finish the opening checks” with those actions. Without those facts, preserve the original meaning rather than inventing specifics.
 
 If the text already says what the reader needs in plain words, leave it alone. Change a sentence only when you can name what the reader could misunderstand or struggle to find. Style preference is not enough. Do not swap synonyms, join or split sentences, or add transitions merely to produce a rewrite.
 
