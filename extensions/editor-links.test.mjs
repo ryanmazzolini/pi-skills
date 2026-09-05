@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import {
   createBashToolDefinition,
+  createWriteToolDefinition,
   initTheme,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -271,16 +272,16 @@ test("rewrites the built-in write tool path without changing its label or body",
     isError: false,
   };
 
-  const component = definition.renderCall(
-    { path: ".plans/session-audit/findings.md", content: "body .plans/session-audit/findings.md" },
-    theme,
-    context,
-  );
+  const args = { path: ".plans/session-audit/findings.md", content: "body .plans/session-audit/findings.md" };
+  const upstream = createWriteToolDefinition(cwd).renderCall(args, theme, { ...context, state: {} });
+  const component = definition.renderCall(args, theme, context);
   const [output, , body] = component.render(120);
+  const [, , upstreamBody] = upstream.render(120);
 
   assert.match(output, /write .*\.plans\/session-audit\/findings\.md/);
   assert.equal(bridgeTarget(osc8Url(output)), `zed://file${pathToFileURL(report).pathname}`);
-  assert.equal(body.trimEnd(), "body .plans/session-audit/findings.md");
+  assert.equal(body, upstreamBody);
+  assert.equal(stripVTControlCharacters(body).trimEnd(), args.content);
 
   const narrowComponent = definition.renderCall(
     { path: ".plans/session-audit/findings.md", content: "" },

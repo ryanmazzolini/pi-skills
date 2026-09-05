@@ -38,12 +38,12 @@
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.83.0",
-    "@earendil-works/pi-coding-agent": "0.83.0",
+    "@earendil-works/pi-coding-agent": "^0.85.1",
     "@earendil-works/pi-tui": "0.83.0",
     "@types/node": "^24.0.0",
+    "dotenv-cli": "^11.0.0",
     "typebox": "^1.1.38",
-    "typescript": "^5.9.3",
-    "dotenv-cli": "^11.0.0"
+    "typescript": "^5.9.3"
   },
   "pi": {
     "skills": [
