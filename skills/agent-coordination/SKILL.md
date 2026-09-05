@@ -1,6 +1,6 @@
 ---
 name: "agent-coordination"
-description: "Choose configured model and reasoning profiles for delegated agents. Use before calling `delegate`."
+description: "Choose models and reasoning levels for delegated agents using configured preferences and performance evidence. Use before calling `delegate`."
 ---
 
 # Agent Coordination
@@ -24,10 +24,9 @@ Give each agent a bounded question and ask for only the evidence or findings nee
 
 ## Select the Route
 
-1. Match each task or homogeneous batch to the named profile whose description fits its contract.
-2. Choose a recommended model and reasoning pair using the policy's selection rules.
-3. Pass that exact `model` and `reasoning` to `delegate`.
-4. Do not treat other recommendations as availability fallbacks.
-5. If agents require different routes or resources, use separate `delegate` calls because batch resources are shared.
+1. Identify the delegated task's quality requirements, context demands, latency needs, and how readily its result can be checked. Judge the task itself, not just its parent workflow.
+2. Apply the configured model preferences and choose a supported reasoning level. Read the policy's linked model evidence when its conditions apply; examples inform the choice rather than restrict it to listed pairs.
+3. Pass the selected `model` and `reasoning` explicitly to `delegate`. If the selected model is unavailable, surface the error rather than silently substituting another model.
+4. If agents require different routes or resources, use separate `delegate` calls because batch resources are shared.
 
 Follow the `delegate` and `delegate_control` tool guidance for lifecycle, waiting, and delivery. Do not duplicate status requests or poll for completion.
