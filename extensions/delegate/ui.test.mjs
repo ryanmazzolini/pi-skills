@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { projectRun } from "./runtime.ts";
 import { AgentDeskOverlayComponent, createDelegateUi, describeLatestActivity, listDeskAssignments, readChildHistory, RunOverlayComponent } from "./ui.ts";
 
 const theme = {
@@ -417,6 +418,53 @@ test("agent desk tie-breaks equal run times and keeps terminal stale attention r
   ]);
 });
 
+test("collapsed completion keeps late failures and cancellations visible without changing expanded order", () => {
+  const batch = run("completed", new Date().toISOString(), 8);
+  batch.children[6].state = "failed";
+  batch.children[6].failure = { message: "Review failed", failedAt: new Date().toISOString() };
+  batch.children[7].state = "cancelled";
+  const view = projectRun(batch);
+  const before = structuredClone(view);
+  const ui = createDelegateUi(runtimeFor(batch).runtime);
+  const collapsed = ui.renderCompletion(view, false, theme).render(120).join("\n");
+  assert.match(collapsed, /Reader 7 failed/);
+  assert.match(collapsed, /Review failed/);
+  assert.match(collapsed, /Reader 8 cancelled/);
+  assert.match(collapsed, /… 2 more · \/agents/);
+  assert.doesNotMatch(collapsed, /Reader [56]/);
+  assert.equal((collapsed.match(/Reader \d+/g) ?? []).length, 6);
+  const expanded = ui.renderCompletion(view, true, theme).render(120).join("\n");
+  assert.deepEqual(expanded.match(/Reader \d+/g), batch.children.map((child) => child.label));
+  assert.deepEqual(view, before);
+});
+
+test("completion overflow identifies hidden problems and leaves unreported states unknown", () => {
+  const batch = run("failed", new Date().toISOString(), 8);
+  const view = { ...projectRun(batch), omittedChildren: 2 };
+  const ui = createDelegateUi(runtimeFor(batch).runtime);
+  const collapsed = ui.renderCompletion(view, false, theme).render(120).join("\n");
+  assert.match(collapsed, /… 4 more · including 2 failed · \/agents/);
+  const expanded = ui.renderCompletion(view, true, theme).render(120).join("\n");
+  assert.match(expanded, /… 2 more · \/agents/);
+  assert.doesNotMatch(expanded, /including/);
+});
+
+test("completion prioritizes attention and workspace failures even after a successful child turn", () => {
+  const batch = run("completed", new Date().toISOString(), 10);
+  const view = projectRun(batch);
+  view.children[6].state = "needs_attention";
+  view.children[6].attention = { kind: "decision", question: "Which target?" };
+  view.children[7].state = "interrupted";
+  view.children[8].workspace = { kind: "temporary", state: "conflict", message: "Patch conflict" };
+  view.children[9].workspace = { kind: "temporary", state: "applied", cleanupError: "Worktree remains" };
+  const ui = createDelegateUi(runtimeFor(batch).runtime);
+  const collapsed = ui.renderCompletion(view, false, theme).render(120).join("\n");
+  for (const label of ["Reader 7", "Reader 8", "Reader 9", "Reader 10"]) assert.ok(collapsed.includes(label));
+  assert.match(collapsed, /Which target\?/);
+  assert.match(collapsed, /Patch conflict/);
+  assert.match(collapsed, /Cleanup failed: Worktree remains/);
+});
+
 test("agent desk names conductor ownership and truthful attention delivery states", () => {
   const mixed = run("running", new Date().toISOString(), 7);
   mixed.id = "hidden-run-id";
@@ -674,6 +722,7 @@ test("agent desk stays ANSI-safe on narrow and short terminals", () => {
     const lines = component.render(width);
     assert.ok(lines.length <= 6);
     assert.ok(lines.every((line) => visibleWidth(line) <= width));
+    assert.match(lines.at(-2), /Esc/);
     if (width >= 40) assert.match(lines.join("\n"), /Reader 1/);
   }
   component.handleInput("\r");
@@ -682,6 +731,62 @@ test("agent desk stays ANSI-safe on narrow and short terminals", () => {
   assert.ok(detail.every((line) => visibleWidth(line) <= 40));
   assert.match(detail.join("\n"), /Agents \/ Reader 1/);
   component.dispose();
+});
+
+test("Agent Desk footers shorten complete hints and keep Escape visible", () => {
+  const component = new AgentDeskOverlayComponent(
+    runtimeFor(run("interrupted")).runtime,
+    {},
+    { requestRender() {}, terminal: { rows: 24 } },
+    theme,
+    () => {},
+    { async resume() {} },
+  );
+  try {
+    const wide = component.render(120).at(-2);
+    assert.match(wide, /↑\/↓ j\/k select · Enter live status · r\/R resume · Esc close/);
+    for (const width of [80, 60, 40, 23, 10, 5]) {
+      const lines = component.render(width);
+      assert.ok(lines.every((line) => visibleWidth(line) <= width));
+      assert.match(lines.at(-2), /Esc/);
+      assert.doesNotMatch(lines.at(-2), /…|\.\.\./);
+    }
+    assert.match(component.render(60).at(-2), /r resume/);
+    component.handleInput("\r");
+    for (const width of [80, 60, 40, 23, 10, 5]) {
+      assert.match(component.render(width).at(-2), /Esc/);
+      assert.doesNotMatch(component.render(width).at(-2), /…|\.\.\./);
+    }
+  } finally {
+    component.dispose();
+  }
+});
+
+test("scrollable transcript hints keep live and exit controls on narrow terminals", async () => {
+  const active = run();
+  active.children[0].sessionFile = "/tmp/unused.jsonl";
+  const component = new RunOverlayComponent(
+    runtimeFor(active).runtime,
+    active.id,
+    { requestRender() {}, terminal: { rows: 24 } },
+    theme,
+    () => {},
+    async () => [{ kind: "assistant", text: Array.from({ length: 50 }, (_, i) => `Line ${i}`).join("\n") }],
+    { detailOnly: true },
+  );
+  try {
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(component.render(120).at(-2), /PgUp\/PgDn page/);
+    assert.match(component.render(60).at(-2), /↑\/↓ scroll · End live · Esc agents/);
+    for (const width of [40, 23, 10, 5]) {
+      const lines = component.render(width);
+      assert.ok(lines.every((line) => visibleWidth(line) <= width));
+      assert.match(lines.at(-2), /Esc/);
+      assert.doesNotMatch(lines.at(-2), /…|\.\.\./);
+    }
+  } finally {
+    component.dispose();
+  }
 });
 
 test("compact Agent Desk detail keeps transcript scrolling truthful", async () => {
