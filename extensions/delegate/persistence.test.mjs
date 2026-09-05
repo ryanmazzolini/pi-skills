@@ -59,6 +59,20 @@ test("atomically persists and lists runs under their parent session", async (t) 
   assert.deepEqual(fs.readdirSync(path.dirname(run.recordRef)).filter((name) => name.includes(".tmp-")), []);
 });
 
+test("retry metadata round-trips while records without it remain unchanged", async (t) => {
+  const repository = new FileRunRepository(fixture(t));
+  const run = runRecord(repository);
+  await repository.save(run);
+  assert.deepEqual(await repository.list("parent-1"), [run]);
+  run.children[0].state = "running";
+  run.children[0].latestActivity = {
+    kind: "retry", summary: "rate limited", observedAt: new Date(0).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(20_000).toISOString() },
+  };
+  await repository.save(run);
+  assert.deepEqual(await repository.list("parent-1"), [run]);
+});
+
 test("loads Slice A and B records through the current schema", async (t) => {
   const root = fixture(t);
   const repository = new FileRunRepository(root);

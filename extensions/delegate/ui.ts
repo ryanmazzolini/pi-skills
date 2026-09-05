@@ -91,6 +91,30 @@ function isFinalState(state: DelegatedChild["state"]): boolean {
 	return state === "completed" || state === "failed" || state === "cancelled";
 }
 
+function isRetrying(child: DelegatedChild): boolean {
+	return (child.state === "running" || child.state === "starting") && child.latestActivity.kind === "retry";
+}
+
+function retryActivity(child: DelegatedChild, now: number, theme?: Theme): string | undefined {
+	if (!isRetrying(child)) return undefined;
+	const retry = child.latestActivity.retry;
+	let label = retry ? `Retry ${retry.attempt}/${retry.maxAttempts}` : "Retrying";
+	const retryAt = Date.parse(retry?.retryAt ?? "");
+	if (Number.isFinite(retryAt)) {
+		const seconds = Math.ceil(Math.max(0, retryAt - now) / 1000);
+		label += seconds > 0 ? ` in ${compactDuration(seconds * 1000)}` : " pending";
+	}
+	const reason = firstDisplayLine(child.latestActivity.summary);
+	const heading = theme ? theme.fg("warning", theme.bold(label)) : label;
+	return reason ? `${heading} · ${theme ? theme.fg("text", reason) : reason}` : heading;
+}
+
+function fitRetryRow(prefix: string, label: string, detail: string, width: number): string {
+	// Long task names must leave room for the retry countdown.
+	const labelWidth = Math.max(1, Math.floor(width / 3));
+	return truncateToWidth(`${prefix}${truncateToWidth(label, labelWidth)} · ${detail}`, width);
+}
+
 export function describeLatestActivity(
 	run: DelegationRun,
 	now = Date.now(),
@@ -99,6 +123,8 @@ export function describeLatestActivity(
 ): string {
 	const child = run.children[childIndex];
 	if (!child) return "No child activity";
+	const retry = retryActivity(child, now);
+	if (retry) return retry;
 	const observedAt = Date.parse(child.latestActivity.observedAt);
 	const age = Number.isFinite(observedAt) ? Math.max(0, now - observedAt) : 0;
 	const active = child.state === "starting" || child.state === "running";
@@ -111,17 +137,23 @@ export function describeLatestActivity(
 }
 
 export function stateIcon(
-	state: DelegatedChild["state"],
+	childOrState: DelegatedChild | DelegatedChild["state"],
 	theme: Theme,
 	animated = true,
 	now = Date.now(),
 	frameMs = SPINNER_FRAME_MS,
 ): string {
-	if (state === "running" || state === "starting" || state === "queued") {
+	const child = typeof childOrState === "string" ? undefined : childOrState;
+	const state = typeof childOrState === "string" ? childOrState : childOrState.state;
+	if (child && isRetrying(child)) return theme.fg("warning", "↻");
+	if (state === "queued") return theme.fg("muted", "○");
+	if (state === "running" || state === "starting") {
 		const frame = animated
 			? SPINNER[Math.floor(now / frameMs) % SPINNER.length] ?? "⠋"
 			: "◐";
-		return theme.fg(state === "queued" ? "muted" : "warning", frame);
+		if (!child) return theme.fg("muted", frame);
+		const level = child.resolved.reasoning as Parameters<Theme["getThinkingBorderColor"]>[0];
+		return theme.getThinkingBorderColor(level)(frame);
 	}
 	if (state === "completed") return theme.fg("success", "✓");
 	if (state === "failed") return theme.fg("error", "✗");
@@ -154,14 +186,16 @@ function terminalTimestamp(run: DelegationRun, child: DelegatedChild): number {
 	return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
-function pinnedPriority(state: DelegatedChild["state"]): number {
+function pinnedPriority(child: DelegatedChild): number {
+	const { state } = child;
 	if (state === "needs_attention") return 0;
 	if (state === "failed") return 1;
 	if (state === "interrupted") return 2;
-	if (state === "running" || state === "starting") return 3;
-	if (state === "queued") return 4;
-	if (state === "completed") return 5;
-	return 6;
+	if (isRetrying(child)) return 3;
+	if (state === "running" || state === "starting") return 4;
+	if (state === "queued") return 5;
+	if (state === "completed") return 6;
+	return 7;
 }
 
 function firstDisplayLine(value: string): string {
@@ -193,10 +227,11 @@ function pinnedStateSummary(child: DelegatedChild, now: number, staleAfterMs: nu
 function statusCounts(rows: PinnedChildRow[]): string[] {
 	const counts = new Map<string, number>();
 	for (const { child } of rows) {
-		const label = child.state === "starting" || child.state === "running" ? "running" : child.state.replace("_", " ");
+		const label = isRetrying(child) ? "retrying"
+			: child.state === "starting" || child.state === "running" ? "running" : child.state.replace("_", " ");
 		counts.set(label, (counts.get(label) ?? 0) + 1);
 	}
-	const order = ["needs attention", "failed", "interrupted", "running", "queued", "completed", "cancelled"];
+	const order = ["needs attention", "failed", "interrupted", "retrying", "running", "queued", "completed", "cancelled"];
 	return order.flatMap((label) => {
 		const count = counts.get(label);
 		return count ? [`${count} ${label}`] : [];
@@ -262,17 +297,23 @@ export class PinnedAgentStatusComponent implements Component {
 			return [`${truncateToWidth(compactHeader, safeWidth - visibleWidth(suffix))}${suffix}`];
 		}
 
-		const prioritized = [...rows].sort((left, right) => pinnedPriority(left.child.state) - pinnedPriority(right.child.state) || left.order - right.order);
+		const prioritized = [...rows].sort((left, right) => pinnedPriority(left.child) - pinnedPriority(right.child) || left.order - right.order);
 		const visible = prioritized.slice(0, this.maxRows);
 		const lines = [header];
 		for (const { run, child } of visible) {
-			const icon = stateIcon(child.state, this.theme, true, now, this.spinnerFrameMs);
+			const icon = stateIcon(child, this.theme, true, now, this.spinnerFrameMs);
 			const label = this.theme.fg("accent", firstDisplayLine(child.label));
+			const retry = retryActivity(child, now, this.theme);
+			const elapsed = this.theme.fg("dim", ` · ${compactDuration(this.elapsedFor(run, child, now))}`);
+			if (retry) {
+				lines.push(fitRetryRow(`${icon} `, label, retry + elapsed, safeWidth));
+				continue;
+			}
 			const detail = this.theme.fg(
 				child.state === "failed" ? "error" : child.state === "needs_attention" || child.state === "interrupted" ? "warning" : "dim",
-				`${firstDisplayLine(pinnedStateSummary(child, now, this.staleAfterMs))} · ${compactDuration(this.elapsedFor(run, child, now))}`,
+				firstDisplayLine(pinnedStateSummary(child, now, this.staleAfterMs)),
 			);
-			lines.push(`${icon} ${label} · ${detail}`);
+			lines.push(`${icon} ${label} · ${detail}${elapsed}`);
 		}
 		if (prioritized.length > visible.length) {
 			lines.push(this.theme.fg("dim", `… ${prioritized.length - visible.length} more · /agents`));
@@ -648,8 +689,7 @@ export class AgentDeskOverlayComponent implements Component {
 		});
 		this.timer = setInterval(() => {
 			if (this.disposed) return;
-			const selected = this.selectedAssignment();
-			if (selected && (selected.child.state === "queued" || selected.child.state === "starting" || selected.child.state === "running")) {
+			if (this.assignments().some(({ child }) => child.state === "queued" || child.state === "starting" || child.state === "running")) {
 				this.tui.requestRender();
 			}
 		}, SPINNER_FRAME_MS);
@@ -706,12 +746,12 @@ export class AgentDeskOverlayComponent implements Component {
 		}
 
 		const bodyHeight = this.bodyHeight();
-		const display = this.displayLines(assignments);
+		const display = this.displayLines(assignments, innerWidth);
 		const selectedLine = Math.max(0, display.findIndex((line) => line.childId === selected.child.id));
 		const maxStart = Math.max(0, display.length - bodyHeight);
 		const start = Math.min(Math.max(0, selectedLine - Math.floor(bodyHeight / 2)), maxStart);
 		const visible = this.maxLines() < 8
-			? [this.assignmentLine(selected, true)]
+			? [this.assignmentLine(selected, true, innerWidth)]
 			: display.slice(start, start + bodyHeight).map(({ text }) => text);
 		const padded = Array.from({ length: bodyHeight }, (_, index) => visible[index] ?? "");
 		const canResume = selected.child.state === "interrupted" && !this.resumePending.has(selected.child.id);
@@ -781,7 +821,7 @@ export class AgentDeskOverlayComponent implements Component {
 		return index >= 0 ? assignments[index] : undefined;
 	}
 
-	private displayLines(assignments: DeskAssignment[]): DeskDisplayLine[] {
+	private displayLines(assignments: DeskAssignment[], width: number): DeskDisplayLine[] {
 		const lines: DeskDisplayLine[] = [];
 		for (const { section, label } of DESK_SECTIONS) {
 			const sectionAssignments = assignments.filter((assignment) => assignment.section === section);
@@ -789,13 +829,13 @@ export class AgentDeskOverlayComponent implements Component {
 			if (lines.length > 0) lines.push({ text: "" });
 			lines.push({ text: this.theme.fg("dim", label) });
 			for (const assignment of sectionAssignments) {
-				lines.push({ text: this.assignmentLine(assignment, assignment.child.id === this.selectedChildId), childId: assignment.child.id });
+				lines.push({ text: this.assignmentLine(assignment, assignment.child.id === this.selectedChildId, width), childId: assignment.child.id });
 			}
 		}
 		return lines;
 	}
 
-	private assignmentLine(assignment: DeskAssignment, selected: boolean): string {
+	private assignmentLine(assignment: DeskAssignment, selected: boolean, width: number): string {
 		const { child } = assignment;
 		const marker = selected ? this.theme.fg("accent", "›") : " ";
 		const label = selected ? this.theme.fg("accent", child.label) : child.label;
@@ -808,7 +848,10 @@ export class AgentDeskOverlayComponent implements Component {
 				: deskAssignmentSummary(assignment);
 		const color = child.state === "failed" ? "error" : child.state === "interrupted" || child.state === "needs_attention" ? "warning" : "dim";
 		const model = this.theme.fg("dim", child.resolved.model.id);
-		return `${marker} ${stateIcon(child.state, this.theme)} ${label} · ${model} · ${this.theme.fg(color, summary)}`;
+		const retry = retryActivity(child, Date.now(), this.theme);
+		const prefix = `${marker} ${stateIcon(child, this.theme)} `;
+		return retry ? fitRetryRow(prefix, label, retry, width)
+			: `${prefix}${label} · ${model} · ${this.theme.fg(color, summary)}`;
 	}
 
 	private openDetail(): void {
@@ -1028,7 +1071,7 @@ export class RunOverlayComponent implements Component {
 				: this.theme.fg("dim", fitFooterHints(innerWidth, ["Compact detail · Esc agents"], "Esc agents"));
 			return framedOverlay([
 				truncateToWidth(header, innerWidth),
-				truncateToWidth(this.childHeader(run, child), innerWidth),
+				truncateToWidth(this.childHeader(run, child, innerWidth), innerWidth),
 				...transcript,
 				truncateToWidth(footer, innerWidth),
 			], safeWidth, this.theme);
@@ -1042,7 +1085,7 @@ export class RunOverlayComponent implements Component {
 			const hints = this.footerHints(transcript.length > transcriptHeight, innerWidth);
 			return framedOverlay([
 				truncateToWidth(header, innerWidth),
-				truncateToWidth(this.childHeader(run, child), innerWidth),
+				truncateToWidth(this.childHeader(run, child, innerWidth), innerWidth),
 				this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 				...paddedTranscript,
 				truncateToWidth(hints, innerWidth),
@@ -1064,11 +1107,11 @@ export class RunOverlayComponent implements Component {
 			const marker = index === this.selected
 				? this.theme.fg(this.transcriptFocused ? "muted" : "accent", this.transcriptFocused ? "•" : "›")
 				: " ";
-			return `${marker} ${stateIcon(candidate.state, this.theme)} ${index + 1}. ${candidate.label} ${this.theme.fg("dim", candidate.state)}`;
+			return `${marker} ${stateIcon(candidate, this.theme)} ${index + 1}. ${candidate.label} ${this.theme.fg("dim", candidate.state)}`;
 		});
 		const body: string[] = [];
 		for (let index = 0; index < bodyHeight; index++) {
-			const right = index === 0 ? this.childHeader(run, child) : visibleTranscript[index - 1] ?? "";
+			const right = index === 0 ? this.childHeader(run, child, rightWidth) : visibleTranscript[index - 1] ?? "";
 			body.push(`${padAnsi(left[index] ?? "", leftWidth)} ${this.theme.fg(this.transcriptFocused ? "borderAccent" : "borderMuted", "│")} ${truncateToWidth(right, rightWidth)}`);
 		}
 		return framedOverlay([
@@ -1115,10 +1158,14 @@ export class RunOverlayComponent implements Component {
 		return this.theme.fg("dim", fitFooterHints(width, alternatives, selecting ? "Esc close" : "Esc agents"));
 	}
 
-	private childHeader(_run: DelegationRun, child: DelegatedChild): string {
+	private childHeader(_run: DelegationRun, child: DelegatedChild, width: number): string {
 		const focus = this.transcriptFocused ? `${this.theme.fg("accent", "▶")} ` : "";
 		const route = `${child.resolved.model.provider}/${child.resolved.model.id} · ${child.resolved.reasoning}`;
-		return `${focus}${stateIcon(child.state, this.theme)} ${this.theme.bold(child.label)} ${this.theme.fg("dim", `${child.state} · ${route}`)}`;
+		const retry = retryActivity(child, Date.now(), this.theme);
+		const prefix = `${focus}${stateIcon(child, this.theme)} `;
+		const label = this.theme.bold(child.label);
+		return retry ? fitRetryRow(prefix, label, retry, width)
+			: `${prefix}${label} ${this.theme.fg("dim", `${child.state} · ${route}`)}`;
 	}
 
 	private transcriptLines(run: DelegationRun, child: DelegatedChild, width: number): string[] {
@@ -1156,9 +1203,9 @@ export class RunOverlayComponent implements Component {
 			if (lines.length > 0) lines.push("");
 			lines.push(...workspaceLines.flatMap((line) => wrapTextWithAnsi(line, width)));
 		}
-		if (child.state === "queued" || child.state === "starting" || child.state === "running") {
+		if (!isRetrying(child) && (child.state === "queued" || child.state === "starting" || child.state === "running")) {
 			if (lines.length > 0) lines.push("");
-			lines.push(this.theme.fg("dim", `${stateIcon(child.state, this.theme)} ${describeLatestActivity(run, Date.now(), 10_000, this.selected)}`));
+			lines.push(`${stateIcon(child, this.theme)} ${this.theme.fg("dim", describeLatestActivity(run, Date.now(), 10_000, this.selected))}`);
 		}
 		if (run.delivery.state === "held" && isFinalState(child.state)) {
 			if (lines.length > 0) lines.push("");

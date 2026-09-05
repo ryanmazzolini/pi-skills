@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { childOutputGuidance, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
+import { childOutputGuidance, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, emitActivity, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-resources-test-"));
@@ -30,6 +30,28 @@ function fixture(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { agentDir, cwd };
 }
+
+test("retry events expose a fixed deadline and clear on retry completion", () => {
+  const activities = [];
+  const sink = { activity(value) { activities.push(value); } };
+  emitActivity({ type: "auto_retry_start", attempt: 2, maxAttempts: 3, delayMs: 20_000, errorMessage: "rate limited" }, sink, 1_000);
+  assert.deepEqual(activities.pop(), {
+    kind: "retry", summary: "rate limited",
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(21_000).toISOString() },
+  });
+  for (const event of [
+    { type: "auto_retry_end", success: true, attempt: 2 },
+    { type: "auto_retry_end", success: false, attempt: 3, finalError: "still\nrate limited" },
+    { type: "auto_retry_end", success: false, attempt: 2, finalError: "Retry cancelled" },
+    { type: "turn_start", turnIndex: 2, timestamp: 21_000 },
+  ]) {
+    emitActivity(event, sink);
+    const activity = activities.pop();
+    assert.notEqual(activity.kind, "retry");
+    assert.equal(activity.retry, undefined);
+    if (event.finalError) assert.equal(activity.summary, event.finalError.replace(/\s+/g, " "));
+  }
+});
 
 test("child sessions reuse the parent model runtime", () => {
   const modelRuntime = { getAuth() {} };

@@ -126,8 +126,26 @@ function summarizeTool(name: string, args: unknown): string {
 	return `Using ${name}`;
 }
 
-function emitActivity(event: AgentSessionEvent, sink: Parameters<ChildSessionAdapter["start"]>[1]): void {
+export function emitActivity(event: AgentSessionEvent, sink: Parameters<ChildSessionAdapter["start"]>[1], now = Date.now()): void {
 	switch (event.type) {
+		case "auto_retry_start":
+			sink.activity({
+				kind: "retry",
+				summary: event.errorMessage,
+				retry: {
+					attempt: event.attempt,
+					maxAttempts: event.maxAttempts,
+					retryAt: new Date(now + event.delayMs).toISOString(),
+				},
+			});
+			return;
+		case "auto_retry_end":
+			// This ends the retry sequence, not just its sleep. Turn activity clears the wait sooner.
+			sink.activity({
+				kind: event.success ? "thinking" : "waiting",
+				summary: event.success ? "Retry succeeded" : (event.finalError || "Retry failed").replace(/\s+/g, " ").trim(),
+			});
+			return;
 		case "agent_start":
 		case "turn_start":
 			sink.activity({ kind: "thinking", summary: "Thinking" });
