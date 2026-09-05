@@ -13,6 +13,8 @@ Identify each change's intent, base, head, and changed files. Review the exact r
 
 For a pull request, read its description and retrieve every explicitly linked issue before inspecting the implementation. Record the original problem, its user or operator impact, the requested outcome, acceptance criteria, and stated exclusions. If no issue is linked or an issue is unavailable, name the context used instead and do not infer missing requirements.
 
+When context is missing, complete the inspection that does not depend on it before asking the user. Ask only when the missing answer prevents a useful review; otherwise return the review with the limitation and its effect on the recommendation.
+
 For multiple or stacked pull requests, review each against its immediate parent. Keep its evidence, recommendation, and comments in a separate output section. Assign a finding to the pull request that introduced it, and do not repeat inherited findings higher in the stack.
 
 Read the diff, then inspect enough surrounding code, tests, repository instructions, architecture decisions, and history to understand the affected behavior. Load applicable language, framework, security, or interface-review skills when they add relevant criteria.
@@ -51,7 +53,7 @@ Report a finding only when all of these are clear:
 - The consequence matters to a caller, user, operator, or maintainer.
 - The author can take a specific next step within the change's scope.
 
-Confirm suspected findings against the implementation and existing tests. When available, use a test, CI for the reviewed revision, or a focused reproduction.
+Confirm suspected findings against the implementation and existing tests. When available, use a test, CI for the reviewed revision, or a focused reproduction. Complete required repository checks. Once the triggering path and consequence are established and required checks are complete, broaden or repeat verification only for a specific unresolved concern, a failure, or a changed revision.
 
 Treat deterministic check failures as evidence rather than duplicating them as comments. Include a material failed or unavailable check when it affects the decision; report the underlying defect only when it independently meets the requirements above.
 
@@ -75,7 +77,7 @@ A significant unresolved question may also prevent approval without becoming an 
 
 ## Write the comment
 
-Write each introduced finding and **Existing issue** as a proposed inline comment on the smallest changed line or range that establishes the defect. Use the old side for deleted lines when the host supports it. Do not anchor comments to unchanged surrounding code.
+Write each introduced finding as a proposed inline comment on the smallest changed line or range that establishes the defect. For an **Existing issue**, use the smallest changed line or range that establishes its direct relevance to the reviewed behavior, such as a new caller of an affected helper, and identify the pre-existing defect in the comment. Use the old side for deleted lines when the host supports it. Do not anchor comments to unchanged surrounding code.
 
 Make the displayed file and line reference a deep link when the review host supports one. Use an immutable blob link pinned to the reviewed head, or to the base for deleted lines. A host-provided diff link is suitable only when it is pinned to the reviewed revision. Fall back to a plain path for local-only reviews rather than inventing a link. Display ranges as `path/to/file:81-86`; keep host-specific anchors such as `#L81-L86` in the URL.
 
