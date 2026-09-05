@@ -14,7 +14,7 @@ After the behavior contract is correct, apply [`clear-writing`](../clear-writing
 
 ## Define the contract
 
-State the outcome, relevant context, hard constraints, success criteria, and stopping conditions. Use concrete decision criteria instead of vague caution. Reserve `must`, `always`, and `never` for invariants. Say what the agent may do autonomously and what requires approval.
+State the outcome, relevant context, hard constraints, success criteria, and stopping conditions. Use concrete decision criteria instead of vague caution. Reserve `must`, `always`, and `never` for invariants. Say what the agent may do autonomously and what requires approval. Distinguish the broader goal from the currently authorized action, and state what must remain unchanged.
 
 Prescribe a procedure when the procedure itself matters, such as tool routing, validation, safety, or a human checkpoint. Otherwise describe the destination and let the agent choose an efficient path.
 
@@ -38,6 +38,6 @@ Separate thorough internal work from the concise user-facing result. Lead the fi
 
 Remove contradictions, duplication, stale detail, no-op advice, and examples that only restate a rule. Use deterministic checks for mechanical requirements and instructions for judgment.
 
-Test the document on representative work. Confirm that every remaining instruction changes intended behavior, important conditions and handoffs remain intact, context pointers fire on the right branch, and no material regression appears. For model-specific advice, retrieve current provider guidance instead of relying on general prompt lore.
+Test the document on representative work. Check that the agent completes approved work without redundant permission requests, while preserving agreed checkpoints and stopping before unauthorized scope expansion. Confirm that every remaining instruction changes intended behavior, important conditions and handoffs remain intact, context pointers fire on the right branch, and no material regression appears. For model-specific advice, retrieve current provider guidance instead of relying on general prompt lore.
 
 When the document is a skill, read [SKILL-MECHANICS.md](SKILL-MECHANICS.md) before choosing its invocation, description, references, or split boundaries.
