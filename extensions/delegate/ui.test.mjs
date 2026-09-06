@@ -159,6 +159,61 @@ test("tool timing is right-aligned, survives heartbeats, and drops total first o
   assert.match(desk.render(40).join("\n"), /total 2m 19s/);
 });
 
+test("status labels use spare row space without losing activity or right-aligned timing", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString(), 2);
+  activeRun.children[0].label = "Security review of a very long module name";
+  activeRun.children[1].label = "Security review of a very long module test";
+  const ansiTheme = { ...theme, fg: (_color, text) => `\u001b[33m${text}\u001b[39m`, bold: (text) => `\u001b[1m${text}\u001b[22m` };
+  const harness = runtimeFor(activeRun);
+  const tui = { requestRender() {}, terminal: { rows: 24 } };
+  const pinned = createDelegateUi(harness.runtime).createStatus(tui, ansiTheme);
+  const desk = new AgentDeskOverlayComponent(harness.runtime, {}, tui, ansiTheme, () => {}, { async resume() {} });
+  t.after(() => { pinned.dispose(); desk.dispose(); });
+  for (const width of [80, 100]) {
+    for (const component of [pinned, desk]) {
+      const lines = component.render(width);
+      for (const child of activeRun.children) {
+        const row = lines.find((line) => line.includes(child.label));
+        assert.ok(row, `Full label at width ${width}: ${child.label}`);
+        assert.match(row, /Thinking/);
+        assert.match(row, /total 2m 18s/);
+        assert.equal(visibleWidth(row), width);
+      }
+    }
+  }
+  desk.handleInput("\r");
+  const detail = desk.render(100);
+  assert.ok(detail.some((line) => line.includes(activeRun.children[0].label)));
+  assert.match(detail.join("\n"), /openai\/sol · max/);
+  assert.ok(detail.every((line) => visibleWidth(line) <= 100));
+});
+
+test("detailed tool status retains provider, model, and reasoning without changing compact Desk rows", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString());
+  const harness = runtimeFor(activeRun);
+  const desk = new AgentDeskOverlayComponent(harness.runtime, {}, { requestRender() {}, terminal: { rows: 24 } }, theme, () => {}, { async resume() {} });
+  t.after(() => desk.dispose());
+  desk.handleInput("\r");
+  assert.match(desk.render(100).join("\n"), /openai\/sol · max/);
+  activeRun.children[0].latestActivity = {
+    kind: "tool", summary: "Running: npm test", observedAt: new Date(137_000).toISOString(),
+    tool: { callId: "a", startedAt: new Date(96_000).toISOString(), additionalCount: 1 },
+  };
+  harness.emit(activeRun);
+  assert.match(desk.render(100).join("\n"), /openai\/sol · max · Running: npm test \+1 tool\s+tool 42s · total 2m 18s/);
+  for (const width of [20, 40, 60]) {
+    const lines = desk.render(width);
+    assert.ok(lines.every((line) => visibleWidth(line) <= width));
+    assert.match(lines.join("\n"), /tool 42s/);
+  }
+  desk.handleInput("\u001b");
+  const compact = desk.render(40).join("\n");
+  assert.match(compact, /tool 42s/);
+  assert.doesNotMatch(compact, /openai\/sol/);
+});
+
 test("tool timing handles old records and ANSI rows without inventing a start time", (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
   const activeRun = run("running", new Date(137_000).toISOString());

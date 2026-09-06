@@ -136,9 +136,11 @@ function statusRow(
 	prefix: string, label: string, detail: string,
 	run: DelegationRun, child: DelegatedChild, width: number, theme: Theme, now = Date.now(),
 ): string {
-	const leading = `${prefix}${truncateToWidth(label, Math.max(1, Math.floor(width / 3)))} · `;
+	const minimumLabelWidth = Math.max(1, Math.floor(width / 3));
+	const leading = `${prefix}${truncateToWidth(label, minimumLabelWidth)} · `;
 	const retry = retryActivity(child, now, theme);
-	const content = leading + (retry ?? detail);
+	const activity = retry ?? detail;
+	const content = leading + activity;
 	const tool = activeTool(child);
 	const toolTime = tool ? `tool ${compactDuration(now - Date.parse(tool.startedAt))}` : undefined;
 	let timing = `${toolTime ? `${toolTime} · ` : ""}total ${compactDuration(totalElapsed(run, child, now))}`;
@@ -147,9 +149,12 @@ function statusRow(
 		? visibleWidth(leading) + visibleWidth(retryActivity(child, now)?.split(" · ")[0] ?? "")
 		: Math.min(visibleWidth(content), 24, Math.floor(width * 0.6));
 	if (!isFinalState(child.state) && minimumContent + visibleWidth(timing) + 2 > width) timing = toolTime ?? "";
-	if (!timing || visibleWidth(timing) + 2 >= width) return truncateToWidth(content, width);
-	const contentWidth = width - visibleWidth(timing) - 2;
-	return `${padAnsi(truncateToWidth(content, contentWidth), contentWidth)}  ${theme.fg("dim", timing)}`;
+	if (visibleWidth(timing) + 2 >= width) timing = "";
+	const contentWidth = timing ? width - visibleWidth(timing) - 2 : width;
+	// Give spare columns back to the label without displacing activity or timing.
+	const labelWidth = Math.max(minimumLabelWidth, contentWidth - visibleWidth(prefix) - 3 - visibleWidth(activity));
+	const fitted = truncateToWidth(`${prefix}${truncateToWidth(label, labelWidth)} · ${activity}`, contentWidth);
+	return timing ? `${padAnsi(fitted, contentWidth)}  ${theme.fg("dim", timing)}` : fitted;
 }
 
 export function describeLatestActivity(
@@ -1188,7 +1193,9 @@ export class RunOverlayComponent implements Component {
 		const focus = this.transcriptFocused ? `${this.theme.fg("accent", "▶")} ` : "";
 		const route = `${child.resolved.model.provider}/${child.resolved.model.id} · ${child.resolved.reasoning}`;
 		const tool = toolSummary(child);
-		const detail = tool ? this.theme.fg("text", tool) : this.theme.fg("dim", `${child.state} · ${route}`);
+		const detail = tool
+			? `${this.theme.fg("dim", route)} · ${this.theme.fg("text", tool)}`
+			: this.theme.fg("dim", `${child.state} · ${route}`);
 		return statusRow(`${focus}${stateIcon(child, this.theme)} `, this.theme.bold(firstDisplayLine(child.label)), detail, run, child, width, this.theme);
 	}
 
