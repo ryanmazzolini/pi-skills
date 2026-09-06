@@ -14,7 +14,7 @@ Research, alignment, design review, and delivery planning answer different quest
 Inspect the current request, live repository, authoritative project evidence, and any existing workflow. Before recommending a solution structure or delivery chunks, establish:
 
 - **Expected result:** who the work helps, what they should be able to do or understand, and what counts as complete for this request.
-- **Expected behavior:** one concrete user or caller path to that result, including failure or recovery behavior when it could change the solution. Reuse an existing walkthrough or state which behavior must remain unchanged.
+- **Expected behavior:** for interface changes, establish current and intended user or caller walkthroughs, including relevant feedback, completion, failure, and recovery states. Otherwise, establish one concrete path to the result or state which behavior must remain unchanged. Reuse existing walkthroughs where they already settle the expected behavior.
 - **Scope:** what this change includes, what it excludes or defers, and which existing behavior, interfaces, and UI it must preserve.
 
 Reuse settled decisions and exact bounded requests. Do not ask the user to restate the rationale, repeat approval, or create an alignment document when those expectations and boundaries are already clear. Size changes the depth of this check, not whether it happens.
