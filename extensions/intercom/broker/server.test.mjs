@@ -576,7 +576,8 @@ test("broker admits more than the legacy 32-session ceiling and reports configur
 			/Intercom broker rejected registration: Intercom session limit reached \(maximum 256;/,
 		);
 
-		transients.push(...await Promise.all(Array.from({ length: 256 }, () => connectRaw(paths.socketPath))));
+		// Fill accepted-connection capacity without overflowing the OS pending-connection queue.
+		for (let index = 0; index < 256; index++) transients.push(await connectRaw(paths.socketPath));
 		const connectionOverflow = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
 		await assert.rejects(
 			connectionOverflow.connect(registration("connection-overflow")),
