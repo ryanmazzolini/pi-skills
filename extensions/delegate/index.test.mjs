@@ -1,12 +1,45 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import delegateExtension, { agentDeskTarget, currentDelegationRun, currentHeldRun, defaultDelegateTemporaryRoot, delegateLaunchText, existingDirectory, heldEntryData, heldEntryState, heldEntryTitle, normalizeTasks, persistedInputGeneration, supportsReasoning, toolText, validateControl, validateOutputSchema } from "./index.ts";
 
-test("places new temporary delegate workspaces below the canonical OS temporary root", async () => {
-  assert.equal(await defaultDelegateTemporaryRoot(), path.join(fs.realpathSync(os.tmpdir()), "pi-delegate"));
+test("places new temporary delegate workspaces in a stable per-user OS temporary directory", async () => {
+  const userKey = process.getuid?.()?.toString()
+    ?? createHash("sha256").update(os.homedir()).digest("hex").slice(0, 16);
+  const expected = path.join(fs.realpathSync(os.tmpdir()), `pi-delegate-${userKey}`);
+  assert.equal(await defaultDelegateTemporaryRoot(), expected);
+  assert.equal(await defaultDelegateTemporaryRoot(), expected);
+});
+
+test("separates users sharing the same OS temporary root", {
+  skip: typeof process.getuid !== "function",
+}, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-shared-temp-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const uid = t.mock.method(process, "getuid", () => 1001);
+  const first = await defaultDelegateTemporaryRoot(root);
+  fs.mkdirSync(first, { mode: 0o700 });
+
+  uid.mock.mockImplementation(() => 1002);
+  const second = await defaultDelegateTemporaryRoot(root);
+  fs.mkdirSync(second, { mode: 0o700 });
+
+  assert.equal(path.dirname(first), fs.realpathSync(root));
+  assert.equal(path.dirname(second), fs.realpathSync(root));
+  assert.notEqual(first, second);
+  assert.equal(fs.statSync(first).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(second).mode & 0o777, 0o700);
+});
+
+test("uses a stable home-directory hash when numeric user IDs are unavailable", {
+  skip: typeof process.getuid !== "function",
+}, async (t) => {
+  t.mock.method(process, "getuid", () => undefined);
+  const userKey = createHash("sha256").update(os.homedir()).digest("hex").slice(0, 16);
+  assert.equal(await defaultDelegateTemporaryRoot(), path.join(fs.realpathSync(os.tmpdir()), `pi-delegate-${userKey}`));
 });
 
 test("canonicalizes a symlinked delegated working directory before resource and workspace resolution", async (t) => {
