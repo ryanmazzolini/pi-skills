@@ -1098,6 +1098,8 @@ async function cleanupEnvelopeScratchWorkspace(
 		throw new WorkspaceConflictError(`Scratch path is a registered Git worktree: ${workspace.worktreePath}`);
 	}
 	await ownedEnvelopePath(quarantined, workspace.envelope, temporaryRoot);
+	// Keep the ownership marker until workspace removal succeeds so cleanup can be retried.
+	await rm(quarantinedWorktree, { recursive: true, force: true });
 	await rm(quarantined, { recursive: true, force: true });
 }
 

@@ -681,6 +681,49 @@ test("recovers cleanup after an owned envelope was quarantined", async (t) => {
   assert.equal(fs.existsSync(quarantine), false);
 });
 
+test("retries scratch cleanup after a workspace permission failure without losing ownership", {
+  skip: process.platform === "win32" || process.getuid?.() === 0,
+}, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-cleanup-retry-test-"));
+  const source = path.join(root, "source");
+  const temporaryRoot = path.join(root, "temporary");
+  fs.mkdirSync(source);
+  let blocked;
+  t.after(() => {
+    if (blocked && fs.existsSync(blocked)) fs.chmodSync(blocked, 0o700);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const manager = new GitWorkspaceManager(temporaryRoot, temporaryRoot, () => "owner-token");
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    patchPath: path.join(root, "patch.patch"),
+    manifestPath: path.join(root, "manifest.json"),
+  });
+  const quarantine = `${workspace.envelope.rootPath}.cleanup-owner-token`;
+  const locked = path.join(workspace.worktreePath, "locked");
+  fs.mkdirSync(locked);
+  fs.writeFileSync(path.join(locked, "evidence.txt"), "keep until cleanup succeeds\n");
+  fs.chmodSync(locked, 0o000);
+  blocked = locked;
+
+  try {
+    await assert.rejects(manager.cleanup(workspace), { code: "EACCES" });
+  } finally {
+    if (fs.existsSync(quarantine)) blocked = path.join(quarantine, "workspace", "locked");
+  }
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(quarantine, "owner.json"), "utf8")), {
+    schemaVersion: 1,
+    ownerToken: "owner-token",
+  });
+  fs.chmodSync(blocked, 0o700);
+
+  await new GitWorkspaceManager(temporaryRoot).cleanup(workspace);
+  assert.equal(fs.existsSync(quarantine), false);
+  assert.equal(fs.existsSync(workspace.envelope.rootPath), false);
+});
+
 test("refuses a linked worktree moved into scratch without registration repair", async (t) => {
   const { root, repo, store } = fixture(t);
   const source = path.join(root, "plain-source");

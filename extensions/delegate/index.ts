@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
 	getAgentDir,
@@ -240,8 +241,10 @@ export function agentDeskTarget(runId?: string, childId?: string): AgentDeskTarg
 	};
 }
 
-export async function defaultDelegateTemporaryRoot(): Promise<string> {
-	return join(await realpath(tmpdir()), "pi-delegate");
+export async function defaultDelegateTemporaryRoot(temporaryRoot = tmpdir()): Promise<string> {
+	const userKey = process.getuid?.()?.toString()
+		?? createHash("sha256").update(homedir()).digest("hex").slice(0, 16);
+	return join(await realpath(temporaryRoot), `pi-delegate-${userKey}`);
 }
 
 export async function existingDirectory(parentCwd: string, value: string | undefined): Promise<string> {
