@@ -95,6 +95,10 @@ function isRetrying(child: DelegatedChild): boolean {
 	return (child.state === "running" || child.state === "starting") && child.latestActivity.kind === "retry";
 }
 
+function hasWorkingSpinner(child: DelegatedChild): boolean {
+	return (child.state === "starting" || child.state === "running") && !isRetrying(child);
+}
+
 function retryActivity(child: DelegatedChild, now: number, theme?: Theme): string | undefined {
 	if (!isRetrying(child)) return undefined;
 	const retry = child.latestActivity.retry;
@@ -109,10 +113,43 @@ function retryActivity(child: DelegatedChild, now: number, theme?: Theme): strin
 	return reason ? `${heading} · ${theme ? theme.fg("text", reason) : reason}` : heading;
 }
 
-function fitRetryRow(prefix: string, label: string, detail: string, width: number): string {
-	// Long task names must leave room for the retry countdown.
-	const labelWidth = Math.max(1, Math.floor(width / 3));
-	return truncateToWidth(`${prefix}${truncateToWidth(label, labelWidth)} · ${detail}`, width);
+function activeTool(child: DelegatedChild): NonNullable<DelegatedChild["latestActivity"]["tool"]> | undefined {
+	const tool = child.latestActivity.tool;
+	return (child.state === "starting" || child.state === "running") && child.latestActivity.kind === "tool"
+		&& tool && Number.isFinite(Date.parse(tool.startedAt)) ? tool : undefined;
+}
+
+function toolSummary(child: DelegatedChild): string | undefined {
+	const tool = activeTool(child);
+	if (!tool) return undefined;
+	const extra = tool.additionalCount > 0 ? ` +${tool.additionalCount} tool${tool.additionalCount === 1 ? "" : "s"}` : "";
+	return firstDisplayLine(child.latestActivity.summary) + extra;
+}
+
+function totalElapsed(run: DelegationRun, child: DelegatedChild, now: number): number {
+	const start = Date.parse(run.createdAt);
+	const end = isFinalState(child.state) ? terminalTimestamp(run, child) : now;
+	return Math.max(0, end - (Number.isFinite(start) ? start : end));
+}
+
+function statusRow(
+	prefix: string, label: string, detail: string,
+	run: DelegationRun, child: DelegatedChild, width: number, theme: Theme, now = Date.now(),
+): string {
+	const leading = `${prefix}${truncateToWidth(label, Math.max(1, Math.floor(width / 3)))} · `;
+	const retry = retryActivity(child, now, theme);
+	const content = leading + (retry ?? detail);
+	const tool = activeTool(child);
+	const toolTime = tool ? `tool ${compactDuration(now - Date.parse(tool.startedAt))}` : undefined;
+	let timing = `${toolTime ? `${toolTime} · ` : ""}total ${compactDuration(totalElapsed(run, child, now))}`;
+	// Keep the retry heading intact; otherwise reserve enough room to recognise the activity.
+	const minimumContent = retry
+		? visibleWidth(leading) + visibleWidth(retryActivity(child, now)?.split(" · ")[0] ?? "")
+		: Math.min(visibleWidth(content), 24, Math.floor(width * 0.6));
+	if (!isFinalState(child.state) && minimumContent + visibleWidth(timing) + 2 > width) timing = toolTime ?? "";
+	if (!timing || visibleWidth(timing) + 2 >= width) return truncateToWidth(content, width);
+	const contentWidth = width - visibleWidth(timing) - 2;
+	return `${padAnsi(truncateToWidth(content, contentWidth), contentWidth)}  ${theme.fg("dim", timing)}`;
 }
 
 export function describeLatestActivity(
@@ -125,6 +162,8 @@ export function describeLatestActivity(
 	if (!child) return "No child activity";
 	const retry = retryActivity(child, now);
 	if (retry) return retry;
+	const tool = activeTool(child);
+	if (tool) return `${toolSummary(child)} · tool ${compactDuration(now - Date.parse(tool.startedAt))}`;
 	const observedAt = Date.parse(child.latestActivity.observedAt);
 	const age = Number.isFinite(observedAt) ? Math.max(0, now - observedAt) : 0;
 	const active = child.state === "starting" || child.state === "running";
@@ -252,6 +291,7 @@ export class PinnedAgentStatusComponent implements Component {
 	private readonly dismissedTerminal = new Set<string>();
 	private readonly unsubscribe: () => void;
 	private animationTimer: ReturnType<typeof setInterval> | undefined;
+	private animationIntervalMs: number | undefined;
 	private expiryTimer: ReturnType<typeof setTimeout> | undefined;
 	private disposed = false;
 
@@ -286,12 +326,12 @@ export class PinnedAgentStatusComponent implements Component {
 		const now = this.now();
 		const rows = this.visibleRows(now);
 		if (rows.length === 0) return [];
-		const longestElapsed = Math.max(...rows.map(({ run, child }) => this.elapsedFor(run, child, now)));
+		const longestElapsed = Math.max(...rows.map(({ run, child }) => totalElapsed(run, child, now)));
 		const counts = statusCounts(rows);
-		const header = this.theme.bold(`Agents · ${counts.join(" · ")} · ${compactDuration(longestElapsed)}`);
+		const header = this.theme.bold(`Agents · ${counts.join(" · ")} · total ${compactDuration(longestElapsed)}`);
 		if (safeWidth < this.narrowWidth) {
 			const compactCounts = counts.map((count) => count.replace("needs attention", "attention").replace("completed", "done"));
-			const compactHeader = this.theme.bold(`Agents · ${compactCounts.join(" · ")} · ${compactDuration(longestElapsed)}`);
+			const compactHeader = this.theme.bold(`Agents · ${compactCounts.join(" · ")} · total ${compactDuration(longestElapsed)}`);
 			const suffix = this.theme.fg("dim", " · /agents");
 			if (safeWidth <= visibleWidth(suffix)) return [truncateToWidth(this.theme.fg("dim", "/agents"), safeWidth)];
 			return [`${truncateToWidth(compactHeader, safeWidth - visibleWidth(suffix))}${suffix}`];
@@ -303,17 +343,12 @@ export class PinnedAgentStatusComponent implements Component {
 		for (const { run, child } of visible) {
 			const icon = stateIcon(child, this.theme, true, now, this.spinnerFrameMs);
 			const label = this.theme.fg("accent", firstDisplayLine(child.label));
-			const retry = retryActivity(child, now, this.theme);
-			const elapsed = this.theme.fg("dim", ` · ${compactDuration(this.elapsedFor(run, child, now))}`);
-			if (retry) {
-				lines.push(fitRetryRow(`${icon} `, label, retry + elapsed, safeWidth));
-				continue;
-			}
+			const tool = toolSummary(child);
 			const detail = this.theme.fg(
-				child.state === "failed" ? "error" : child.state === "needs_attention" || child.state === "interrupted" ? "warning" : "dim",
-				firstDisplayLine(pinnedStateSummary(child, now, this.staleAfterMs)),
+				tool ? "text" : child.state === "failed" ? "error" : child.state === "needs_attention" || child.state === "interrupted" ? "warning" : "dim",
+				tool ?? firstDisplayLine(pinnedStateSummary(child, now, this.staleAfterMs)),
 			);
-			lines.push(`${icon} ${label} · ${detail}${elapsed}`);
+			lines.push(statusRow(`${icon} `, label, detail, run, child, safeWidth, this.theme, now));
 		}
 		if (prioritized.length > visible.length) {
 			lines.push(this.theme.fg("dim", `… ${prioritized.length - visible.length} more · /agents`));
@@ -372,18 +407,19 @@ export class PinnedAgentStatusComponent implements Component {
 	}
 
 	private syncAnimationTimer(): void {
-		const active = this.runtime.list().some((run) => run.children.some((child) =>
-			child.state === "queued" || child.state === "starting" || child.state === "running",
-		));
-		if (!active || this.disposed) {
-			if (this.animationTimer) clearInterval(this.animationTimer);
-			this.animationTimer = undefined;
-			return;
-		}
-		if (this.animationTimer) return;
+		const children = this.runtime.list().flatMap((run) => run.children);
+		const active = children.some((child) => !isFinalState(child.state));
+		const interval = children.some(hasWorkingSpinner) ? this.spinnerFrameMs : 1_000;
+		if (this.animationTimer && active && !this.disposed && interval === this.animationIntervalMs) return;
+		if (this.animationTimer) clearInterval(this.animationTimer);
+		this.animationTimer = undefined;
+		this.animationIntervalMs = undefined;
+		if (!active || this.disposed) return;
+		// Static retry/parked rows only change once per second; don't repaint them at spinner speed.
+		this.animationIntervalMs = interval;
 		this.animationTimer = setInterval(() => {
 			if (!this.disposed) this.tui.requestRender();
-		}, this.spinnerFrameMs);
+		}, interval);
 		this.animationTimer.unref?.();
 	}
 
@@ -400,18 +436,6 @@ export class PinnedAgentStatusComponent implements Component {
 			this.scheduleTerminalExpiry();
 		}, Math.max(0, nextExpiry - this.now()));
 		this.expiryTimer.unref?.();
-	}
-
-	private elapsedFor(run: DelegationRun, child: DelegatedChild, now: number): number {
-		const startedAt = Date.parse(run.createdAt);
-		const paused = child.state === "needs_attention" || child.state === "interrupted";
-		const pausedAt = Date.parse(child.latestActivity.observedAt);
-		const end = isFinalState(child.state)
-			? terminalTimestamp(run, child)
-			: paused && Number.isFinite(pausedAt)
-				? pausedAt
-				: now;
-		return Math.max(0, end - (Number.isFinite(startedAt) ? startedAt : end));
 	}
 }
 
@@ -660,6 +684,7 @@ export class AgentDeskOverlayComponent implements Component {
 	private readonly resumeErrors = new Map<string, string>();
 	private selectedChildId: string | undefined;
 	private selectedIndexHint = 0;
+	private ticks = 0;
 	private detail: RunOverlayComponent | undefined;
 	private disposed = false;
 
@@ -689,7 +714,9 @@ export class AgentDeskOverlayComponent implements Component {
 		});
 		this.timer = setInterval(() => {
 			if (this.disposed) return;
-			if (this.assignments().some(({ child }) => child.state === "queued" || child.state === "starting" || child.state === "running")) {
+			this.ticks++;
+			const assignments = this.assignments();
+			if (assignments.some(({ child }) => hasWorkingSpinner(child) || (!isFinalState(child.state) && this.ticks % 5 === 0))) {
 				this.tui.requestRender();
 			}
 		}, SPINNER_FRAME_MS);
@@ -836,9 +863,9 @@ export class AgentDeskOverlayComponent implements Component {
 	}
 
 	private assignmentLine(assignment: DeskAssignment, selected: boolean, width: number): string {
-		const { child } = assignment;
+		const { run, child } = assignment;
 		const marker = selected ? this.theme.fg("accent", "›") : " ";
-		const label = selected ? this.theme.fg("accent", child.label) : child.label;
+		const label = selected ? this.theme.fg("accent", firstDisplayLine(child.label)) : firstDisplayLine(child.label);
 		const pending = this.resumePending.has(child.id) && child.state === "interrupted";
 		const error = this.resumeErrors.get(child.id);
 		const summary = pending
@@ -848,10 +875,9 @@ export class AgentDeskOverlayComponent implements Component {
 				: deskAssignmentSummary(assignment);
 		const color = child.state === "failed" ? "error" : child.state === "interrupted" || child.state === "needs_attention" ? "warning" : "dim";
 		const model = this.theme.fg("dim", child.resolved.model.id);
-		const retry = retryActivity(child, Date.now(), this.theme);
-		const prefix = `${marker} ${stateIcon(child, this.theme)} `;
-		return retry ? fitRetryRow(prefix, label, retry, width)
-			: `${prefix}${label} · ${model} · ${this.theme.fg(color, summary)}`;
+		const tool = toolSummary(child);
+		const detail = tool ? this.theme.fg("text", tool) : `${model} · ${this.theme.fg(color, firstDisplayLine(summary))}`;
+		return statusRow(`${marker} ${stateIcon(child, this.theme)} `, label, detail, run, child, width, this.theme);
 	}
 
 	private openDetail(): void {
@@ -954,7 +980,7 @@ export class RunOverlayComponent implements Component {
 			if (this.disposed) return;
 			this.ticks++;
 			const run = this.runtime.get(this.runId);
-			if (run?.children.some((child) => child.state === "queued" || child.state === "starting" || child.state === "running")) {
+			if (run?.children.some((child) => hasWorkingSpinner(child) || (!isFinalState(child.state) && this.ticks % 5 === 0))) {
 				this.tui.requestRender();
 			}
 			const selected = run?.children[this.selected];
@@ -1158,14 +1184,12 @@ export class RunOverlayComponent implements Component {
 		return this.theme.fg("dim", fitFooterHints(width, alternatives, selecting ? "Esc close" : "Esc agents"));
 	}
 
-	private childHeader(_run: DelegationRun, child: DelegatedChild, width: number): string {
+	private childHeader(run: DelegationRun, child: DelegatedChild, width: number): string {
 		const focus = this.transcriptFocused ? `${this.theme.fg("accent", "▶")} ` : "";
 		const route = `${child.resolved.model.provider}/${child.resolved.model.id} · ${child.resolved.reasoning}`;
-		const retry = retryActivity(child, Date.now(), this.theme);
-		const prefix = `${focus}${stateIcon(child, this.theme)} `;
-		const label = this.theme.bold(child.label);
-		return retry ? fitRetryRow(prefix, label, retry, width)
-			: `${prefix}${label} ${this.theme.fg("dim", `${child.state} · ${route}`)}`;
+		const tool = toolSummary(child);
+		const detail = tool ? this.theme.fg("text", tool) : this.theme.fg("dim", `${child.state} · ${route}`);
+		return statusRow(`${focus}${stateIcon(child, this.theme)} `, this.theme.bold(firstDisplayLine(child.label)), detail, run, child, width, this.theme);
 	}
 
 	private transcriptLines(run: DelegationRun, child: DelegatedChild, width: number): string[] {
@@ -1203,7 +1227,7 @@ export class RunOverlayComponent implements Component {
 			if (lines.length > 0) lines.push("");
 			lines.push(...workspaceLines.flatMap((line) => wrapTextWithAnsi(line, width)));
 		}
-		if (!isRetrying(child) && (child.state === "queued" || child.state === "starting" || child.state === "running")) {
+		if (!isRetrying(child) && !activeTool(child) && (child.state === "queued" || child.state === "starting" || child.state === "running")) {
 			if (lines.length > 0) lines.push("");
 			lines.push(`${stateIcon(child, this.theme)} ${this.theme.fg("dim", describeLatestActivity(run, Date.now(), 10_000, this.selected))}`);
 		}

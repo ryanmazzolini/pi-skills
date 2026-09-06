@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { childOutputGuidance, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, emitActivity, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
+import { childOutputGuidance, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, createActivityEmitter, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-resources-test-"));
@@ -34,7 +34,8 @@ function fixture(t) {
 test("retry events expose a fixed deadline and clear on retry completion", () => {
   const activities = [];
   const sink = { activity(value) { activities.push(value); } };
-  emitActivity({ type: "auto_retry_start", attempt: 2, maxAttempts: 3, delayMs: 20_000, errorMessage: "rate limited" }, sink, 1_000);
+  const emit = createActivityEmitter(sink, () => 1_000);
+  emit({ type: "auto_retry_start", attempt: 2, maxAttempts: 3, delayMs: 20_000, errorMessage: "rate limited" });
   assert.deepEqual(activities.pop(), {
     kind: "retry", summary: "rate limited",
     retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(21_000).toISOString() },
@@ -45,12 +46,78 @@ test("retry events expose a fixed deadline and clear on retry completion", () =>
     { type: "auto_retry_end", success: false, attempt: 2, finalError: "Retry cancelled" },
     { type: "turn_start", turnIndex: 2, timestamp: 21_000 },
   ]) {
-    emitActivity(event, sink);
+    emit(event);
     const activity = activities.pop();
     assert.notEqual(activity.kind, "retry");
     assert.equal(activity.retry, undefined);
     if (event.finalError) assert.equal(activity.summary, event.finalError.replace(/\s+/g, " "));
   }
+});
+
+test("tool activity tracks the oldest call across progress, overlap, and out-of-order completion", () => {
+  let now = 1_000;
+  let activity;
+  const emit = createActivityEmitter({ activity(value) { activity = value; } }, () => now);
+  const start = (id) => ({ type: "tool_execution_start", toolCallId: id, toolName: "bash", args: { command: "npm test" } });
+  const end = (id, isError = false) => ({ type: "tool_execution_end", toolCallId: id, toolName: "bash", result: {}, isError });
+  emit(start("a"));
+  assert.deepEqual(activity, {
+    kind: "tool", summary: "Running: npm test",
+    tool: { callId: "a", startedAt: new Date(1_000).toISOString(), additionalCount: 0 },
+  });
+  const first = structuredClone(activity);
+  now = 8_000;
+  emit({ type: "tool_execution_update", toolCallId: "a", toolName: "bash", args: {}, partialResult: {} });
+  assert.deepEqual(activity, first);
+  emit(start("a")); // Duplicate starts must not reset elapsed time.
+  assert.deepEqual(activity, first);
+  emit(start("b"));
+  assert.equal(activity.tool.callId, "a");
+  assert.equal(activity.tool.additionalCount, 1);
+  emit({ type: "message_update", assistantMessageEvent: { type: "text_delta" } });
+  assert.equal(activity.tool.callId, "a");
+  emit(end("b", true));
+  assert.deepEqual(activity, first);
+  now = 10_000;
+  emit(start("c"));
+  emit(end("a"));
+  assert.deepEqual(activity.tool, { callId: "c", startedAt: new Date(10_000).toISOString(), additionalCount: 0 });
+  emit(end("unknown"));
+  assert.equal(activity.tool.callId, "c");
+  emit(end("c", true));
+  assert.equal(activity.kind, "waiting");
+  assert.equal(activity.tool, undefined);
+  now = 20_000;
+  emit(start("d"));
+  assert.equal(activity.tool.startedAt, new Date(now).toISOString());
+  emit(end("d"));
+  assert.equal(activity.kind, "thinking");
+  assert.equal(activity.tool, undefined);
+});
+
+test("tool trackers are child-local and reset at lifecycle boundaries", () => {
+  let activity;
+  let other;
+  const emit = createActivityEmitter({ activity(value) { activity = value; } }, () => 1_000);
+  const otherEmit = createActivityEmitter({ activity(value) { other = value; } }, () => 2_000);
+  const start = { type: "tool_execution_start", toolCallId: "a", toolName: "read", args: { path: "src/main.ts" } };
+  otherEmit(start);
+  for (const boundary of [
+    { type: "agent_end", messages: [] },
+    { type: "agent_start" },
+    { type: "turn_start" },
+    { type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 20_000, errorMessage: "rate limited" },
+  ]) {
+    emit(start);
+    emit(boundary);
+    assert.equal(activity.tool, undefined);
+    emit({ ...start, toolCallId: "new" });
+    assert.equal(activity.tool.callId, "new");
+    assert.equal(activity.tool.additionalCount, 0);
+    emit({ type: "agent_end", messages: [] });
+  }
+  assert.equal(other.tool.callId, "a");
+  assert.equal(other.tool.startedAt, new Date(2_000).toISOString());
 });
 
 test("child sessions reuse the parent model runtime", () => {
