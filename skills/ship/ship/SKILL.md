@@ -5,20 +5,27 @@ description: Route coding work through the lightest useful path. Use for direct 
 
 # Ship
 
-Move work to its next useful human checkpoint. Use the least process that keeps the outcome clear and the work recoverable. First determine what is settled. Then decide whether design review is warranted and choose the delivery shape. Research, alignment, design review, and delivery planning answer different questions. None is a required stage, but the human explicitly approves the route before production implementation when any are skipped.
+Establish the expected experience or behavior and the boundaries of the current work before choosing a solution or delivery approach. This applies to every change, large or small. Use the broader goal to understand the request, not to expand its scope. Move work to its next useful human checkpoint with the least process that keeps the outcome clear and the work recoverable.
 
-## Determine what is settled
+Research, alignment, design review, and delivery planning answer different questions. None is a required stage, but the human explicitly approves the route before production implementation when any are skipped.
 
-Inspect the current request, live repository, authoritative project evidence, and any existing workflow.
+## Settle expectations and scope
 
-- **Facts:** use the live system, code, tests, automation, and documentation to establish current behavior, constraints, and existing decisions. [`research`](../research/SKILL.md) helps when material uncertainty prevents a trustworthy route. Routine local inspection is usually enough otherwise.
-- **Intent:** use the request and authoritative project evidence to establish the target value, observable behavior, and included or deferred outcomes. An exact bounded request authorizes the change it names. Keep that authority unless relevant evidence conflicts. Do not ask the user to restate the rationale without a material gap.
+Inspect the current request, live repository, authoritative project evidence, and any existing workflow. Before recommending a solution structure or delivery chunks, establish:
 
-Pause direct implementation when sources of intent conflict or leave a consequential choice. A choice is consequential when plausible answers could change the goal, priority, value, experience, scope, risk, or high-level solution direction. `align` is the default way to resolve it. Prefer inspection or `research` for questions evidence can answer.
+- **Expected result:** who the work helps, what they should be able to do or understand, and what counts as complete for this request.
+- **Expected behavior:** for interface changes, establish current and intended user or caller walkthroughs, including relevant feedback, completion, failure, and recovery states. Otherwise, establish one concrete path to the result or state which behavior must remain unchanged. Reuse existing walkthroughs where they already settle the expected behavior.
+- **Scope:** what this change includes, what it excludes or defers, and which existing behavior, interfaces, and UI it must preserve.
 
-For example, a small retry button needs alignment when its placement, retry behavior, and feedback are unspecified. It can proceed directly when an authoritative UI specification and contract tests settle all three.
+Reuse settled decisions and exact bounded requests. Do not ask the user to restate the rationale, repeat approval, or create an alignment document when those expectations and boundaries are already clear. Size changes the depth of this check, not whether it happens.
 
-Small, local, or reversible work does not settle a missing choice. Reuse settled intent instead of repeating alignment.
+Use the live system, code, tests, automation, and documentation to establish facts. Use [`research`](../research/SKILL.md) when material uncertainty prevents a trustworthy decision; routine inspection is usually enough otherwise. Distinguish current behavior from requested behavior and from your proposed changes.
+
+Pause solution selection or implementation when sources of intent conflict or completing the expected behavior would require inventing a consequential choice. A choice is consequential when plausible answers could change the goal, priority, value, experience, scope, risk, or high-level solution direction. Use [`align`](../align/SKILL.md) to settle choices that need human judgment, not questions inspection or research can answer.
+
+For example, a small preference toggle can change existing users' behavior. If its default is unspecified and plausible defaults have different effects, settle that choice before implementation. If its behavior and preservation boundaries are already authoritative, reuse those decisions and proceed within the existing approval.
+
+Finish this check when the expected result, behavior, and scope are clear without inventing a consequential choice. Keep routine accounting internal. If the result requires changing something the user asked to preserve, explain the conflict and ask before proceeding. Suggest related improvements separately; they are not part of the approved work.
 
 ## Decide whether to review the design
 
@@ -65,7 +72,7 @@ Continue from the settled outcome or exact bounded request and any approved desi
 - the approved implementation route and its reasons for skipped steps
 - the authoritative intent, observable completion, and outcome boundaries
 - the next delivery change: one narrow observable outcome or justified enabler, plus the work deferred beyond it
-- the current and intended UX/DX walkthrough when an interface changes, or the behavior that must remain unchanged
+- the settled expected behavior and preservation boundaries still fit the change
 - the live repository, cwd, branch, and worktree
 - allowed scope and existing work to preserve
 - known sibling work
