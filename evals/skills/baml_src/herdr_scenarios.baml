@@ -124,8 +124,8 @@ function HerdrProposalAssertions() -> HardAssertion[] {
     ]
 }
 
-function HerdrCreationAssertions() -> HardAssertion[] {
-    [
+function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
+    let assertions: HardAssertion[] = [
         ToolCountAssertion {
             kind: "tool-count",
             tool: "bash",
@@ -158,16 +158,33 @@ function HerdrCreationAssertions() -> HardAssertion[] {
             kind: "tool-count",
             tool: "bash",
             argumentIncludes: "herdr tab create",
-            min: 1,
-            max: 1,
-            description: "The agent creates exactly one tab in the approved existing workspace.",
+            min: if (new_workspace) {
+                0
+            } else {
+                1
+            },
+            max: if (new_workspace) {
+                0
+            } else {
+                1
+            },
+            description: "The agent creates one tab for an existing workspace, or uses the initial tab of a new workspace without creating an extra tab.",
         },
         ToolCountAssertion {
             kind: "tool-count",
             tool: "bash",
             argumentIncludes: "herdr workspace create",
-            max: 0,
-            description: "The agent does not create another workspace for an approved existing-workspace destination.",
+            min: if (new_workspace) {
+                1
+            } else {
+                0
+            },
+            max: if (new_workspace) {
+                1
+            } else {
+                0
+            },
+            description: "The agent creates exactly one workspace only for an approved new-workspace destination.",
         },
         ToolCountAssertion {
             kind: "tool-count",
@@ -188,8 +205,15 @@ function HerdrCreationAssertions() -> HardAssertion[] {
             kind: "tool-count",
             tool: "bash",
             argumentIncludes: "herdr pane get",
+            min: 2,
+            description: "The agent re-reads both source and destination pane identity and state after startup.",
+        },
+        ToolCountAssertion {
+            kind: "tool-count",
+            tool: "bash",
+            argumentIncludes: "test -f",
             min: 1,
-            description: "The agent verifies destination pane identity and state after startup.",
+            description: "The agent verifies both reported Pi session files exist before reporting readiness.",
         },
         ToolCountAssertion {
             kind: "tool-count",
@@ -258,7 +282,32 @@ function HerdrCreationAssertions() -> HardAssertion[] {
             max: 0,
             description: "The agent does not perform a public action during the handoff.",
         },
-    ]
+    ];
+    if (new_workspace) {
+        assertions
+            .push(
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "bash",
+                    argumentIncludes: "herdr tab rename",
+                    min: 1,
+                    max: 1,
+                    description: "The agent assigns the requested label to the new workspace's initial tab.",
+                },
+            );
+        assertions
+            .push(
+                ToolCountAssertion {
+                    kind: "tool-count",
+                    tool: "bash",
+                    argumentIncludes: "herdr tab get",
+                    min: 1,
+                    fromTurn: 1,
+                    description: "The agent verifies the renamed initial tab after approval.",
+                },
+            );
+    };
+    assertions
 }
 
 function HerdrScenarios() -> Scenario[] {
@@ -306,15 +355,15 @@ function HerdrScenarios() -> Scenario[] {
             semanticCriteria: [
                 SemanticCriterion {
                     id: "review-uses-existing-workspace",
-                    description: "The proposal selects existing workspace reviews (w11) and a new tab rather than proposing another workspace.",
+                    description: "The proposal leads with exactly “I’ll start a fresh Pi for the review tracked by GitHub issue #3496.”, then uses bullets for the existing `reviews` workspace, the new tab, and the working directory. Each bullet label is plain text and only its value is inline code or a clickable link labeled with inline code; the proposal does not create another workspace or use a table.",
                 },
                 SemanticCriterion {
                     id: "review-infers-label-and-cwd",
-                    description: "The proposal uses tab label 3496 and cwd /Users/ryan/git without requiring a ticket folder, branch, or worktree.",
+                    description: "The proposal uses tab label gh-3496 and cwd /Users/ryan/git without requiring a ticket folder, branch, worktree, repository name, title, or issue lookup.",
                 },
                 SemanticCriterion {
                     id: "review-preserves-topology",
-                    description: "The proposal says the destination will be a fresh Pi created without focus and the source pane will remain open, then asks for approval before creation.",
+                    description: "After exactly three destination bullets, the proposal states “Your current focus and Pi session will remain unchanged.” and asks “Approve this destination?”. It omits other bullets, source details, opaque Herdr IDs, tables, and the word “background”.",
                 },
             ],
         },
@@ -375,7 +424,7 @@ function HerdrScenarios() -> Scenario[] {
             semanticCriteria: [
                 SemanticCriterion {
                     id: "monday-matches-repository-workspace",
-                    description: "The proposal infers existing workspace ai-oncall-workflow-scripts (w30) from the requested repository instead of using the unrelated calling workspace or creating another workspace.",
+                    description: "The proposal selects the existing `ai-oncall-workflow-scripts` workspace from the requested repository without exposing its Herdr ID, using the unrelated calling workspace, or proposing another workspace.",
                 },
                 SemanticCriterion {
                     id: "monday-infers-item-label",
@@ -383,7 +432,7 @@ function HerdrScenarios() -> Scenario[] {
                 },
                 SemanticCriterion {
                     id: "monday-confirms-background-destination",
-                    description: "The response states that a fresh Pi will be started without focus, keeps the source open, and asks for approval before creation.",
+                    description: "The proposal leads with a fresh Pi for Monday item 12934387102, uses exactly the Workspace, New tab, and Working directory bullets with each bullet label kept as plain text and only its value formatted as inline code or a clickable link labeled with inline code, then uses the required focus/session sentence and approval question without background wording.",
                 },
             ],
         },
@@ -448,7 +497,7 @@ function HerdrScenarios() -> Scenario[] {
             semanticCriteria: [
                 SemanticCriterion {
                     id: "worktree-matches-canonical-workspace",
-                    description: "The proposal uses existing workspace pi-skills (wX), recognizing the linked worktree's canonical repository instead of treating herdr-workspace as the repository or using the calling ticket workspace.",
+                    description: "The proposal uses the existing `pi-skills` workspace without exposing its Herdr ID, recognizing the linked worktree’s canonical repository instead of treating `herdr-workspace` as the repository or using the calling ticket workspace.",
                 },
                 SemanticCriterion {
                     id: "worktree-infers-feature-label",
@@ -457,6 +506,10 @@ function HerdrScenarios() -> Scenario[] {
                 SemanticCriterion {
                     id: "worktree-does-not-require-ticket",
                     description: "The response does not require or propose creating a ticket, branch, worktree, ticket folder, or separate workspace before starting the fresh Pi destination.",
+                },
+                SemanticCriterion {
+                    id: "worktree-confirms-destination",
+                    description: "The proposal leads with a fresh Pi for the herdr-workspace change, uses exactly the Workspace, New tab, and Working directory bullets with each bullet label kept as plain text and only its value formatted as inline code or a clickable link labeled with inline code, then uses the required focus/session sentence and approval question without background wording, source details, opaque Herdr IDs, or a table.",
                 },
             ],
         },
@@ -563,10 +616,212 @@ function HerdrScenarios() -> Scenario[] {
             ],
         },
         Scenario {
+            id: "herdr-ticket-folder-in-current-activity-workspace",
+            title: "Continues a multi-repo ticket folder in the current activity workspace",
+            skillPath: "skills/herdr/SKILL.md",
+            skillReferences: [
+                "skills/herdr/references/pi-session-transfer.md",
+                "skills/ticket-workspace/ticket-workspace/SKILL.md",
+            ],
+            turns: [
+                "Ticket-workspace has finished preparing /Users/ryan/git/worktrees/sc-12345-invoice-match with api/ and web/ worktrees. Continue this review here in a fresh Pi tab, with cwd at the ticket folder so it can work across both repos. Infer the destination and show me before changing anything.",
+            ],
+            files: {},
+            searchResponses: [],
+            fetchResponses: {},
+            bashResponses: [
+                BashResponse { includes: "HERDR_ENV", output: "HERDR_ENV=1" },
+                BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
+                BashResponse {
+                    includes: "herdr pane current",
+                    output: #"
+                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr workspace list",
+                    output: #"
+                        {"result":{"workspaces":[{"label":"reviews","workspace_id":"w11"},{"label":"api","workspace_id":"w20"},{"label":"web","workspace_id":"w21"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr pane list",
+                    output: #"
+                        {"result":{"panes":[{"cwd":"/Users/ryan/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"},{"cwd":"/Users/ryan/git/api","pane_id":"w20:p1","workspace_id":"w20"},{"cwd":"/Users/ryan/git/web","pane_id":"w21:p1","workspace_id":"w21"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab list",
+                    output: #"
+                        {"result":{"tabs":[{"label":"gh-3496","tab_id":"w11:t2","workspace_id":"w11"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab",
+                    output: "Usage: herdr tab [COMMAND]\nCommands: list create get focus rename close",
+                },
+                BashResponse { includes: "test -f", output: "" },
+                BashResponse { includes: "test -d", output: "" },
+                BashResponse { includes: "ls", output: "api/\nweb/" },
+            ],
+            maxToolCalls: 16,
+            hardAssertions: HerdrProposalAssertions(),
+            semanticCriteria: [
+                SemanticCriterion {
+                    id: "ticket-folder-keeps-current-activity",
+                    description: "The proposal infers the calling reviews workspace from 'here', creates a new tab labeled sc-12345-invoice-match there, and does not force a new Herdr workspace or choose the api or web workspace because of the folder contents.",
+                },
+                SemanticCriterion {
+                    id: "ticket-folder-keeps-parent-cwd",
+                    description: "The proposal keeps /Users/ryan/git/worktrees/sc-12345-invoice-match as cwd, without replacing it with api/ or web/, requiring it to be a Git repository, or repeating ticket/branch/worktree preparation.",
+                },
+                SemanticCriterion {
+                    id: "ticket-folder-confirms-destination",
+                    description: "The proposal identifies fresh Pi work for Shortcut story SC-12345, uses only Workspace, New tab, and Working directory bullets, then the unchanged focus/Pi-session sentence and approval question. It does not present New workspace or imply folder creation approved terminal creation.",
+                },
+            ],
+        },
+        Scenario {
+            id: "herdr-worktree-in-explicit-activity-workspace",
+            title: "Keeps an individual worktree in an activity workspace rather than its repository workspace",
+            skillPath: "skills/herdr/SKILL.md",
+            skillReferences: [
+                "skills/herdr/references/pi-session-transfer.md",
+                "skills/ticket-workspace/ticket-workspace/SKILL.md",
+            ],
+            turns: [
+                "The approved ticketless parser-cleanup folder and its pi-skills worktree are ready. Start a fresh Pi in the reviews Herdr workspace with cwd /Users/ryan/personal/worktrees/parser-cleanup/pi-skills. Infer the tab label from the work folder and show me the destination before changing anything.",
+            ],
+            files: {},
+            searchResponses: [],
+            fetchResponses: {},
+            bashResponses: [
+                BashResponse { includes: "HERDR_ENV", output: "HERDR_ENV=1" },
+                BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
+                BashResponse {
+                    includes: "herdr pane current",
+                    output: #"
+                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/personal/pi-skills","pane_id":"wX:p1","tab_id":"wX:t1","workspace_id":"wX"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr workspace list",
+                    output: #"
+                        {"result":{"workspaces":[{"label":"pi-skills","workspace_id":"wX"},{"label":"reviews","workspace_id":"w11"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr pane list",
+                    output: #"
+                        {"result":{"panes":[{"cwd":"/Users/ryan/personal/pi-skills","pane_id":"wX:p1","tab_id":"wX:t1","workspace_id":"wX"},{"cwd":"/Users/ryan/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab list",
+                    output: #"
+                        {"result":{"tabs":[{"label":"gh-3496","tab_id":"w11:t2","workspace_id":"w11"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab",
+                    output: "Usage: herdr tab [COMMAND]\nCommands: list create get focus rename close",
+                },
+                BashResponse {
+                    includes: "git remote",
+                    output: "git@github.com:ryanmazzolini/pi-skills.git",
+                },
+                BashResponse {
+                    includes: "git rev-parse --git-common-dir",
+                    output: "/Users/ryan/personal/pi-skills/.git",
+                },
+                BashResponse {
+                    includes: "git rev-parse",
+                    output: "/Users/ryan/personal/worktrees/parser-cleanup/pi-skills",
+                },
+                BashResponse { includes: "test -f", output: "" },
+                BashResponse { includes: "test -d", output: "" },
+            ],
+            maxToolCalls: 16,
+            hardAssertions: HerdrProposalAssertions(),
+            semanticCriteria: [
+                SemanticCriterion {
+                    id: "worktree-explicit-activity-wins",
+                    description: "The proposal uses the explicitly requested reviews workspace, not the calling/canonical pi-skills workspace or a new workspace, with tab label parser-cleanup.",
+                },
+                SemanticCriterion {
+                    id: "worktree-keeps-requested-cwd",
+                    description: "The proposal keeps /Users/ryan/personal/worktrees/parser-cleanup/pi-skills as cwd rather than its parent ticket folder or the canonical checkout, and does not require a ticket or repeat worktree preparation.",
+                },
+                SemanticCriterion {
+                    id: "worktree-activity-confirms-destination",
+                    description: "The proposal identifies fresh Pi work for parser-cleanup, uses only Workspace, New tab, and Working directory bullets, then the unchanged focus/Pi-session sentence and approval question.",
+                },
+            ],
+        },
+        Scenario {
+            id: "herdr-ticket-folder-without-destination",
+            title: "Asks where a multi-repo ticket folder belongs when context does not select a workspace",
+            skillPath: "skills/herdr/SKILL.md",
+            skillReferences: [
+                "skills/herdr/references/pi-session-transfer.md",
+                "skills/ticket-workspace/ticket-workspace/SKILL.md",
+            ],
+            turns: [
+                "Ticket-workspace finished preparing /Users/ryan/git/worktrees/sc-12345-invoice-match with api/ and web/ worktrees. Offer the fresh Pi handoff with cwd at that ticket folder. I have not chosen a Herdr workspace; infer one if clear, otherwise ask before changing anything.",
+            ],
+            files: {},
+            searchResponses: [],
+            fetchResponses: {},
+            bashResponses: [
+                BashResponse { includes: "HERDR_ENV", output: "HERDR_ENV=1" },
+                BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
+                BashResponse {
+                    includes: "herdr pane current",
+                    output: #"
+                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/git","pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr workspace list",
+                    output: #"
+                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"api","workspace_id":"w20"},{"label":"web","workspace_id":"w21"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr pane list",
+                    output: #"
+                        {"result":{"panes":[{"cwd":"/Users/ryan/git","pane_id":"w18:p1","workspace_id":"w18"},{"cwd":"/Users/ryan/git/api","pane_id":"w20:p1","workspace_id":"w20"},{"cwd":"/Users/ryan/git/web","pane_id":"w21:p1","workspace_id":"w21"}]}}
+                    "#,
+                },
+                BashResponse { includes: "test -f", output: "" },
+                BashResponse { includes: "test -d", output: "" },
+                BashResponse { includes: "ls", output: "api/\nweb/" },
+                BashResponse {
+                    includes: "git",
+                    output: "fatal: not a git repository (or any of the parent directories): .git",
+                },
+            ],
+            maxToolCalls: 16,
+            hardAssertions: HerdrProposalAssertions(),
+            semanticCriteria: [
+                SemanticCriterion {
+                    id: "ticket-folder-asks-workspace-choice",
+                    description: "The response asks the user to choose an existing Herdr workspace or a new one. It does not assume a separate workspace is required, choose first-mate because it is the source, or select api/web merely because one is a child repository.",
+                },
+                SemanticCriterion {
+                    id: "ticket-folder-retains-work-identity",
+                    description: "The response retains sc-12345-invoice-match as the work label and /Users/ryan/git/worktrees/sc-12345-invoice-match as cwd. It does not require a single-repository directory or repeat ticket/branch/worktree preparation to resolve the terminal destination.",
+                },
+            ],
+        },
+        Scenario {
             id: "herdr-preserves-ticket-workspace-path",
             title: "Keeps the explicit new-workspace path for ticket work",
             skillPath: "skills/herdr/SKILL.md",
-            skillReferences: ["skills/herdr/references/pi-session-transfer.md"],
+            skillReferences: [
+                "skills/herdr/references/pi-session-transfer.md",
+                "skills/ticket-workspace/ticket-workspace/SKILL.md",
+            ],
             turns: [
                 "Ticket-workspace prepared /Users/ryan/git/worktrees/sc-65850-bound-reconciliation-lock-waits. This ticket needs its own Herdr workspace with that slug. Show me the exact background destination before creating it.",
             ],
@@ -607,7 +862,7 @@ function HerdrScenarios() -> Scenario[] {
                 },
                 SemanticCriterion {
                     id: "ticket-preserves-background-safety",
-                    description: "The response says a fresh Pi will be started without focus, the source remains open, and creation waits for approval.",
+                    description: "The proposal leads with exactly “I’ll start a fresh Pi for Shortcut story `SC-65850`.”, uses exactly the New workspace and Working directory bullets with each bullet label kept as plain text and only its value formatted as inline code or a clickable link labeled with inline code, then uses the required focus/session sentence and approval question without background wording.",
                 },
             ],
         },
@@ -670,6 +925,177 @@ function HerdrScenarios() -> Scenario[] {
                 SemanticCriterion {
                     id: "duplicate-does-not-replace-agent",
                     description: "The response does not create a duplicate tab or replace the existing Pi. It asks whether to use the existing tab or choose another label.",
+                },
+            ],
+        },
+        Scenario {
+            id: "herdr-review-without-tracking-issue",
+            title: "Offers a PR-only review without inventing or requiring a tracking issue",
+            skillPath: "skills/herdr/SKILL.md",
+            skillReferences: ["skills/herdr/references/pi-session-transfer.md"],
+            turns: [
+                "Start a fresh Pi for reviewing acme/api PR #72, tab retry-review, in the reviews Herdr workspace, cwd /Users/ryan/git/api. There is no tracking issue. Show me the destination before creating it.",
+            ],
+            files: {},
+            searchResponses: [],
+            fetchResponses: {},
+            bashResponses: [
+                BashResponse { includes: "HERDR_ENV", output: "HERDR_ENV=1" },
+                BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
+                BashResponse {
+                    includes: "herdr pane current",
+                    output: #"
+                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr workspace list",
+                    output: #"
+                        {"result":{"workspaces":[{"label":"reviews","workspace_id":"w11"},{"label":"api","workspace_id":"w20"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr pane list",
+                    output: #"
+                        {"result":{"panes":[{"cwd":"/Users/ryan/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"},{"cwd":"/Users/ryan/git/api","pane_id":"w20:p1","workspace_id":"w20"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab list",
+                    output: #"
+                        {"result":{"tabs":[{"label":"gh-3496","tab_id":"w11:t2","workspace_id":"w11"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab",
+                    output: "Usage: herdr tab [COMMAND]\nCommands: list create get focus rename close",
+                },
+                BashResponse { includes: "test -f", output: "" },
+                BashResponse { includes: "test -d", output: "" },
+            ],
+            maxToolCalls: 16,
+            hardAssertions: HerdrProposalAssertions(),
+            semanticCriteria: [
+                SemanticCriterion {
+                    id: "pr-review-does-not-require-issue",
+                    description: "The opening describes fresh Pi work for reviewing acme/api PR #72. It does not call PR #72 a tracking issue, invent an issue, ask for an issue, or perform an issue lookup.",
+                },
+                SemanticCriterion {
+                    id: "pr-review-keeps-explicit-destination",
+                    description: "The proposal uses exactly Workspace reviews, New tab retry-review, and Working directory /Users/ryan/git/api, rather than substituting gh-72, the api workspace, or the source cwd /Users/ryan/git. It keeps the unchanged focus/Pi-session sentence and approval question.",
+                },
+            ],
+        },
+        Scenario {
+            id: "herdr-creates-new-workspace-with-explicit-tab",
+            title: "Creates a new workspace and names its initial tab independently",
+            skillPath: "skills/herdr/SKILL.md",
+            skillReferences: ["skills/herdr/references/pi-session-transfer.md"],
+            turns: [
+                "Create a new Herdr workspace incident-response, with a fresh Pi tab cache-timeouts, cwd /Users/ryan/git/api, to investigate cache timeouts. Show me the exact destination before creating it.",
+                "Yes, create that workspace with its initial tab named cache-timeouts. Do not focus it or close the source.",
+            ],
+            files: {},
+            searchResponses: [],
+            fetchResponses: {},
+            bashResponses: [
+                BashResponse { includes: "HERDR_ENV", output: "HERDR_ENV=1" },
+                BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
+                BashResponse {
+                    includes: "herdr pane current",
+                    output: #"
+                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/git","pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr workspace list",
+                    output: #"
+                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"api","workspace_id":"w20"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr workspace create",
+                    output: #"
+                        {"result":{"workspace_id":"w40","tab_id":"w40:t1","pane_id":"w40:p1","label":"incident-response","cwd":"/Users/ryan/git/api"}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr workspace",
+                    output: "herdr workspace create [--cwd PATH] [--label TEXT] [--no-focus]",
+                },
+                BashResponse {
+                    includes: "herdr tab rename",
+                    output: #"
+                        {"result":{"tab_id":"w40:t1","workspace_id":"w40","label":"cache-timeouts"}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab get",
+                    output: #"
+                        {"result":{"tab":{"tab_id":"w40:t1","workspace_id":"w40","label":"cache-timeouts"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab",
+                    output: "herdr tab rename <tab_id> <label>\nherdr tab get <tab_id>\nherdr tab list [--workspace <workspace_id>]",
+                },
+                BashResponse {
+                    includes: "herdr pane list",
+                    output: #"
+                        {"result":{"panes":[{"cwd":"/Users/ryan/git/api","pane_id":"w20:p1","workspace_id":"w20"}]}}
+                    "#,
+                },
+                BashResponse { includes: "herdr agent get", output: "agent_not_found" },
+                BashResponse {
+                    includes: "herdr agent start",
+                    output: #"
+                        {"result":{"agent":"pi","agent_status":"idle","pane_id":"w40:p1"}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr agent wait",
+                    output: #"
+                        {"result":{"agent_status":"idle","pane_id":"w40:p1"}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr pane get w18:p1",
+                    output: #"
+                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/git","pane_id":"w18:p1","workspace_id":"w18"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr pane get",
+                    output: #"
+                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/destination.jsonl"},"agent_status":"idle","cwd":"/Users/ryan/git/api","pane_id":"w40:p1","tab_id":"w40:t1","workspace_id":"w40"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "shasum",
+                    output: "02e4b33655cb22695e64036c80f525f10cea497a4183c4fd38bad20b83a85a2d  -",
+                },
+                BashResponse {
+                    includes: "sha256sum",
+                    output: "02e4b33655cb22695e64036c80f525f10cea497a4183c4fd38bad20b83a85a2d  -",
+                },
+                BashResponse { includes: "test -d", output: "" },
+                BashResponse { includes: "test -f", output: "" },
+                BashResponse { includes: "test -e", output: "" },
+            ],
+            maxToolCalls: 36,
+            hardAssertions: HerdrCreationAssertions(true),
+            semanticCriteria: [
+                SemanticCriterion {
+                    id: "new-workspace-confirms-independent-tab",
+                    description: "Before approval, the proposal identifies fresh Pi work for cache timeouts and shows New workspace incident-response, New tab cache-timeouts, and Working directory /Users/ryan/git/api, with plain-text labels and code-formatted values. It keeps the unchanged focus/Pi-session sentence and approval question. No workspace creation or tab rename occurs before the second user turn.",
+                },
+                SemanticCriterion {
+                    id: "new-workspace-names-initial-tab",
+                    description: "After approval, the agent creates incident-response with --no-focus and the requested cwd, then renames the returned initial tab w40:t1 to cache-timeouts and verifies its workspace and label using tab get before starting Pi in w40:p1. It does not create a second tab or use the existing api workspace.",
+                },
+                SemanticCriterion {
+                    id: "new-workspace-preserves-fresh-session-safety",
+                    description: "The agent checks and starts the same bounded pane-derived agent name, supplies a continuation brief that prohibits startup mutation and requires waiting for the user, waits for readiness, re-reads destination and source panes after startup, and checks both distinct session files exist before claiming success. No focus or closure occurs.",
                 },
             ],
         },
@@ -757,18 +1183,18 @@ function HerdrScenarios() -> Scenario[] {
                 },
                 BashResponse {
                     includes: "shasum",
-                    output: "74c5d41e514b422bff8f2e19ca1d4d3ef78eb682cf535719882485a10b8c5a80  -",
+                    output: "1a515ffed899363d3fe625ec54be028ba7d1f879d8b61e63780b56e3681dc30e  -",
                 },
                 BashResponse {
                     includes: "sha256sum",
-                    output: "74c5d41e514b422bff8f2e19ca1d4d3ef78eb682cf535719882485a10b8c5a80  -",
+                    output: "1a515ffed899363d3fe625ec54be028ba7d1f879d8b61e63780b56e3681dc30e  -",
                 },
                 BashResponse { includes: "test -d", output: "" },
                 BashResponse { includes: "test -f", output: "" },
                 BashResponse { includes: "test -e", output: "" },
             ],
-            maxToolCalls: 25,
-            hardAssertions: HerdrCreationAssertions(),
+            maxToolCalls: 32,
+            hardAssertions: HerdrCreationAssertions(false),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "creation-uses-approved-tab",
@@ -779,8 +1205,12 @@ function HerdrScenarios() -> Scenario[] {
                     description: "The agent starts a fresh Pi in pane w30:p9 with a concise continuation brief that identifies the destination and source and tells the destination to verify state, report ready, and wait without mutating work or topology.",
                 },
                 SemanticCriterion {
+                    id: "creation-reuses-agent-name",
+                    description: "The agent derives one name as `pi_` plus exactly 28 lowercase hexadecimal characters and uses that identical name for both `herdr agent get` and `herdr agent start`.",
+                },
+                SemanticCriterion {
                     id: "creation-verifies-fresh-session",
-                    description: "The agent waits for readiness and verifies the destination workspace, tab, pane, cwd, distinct session path, and surviving source before reporting success.",
+                    description: "After waiting for readiness, the agent re-reads both the destination and source panes, then verifies the approved workspace, tab, cwd, distinct session paths, and surviving source before reporting success.",
                 },
                 SemanticCriterion {
                     id: "creation-preserves-focus-and-source",

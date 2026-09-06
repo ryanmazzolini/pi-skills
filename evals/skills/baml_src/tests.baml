@@ -275,6 +275,37 @@ testset "contracts" {
         assert.equal(research_case[0].id, "research");
     }
 
+    test "ticket-workspace handoff scenarios enter through the calling skill" {
+        let suites = SelectScenarioSuites(ScenarioSuites(), "ticket-workspace", null);
+        let scenario = suites[0].scenarios[0];
+        assert.equal(scenario.skillPath, "skills/ticket-workspace/ticket-workspace/SKILL.md");
+        assert.is_true(scenario.skillReferences.includes("skills/herdr/SKILL.md"));
+        assert
+            .is_true(
+                scenario.skillReferences.includes("skills/herdr/references/pi-session-transfer.md"),
+            );
+    }
+
+    test "new-workspace assertions require initial-tab naming and reject an extra tab" {
+        let scenario = SelectScenarios(HerdrScenarios(), "herdr-creates-new-workspace-with-explicit-tab")[0];
+        let extra_tab = TestCall(1, "bash", 0);
+        extra_tab.command = "herdr tab create --workspace w40 --label cache-timeouts --no-focus";
+        let results = EvaluateHardAssertions(scenario, [extra_tab]);
+        let rejected_extra_tab = false;
+        let missing_rename = false;
+        for (let result in results) {
+            if (result.description.includes("without creating an extra tab")) {
+                rejected_extra_tab = !result.passed;
+            };
+            if (result.description.includes("assigns the requested label")) {
+                missing_rename = !result.passed;
+            };
+        }
+        ;
+        assert.is_true(rejected_extra_tab);
+        assert.is_true(missing_rename);
+    }
+
     test "response decisions support typed and plain text but reject empty messages" {
         let typed_decision = TestStep("respond");
         typed_decision.message = "Use SQLite.";
