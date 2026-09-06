@@ -1072,14 +1072,14 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 			this.ctx?.ui.notify(`Stopped monitoring ${pullRequestKey(monitor.pr)}: ${reason}`, outcome ? "info" : "warning");
 			if (monitor.pending.size > 0 || this.delivery.hasPending(monitor.recordId)) {
 				this.persist(monitor);
-				if (!this.hasPollableMonitors()) this.checkScheduler.stop();
+				if (!this.hasCheckableMonitors()) this.checkScheduler.stop();
 				this.notifyChange();
 				return;
 			}
 		}
 		if (outcome) {
 			this.persist(monitor);
-			if (!this.hasPollableMonitors()) this.checkScheduler.stop();
+			if (!this.hasCheckableMonitors()) this.checkScheduler.stop();
 			this.notifyChange();
 			return;
 		}
@@ -1127,7 +1127,7 @@ export class GithubPrMonitorRuntime implements PiMonitorSession {
 		this.stateStore.remove(monitor.recordId);
 		this.monitors.delete(monitor.recordId);
 		monitor.pending.clear();
-		if (!this.hasPollableMonitors()) this.checkScheduler.stop();
+		if (!this.hasCheckableMonitors()) this.checkScheduler.stop();
 		this.notifyChange();
 	}
 

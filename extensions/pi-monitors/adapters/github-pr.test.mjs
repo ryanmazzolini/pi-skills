@@ -752,6 +752,55 @@ test("shared delivery batches terminal outcomes from one poll", async () => {
   ]);
 });
 
+test("one outcome acknowledgement keeps another terminal retry scheduled", async () => {
+  const otherUrl = "https://github.com/acme/gadgets/pull/7";
+  const widgetSnapshot = { pull: { state: "open", title: "Widgets" }, comments: [], reviews: [], reviewComments: [] };
+  const gadgetSnapshot = { pull: { state: "open", title: "Gadgets" }, comments: [], reviews: [], reviewComments: [] };
+  let failGadgetFinalDrain = false;
+  const f = fixture({
+    pullRequests: new Map([
+      [PR_URL, { number: 42, url: PR_URL, title: "Widgets", state: "OPEN" }],
+      [otherUrl, { number: 7, url: otherUrl, title: "Gadgets", state: "OPEN" }],
+    ]),
+    snapshots: new Map([[PR_URL, widgetSnapshot], [otherUrl, gadgetSnapshot]]),
+    beforeExec(_command, args) {
+      if (failGadgetFinalDrain && args[0] === "api" && args.at(-1) === "repos/acme/gadgets/pulls/7") {
+        failGadgetFinalDrain = false;
+        throw new Error("temporary GitHub failure");
+      }
+    },
+  });
+  await start(f);
+  await f.runtime.register(PR_URL, f.ctx);
+  await f.runtime.register(otherUrl, f.ctx);
+
+  widgetSnapshot.pull.state = "closed";
+  gadgetSnapshot.pull.state = "closed";
+  gadgetSnapshot.comments = [issueComment({ id: 701, node_id: "IC_701", html_url: `${otherUrl}#issuecomment-701` })];
+  await f.timer.latest(60_000).callback();
+  await settleDelivery();
+
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0][0].customType, "github_pr_feedback");
+
+  failGadgetFinalDrain = true;
+  await acknowledgeLast(f);
+  const retry = f.timer.latest(120_000);
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.sent[1][0].customType, "github_pr_outcome");
+
+  await acknowledgeLast(f);
+  assert.deepEqual(f.runtime.snapshot().active.map((monitor) => monitor.id), ["github-pr:acme/gadgets#7"]);
+  assert.match(f.runtime.snapshot().active[0].status, /Finishing:.*closed/);
+  assert.equal(retry.cancelled, false);
+  await retry.callback();
+  await settleDelivery();
+
+  assert.equal(f.sent.length, 3);
+  assert.equal(f.sent[2][0].customType, "github_pr_outcome");
+  assert.equal(f.sent[2][0].details.prKey, "acme/gadgets#7");
+});
+
 test("the full PR monitor set shares one automatic turn", async () => {
   const pullRequests = new Map();
   const snapshots = new Map();
