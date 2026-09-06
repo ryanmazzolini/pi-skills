@@ -57,6 +57,13 @@ function HerdrProposalAssertions() -> HardAssertion[] {
         ToolCountAssertion {
             kind: "tool-count",
             tool: "bash",
+            argumentIncludes: "herdr agent start",
+            max: 0,
+            description: "The agent does not start an agent before the requested topology confirmation.",
+        },
+        ToolCountAssertion {
+            kind: "tool-count",
+            tool: "bash",
             argumentIncludes: "herdr pane focus",
             max: 0,
             description: "The agent does not focus a pane while inferring a background destination.",
@@ -211,9 +218,10 @@ function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
         ToolCountAssertion {
             kind: "tool-count",
             tool: "bash",
-            argumentIncludes: "test -f",
+            argumentIncludes: "test -f /fixture/destination.jsonl && test -f /fixture/source.jsonl",
             min: 1,
-            description: "The agent verifies both reported Pi session files exist before reporting readiness.",
+            fromTurn: 1,
+            description: "The agent issues the required combined check for both reported Pi session files after approval.",
         },
         ToolCountAssertion {
             kind: "tool-count",
