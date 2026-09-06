@@ -43,10 +43,15 @@ function preparation(store, suffix = "one") {
     sourceCwd: path.join(store, "..", "repo"),
     runId: `run-${suffix}`,
     childId: `child-${suffix}`,
-    worktreePath: path.join(store, "worktrees", suffix),
     patchPath: path.join(store, "patches", `${suffix}.patch`),
     manifestPath: path.join(store, "patches", `${suffix}.manifest.json`),
   };
+}
+
+function envelopePaths(root) {
+  return fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(root, entry.name, "owner.json")))
+    .map((entry) => path.join(root, entry.name));
 }
 
 function workingTreeRevision(repo, indexPath) {
@@ -109,7 +114,11 @@ if (process.env.PI_DELEGATE_TEST_FAIL_WORKTREE_ADD && worktree >= 0 && args[work
     process.exit(95);
   }
   const result = spawnSync(process.env.PI_DELEGATE_REAL_GIT, args, { stdio: "inherit" });
-  if (result.status === 0) fs.writeFileSync(path.join(target, "checkout-side-effect.txt"), "dirty after checkout\\n");
+  if (result.status === 0 && process.env.PI_DELEGATE_TEST_FAIL_WORKTREE_ADD === "missing") {
+    fs.rmSync(target, { recursive: true, force: true });
+  } else if (result.status === 0) {
+    fs.writeFileSync(path.join(target, "checkout-side-effect.txt"), "dirty after checkout\\n");
+  }
   process.exit(result.status === 0 ? 96 : (result.status ?? 98));
 }
 const result = spawnSync(process.env.PI_DELEGATE_REAL_GIT, args, { stdio: "inherit" });
@@ -133,7 +142,7 @@ process.exit(result.status ?? 99);
 
 test("requires a clean Git source and never falls back when worktree creation is blocked", async (t) => {
   const { repo, store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   fs.writeFileSync(path.join(repo, "keep.txt"), "dirty\n");
   await assert.rejects(manager.prepare(preparation(store, "dirty")), /must be clean/);
   assert.equal(fs.existsSync(path.join(store, "worktrees", "dirty")), false);
@@ -144,10 +153,7 @@ test("requires a clean Git source and never falls back when worktree creation is
   await assert.rejects(manager.prepare(preparation(store, "collision")), /branch already exists/);
   assert.notEqual(git(repo, ["branch", "--list", collidingBranch]), "");
 
-  const blocked = preparation(store, "blocked");
-  fs.mkdirSync(blocked.worktreePath, { recursive: true });
-  await assert.rejects(manager.prepare(blocked), /already exists/);
-  assert.equal(git(repo, ["branch", "--list", "pi-delegate/run-blocked/child-blocked"]), "");
+  assert.deepEqual(envelopePaths(store), []);
 });
 
 test("does not run repository checkout hooks for extension-owned worktrees", async (t) => {
@@ -156,7 +162,7 @@ test("does not run repository checkout hooks for extension-owned worktrees", asy
   const hook = path.join(repo, ".git", "hooks", "post-checkout");
   fs.writeFileSync(hook, `#!/bin/sh\nprintf ran > "${marker}"\nexit 23\n`);
   fs.chmodSync(hook, 0o755);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const workspace = await manager.prepare(preparation(store, "hook-isolated"));
 
   assert.equal(fs.existsSync(marker), false);
@@ -164,21 +170,147 @@ test("does not run repository checkout hooks for extension-owned worktrees", asy
   await manager.cleanup(workspace);
 });
 
+test("creates Git worktrees in temporary envelopes while the branch remains repository-owned", async (t) => {
+  const { repo, store, baseCommit } = fixture(t);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare(preparation(store, "ephemeral-git"));
+
+  assert.equal(workspace.worktreePath, path.join(workspace.envelope.rootPath, "workspace"));
+  assert.equal(fs.existsSync(path.join(workspace.envelope.rootPath, "owner.json")), true);
+  assert.equal(git(repo, ["rev-parse", workspace.branch]), baseCommit);
+
+  fs.rmSync(workspace.envelope.rootPath, { recursive: true });
+  git(repo, ["worktree", "prune", "--expire", "now"]);
+  assert.equal(git(repo, ["rev-parse", workspace.branch]), baseCommit);
+  git(repo, ["branch", "-D", workspace.branch]);
+});
+
+test("treats a workspace from a previous OS temporary root as unavailable without deleting it", async (t) => {
+  const { root, repo, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare(preparation(store, "foreign-root"));
+  const currentRootManager = new GitWorkspaceManager(path.join(root, "new-temporary-root"), store);
+
+  assert.equal(await currentRootManager.expire(workspace), true);
+  assert.equal(fs.existsSync(workspace.worktreePath), true);
+  assert.notEqual(git(repo, ["branch", "--list", workspace.branch]), "");
+  await manager.cleanup(workspace);
+});
+
+test("validates a Git envelope before removing its worktree or branch", async (t) => {
+  const { repo, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare(preparation(store, "git-owner-mismatch"));
+  fs.appendFileSync(path.join(repo, ".git", "info", "exclude"), "ignored.tmp\n");
+  fs.writeFileSync(path.join(workspace.worktreePath, "ignored.tmp"), "preserve me\n");
+  fs.writeFileSync(path.join(workspace.envelope.rootPath, "owner.json"), '{"schemaVersion":1,"ownerToken":"other"}\n');
+
+  await assert.rejects(manager.cleanup(workspace), /ownership changed/);
+  assert.equal(fs.readFileSync(path.join(workspace.worktreePath, "ignored.tmp"), "utf8"), "preserve me\n");
+  assert.notEqual(git(repo, ["branch", "--list", workspace.branch]), "");
+
+  fs.writeFileSync(path.join(workspace.envelope.rootPath, "owner.json"), '{"schemaVersion":1,"ownerToken":"owner-token"}\n');
+  await manager.cleanup(workspace);
+});
+
+test("restores a quarantined Git envelope when late edits block cleanup", async (t) => {
+  const { store } = fixture(t);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare(preparation(store, "late-edit"));
+  const initial = await manager.inspect(workspace);
+  assert.equal(initial.kind, "no_changes");
+  fs.writeFileSync(path.join(workspace.worktreePath, "late.txt"), "keep me\n");
+
+  await assert.rejects(manager.cleanup(workspace), /changed before cleanup/);
+  assert.equal(fs.readFileSync(path.join(workspace.worktreePath, "late.txt"), "utf8"), "keep me\n");
+  const reviewed = await manager.inspect(workspace);
+  assert.equal(reviewed.kind, "changes");
+
+  fs.rmSync(path.join(workspace.worktreePath, "late.txt"));
+  await manager.cleanup(workspace);
+});
+
+test("prunes an expired Git checkout while removing only its unchanged private branch", async (t) => {
+  const { repo, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare(preparation(store, "expired-git"));
+  fs.rmSync(store, { recursive: true });
+
+  await manager.cleanup(workspace);
+  assert.equal(git(repo, ["branch", "--list", workspace.branch]), "");
+  assert.doesNotMatch(git(repo, ["worktree", "list", "--porcelain"]), /expired-git/);
+});
+
+test("expired delegate cleanup preserves unrelated missing worktree registrations", async (t) => {
+  const { root, repo, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare(preparation(store, "targeted-expiry"));
+  const otherPath = path.join(root, "other-worktree");
+  const hiddenOtherPath = path.join(root, "hidden-other-worktree");
+  git(repo, ["branch", "other-worktree"]);
+  git(repo, ["worktree", "add", otherPath, "other-worktree"]);
+  fs.writeFileSync(path.join(otherPath, "staged.txt"), "staged\n");
+  git(otherPath, ["add", "staged.txt"]);
+  fs.renameSync(otherPath, hiddenOtherPath);
+  fs.rmSync(workspace.envelope.rootPath, { recursive: true });
+
+  await manager.cleanup(workspace);
+  assert.match(git(repo, ["worktree", "list", "--porcelain"]), new RegExp(otherPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  fs.renameSync(hiddenOtherPath, otherPath);
+  assert.match(git(otherPath, ["status", "--porcelain"]), /^A  staged\.txt$/m);
+  git(repo, ["worktree", "remove", "--force", otherPath]);
+  git(repo, ["branch", "-D", "other-worktree"]);
+});
+
+test("finishes cleanup after the Git worktree and branch were removed before envelope deletion", async (t) => {
+  const { repo, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare(preparation(store, "cleanup-recovery"));
+  const quarantine = `${workspace.envelope.rootPath}.cleanup-owner-token`;
+  fs.renameSync(workspace.envelope.rootPath, quarantine);
+  git(repo, ["worktree", "repair", path.join(quarantine, "workspace")]);
+  git(repo, ["worktree", "remove", path.join(quarantine, "workspace")]);
+  git(repo, ["branch", "-D", workspace.branch]);
+
+  await new GitWorkspaceManager(store, store).cleanup(workspace);
+  assert.equal(fs.existsSync(quarantine), false);
+});
+
 test("cleans registered dirty setup resources after worktree add returns failure", async (t) => {
   const { root, repo, store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const input = preparation(store, "registered-failure");
   interceptWorktreeAdd(t, root);
 
   await assert.rejects(manager.prepare(input), /worktree add/);
-  assert.equal(fs.existsSync(input.worktreePath), false);
+  assert.deepEqual(envelopePaths(store), []);
   assert.equal(git(repo, ["branch", "--list", "pi-delegate/run-registered-failure/child-registered-failure"]), "");
   assert.doesNotMatch(git(repo, ["worktree", "list", "--porcelain"]), /registered-failure/);
 });
 
+test("failed setup removes only its missing worktree registration", async (t) => {
+  const { root, repo, store } = fixture(t);
+  const otherPath = path.join(root, "setup-other-worktree");
+  const hiddenOtherPath = path.join(root, "hidden-setup-other-worktree");
+  git(repo, ["branch", "setup-other-worktree"]);
+  git(repo, ["worktree", "add", otherPath, "setup-other-worktree"]);
+  fs.writeFileSync(path.join(otherPath, "staged.txt"), "staged\n");
+  git(otherPath, ["add", "staged.txt"]);
+  fs.renameSync(otherPath, hiddenOtherPath);
+  interceptWorktreeAdd(t, root, "missing");
+  const manager = new GitWorkspaceManager(store);
+
+  await assert.rejects(manager.prepare(preparation(store, "missing-setup")), /worktree add/);
+  assert.match(git(repo, ["worktree", "list", "--porcelain"]), new RegExp(otherPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  fs.renameSync(hiddenOtherPath, otherPath);
+  assert.match(git(otherPath, ["status", "--porcelain"]), /^A  staged\.txt$/m);
+  git(repo, ["worktree", "remove", "--force", otherPath]);
+  git(repo, ["branch", "-D", "setup-other-worktree"]);
+});
+
 test("preserves an unregistered replacement directory after setup failure", async (t) => {
   const { root, repo, store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const input = preparation(store, "replacement-race");
   interceptWorktreeAdd(t, root, "replacement");
 
@@ -190,14 +322,16 @@ test("preserves an unregistered replacement directory after setup failure", asyn
       return true;
     },
   );
-  assert.equal(fs.readFileSync(path.join(input.worktreePath, "valuable.txt"), "utf8"), "preserve me\n");
+  const [preservedEnvelope] = envelopePaths(store);
+  assert.ok(preservedEnvelope);
+  assert.equal(fs.readFileSync(path.join(preservedEnvelope, "workspace", "valuable.txt"), "utf8"), "preserve me\n");
   assert.equal(git(repo, ["branch", "--list", "pi-delegate/run-replacement-race/child-replacement-race"]), "");
   assert.doesNotMatch(git(repo, ["worktree", "list", "--porcelain"]), /replacement-race/);
 });
 
 test("captures a complete tree revision and applies that exact uncommitted change set", async (t) => {
   const { repo, store, baseCommit } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const workspace = await manager.prepare(preparation(store));
   const worktree = workspace.worktreePath;
 
@@ -249,7 +383,7 @@ test("captures a complete tree revision and applies that exact uncommitted chang
 
 test("rolls back earlier paths when Git fails partway through destination writes", async (t) => {
   const { repo, store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const workspace = await manager.prepare(preparation(store, "rollback"));
   fs.writeFileSync(path.join(workspace.worktreePath, "keep.txt"), "agent keep\n");
   fs.writeFileSync(path.join(workspace.worktreePath, "locked", "b.txt"), "agent locked\n");
@@ -274,7 +408,7 @@ test("rolls back earlier paths when Git fails partway through destination writes
 
 test("deterministically rolls back a partially applied symlink and nested addition", async (t) => {
   const { root, repo, store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const workspace = await manager.prepare(preparation(store, "deterministic-rollback"));
   fs.symlinkSync("missing-target", path.join(workspace.worktreePath, "a-link"));
   fs.mkdirSync(path.join(workspace.worktreePath, "new-dir"));
@@ -308,7 +442,7 @@ test("restores non-UTF-8 symlink targets byte-for-byte after partial apply", asy
   git(repo, ["add", "a-raw-link"]);
   git(repo, ["commit", "-m", "add raw symlink"]);
 
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const workspace = await manager.prepare(preparation(store, "raw-symlink-rollback"));
   fs.unlinkSync(path.join(workspace.worktreePath, "a-raw-link"));
   fs.symlinkSync(changedTarget, path.join(workspace.worktreePath, "a-raw-link"));
@@ -327,7 +461,7 @@ test("restores non-UTF-8 symlink targets byte-for-byte after partial apply", asy
 
 test("rejects file and directory transitions before destination mutation", async (t) => {
   const { repo, store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
 
   const fileToDirectory = await manager.prepare(preparation(store, "file-to-directory"));
   fs.rmSync(path.join(fileToDirectory.worktreePath, "keep.txt"));
@@ -360,7 +494,7 @@ test("rejects file and directory transitions before destination mutation", async
 
 test("preserves reviewed work after stale revision or destination conflict", async (t) => {
   const { repo, store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const workspace = await manager.prepare(preparation(store, "conflict"));
   fs.writeFileSync(path.join(workspace.worktreePath, "new.txt"), "reviewed\n");
   const first = await manager.inspect(workspace);
@@ -387,7 +521,7 @@ test("preserves reviewed work after stale revision or destination conflict", asy
 
 test("refuses cleanup when persisted workspace ownership fields no longer match Git", async (t) => {
   const { repo, store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const workspace = await manager.prepare(preparation(store, "ownership"));
   const unsafe = { ...workspace, branch: "main" };
   await assert.rejects(manager.cleanup(unsafe), /unsafe temporary branch/);
@@ -405,11 +539,18 @@ test("refuses cleanup when persisted workspace ownership fields no longer match 
   assert.equal(fs.existsSync(workspace.worktreePath), true);
   git(workspace.worktreePath, ["reset", "--hard", workspace.baseCommit]);
   await manager.cleanup(workspace);
+
+  const missingBranch = await manager.prepare(preparation(store, "missing-branch"));
+  git(repo, ["update-ref", "-d", `refs/heads/${missingBranch.branch}`]);
+  await assert.rejects(manager.cleanup(missingBranch), /branch is missing while its worktree remains/);
+  assert.equal(fs.existsSync(missingBranch.worktreePath), true);
+  git(repo, ["update-ref", `refs/heads/${missingBranch.branch}`, missingBranch.baseCommit]);
+  await manager.cleanup(missingBranch);
 });
 
 test("refuses to delete a temporary branch that was repurposed after worktree removal", async (t) => {
   const { repo, store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const workspace = await manager.prepare(preparation(store, "repurposed"));
   git(repo, ["worktree", "remove", "--force", workspace.worktreePath]);
   const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
@@ -422,10 +563,334 @@ test("refuses to delete a temporary branch that was repurposed after worktree re
 
 test("reports an unchanged temporary tree and cleans it without artifacts", async (t) => {
   const { store } = fixture(t);
-  const manager = new GitWorkspaceManager();
+  const manager = new GitWorkspaceManager(store);
   const workspace = await manager.prepare(preparation(store, "clean"));
   assert.deepEqual(await manager.inspect(workspace), { kind: "no_changes" });
   await manager.cleanup(workspace);
   assert.equal(fs.existsSync(workspace.worktreePath), false);
   assert.equal(fs.existsSync(workspace.patchPath), false);
+});
+
+test("creates an empty scratch cwd inside a private temporary envelope", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-scratch-test-"));
+  const source = path.join(root, "source");
+  const temporaryRoot = path.join(root, "temporary");
+  const legacyRoot = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, "input.txt"), "source material\n");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const manager = new GitWorkspaceManager(temporaryRoot, legacyRoot, () => "owner-token");
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run-scratch",
+    childId: "child-scratch",
+    patchPath: path.join(legacyRoot, "patches", "child.patch"),
+    manifestPath: path.join(legacyRoot, "patches", "child.json"),
+  });
+
+  assert.equal(workspace.kind, "temporary");
+  assert.equal("repoRoot" in workspace, false);
+  assert.equal(workspace.worktreePath, path.join(workspace.envelope.rootPath, "workspace"));
+  assert.deepEqual(fs.readdirSync(workspace.worktreePath), []);
+  assert.equal(fs.statSync(workspace.worktreePath).mode & 0o777, 0o700);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(workspace.envelope.rootPath, "owner.json"), "utf8")), {
+    schemaVersion: 1,
+    ownerToken: "owner-token",
+  });
+
+  fs.writeFileSync(path.join(workspace.worktreePath, "evidence.log"), "useful evidence\n");
+  fs.mkdirSync(path.join(workspace.worktreePath, "raw"));
+  fs.writeFileSync(path.join(workspace.worktreePath, "raw", "output.txt"), "captured output\n");
+  assert.deepEqual(await manager.inspectScratch(workspace), {
+    entries: ["evidence.log", "raw/", "raw/output.txt"],
+    truncated: false,
+  });
+  await manager.cleanup(workspace);
+  assert.equal(fs.existsSync(workspace.envelope.rootPath), false);
+  assert.equal(fs.readFileSync(path.join(source, "input.txt"), "utf8"), "source material\n");
+});
+
+test("preserves a replaced or mismatched temporary envelope", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-envelope-safety-test-"));
+  const source = path.join(root, "source");
+  const temporaryRoot = path.join(root, "temporary");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new GitWorkspaceManager(temporaryRoot, temporaryRoot, () => "owner-token");
+  const prepare = () => manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    patchPath: path.join(root, "patch.patch"),
+    manifestPath: path.join(root, "manifest.json"),
+  });
+
+  const mismatched = await prepare();
+  fs.writeFileSync(path.join(mismatched.envelope.rootPath, "owner.json"), '{"schemaVersion":1,"ownerToken":"other"}\n');
+  fs.writeFileSync(path.join(mismatched.worktreePath, "valuable.txt"), "do not delete\n");
+  await assert.rejects(manager.cleanup(mismatched), /ownership changed/);
+  assert.equal(fs.readFileSync(path.join(mismatched.worktreePath, "valuable.txt"), "utf8"), "do not delete\n");
+
+  fs.rmSync(mismatched.envelope.rootPath, { recursive: true });
+  const replaced = await prepare();
+  const original = `${replaced.envelope.rootPath}.original`;
+  fs.renameSync(replaced.envelope.rootPath, original);
+  fs.mkdirSync(replaced.envelope.rootPath);
+  fs.writeFileSync(path.join(replaced.envelope.rootPath, "valuable.txt"), "replacement\n");
+  await assert.rejects(new GitWorkspaceManager(temporaryRoot).cleanup(replaced), /invalid ownership metadata/);
+  assert.equal(fs.readFileSync(path.join(replaced.envelope.rootPath, "valuable.txt"), "utf8"), "replacement\n");
+  assert.equal(fs.existsSync(original), true);
+});
+
+test("refuses a replacement envelope even when its owner marker was copied", async (t) => {
+  const { root, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare(preparation(path.join(root, "plain-source"), "copied-owner"));
+  const original = `${workspace.envelope.rootPath}.original`;
+  fs.renameSync(workspace.envelope.rootPath, original);
+  fs.mkdirSync(workspace.worktreePath, { recursive: true });
+  fs.copyFileSync(path.join(original, "owner.json"), path.join(workspace.envelope.rootPath, "owner.json"));
+  fs.writeFileSync(path.join(workspace.worktreePath, "valuable.txt"), "keep me\n");
+
+  await assert.rejects(manager.cleanup(workspace), /envelope identity changed/);
+  assert.equal(fs.readFileSync(path.join(workspace.worktreePath, "valuable.txt"), "utf8"), "keep me\n");
+  fs.rmSync(workspace.envelope.rootPath, { recursive: true });
+  fs.renameSync(original, workspace.envelope.rootPath);
+  await manager.cleanup(workspace);
+});
+
+test("recovers cleanup after an owned envelope was quarantined", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-envelope-recovery-test-"));
+  const source = path.join(root, "source");
+  const temporaryRoot = path.join(root, "temporary");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new GitWorkspaceManager(temporaryRoot, temporaryRoot, () => "owner-token");
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    patchPath: path.join(root, "patch.patch"),
+    manifestPath: path.join(root, "manifest.json"),
+  });
+  const quarantine = `${workspace.envelope.rootPath}.cleanup-owner-token`;
+  fs.renameSync(workspace.envelope.rootPath, quarantine);
+
+  await new GitWorkspaceManager(temporaryRoot).cleanup(workspace);
+  assert.equal(fs.existsSync(quarantine), false);
+});
+
+test("retries scratch cleanup after a workspace permission failure without losing ownership", {
+  skip: process.platform === "win32" || process.getuid?.() === 0,
+}, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-cleanup-retry-test-"));
+  const source = path.join(root, "source");
+  const temporaryRoot = path.join(root, "temporary");
+  fs.mkdirSync(source);
+  let blocked;
+  t.after(() => {
+    if (blocked && fs.existsSync(blocked)) fs.chmodSync(blocked, 0o700);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const manager = new GitWorkspaceManager(temporaryRoot, temporaryRoot, () => "owner-token");
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    patchPath: path.join(root, "patch.patch"),
+    manifestPath: path.join(root, "manifest.json"),
+  });
+  const quarantine = `${workspace.envelope.rootPath}.cleanup-owner-token`;
+  const locked = path.join(workspace.worktreePath, "locked");
+  fs.mkdirSync(locked);
+  fs.writeFileSync(path.join(locked, "evidence.txt"), "keep until cleanup succeeds\n");
+  fs.chmodSync(locked, 0o000);
+  blocked = locked;
+
+  try {
+    await assert.rejects(manager.cleanup(workspace), { code: "EACCES" });
+  } finally {
+    if (fs.existsSync(quarantine)) blocked = path.join(quarantine, "workspace", "locked");
+  }
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(quarantine, "owner.json"), "utf8")), {
+    schemaVersion: 1,
+    ownerToken: "owner-token",
+  });
+  fs.chmodSync(blocked, 0o700);
+
+  await new GitWorkspaceManager(temporaryRoot).cleanup(workspace);
+  assert.equal(fs.existsSync(quarantine), false);
+  assert.equal(fs.existsSync(workspace.envelope.rootPath), false);
+});
+
+test("refuses a linked worktree moved into scratch without registration repair", async (t) => {
+  const { root, repo, store } = fixture(t);
+  const source = path.join(root, "plain-source");
+  const externalPath = path.join(root, "external-worktree");
+  fs.mkdirSync(source);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare({ ...preparation(store, "moved-registration"), sourceCwd: source });
+  git(repo, ["branch", "moved-registration"]);
+  git(repo, ["worktree", "add", externalPath, "moved-registration"]);
+  fs.writeFileSync(path.join(externalPath, "staged.txt"), "keep staged\n");
+  git(externalPath, ["add", "staged.txt"]);
+  fs.rmSync(workspace.worktreePath, { recursive: true });
+  fs.renameSync(externalPath, workspace.worktreePath);
+
+  await assert.rejects(manager.cleanup(workspace), /registered Git worktree/);
+  assert.match(git(workspace.worktreePath, ["status", "--porcelain"]), /^A  staged\.txt$/m);
+  git(repo, ["worktree", "repair", workspace.worktreePath]);
+  git(repo, ["worktree", "remove", "--force", workspace.worktreePath]);
+  git(repo, ["branch", "-D", "moved-registration"]);
+  await manager.cleanup(workspace);
+});
+
+test("restores a quarantined scratch envelope instead of deleting a registered worktree", async (t) => {
+  const { root, repo, store } = fixture(t);
+  const source = path.join(root, "plain-source");
+  fs.mkdirSync(source);
+  const manager = new GitWorkspaceManager(store, store, () => "owner-token");
+  const workspace = await manager.prepare({ ...preparation(store, "quarantined-registration"), sourceCwd: source });
+  const quarantine = `${workspace.envelope.rootPath}.cleanup-owner-token`;
+  fs.rmSync(workspace.worktreePath, { recursive: true });
+  git(repo, ["branch", "quarantined-registration"]);
+  git(repo, ["worktree", "add", workspace.worktreePath, "quarantined-registration"]);
+  fs.writeFileSync(path.join(workspace.worktreePath, "staged.txt"), "keep staged\n");
+  git(workspace.worktreePath, ["add", "staged.txt"]);
+  fs.renameSync(workspace.envelope.rootPath, quarantine);
+
+  await assert.rejects(manager.cleanup(workspace), /registered Git worktree/);
+  assert.equal(fs.existsSync(workspace.worktreePath), true);
+  assert.match(git(repo, ["worktree", "list", "--porcelain"]), new RegExp(workspace.worktreePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(git(workspace.worktreePath, ["status", "--porcelain"]), /^A  staged\.txt$/m);
+
+  git(repo, ["worktree", "remove", "--force", workspace.worktreePath]);
+  git(repo, ["branch", "-D", "quarantined-registration"]);
+  await manager.cleanup(workspace);
+});
+
+test("treats an OS-expired scratch envelope as already cleaned", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-envelope-expiry-test-"));
+  const source = path.join(root, "source");
+  const temporaryRoot = path.join(root, "temporary");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new GitWorkspaceManager(temporaryRoot, temporaryRoot, () => "owner-token");
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    patchPath: path.join(root, "patch.patch"),
+    manifestPath: path.join(root, "manifest.json"),
+  });
+  fs.rmSync(workspace.envelope.rootPath, { recursive: true });
+
+  assert.deepEqual(await new GitWorkspaceManager(temporaryRoot).inspectScratch(workspace), {
+    entries: [],
+    truncated: false,
+    error: "Scratch workspace expired",
+  });
+  await new GitWorkspaceManager(temporaryRoot).cleanup(workspace);
+});
+
+test("treats a missing OS temporary root as scratch expiry", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-root-expiry-test-"));
+  const source = path.join(root, "source");
+  const temporaryRoot = path.join(root, "temporary");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new GitWorkspaceManager(temporaryRoot, temporaryRoot, () => "owner-token");
+  const workspace = await manager.prepare({
+    sourceCwd: source,
+    runId: "run",
+    childId: "child",
+    patchPath: path.join(root, "patch.patch"),
+    manifestPath: path.join(root, "manifest.json"),
+  });
+  fs.rmSync(temporaryRoot, { recursive: true });
+
+  assert.deepEqual(await manager.inspectScratch(workspace), {
+    entries: [],
+    truncated: false,
+    error: "Scratch workspace expired",
+  });
+  await manager.cleanup(workspace);
+});
+
+test("keeps legacy scratch inspection and cleanup compatible", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-legacy-scratch-test-"));
+  const temporaryRoot = path.join(root, "temporary");
+  const legacyRoot = path.join(root, "delegate-runs");
+  const legacyPath = path.join(legacyRoot, "parent", "run", "worktrees", "child");
+  fs.mkdirSync(legacyPath, { recursive: true });
+  fs.writeFileSync(path.join(legacyPath, "evidence.txt"), "legacy\n");
+  const info = fs.lstatSync(legacyPath, { bigint: true });
+  const workspace = {
+    kind: "temporary",
+    sourceCwd: root,
+    worktreePath: legacyPath,
+    directoryIdentity: { dev: info.dev.toString(), ino: info.ino.toString() },
+    integration: { state: "working" },
+  };
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new GitWorkspaceManager(temporaryRoot, legacyRoot);
+
+  assert.deepEqual(await manager.inspectScratch(workspace), { entries: ["evidence.txt"], truncated: false });
+  await manager.cleanup(workspace);
+  assert.equal(fs.existsSync(legacyPath), false);
+});
+
+test("refuses legacy cleanup when its durable root is missing", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-missing-legacy-root-test-"));
+  const temporaryRoot = path.join(root, "temporary");
+  const legacyRoot = path.join(root, "delegate-runs");
+  const movedRoot = path.join(root, "moved-delegate-runs");
+  const legacyPath = path.join(legacyRoot, "parent", "run", "worktrees", "child");
+  fs.mkdirSync(legacyPath, { recursive: true });
+  fs.writeFileSync(path.join(legacyPath, "evidence.txt"), "legacy\n");
+  const info = fs.lstatSync(legacyPath, { bigint: true });
+  const workspace = {
+    kind: "temporary",
+    sourceCwd: root,
+    worktreePath: legacyPath,
+    directoryIdentity: { dev: info.dev.toString(), ino: info.ino.toString() },
+    integration: { state: "working" },
+  };
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new GitWorkspaceManager(temporaryRoot, legacyRoot);
+  await manager.inspectScratch(workspace);
+  fs.renameSync(legacyRoot, movedRoot);
+
+  await assert.rejects(manager.cleanup(workspace), /Legacy delegate root is missing/);
+  assert.equal(fs.readFileSync(path.join(movedRoot, "parent", "run", "worktrees", "child", "evidence.txt"), "utf8"), "legacy\n");
+  fs.renameSync(movedRoot, legacyRoot);
+  await manager.cleanup(workspace);
+});
+
+test("never treats a registered Git worktree as legacy scratch", async (t) => {
+  const { repo, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store, store);
+  const workspace = await manager.prepare(preparation(store, "registered-not-scratch"));
+  const info = fs.lstatSync(workspace.worktreePath, { bigint: true });
+  const disguised = {
+    kind: "temporary",
+    sourceCwd: repo,
+    worktreePath: workspace.worktreePath,
+    directoryIdentity: { dev: info.dev.toString(), ino: info.ino.toString() },
+    integration: { state: "working" },
+  };
+
+  await assert.rejects(manager.cleanup(disguised), /outside the delegate temporary root|registered Git worktree/);
+  assert.equal(fs.existsSync(workspace.worktreePath), true);
+  await manager.cleanup(workspace);
+});
+
+test("does not fall back to scratch after detecting a Git source", async (t) => {
+  const { repo, store } = fixture(t);
+  const manager = new GitWorkspaceManager(store);
+  fs.writeFileSync(path.join(repo, "keep.txt"), "dirty\n");
+
+  await assert.rejects(manager.prepare(preparation(store, "git-failure")), /must be clean/);
+  assert.equal(fs.existsSync(path.join(store, "worktrees", "git-failure")), false);
 });

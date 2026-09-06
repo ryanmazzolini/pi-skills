@@ -16,6 +16,7 @@ import { Type, type TSchema } from "typebox";
 import { Check } from "typebox/value";
 import {
 	childWorkspaceCwd,
+	isGitTemporaryWorkspace,
 	type AttentionKind,
 	type ChildOutcome,
 	type ChildOutputContract,
@@ -267,7 +268,9 @@ export function createRuntimeTools(
 }
 
 export function resolvedSkillIdentity(child: DelegatedChild, skill: ResolvedSkill, actual: boolean): string {
-	if (child.workspace.kind !== "temporary") return `${skill.name}\u0000${skill.filePath}`;
+	if (child.workspace.kind !== "temporary" || !isGitTemporaryWorkspace(child.workspace)) {
+		return `${skill.name}\u0000${skill.filePath}`;
+	}
 	const root = actual ? child.workspace.worktreePath : child.workspace.repoRoot;
 	const path = relative(root, skill.filePath);
 	if (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path)) {
@@ -310,14 +313,20 @@ async function createChild(
 	if (signal.aborted) throw new Error("Child start cancelled");
 	const agentDir = getAgentDir();
 	const cwd = childWorkspaceCwd(child.workspace);
-	const additionalGuidance = [
-		childOutputGuidance(child.resolved.output),
-		...(child.workspace.kind === "temporary"
-			? ["This is an extension-owned temporary workspace. Do not commit, create branches, or change Git history; leave filesystem changes for parent review."]
-			: []),
-	];
+	const scratchSource = child.workspace.kind === "temporary" && !isGitTemporaryWorkspace(child.workspace)
+		? child.workspace.sourceCwd
+		: undefined;
+	const resourceCwd = scratchSource ?? cwd;
+	const workspaceGuidance = child.workspace.kind !== "temporary"
+		? []
+		: scratchSource !== undefined
+			? [
+				`This is an extension-owned scratch workspace. Write investigation artifacts here. The original working directory is ${scratchSource}. Do not modify the original directory.`,
+			]
+			: ["This is an extension-owned temporary workspace. Do not commit, create branches, or change Git history; leave filesystem changes for parent review."];
+	const additionalGuidance = [childOutputGuidance(child.resolved.output), ...workspaceGuidance];
 	const { loader, settingsManager, resolvedSkills } = await createChildResourceLoader(
-		cwd,
+		resourceCwd,
 		agentDir,
 		child.resolved.skills.map((skill) => skill.name),
 		additionalGuidance,

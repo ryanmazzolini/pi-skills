@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-tui";
 import {
 	deriveRunStatus,
+	isGitTemporaryWorkspace,
 	type DelegateHandle,
 	type DelegateRuntime,
 	type DelegatedChild,
@@ -50,12 +51,28 @@ function resultText(result: NonNullable<RunView["children"][number]["result"]>, 
 function temporaryWorkspaceLines(runId: string, child: DelegatedChild, theme: Theme, showControls = true): string[] {
 	if (child.workspace.kind !== "temporary") return [];
 	const integration = child.workspace.integration;
+	const scratch = !isGitTemporaryWorkspace(child.workspace) ? child.workspace : undefined;
+	const git = scratch === undefined;
 	if (integration.state === "working") {
-		const lines = isFinalState(child.state)
-			? [theme.fg("warning", showControls ? "Temporary workspace ready for review" : "Temporary workspace ready for conductor review")]
-			: [theme.fg("dim", "Working in an isolated temporary workspace")];
+		const lines = git
+			? (isFinalState(child.state)
+				? [theme.fg("warning", showControls ? "Temporary workspace ready for review" : "Temporary workspace ready for conductor review")]
+				: [theme.fg("dim", "Working in an isolated temporary workspace")])
+			: (isFinalState(child.state)
+				? [theme.fg("warning", "Scratch artifacts are ready for disposition")]
+				: [theme.fg("dim", "Working in an isolated scratch workspace")]);
+		if (scratch) {
+			lines.push(theme.fg("dim", `Scratch: ${scratch.worktreePath}`));
+			for (const entry of scratch.contents?.entries ?? []) lines.push(theme.fg("dim", `  ${entry}`));
+			if (scratch.contents?.truncated) lines.push(theme.fg("dim", "  [additional entries omitted]"));
+			if (scratch.contents?.error) lines.push(theme.fg("warning", scratch.contents.error));
+		}
 		if (integration.message) lines.push(theme.fg("warning", integration.message));
-		if (showControls && isFinalState(child.state)) lines.push(theme.fg("dim", `Review: /agents review ${runId} ${child.id}`));
+		if (showControls && isFinalState(child.state)) {
+			lines.push(theme.fg("dim", git
+				? `Review: /agents review ${runId} ${child.id}`
+				: `After preserving useful artifacts: /agents cleanup ${runId} ${child.id}`));
+		}
 		return lines;
 	}
 	if (integration.state === "review_pending" || integration.state === "conflict") {
@@ -79,7 +96,7 @@ function temporaryWorkspaceLines(runId: string, child: DelegatedChild, theme: Th
 		return [theme.fg("warning", `Workspace ${integration.state} · ${integration.review.revision}`)];
 	}
 	const cleanupError = "cleanupError" in integration ? integration.cleanupError : undefined;
-	const lines = [theme.fg(integration.state === "applied" ? "success" : "dim", `Workspace ${integration.state.replace("_", " ")}`)];
+	const lines = [theme.fg(integration.state === "applied" || integration.state === "cleaned" ? "success" : "dim", `Workspace ${integration.state.replace("_", " ")}`)];
 	if (cleanupError) {
 		lines.push(theme.fg("warning", `Cleanup failed: ${cleanupError}`));
 		lines.push(theme.fg("dim", showControls ? `Retry cleanup: /agents cleanup ${runId} ${child.id}` : "The conductor can retry cleanup"));
