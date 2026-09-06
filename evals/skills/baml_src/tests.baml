@@ -275,6 +275,101 @@ testset "contracts" {
         assert.equal(research_case[0].id, "research");
     }
 
+    test "ticket-workspace handoff scenarios enter through the calling skill" {
+        let suites = SelectScenarioSuites(ScenarioSuites(), "ticket-workspace", null);
+        let scenario = suites[0].scenarios[0];
+        assert.equal(scenario.skillPath, "skills/ticket-workspace/ticket-workspace/SKILL.md");
+        assert.is_true(scenario.skillReferences.includes("skills/herdr/SKILL.md"));
+        assert
+            .is_true(
+                scenario.skillReferences.includes("skills/herdr/references/pi-session-transfer.md"),
+            );
+    }
+
+    test "new-workspace assertions require initial-tab naming and reject an extra tab" {
+        let scenario = SelectScenarios(HerdrScenarios(), "herdr-creates-new-workspace-with-explicit-tab")[0];
+        let extra_tab = TestCall(1, "bash", 0);
+        extra_tab.command = "herdr tab create --workspace w40 --label cache-timeouts --no-focus";
+        let results = EvaluateHardAssertions(scenario, [extra_tab]);
+        let rejected_extra_tab = false;
+        let missing_rename = false;
+        for (let result in results) {
+            if (result.description.includes("without creating an extra tab")) {
+                rejected_extra_tab = !result.passed;
+            };
+            if (result.description.includes("assigns the requested label")) {
+                missing_rename = !result.passed;
+            };
+        }
+        ;
+        assert.is_true(rejected_extra_tab);
+        assert.is_true(missing_rename);
+    }
+
+    test "Herdr proposal assertions reject agent startup" {
+        let scenario = SelectScenarios(HerdrScenarios(), "herdr-infer-review-tab")[0];
+        let startup = TestCall(1, "bash", 0);
+        startup.command = "herdr agent start pi_unapproved --kind pi --pane w11:p2";
+        let found_guard = false;
+        for (let result in EvaluateHardAssertions(scenario, [startup])) {
+            if (result.description.includes("does not start an agent")) {
+                assert.is_true(!result.passed);
+                found_guard = true;
+            };
+        }
+        ;
+        assert.is_true(found_guard);
+        for (let result in EvaluateHardAssertions(scenario, [])) {
+            if (result.description.includes("does not start an agent")) {
+                assert.is_true(result.passed);
+            };
+        }
+        ;
+    }
+
+    test "Herdr creation assertions require both fixture session paths after approval" {
+        let combined = "test -f /fixture/destination.jsonl && test -f /fixture/source.jsonl";
+        for (
+            let scenario_id in [
+                "herdr-creates-approved-existing-workspace-tab",
+                "herdr-creates-new-workspace-with-explicit-tab",
+            ]
+        ) {
+            let scenario = SelectScenarios(HerdrScenarios(), scenario_id)[0];
+            for (
+                let command in [
+                    "test -f /fixture/destination.jsonl",
+                    "test -f /fixture/source.jsonl",
+                    "test -f /fixture/unrelated.jsonl",
+                    "test -f /fixture/destination.jsonl && test -f /fixture/destination.jsonl",
+                    combined,
+                ]
+            ) {
+                let check = TestCall(1, "bash", 1);
+                check.command = command;
+                let found_check = false;
+                for (let result in EvaluateHardAssertions(scenario, [check])) {
+                    if (result.description.includes("both reported Pi session files")) {
+                        assert.equal(result.passed, command == combined);
+                        found_check = true;
+                    };
+                }
+                ;
+                assert.is_true(found_check);
+            }
+            ;
+            let premature_check = TestCall(1, "bash", 0);
+            premature_check.command = combined;
+            for (let result in EvaluateHardAssertions(scenario, [premature_check])) {
+                if (result.description.includes("both reported Pi session files")) {
+                    assert.is_true(!result.passed);
+                };
+            }
+            ;
+        }
+        ;
+    }
+
     test "response decisions support typed and plain text but reject empty messages" {
         let typed_decision = TestStep("respond");
         typed_decision.message = "Use SQLite.";
