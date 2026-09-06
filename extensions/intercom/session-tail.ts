@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	closeSync,
 	constants as fsConstants,
@@ -56,12 +57,23 @@ export interface SessionTailSnapshot {
 	readonly ignoredFinalFragment: boolean;
 }
 
-export interface SessionTailHandle {
-	readonly snapshot: SessionTailSnapshot;
+export interface SessionReadHandle<T> {
+	readonly snapshot: T;
 	verifyStable(): void;
 	/** Reopen and compare the original descriptor state after the handle has been closed. */
 	verifyReopenedStable(): void;
 	close(): void;
+}
+
+export type SessionTailHandle = SessionReadHandle<SessionTailSnapshot>;
+
+/** Internal reader result. Only the filtered tail or page belongs in tool output. */
+export interface SessionBranchSnapshot {
+	readonly branch: readonly BranchEntry[];
+	readonly skippedLeaf: Readonly<{ id: string; digest: string }> | null;
+	readonly tail: SessionTailSnapshot;
+	readonly eventEntryIds: readonly string[];
+	readonly fileState: Readonly<StableFileState>;
 }
 
 export interface OpenSessionTailInput {
@@ -397,6 +409,11 @@ interface BranchEntry {
 	entry: Record<string, unknown>;
 }
 
+/** Fingerprint only the compact entry fields that the reader exposes or uses for ancestry. */
+export function sessionEntryDigest(entry: Record<string, unknown>): string {
+	return createHash("sha256").update(JSON.stringify(entry)).digest("hex");
+}
+
 function reserveRetained(current: number, ...values: string[]): number {
 	let next = current;
 	for (const value of values) next += utf8Bytes(value);
@@ -496,12 +513,14 @@ function reserveCompactEntry(current: number, entry: Record<string, unknown>): n
 }
 
 interface PositionedEvent {
+	entryId: string;
 	position: number;
 	sequence: number;
 	event: SessionTailEvent;
 }
 
 interface PendingToolResult {
+	entryId: string;
 	position: number;
 	sequence: number;
 	name: string;
@@ -518,7 +537,7 @@ function canonicalTimestamp(value: unknown): number {
 function projectBranch(
 	leafToRoot: readonly BranchEntry[],
 	limit: number,
-): SessionTailSnapshot {
+): SessionTailSnapshot & { readonly eventEntryIds: readonly string[] } {
 	let eligibleTextEvents = 0;
 	let lastConversationalTimestamp: number | null = null;
 	let selectedTextEvents = 0;
@@ -539,6 +558,7 @@ function projectBranch(
 				const name = message.toolName as string;
 				const pending = pendingToolResults.get(id) ?? [];
 				pending.push({
+					entryId: indexed.id,
 					position,
 					sequence: sequence++,
 					name,
@@ -554,7 +574,7 @@ function projectBranch(
 				let outcome: "succeeded" | "failed" | "cancelled" | undefined;
 				if (message.cancelled === true) outcome = "cancelled";
 				else if (typeof message.exitCode === "number") outcome = message.exitCode === 0 ? "succeeded" : "failed";
-				if (outcome) candidates.push({ position, sequence: sequence++, event: { kind: "bash", outcome } });
+				if (outcome) candidates.push({ entryId: indexed.id, position, sequence: sequence++, event: { kind: "bash", outcome } });
 			}
 			continue;
 		}
@@ -572,6 +592,7 @@ function projectBranch(
 						const result = results[resultIndex];
 						if (result.name !== call.name) continue;
 						candidates.push({
+							entryId: result.entryId,
 							position: result.position,
 							sequence: result.sequence,
 							event: { kind: "tool", name: result.name, outcome: result.outcome },
@@ -590,7 +611,7 @@ function projectBranch(
 			if (lastConversationalTimestamp === null || timestamp > lastConversationalTimestamp) lastConversationalTimestamp = timestamp;
 			eligibleTextEvents++;
 			if (selectedTextEvents < limit) {
-				candidates.push({ position, sequence: sequence++, event: { kind: "assistant", text } });
+				candidates.push({ entryId: indexed.id, position, sequence: sequence++, event: { kind: "assistant", text } });
 				selectedTextEvents++;
 			}
 			continue;
@@ -603,7 +624,7 @@ function projectBranch(
 			if (lastConversationalTimestamp === null || timestamp > lastConversationalTimestamp) lastConversationalTimestamp = timestamp;
 			eligibleTextEvents++;
 			if (selectedTextEvents < limit) {
-				candidates.push({ position, sequence: sequence++, event: { kind: "user", text } });
+				candidates.push({ entryId: indexed.id, position, sequence: sequence++, event: { kind: "user", text } });
 				selectedTextEvents++;
 			}
 		}
@@ -642,6 +663,7 @@ function projectBranch(
 	});
 	return Object.freeze({
 		events: Object.freeze(events),
+		eventEntryIds: Object.freeze(selected.map((candidate) => candidate.entryId)),
 		counts,
 		lastConversationalTimestamp,
 		truncated: eligibleTextEvents > selectedTextEvents,
@@ -851,6 +873,7 @@ class ReverseLineReader {
 
 interface BranchScanResult {
 	branch: BranchEntry[];
+	skippedLeaf: Readonly<{ id: string; digest: string }> | null;
 	scannedEntries: number;
 	historyTruncated: boolean;
 	ignoredFinalFragment: boolean;
@@ -869,11 +892,13 @@ async function scanAdvertisedBranch(
 	activeLeafId: string | null,
 	limit: number,
 	version: 2 | 3,
+	skipLeaf: boolean,
 ): Promise<BranchScanResult> {
 	await reader.initialize();
 	if (activeLeafId === null) {
 		return {
 			branch: [],
+			skippedLeaf: null,
 			scannedEntries: 0,
 			historyTruncated: false,
 			ignoredFinalFragment: reader.ignoredFinalFragment,
@@ -882,6 +907,7 @@ async function scanAdvertisedBranch(
 
 	const seen = new Set<string>();
 	const branch: BranchEntry[] = [];
+	let skippedLeaf: BranchScanResult["skippedLeaf"] = null;
 	let retainedBytes = 0;
 	let scannedEntries = 0;
 	let expectedId: string | null = activeLeafId;
@@ -911,9 +937,16 @@ async function scanAdvertisedBranch(
 		foundLeaf = true;
 		if (parentId !== null && seen.has(parentId)) fail(ERROR.malformed);
 		const compact = compactValidatedEntry(entry);
+		expectedId = parentId;
+		// Verify a consumed boundary without retaining its text against the next page's budget.
+		if (skipLeaf && id === activeLeafId) {
+			skippedLeaf = Object.freeze({ id, digest: sessionEntryDigest(compact) });
+			retainedBytes = reserveRetained(retainedBytes, skippedLeaf.digest);
+			if (expectedId === null) break;
+			continue;
+		}
 		retainedBytes = reserveCompactEntry(retainedBytes, compact);
 		branch.push({ id, parentId, entry: compact });
-		expectedId = parentId;
 		if (compact.type === "message") {
 			const message = compact.message as Record<string, unknown>;
 			// Only results newer than the selected text boundary can be projected.
@@ -932,6 +965,7 @@ async function scanAdvertisedBranch(
 
 	return {
 		branch,
+		skippedLeaf,
 		scannedEntries,
 		historyTruncated: expectedId !== null,
 		ignoredFinalFragment: reader.ignoredFinalFragment,
@@ -960,6 +994,15 @@ function validateInput(input: OpenSessionTailInput): void {
  * caller must verify stability immediately before use and close the handle.
  */
 export async function openSessionTail(input: OpenSessionTailInput): Promise<SessionTailHandle> {
+	const handle = await openSessionBranch(input);
+	return { ...handle, snapshot: handle.snapshot.tail };
+}
+
+/** Shared bounded scan for the legacy tail and the paged reader. */
+export async function openSessionBranch(
+	input: OpenSessionTailInput,
+	skipLeaf = false,
+): Promise<SessionReadHandle<SessionBranchSnapshot>> {
 	validateInput(input);
 	const uid = currentUid();
 	const noFollow = fsConstants.O_NOFOLLOW;
@@ -1000,7 +1043,7 @@ export async function openSessionTail(input: OpenSessionTailInput): Promise<Sess
 			headerWindow.leadingBody,
 			input.signal,
 		);
-		const scanned = await scanAdvertisedBranch(reader, input.activeLeafId, input.limit, version);
+		const scanned = await scanAdvertisedBranch(reader, input.activeLeafId, input.limit, version, skipLeaf);
 		throwIfCancelled(input.signal);
 		assertPathAndDescriptorStable(fd, input.fileLocator, stableState, uid);
 		const projected = projectBranch(scanned.branch, input.limit);
@@ -1021,7 +1064,13 @@ export async function openSessionTail(input: OpenSessionTailInput): Promise<Sess
 		const handleFd = fd;
 		fd = undefined;
 		return {
-			snapshot,
+			snapshot: {
+				branch: scanned.branch,
+				skippedLeaf: scanned.skippedLeaf,
+				tail: snapshot,
+				eventEntryIds: projected.eventEntryIds,
+				fileState: Object.freeze(stableState),
+			},
 			verifyStable(): void {
 				if (!open) fail(ERROR.closed);
 				assertPathAndDescriptorStable(handleFd, input.fileLocator, stableState, uid);
