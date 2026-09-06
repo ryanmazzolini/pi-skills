@@ -929,6 +929,74 @@ function HerdrScenarios() -> Scenario[] {
             ],
         },
         Scenario {
+            id: "herdr-suffixes-colliding-inferred-issue-label",
+            title: "Adds a work-description suffix only when an inferred issue tab label is taken",
+            skillPath: "skills/herdr/SKILL.md",
+            skillReferences: ["skills/herdr/references/pi-session-transfer.md"],
+            turns: [
+                "Start a fresh Pi for the retry fix review tracked by GitHub issue #72, in the reviews workspace with cwd /Users/ryan/git/api. Infer the tab name and show me the destination before creating it.",
+            ],
+            files: {},
+            searchResponses: [],
+            fetchResponses: {},
+            bashResponses: [
+                BashResponse { includes: "HERDR_ENV", output: "HERDR_ENV=1" },
+                BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
+                BashResponse {
+                    includes: "herdr pane current",
+                    output: #"
+                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr workspace list",
+                    output: #"
+                        {"result":{"workspaces":[{"label":"reviews","workspace_id":"w11"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab list",
+                    output: #"
+                        {"result":{"tabs":[{"label":"1","tab_id":"w11:t2","workspace_id":"w11"},{"label":"gh-72","tab_id":"w11:t7","workspace_id":"w11"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab get",
+                    output: #"
+                        {"result":{"tab":{"label":"gh-72","tab_id":"w11:t7","workspace_id":"w11"}}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr pane list",
+                    output: #"
+                        {"result":{"panes":[{"agent":"pi","agent_status":"idle","cwd":"/Users/ryan/git/web","pane_id":"w11:p7","tab_id":"w11:t7","workspace_id":"w11"}]}}
+                    "#,
+                },
+                BashResponse {
+                    includes: "herdr tab",
+                    output: "Usage: herdr tab [COMMAND]\nCommands: list create get focus rename close",
+                },
+                BashResponse { includes: "test -f", output: "" },
+                BashResponse { includes: "test -d", output: "" },
+            ],
+            maxToolCalls: 16,
+            hardAssertions: HerdrProposalAssertions(),
+            semanticCriteria: [
+                SemanticCriterion {
+                    id: "collision-proposes-work-suffix",
+                    description: "After reading the reviews workspace's tab list, the agent recognizes gh-72 is taken and gh-72-retry-fix is unused. It proposes new tab gh-72-retry-fix in reviews with cwd /Users/ryan/git/api through the normal destination confirmation and approval question, rather than asking the user to name the tab despite the supplied work description.",
+                },
+                SemanticCriterion {
+                    id: "collision-preserves-existing-tab",
+                    description: "The agent leaves existing tab w11:t7 and its agent untouched: no rename, reuse, replacement, creation, focus, or closure. It does not offer the existing gh-72 tab as the destination for this fresh review.",
+                },
+                SemanticCriterion {
+                    id: "collision-needs-no-lookup",
+                    description: "The agent derives retry-fix from the user's supplied work description, without asking for a repository or issue title, fetching the issue, or adding a repository namespace.",
+                },
+            ],
+        },
+        Scenario {
             id: "herdr-review-without-tracking-issue",
             title: "Offers a PR-only review without inventing or requiring a tracking issue",
             skillPath: "skills/herdr/SKILL.md",
