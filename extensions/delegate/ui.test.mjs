@@ -73,9 +73,9 @@ test("pinned status is label-first, UUID-free, and reports elapsed time", () => 
   const component = ui.createStatus({ requestRender() {} }, theme, { now: () => now });
   const rendered = component.render(120).join("\n");
 
-  assert.match(rendered, /Agents · 2 running · 19s/);
-  assert.match(rendered, /Reader 1 · Thinking · 19s/);
-  assert.match(rendered, /Reader 2 · Thinking · 19s/);
+  assert.match(rendered, /Agents · 2 running · total 19s/);
+  assert.match(rendered, /Reader 1 · Thinking\s+total 19s/);
+  assert.match(rendered, /Reader 2 · Thinking\s+total 19s/);
   assert.match(rendered, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Reader 1/);
   assert.doesNotMatch(rendered, /run-1|child-1/);
   component.dispose();
@@ -119,8 +119,123 @@ test("quiet active work reports activity age only after the stale threshold", ()
     theme,
     { now: () => 15_000 },
   );
-  assert.match(component.render(120).join("\n"), /Still running · Thinking · quiet 15s · 15s/);
+  assert.match(component.render(120).join("\n"), /Still running · Thinking · quiet 15s\s+total 15s/);
   component.dispose();
+});
+
+test("tool timing is right-aligned, survives heartbeats, and drops total first on narrow rows", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString());
+  const child = activeRun.children[0];
+  child.latestActivity = {
+    kind: "tool", summary: "Running: npm test", observedAt: new Date(137_000).toISOString(),
+    tool: { callId: "a", startedAt: new Date(96_000).toISOString(), additionalCount: 1 },
+  };
+  assert.equal(describeLatestActivity(activeRun, 138_000), "Running: npm test +1 tool · tool 42s");
+  child.latestActivity.observedAt = new Date(138_000).toISOString();
+  assert.equal(describeLatestActivity(activeRun, 138_000), "Running: npm test +1 tool · tool 42s");
+  const harness = runtimeFor(activeRun);
+  const pinned = createDelegateUi(harness.runtime).createStatus({ requestRender() {} }, theme);
+  const desk = new AgentDeskOverlayComponent(harness.runtime, {}, { requestRender() {}, terminal: { rows: 24 } }, theme, () => {}, { async resume() {} });
+  t.after(() => { pinned.dispose(); desk.dispose(); });
+  const row = pinned.render(100).find((line) => line.includes("Reader 1"));
+  assert.match(row, /Reader 1 · Running: npm test \+1 tool\s+tool 42s · total 2m 18s$/);
+  assert.equal(visibleWidth(row), 100);
+  assert.doesNotMatch(row, /quiet|ago/);
+  const narrow = desk.render(40).find((line) => line.includes("Reader 1"));
+  assert.match(narrow, /tool 42s/);
+  assert.doesNotMatch(narrow, /total/);
+  desk.handleInput("\r");
+  assert.match(desk.render(100).join("\n"), /Running: npm test \+1 tool\s+tool 42s · total 2m 18s/);
+  t.mock.timers.tick(1_000);
+  assert.match(desk.render(40).join("\n"), /tool 43s/);
+  child.state = "completed";
+  child.result = { kind: "text", value: "Done", completedAt: new Date(139_000).toISOString() };
+  child.latestActivity = { kind: "message", summary: "Completed", observedAt: new Date(139_000).toISOString() };
+  harness.emit(activeRun);
+  for (const width of [20, 30, 40]) assert.match(desk.render(width).join("\n"), /total 2m 19s/);
+  assert.doesNotMatch(desk.render(40).join("\n"), /tool \d/);
+  t.mock.timers.tick(5_000);
+  assert.match(desk.render(40).join("\n"), /total 2m 19s/);
+});
+
+test("tool timing handles old records and ANSI rows without inventing a start time", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString());
+  const child = activeRun.children[0];
+  child.latestActivity = { kind: "tool", summary: "Running: npm test", observedAt: new Date(137_000).toISOString() };
+  assert.equal(describeLatestActivity(activeRun, 138_000), "Running: npm test · 1s ago");
+  child.latestActivity.tool = { callId: "a", startedAt: "invalid", additionalCount: 0 };
+  assert.doesNotMatch(describeLatestActivity(activeRun, 138_000), /NaN|tool \d/);
+  child.latestActivity.tool.startedAt = new Date(96_000).toISOString();
+  child.label = "A very long 安全 review label";
+  child.latestActivity.summary += "\nprovider output";
+  const ansiTheme = { ...theme, fg: (_color, text) => `\u001b[33m${text}\u001b[39m`, bold: (text) => `\u001b[1m${text}\u001b[22m` };
+  const desk = new AgentDeskOverlayComponent(runtimeFor(activeRun).runtime, {}, { requestRender() {}, terminal: { rows: 24 } }, ansiTheme, () => {}, { async resume() {} });
+  t.after(() => desk.dispose());
+  for (const detail of [false, true]) {
+    if (detail) desk.handleInput("\r");
+    for (const width of [1, 20, 40, 60, 100]) {
+      const lines = desk.render(width);
+      assert.ok(lines.every((line) => visibleWidth(line) <= width && !/[\r\n]/.test(line)));
+      if (width >= 40) assert.match(lines.join("\n"), /tool 42s/);
+    }
+  }
+});
+
+test("wall-clock totals keep repainting through attention and interruption and stop on terminal states", (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 20_000 });
+  for (const state of ["queued", "running", "needs_attention", "interrupted", "completed", "failed", "cancelled"]) {
+    const activeRun = run(state, new Date(10_000).toISOString());
+    const renders = [0, 0, 0];
+    const tuis = renders.map((_, index) => ({ requestRender() { renders[index]++; }, terminal: { rows: 24 } }));
+    const harness = runtimeFor(activeRun);
+    const pinned = createDelegateUi(harness.runtime).createStatus(tuis[0], theme);
+    const desk = new AgentDeskOverlayComponent(harness.runtime, {}, tuis[1], theme, () => {}, { async resume() {} });
+    const detail = new RunOverlayComponent(harness.runtime, activeRun.id, tuis[2], theme, () => {}, async () => [], { detailOnly: true });
+    const terminal = ["completed", "failed", "cancelled"].includes(state);
+    const expected = terminal ? 10 : Math.floor(Date.now() / 1_000) + 1;
+    const before = [...renders];
+    for (let tick = 0; tick < 10; tick++) t.mock.timers.tick(100);
+    for (const [index, component] of [pinned, desk, detail].entries()) {
+      assert.match(component.render(100).join("\n"), new RegExp(`total ${expected}s`), state);
+      assert.equal(renders[index] > before[index], !terminal, `${state}, surface ${index}`);
+      if (["queued", "needs_attention", "interrupted"].includes(state)) assert.equal(renders[index] - before[index], 1, `${state}, surface ${index}`);
+      if (terminal && index !== 0) assert.match(component.render(30).join("\n"), /total 10s/, state);
+    }
+    assert.equal(pinned.animationTimer === undefined, terminal, state);
+    pinned.dispose(); desk.dispose(); detail.dispose();
+  }
+});
+
+test("pinned repaint cadence follows transitions between a working spinner, retry, and a parked child", (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 20_000 });
+  const activeRun = run("running", new Date(19_000).toISOString());
+  const harness = runtimeFor(activeRun);
+  let renders = 0;
+  const pinned = createDelegateUi(harness.runtime).createStatus({ requestRender() { renders++; } }, theme);
+  t.after(() => pinned.dispose());
+  t.mock.timers.tick(80);
+  assert.equal(renders, 1);
+  activeRun.children[0].latestActivity = {
+    kind: "retry", summary: "rate limited", observedAt: new Date(20_000).toISOString(),
+    retry: { attempt: 1, maxAttempts: 3, retryAt: new Date(40_000).toISOString() },
+  };
+  harness.emit(activeRun);
+  let before = renders;
+  for (let tick = 0; tick < 10; tick++) t.mock.timers.tick(100);
+  assert.equal(renders - before, 1);
+  activeRun.children[0].state = "needs_attention";
+  harness.emit(activeRun);
+  before = renders;
+  for (let tick = 0; tick < 10; tick++) t.mock.timers.tick(100);
+  assert.equal(renders - before, 1);
+  activeRun.children[0].state = "running";
+  activeRun.children[0].latestActivity = { kind: "thinking", summary: "Thinking", observedAt: new Date().toISOString() };
+  harness.emit(activeRun);
+  before = renders;
+  t.mock.timers.tick(80);
+  assert.equal(renders - before, 1);
 });
 
 test("retry countdown uses the deadline, not the heartbeat, and never claims quiet work", () => {
@@ -159,7 +274,7 @@ test("retry rows use a static warning cue and emphasize only the countdown", (t)
   );
   t.after(() => component.dispose());
   const before = component.render(120).join("\n");
-  assert.match(before, /↻ Reader 1 · Retry 2\/3 in 18s · rate limited/);
+  assert.match(before, /↻ Reader 1 · Retry 2\/3 in 18s · rate limited\s+total 12s/);
   assert.doesNotMatch(before, /Still running|quiet/);
   assert.ok(calls.some((call) => call.color === "warning" && call.text === "↻"));
   assert.ok(calls.some((call) => call.bold === "Retry 2/3 in 18s"));
@@ -399,7 +514,7 @@ test("terminal outcomes remain briefly and then clear", () => {
   completedRun.children[0].latestActivity = { kind: "message", summary: "Completed", observedAt: new Date(now).toISOString() };
   harness.emit(completedRun);
 
-  assert.match(component.render(100).join("\n"), /✓ Reader 1 · Completed · 10s/);
+  assert.match(component.render(100).join("\n"), /✓ Reader 1 · Completed\s+total 10s/);
   now = 39_999;
   assert.notDeepEqual(component.render(100), []);
   now = 40_001;
