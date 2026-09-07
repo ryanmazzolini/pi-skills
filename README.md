@@ -137,6 +137,14 @@ Pi gets a few extras that are not skills:
 - `scheduled-jobs` adds the human-only `/scheduler` dashboard for task health, next runs, bounded run history and output, and reviewed lifecycle operations. Use arrows or `j`/`k` to select, `Tab` to switch Tasks/Runs, `Enter` for details, `a` for actions, `r` to refresh, and `q` or `Esc` to go back or close. Actions use Pi's native selection, confirmation, and loader UI; Run now blocks until the installed snapshot finishes. A compact footer appears whenever the dashboard classifies a task as Needs attention. Scheduler changes publish one count-only file per manifest, so open Pi sessions update through filesystem events without periodic overview scans.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.
 
+### Read older session messages
+
+Start with `intercom({ action: "tail", to: "<session-id>", paginate: true })`. It returns a JSON page with original entry IDs and `nextCursor`. Read the next older page with `intercom({ action: "tail", cursor: "<nextCursor>" })`, without `to` or `paginate`. Stop when `nextCursor` is `null`.
+
+Pages stay on the initially inspected branch and can continue after the peer disconnects. They verify the source on each read; they are not immutable transcript copies. Text fragments include UTF-16 `textRange` offsets so long messages remain reconstructable. Thinking, images, tool payloads, and extension-private state remain excluded; completed tool/Bash outcome indicators remain bounded.
+
+`tailProjectionBytes` bounds the complete page text, including metadata and escaped characters (default 48 KiB). Cursors are private to the inspecting session, expire after 30 minutes, and are cleared on reload or session replacement. At most 128 tokens are retained; older tokens may be evicted sooner. An invalid or expired cursor requires a new read from a connected session. Ordinary `tail` calls without `paginate` keep their existing output.
+
 ## Contributing
 
 Found an issue? Issues and small PRs are welcome. See [`AGENTS.md`](./AGENTS.md) for repository conventions, then run `npm test` for the full local check. Skill behavior changes can also use the optional [local eval suite](./evals/skills/README.md); its model results are review evidence, not CI gates.

@@ -14,7 +14,8 @@ import {
 	type SendResult,
 	type SessionInfo,
 } from "./client.ts";
-import { openSessionTail, type SessionTailHandle, type SessionTailSnapshot } from "./session-tail.ts";
+import { openSessionTail, type SessionReadHandle, type SessionTailHandle, type SessionTailSnapshot } from "./session-tail.ts";
+import type { SessionPageSource } from "./session-page.ts";
 import { IntercomInbox, type InboxEntry } from "./inbox.ts";
 
 export interface IntercomRuntimeOptions {
@@ -193,6 +194,21 @@ export class IntercomRuntime extends EventEmitter {
 		scanBytes?: number,
 		constraints: { requireIdle?: boolean; requireNoPending?: boolean; onCaptureStart?: () => void } = {},
 	): Promise<RuntimeTailResult> {
+		return this.readSession(to, (source) => this.openTail({
+			...source,
+			limit,
+			...(signal === undefined ? {} : { signal }),
+			...(scanBytes === undefined ? {} : { scanBytes }),
+		}), signal, constraints);
+	}
+
+	/** Resolve a live peer and confirm the same advertised source around a read. */
+	async readSession<T>(
+		to: string,
+		open: (source: SessionPageSource) => Promise<SessionReadHandle<T>>,
+		signal?: AbortSignal,
+		constraints: { requireIdle?: boolean; requireNoPending?: boolean; onCaptureStart?: () => void } = {},
+	): Promise<{ target: SessionInfo; targetSessionId: string; snapshot: T }> {
 		throwIfAborted(signal);
 		await this.ensureConnected();
 		if (!this.client.supportsCapability(INTERCOM_TAIL_CAPABILITY)) {
@@ -212,13 +228,10 @@ export class IntercomRuntime extends EventEmitter {
 		const presence = this.requireUniquePiSession(target, before);
 		throwIfAborted(signal);
 		constraints.onCaptureStart?.();
-		const opened = await this.openTail({
+		const opened = await open({
 			piSessionId: presence.sessionId,
 			fileLocator: presence.fileLocator,
 			activeLeafId: presence.activeLeafId,
-			limit,
-			...(signal === undefined ? {} : { signal }),
-			...(scanBytes === undefined ? {} : { scanBytes }),
 		});
 		try {
 			throwIfAborted(signal);
