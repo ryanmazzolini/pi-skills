@@ -187,6 +187,43 @@ function TestCall(index: int, tool: string, turn: int) -> ToolCallRecord {
     }
 }
 
+function HerdrVerificationCalls(
+    commands: string[],
+    wait_result: string,
+    turn: int,
+) -> ToolCallRecord[] {
+    let calls: ToolCallRecord[] = [];
+    for (let command in commands) {
+        let call = TestCall(calls.length(), "bash", turn);
+        call.command = command;
+        call.result
+            = if (command.includes("herdr agent wait")) {
+                wait_result
+            } else {
+                "fixture"
+            };
+        calls.push(call);
+    }
+    ;
+    calls
+}
+
+function HerdrVerificationPasses(new_workspace: bool, calls: ToolCallRecord[]) -> bool {
+    let scenario_id = if (new_workspace) {
+        "herdr-creates-new-workspace-with-explicit-tab"
+    } else {
+        "herdr-creates-approved-existing-workspace-tab"
+    };
+    let scenario = SelectScenarios(HerdrScenarios(), scenario_id)[0];
+    for (let result in EvaluateHardAssertions(scenario, calls)) {
+        if (result.description.includes("re-reads both source and destination")) {
+            return result.passed;
+        };
+    }
+    ;
+    baml.sys.panic("Missing Herdr pane verification assertion.")
+}
+
 testset "contracts" {
     test "defines the research scenarios in BAML" {
         let scenarios = ResearchScenarios();
@@ -368,6 +405,111 @@ testset "contracts" {
             ;
         }
         ;
+    }
+
+    test "Herdr verification requires startup and both pane reads after a successful wait" {
+        for (let new_workspace in [false, true]) {
+            let destination = if (new_workspace) {
+                "w40:p1"
+            } else {
+                "w30:p9"
+            };
+            let start = `herdr agent start pi_fixture --kind pi --pane ${destination} -- brief`;
+            let wait = `herdr agent wait ${destination} --timeout 120000`;
+            let source_read = "herdr pane get w18:p1";
+            let destination_read = `herdr pane get ${destination}`;
+            let scenario_id = if (new_workspace) {
+                "herdr-creates-new-workspace-with-explicit-tab"
+            } else {
+                "herdr-creates-approved-existing-workspace-tab"
+            };
+            let scenario = SelectScenarios(HerdrScenarios(), scenario_id)[0];
+            let ready = FixtureBash(scenario, wait);
+            for (
+                let commands in [
+                    [source_read, destination_read, start, wait],
+                    [start, source_read, destination_read, wait],
+                    [start, wait, destination_read, destination_read],
+                    [start, wait, source_read, source_read],
+                    [start, wait, source_read, "herdr pane get w99:p1"],
+                    [wait, source_read, destination_read],
+                    [wait, start, source_read, destination_read],
+                    [start, wait, source_read, destination_read, start],
+                ]
+            ) {
+                assert
+                    .is_true(
+                        !HerdrVerificationPasses(new_workspace, HerdrVerificationCalls(commands, ready, 1)),
+                    );
+            }
+            ;
+            let repeated_wait = [start, wait, source_read, destination_read, wait];
+            assert.is_true(HerdrVerificationPasses(new_workspace, HerdrVerificationCalls(repeated_wait, ready, 1)));
+            let correct = [start, wait, source_read, destination_read];
+            assert
+                .is_true(
+                    HerdrVerificationPasses(new_workspace, HerdrVerificationCalls(correct, ready, 1)),
+                );
+            assert
+                .is_true(
+                    !HerdrVerificationPasses(new_workspace, HerdrVerificationCalls(correct, ready, 0)),
+                );
+            let reversed = [start, wait, destination_read, source_read];
+            let done = `{"result":{"agent_status":"done","pane_id":"${destination}"}}`;
+            assert
+                .is_true(
+                    HerdrVerificationPasses(new_workspace, HerdrVerificationCalls(reversed, done, 1)),
+                );
+        }
+        ;
+    }
+
+    test "Herdr verification rejects unsuccessful or wrong-pane waits" {
+        let commands = [
+            "herdr agent start pi_fixture --kind pi --pane w30:p9 -- brief",
+            "herdr agent wait w30:p9 --timeout 120000",
+            "herdr pane get w18:p1",
+            "herdr pane get w30:p9",
+        ];
+        for (
+            let result in [
+                "timeout",
+                "not-json",
+                "{\"result\":{\"agent_status\":\"blocked\",\"pane_id\":\"w30:p9\"}}",
+                "{\"result\":{\"agent_status\":\"working\",\"pane_id\":\"w30:p9\"}}",
+                "{\"result\":{\"agent_status\":\"idle\",\"pane_id\":\"w99:p1\"}}",
+                "{\"result\":{\"agent_status\":\"idle\"}}",
+            ]
+        ) {
+            assert
+                .is_true(
+                    !HerdrVerificationPasses(false, HerdrVerificationCalls(commands, result, 1)),
+                );
+        }
+        ;
+        let wrong_wait = [commands[0], "herdr agent wait w99:p1", commands[2], commands[3]];
+        let ready = "{\"result\":{\"agent_status\":\"idle\",\"pane_id\":\"w30:p9\"}}";
+        assert
+            .is_true(!HerdrVerificationPasses(false, HerdrVerificationCalls(wrong_wait, ready, 1)));
+        let later_failure = HerdrVerificationCalls(commands, ready, 1);
+        let failed_wait = TestCall(later_failure.length(), "bash", 1);
+        failed_wait.command = commands[1];
+        failed_wait.result = "{\"result\":{\"agent_status\":\"blocked\",\"pane_id\":\"w30:p9\"}}";
+        later_failure.push(failed_wait);
+        assert.is_true(!HerdrVerificationPasses(false, later_failure));
+    }
+
+    test "Herdr verification matches direct quoted pane IDs rather than mentions" {
+        let ready = "{\"result\":{\"agent_status\":\"idle\",\"pane_id\":\"w30:p9\"}}";
+        let commands = [
+            "herdr agent start pi_fixture --kind pi --pane 'w30:p9' -- brief",
+            "herdr agent wait \"w30:p9\" --timeout 120000",
+            "herdr pane get 'w18:p1'",
+            "  herdr  pane\tget \"w30:p9\"  ",
+        ];
+        assert.is_true(HerdrVerificationPasses(false, HerdrVerificationCalls(commands, ready, 1)));
+        let mentioned = [commands[0], commands[1], "echo 'herdr pane get w18:p1'", commands[3]];
+        assert.is_true(!HerdrVerificationPasses(false, HerdrVerificationCalls(mentioned, ready, 1)));
     }
 
     test "response decisions support typed and plain text but reject empty messages" {

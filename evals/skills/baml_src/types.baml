@@ -61,6 +61,14 @@ class ToolBeforeAssertion {
     description: string,
 }
 
+class HerdrPaneVerificationAssertion {
+    kind: "herdr-pane-verification",
+    sourcePaneId: string,
+    destinationPaneId: string,
+    fromTurn: int,
+    description: string,
+}
+
 class QueryBatchAssertion {
     kind: "query-batch",
     tool: string,
@@ -85,6 +93,7 @@ class UrlCountAssertion {
 }
 
 type HardAssertion = ToolCountAssertion
+    | HerdrPaneVerificationAssertion
     | ToolBeforeAssertion
     | QueryBatchAssertion
     | CommandAllowlistAssertion

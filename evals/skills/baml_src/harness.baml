@@ -39,7 +39,9 @@ function DecideNextDecision(
         - web_search: queries
         - fetch_content: url or urls
         - bash: command. Use exactly `gh issue view <number>` for fixture-backed GitHub
-          issue inspection; do not add options or shell operators.
+          issue inspection; do not add options or shell operators. For fixture-backed
+          Herdr operations, issue one direct `herdr ...` command per Bash call so each
+          command gets a separate result.
         - edit: path and content
         - write: path and content
         - public_action: command and content. Reserve this only for a public mutation or

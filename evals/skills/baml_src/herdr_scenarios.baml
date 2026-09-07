@@ -208,12 +208,16 @@ function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
             min: 1,
             description: "The agent waits for the destination Pi to become ready.",
         },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr pane get",
-            min: 2,
-            description: "The agent re-reads both source and destination pane identity and state after startup.",
+        HerdrPaneVerificationAssertion {
+            kind: "herdr-pane-verification",
+            sourcePaneId: "w18:p1",
+            destinationPaneId: if (new_workspace) {
+                "w40:p1"
+            } else {
+                "w30:p9"
+            },
+            fromTurn: 1,
+            description: "The agent re-reads both source and destination panes after startup and a successful wait.",
         },
         ToolCountAssertion {
             kind: "tool-count",
