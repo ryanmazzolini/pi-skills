@@ -150,20 +150,6 @@ function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
         ToolCountAssertion {
             kind: "tool-count",
             tool: "bash",
-            argumentIncludes: "herdr pane current",
-            min: 2,
-            description: "The agent identifies the source and rechecks it after approval.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr workspace list",
-            min: 2,
-            description: "The agent rechecks workspace topology after approval.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
             argumentIncludes: "herdr tab create",
             min: if (new_workspace) {
                 0
@@ -201,31 +187,24 @@ function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
             max: 1,
             description: "The agent starts exactly one fresh Pi session in the new tab's root pane.",
         },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr agent wait",
-            min: 1,
-            description: "The agent waits for the destination Pi to become ready.",
-        },
-        HerdrPaneVerificationAssertion {
-            kind: "herdr-pane-verification",
+        HerdrCreationSequenceAssertion {
+            kind: "herdr-creation-sequence",
+            newWorkspace: new_workspace,
             sourcePaneId: "w18:p1",
             destinationPaneId: if (new_workspace) {
                 "w40:p1"
             } else {
                 "w30:p9"
             },
+            destinationTabId: if (new_workspace) {
+                "w40:t1"
+            } else {
+                "w30:t9"
+            },
+            sourceSessionPath: "/fixture/source.jsonl",
+            destinationSessionPath: "/fixture/destination.jsonl",
             fromTurn: 1,
-            description: "The agent re-reads both source and destination panes after startup and a successful wait.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "test -f /fixture/destination.jsonl && test -f /fixture/source.jsonl",
-            min: 1,
-            fromTurn: 1,
-            description: "The agent issues the required combined check for both reported Pi session files after approval.",
+            description: "The agent follows the approved creation sequence through both pane reads and session-file checks.",
         },
         ToolCountAssertion {
             kind: "tool-count",
@@ -295,30 +274,25 @@ function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
             description: "The agent does not perform a public action during the handoff.",
         },
     ];
-    if (new_workspace) {
-        assertions
-            .push(
-                ToolCountAssertion {
-                    kind: "tool-count",
-                    tool: "bash",
-                    argumentIncludes: "herdr tab rename",
-                    min: 1,
-                    max: 1,
-                    description: "The agent assigns the requested label to the new workspace's initial tab.",
+    assertions
+        .push(
+            ToolCountAssertion {
+                kind: "tool-count",
+                tool: "bash",
+                argumentIncludes: "herdr tab rename",
+                min: if (new_workspace) {
+                    1
+                } else {
+                    0
                 },
-            );
-        assertions
-            .push(
-                ToolCountAssertion {
-                    kind: "tool-count",
-                    tool: "bash",
-                    argumentIncludes: "herdr tab get",
-                    min: 1,
-                    fromTurn: 1,
-                    description: "The agent verifies the renamed initial tab after approval.",
+                max: if (new_workspace) {
+                    1
+                } else {
+                    0
                 },
-            );
-    };
+                description: "The agent assigns the requested label once to a new workspace's initial tab, without renaming tabs in existing workspaces.",
+            },
+        );
     assertions
 }
 

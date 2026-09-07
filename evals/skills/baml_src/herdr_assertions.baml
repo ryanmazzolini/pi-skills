@@ -30,8 +30,12 @@ function HerdrCommandWords(command: string) -> string[] {
     words
 }
 
+function HerdrCommandIs(words: string[], group: string, action: string) -> bool {
+    words.length() >= 3 && words[0] == "herdr" && words[1] == group && words[2] == action
+}
+
 function HerdrStartsPane(words: string[], pane_id: string) -> bool {
-    if (words.length() < 6 || words[0] != "herdr" || words[1] != "agent" || words[2] != "start") {
+    if (words.length() < 6 || !HerdrCommandIs(words, "agent", "start")) {
         return false;
     };
     let previous = "";
@@ -48,86 +52,213 @@ function HerdrStartsPane(words: string[], pane_id: string) -> bool {
     false
 }
 
-function EvaluateHerdrPaneVerification(
-    assertion: HerdrPaneVerificationAssertion,
+function HerdrWaitSucceeded(result: string, pane_id: string) -> bool {
+    let response: HerdrWaitResponse? = baml.yaml.deserialize<HerdrWaitResponse>(result) catch_all (_) {
+        _ => null,
+    };
+    match (response) {
+        let value: HerdrWaitResponse => {
+            value.result.pane_id == pane_id
+                && (value.result.agent_status == "idle" || value.result.agent_status == "done")
+        },
+        null => false,
+    }
+}
+
+function HerdrChecksSessionFiles(words: string[], source: string, destination: string) -> bool {
+    words.length() == 7
+        && words[0] == "test"
+        && words[1] == "-f"
+        && words[3] == "&&"
+        && words[4] == "test"
+        && words[5] == "-f"
+        && (
+            (words[2] == destination && words[6] == source)
+                || (words[2] == source && words[6] == destination)
+        )
+}
+
+// Readiness reads and file checks may be repeated. A new start or failed wait
+// invalidates readiness; consent/order violations remain failures for the trace.
+function EvaluateHerdrCreationSequence(
+    assertion: HerdrCreationSequenceAssertion,
     calls: ToolCallRecord[],
 ) -> HardAssertionResult {
+    let proposal_source = false;
+    let proposal_workspace = false;
+    let environment_checked = false;
+    let help_read = false;
+    let source_refresh = -1;
+    let workspace_refresh = -1;
+    let create_index = -1;
+    let rename_index = -1;
+    let tab_check_index = -1;
     let start_index = -1;
     let wait_index = -1;
     let source_index = -1;
     let destination_index = -1;
+    let files_index = -1;
+    let violations: string[] = [];
     for (let call in calls) {
-        if (call.tool == "bash" && call.turn >= assertion.fromTurn) {
-            let words = HerdrCommandWords(call.command ?? "");
-            if (HerdrStartsPane(words, assertion.destinationPaneId)) {
-                start_index = call.index;
-                wait_index = -1;
-                source_index = -1;
-                destination_index = -1;
-            } else if (
-                (words.length() == 4 || (words.length() == 6 && words[4] == "--timeout"))
-                    && words[0] == "herdr"
-                    && words[1] == "agent"
-                    && words[2] == "wait"
-                    && words[3] == assertion.destinationPaneId
-            ) {
-                let successful_wait = false;
-                let response: HerdrWaitResponse? = baml.yaml.deserialize<HerdrWaitResponse>(call.result) catch_all (_) {
-                    _ => null,
-                };
-                match (response) {
-                    let value: HerdrWaitResponse => {
-                        if (
-                            start_index >= 0
-                                && call.index > start_index
-                                && value.result.pane_id == assertion.destinationPaneId
-                                && (
-                                    value.result.agent_status == "idle"
-                                        || value.result.agent_status == "done"
-                                )
-                        ) {
-                            successful_wait = true;
-                        };
-                    },
-                    null => {
-                    },
-                };
-                if (successful_wait) {
-                    if (wait_index < 0) {
-                        wait_index = call.index;
-                    };
+        if (call.tool == "bash") {
+            let command = call.command ?? "";
+            let words = HerdrCommandWords(command);
+            let approved = call.turn >= assertion.fromTurn;
+            let creates_tab = HerdrCommandIs(words, "tab", "create");
+            let creates_workspace = HerdrCommandIs(words, "workspace", "create");
+            let renames_tab = HerdrCommandIs(words, "tab", "rename");
+            let starts_agent = HerdrCommandIs(words, "agent", "start");
+            if (!approved && (creates_tab || creates_workspace || renames_tab || starts_agent)) {
+                violations.push(`Tool call ${call.index}: mutation before approval.`);
+            };
+            if (command.includes("HERDR_ENV")) {
+                environment_checked = true;
+            };
+            if (words.length() == 2 && words[0] == "herdr" && words[1] == "--help") {
+                help_read = true;
+            };
+            if (HerdrCommandIs(words, "pane", "current")) {
+                if (approved) {
+                    source_refresh = call.index;
                 } else {
+                    proposal_source = true;
+                };
+            };
+            if (HerdrCommandIs(words, "workspace", "list")) {
+                if (approved) {
+                    workspace_refresh = call.index;
+                } else {
+                    proposal_workspace = true;
+                };
+            };
+            if (approved) {
+                if (creates_tab || creates_workspace) {
+                    if (
+                        !environment_checked
+                            || !help_read
+                            || !proposal_source
+                            || !proposal_workspace
+                            || source_refresh < 0
+                            || workspace_refresh < 0
+                    ) {
+                        violations
+                            .push(
+                                `Tool call ${call.index}: creation lacks environment/help checks, proposal reads, or post-approval source/workspace refreshes.`,
+                            );
+                    };
+                    if (creates_workspace != assertion.newWorkspace || create_index >= 0) {
+                        violations
+                            .push(
+                                `Tool call ${call.index}: unexpected or duplicate destination creation.`,
+                            );
+                    };
+                    create_index = call.index;
+                } else if (renames_tab) {
+                    if (
+                        !assertion.newWorkspace
+                            || create_index < 0
+                            || start_index >= 0
+                            || words.length() != 5
+                            || words[3] != assertion.destinationTabId
+                    ) {
+                        violations
+                            .push(
+                                `Tool call ${call.index}: initial-tab naming must follow its creation and precede startup.`,
+                            );
+                    };
+                    rename_index = call.index;
+                    tab_check_index = -1;
+                } else if (
+                    HerdrCommandIs(words, "tab", "get")
+                        && words.length() == 4
+                        && words[3] == assertion.destinationTabId
+                        && rename_index >= 0
+                ) {
+                    tab_check_index = call.index;
+                } else if (starts_agent) {
+                    if (
+                        create_index < 0
+                            || !HerdrStartsPane(words, assertion.destinationPaneId)
+                            || (
+                                assertion.newWorkspace
+                                    && (
+                                        rename_index <= create_index
+                                            || tab_check_index <= rename_index
+                                    )
+                            )
+                    ) {
+                        violations
+                            .push(
+                                `Tool call ${call.index}: startup lacks destination creation or verified initial-tab naming.`,
+                            );
+                    };
+                    start_index = call.index;
                     wait_index = -1;
                     source_index = -1;
                     destination_index = -1;
-                };
-            } else if (
-                wait_index >= 0
-                    && call.index > wait_index
-                    && words.length() == 4
-                    && words[0] == "herdr"
-                    && words[1] == "pane"
-                    && words[2] == "get"
-            ) {
-                if (words[3] == assertion.sourcePaneId) {
-                    source_index = call.index;
-                };
-                if (words[3] == assertion.destinationPaneId) {
-                    destination_index = call.index;
+                    files_index = -1;
+                } else if (
+                    HerdrCommandIs(words, "agent", "wait")
+                        && (words.length() == 4 || (words.length() == 6 && words[4] == "--timeout"))
+                        && words[3] == assertion.destinationPaneId
+                ) {
+                    if (
+                        start_index >= 0
+                            && HerdrWaitSucceeded(call.result, assertion.destinationPaneId)
+                    ) {
+                        if (wait_index < 0) {
+                            wait_index = call.index;
+                        };
+                    } else {
+                        wait_index = -1;
+                        source_index = -1;
+                        destination_index = -1;
+                        files_index = -1;
+                    };
+                } else if (HerdrCommandIs(words, "pane", "get") && words.length() == 4 && wait_index >= 0) {
+                    if (words[3] == assertion.sourcePaneId && source_index < 0) {
+                        source_index = call.index;
+                    };
+                    if (words[3] == assertion.destinationPaneId && destination_index < 0) {
+                        destination_index = call.index;
+                    };
+                } else if (
+                    HerdrChecksSessionFiles(words, assertion.sourceSessionPath, assertion.destinationSessionPath)
+                        && source_index >= 0
+                        && destination_index >= 0
+                ) {
+                    // These fixtures return empty output for a successful test command.
+                    files_index
+                        = if (call.result.trim().length() == 0) {
+                            call.index
+                        } else {
+                            -1
+                        };
                 };
             };
         };
     }
     ;
+    let evidence = [
+        `Expected proposal reads, approval from turn ${assertion.fromTurn + 1}, refreshed source/workspaces, creation/naming, startup, idle/done wait, both pane reads, then both session-file checks.`,
+        `Tool call indices (-1 means missing): source refresh=${source_refresh}, workspace refresh=${workspace_refresh}, create=${create_index}, rename=${rename_index}, tab check=${tab_check_index}, start=${start_index}, wait=${wait_index}, source read=${source_index}, destination read=${destination_index}, files=${files_index}.`,
+    ];
+    for (let violation in violations) {
+        evidence.push(violation);
+    }
+    ;
     HardAssertionResult {
         description: assertion.description,
-        passed: assertion.sourcePaneId != assertion.destinationPaneId
-            && wait_index >= 0
+        passed: violations.length() == 0
+            && assertion.sourcePaneId != assertion.destinationPaneId
+            && assertion.sourceSessionPath != assertion.destinationSessionPath
+            && create_index >= 0
+            && start_index > create_index
+            && wait_index > start_index
             && source_index > wait_index
-            && destination_index > wait_index,
-        evidence: [
-            `Expected startup and an idle/done wait for ${assertion.destinationPaneId}, then reads of ${assertion.sourcePaneId} and ${assertion.destinationPaneId} from turn ${assertion.fromTurn + 1} onward.`,
-            `Tool call indices (-1 means missing): start=${start_index}, successful wait=${wait_index}, source read=${source_index}, destination read=${destination_index}.`,
-        ],
+            && destination_index > wait_index
+            && files_index > source_index
+            && files_index > destination_index,
+        evidence: evidence,
     }
 }
