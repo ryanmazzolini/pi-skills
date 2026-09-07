@@ -204,7 +204,17 @@ function HerdrCreationTrace(new_workspace: bool) -> ToolCallRecord[] {
     let scenario = HerdrCreationScenario(new_workspace);
     let calls: ToolCallRecord[] = [];
     let proposal = ["echo $HERDR_ENV", "herdr --help", "herdr pane current --current", "herdr workspace list"];
-    let approved = ["herdr pane current --current", "test -e /fixture/source.jsonl", "herdr workspace list"];
+    let cwd = if (new_workspace) {
+        "/Users/ryan/git/api"
+    } else {
+        "/Users/ryan/git/ai-oncall-workflow-scripts"
+    };
+    let approved = [
+        `test -d ${cwd}`,
+        "herdr pane current --current",
+        "test -e /fixture/source.jsonl",
+        "herdr workspace list",
+    ];
     let destination = if (new_workspace) {
         "w40:p1"
     } else {
@@ -224,7 +234,10 @@ function HerdrCreationTrace(new_workspace: bool) -> ToolCallRecord[] {
                 "herdr tab create --workspace w30 --cwd /Users/ryan/git/ai-oncall-workflow-scripts --label 12934387102 --no-focus",
             );
     };
-    approved.push(`herdr agent start pi_fixture --kind pi --pane ${destination} -- brief`);
+    let digest = FixtureBash(scenario, `printf ${destination} | shasum -a 256`).trim().split(" ")[0];
+    let agent_name = "pi_" + digest.substring(0, 28);
+    approved.push(`herdr agent get ${agent_name}`);
+    approved.push(`herdr agent start ${agent_name} --kind pi --pane ${destination} -- brief`);
     approved.push(`herdr agent wait ${destination} --timeout 120000`);
     approved.push(`herdr pane get ${destination}`);
     approved.push("herdr pane get w18:p1");
@@ -487,6 +500,117 @@ testset "contracts" {
                     assert.is_true(!HerdrCreationPasses(new_workspace, calls));
                 }
                 ;
+            }
+            ;
+        }
+        ;
+    }
+
+    test "Herdr creation checks the approved directory before creation" {
+        for (let new_workspace in [false, true]) {
+            for (let anchor in ["herdr --help", "herdr agent start"]) {
+                let calls = HerdrMoveCall(HerdrCreationTrace(new_workspace), "test -d", anchor, false);
+                assert.is_true(!HerdrCreationPasses(new_workspace, calls));
+            }
+            ;
+            for (let command in ["echo missing-directory-check", "test -d /fixture/unrelated"]) {
+                let calls = HerdrCreationTrace(new_workspace);
+                for (let call in calls) {
+                    if ((call.command ?? "").starts_with("test -d")) {
+                        call.command = command;
+                    };
+                }
+                ;
+                assert.is_true(!HerdrCreationPasses(new_workspace, calls));
+            }
+            ;
+            let failed = HerdrCreationTrace(new_workspace);
+            for (let call in failed) {
+                if ((call.command ?? "").starts_with("test -d")) {
+                    call.result = "directory missing";
+                };
+            }
+            ;
+            assert.is_true(!HerdrCreationPasses(new_workspace, failed));
+        }
+        ;
+    }
+
+    test "Herdr startup requires an available pane-derived agent name" {
+        for (let new_workspace in [false, true]) {
+            let create = if (new_workspace) {
+                "herdr workspace create"
+            } else {
+                "herdr tab create"
+            };
+            for (let anchor in ["herdr --help", create, "herdr agent wait"]) {
+                let calls = HerdrMoveCall(HerdrCreationTrace(new_workspace), "herdr agent get", anchor, false);
+                assert.is_true(!HerdrCreationPasses(new_workspace, calls));
+            }
+            ;
+            for (
+                let result in [
+                    "",
+                    "agent_not_found_extra",
+                    "lookup failed",
+                    "{\"result\":{\"agent\":\"pi\"}}",
+                    "agent_not_found",
+                ]
+            ) {
+                let calls = HerdrCreationTrace(new_workspace);
+                for (let call in calls) {
+                    if ((call.command ?? "").starts_with("herdr agent get")) {
+                        call.result = result;
+                    };
+                }
+                ;
+                assert.equal(HerdrCreationPasses(new_workspace, calls), result == "agent_not_found");
+            }
+            ;
+            for (let command in ["herdr agent get", "herdr agent start", "both"]) {
+                let calls = HerdrCreationTrace(new_workspace);
+                for (let call in calls) {
+                    let words = HerdrCommandWords(call.command ?? "");
+                    if (
+                        HerdrCommandIs(words, "agent", "get")
+                            || HerdrCommandIs(words, "agent", "start")
+                    ) {
+                        if (command == "both" || (call.command ?? "").starts_with(command)) {
+                            call.command = (call.command ?? "").replace(words[3], "pi_fixture");
+                        };
+                    };
+                }
+                ;
+                assert.is_true(!HerdrCreationPasses(new_workspace, calls));
+            }
+            ;
+            let missing = HerdrCreationTrace(new_workspace);
+            for (let call in missing) {
+                if ((call.command ?? "").starts_with("herdr agent get")) {
+                    call.command = "echo missing-lookup";
+                };
+            }
+            ;
+            assert.is_true(!HerdrCreationPasses(new_workspace, missing));
+        }
+        ;
+    }
+
+    test "Herdr startup stops after any failed destination agent lookup" {
+        for (let new_workspace in [false, true]) {
+            for (let failed_lookup in [0, 1]) {
+                let calls = HerdrMoveCall(HerdrCreationTrace(new_workspace), "herdr agent get", "herdr agent start", true);
+                let lookup = 0;
+                for (let call in calls) {
+                    if ((call.command ?? "").starts_with("herdr agent get")) {
+                        if (lookup == failed_lookup) {
+                            call.result = "agent already exists";
+                        };
+                        lookup += 1;
+                    };
+                }
+                ;
+                assert.is_true(!HerdrCreationPasses(new_workspace, calls));
             }
             ;
         }

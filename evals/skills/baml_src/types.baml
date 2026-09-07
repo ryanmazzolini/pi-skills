@@ -68,6 +68,8 @@ class HerdrCreationSequenceAssertion {
     destinationPaneId: string,
     destinationWorkspaceId: string,
     destinationTabId: string,
+    destinationCwd: string,
+    destinationAgentName: string,
     sourceSessionPath: string,
     destinationSessionPath: string,
     fromTurn: int,
