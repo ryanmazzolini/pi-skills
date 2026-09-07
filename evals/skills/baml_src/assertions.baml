@@ -16,7 +16,7 @@ function EvaluateHardAssertion(
 ) -> HardAssertionResult {
     match (assertion) {
         let value: ToolCountAssertion => EvaluateToolCount(value, calls),
-        let value: HerdrPaneVerificationAssertion => EvaluateHerdrPaneVerification(value, calls),
+        let value: HerdrCreationSequenceAssertion => EvaluateHerdrCreationSequence(value, calls),
         let value: ToolBeforeAssertion => EvaluateToolBefore(value, calls),
         let value: QueryBatchAssertion => EvaluateQueryBatch(value, calls),
         let value: CommandAllowlistAssertion => EvaluateCommandAllowlist(value, calls),

@@ -61,10 +61,14 @@ class ToolBeforeAssertion {
     description: string,
 }
 
-class HerdrPaneVerificationAssertion {
-    kind: "herdr-pane-verification",
+class HerdrCreationSequenceAssertion {
+    kind: "herdr-creation-sequence",
+    newWorkspace: bool,
     sourcePaneId: string,
     destinationPaneId: string,
+    destinationTabId: string,
+    sourceSessionPath: string,
+    destinationSessionPath: string,
     fromTurn: int,
     description: string,
 }
@@ -93,7 +97,7 @@ class UrlCountAssertion {
 }
 
 type HardAssertion = ToolCountAssertion
-    | HerdrPaneVerificationAssertion
+    | HerdrCreationSequenceAssertion
     | ToolBeforeAssertion
     | QueryBatchAssertion
     | CommandAllowlistAssertion
