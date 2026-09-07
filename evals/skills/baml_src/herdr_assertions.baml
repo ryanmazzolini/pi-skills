@@ -7,6 +7,18 @@ class HerdrWaitResponse {
     result: HerdrWaitState,
 }
 
+class HerdrListedTab {
+    workspace_id: string,
+}
+
+class HerdrTabInventory {
+    tabs: HerdrListedTab[],
+}
+
+class HerdrTabListResponse {
+    result: HerdrTabInventory,
+}
+
 // Match direct CLI calls, not commands mentioned in prose or shell wrappers.
 // Pane IDs may be quoted; each wait/read needs its own recorded tool result.
 function HerdrCommandWords(command: string) -> string[] {
@@ -65,6 +77,31 @@ function HerdrWaitSucceeded(result: string, pane_id: string) -> bool {
     }
 }
 
+function HerdrTabListSucceeded(result: string, workspace_id: string) -> bool {
+    let response: HerdrTabListResponse? = baml.yaml.deserialize<HerdrTabListResponse>(result) catch_all (_) {
+        _ => null,
+    };
+    match (response) {
+        let value: HerdrTabListResponse => {
+            for (let tab in value.result.tabs) {
+                if (tab.workspace_id != workspace_id) {
+                    return false;
+                };
+            }
+            ;
+            true
+        },
+        null => false,
+    }
+}
+
+function HerdrChecksSourceFile(words: string[], source: string) -> bool {
+    words.length() == 3
+        && words[0] == "test"
+        && (words[1] == "-f" || words[1] == "-e")
+        && words[2] == source
+}
+
 function HerdrChecksSessionFiles(words: string[], source: string, destination: string) -> bool {
     words.length() == 7
         && words[0] == "test"
@@ -89,7 +126,9 @@ function EvaluateHerdrCreationSequence(
     let environment_checked = false;
     let help_read = false;
     let source_refresh = -1;
+    let source_file_check = -1;
     let workspace_refresh = -1;
+    let tab_refresh = -1;
     let create_index = -1;
     let rename_index = -1;
     let tab_check_index = -1;
@@ -120,6 +159,7 @@ function EvaluateHerdrCreationSequence(
             if (HerdrCommandIs(words, "pane", "current")) {
                 if (approved) {
                     source_refresh = call.index;
+                    source_file_check = -1;
                 } else {
                     proposal_source = true;
                 };
@@ -132,6 +172,28 @@ function EvaluateHerdrCreationSequence(
                 };
             };
             if (approved) {
+                if (HerdrChecksSourceFile(words, assertion.sourceSessionPath) && source_refresh >= 0) {
+                    // The fixture represents a successful file test with empty output.
+                    source_file_check
+                        = if (call.result.trim().length() == 0) {
+                            call.index
+                        } else {
+                            -1
+                        };
+                };
+                if (
+                    HerdrCommandIs(words, "tab", "list")
+                        && words.length() == 5
+                        && words[3] == "--workspace"
+                        && words[4] == assertion.destinationWorkspaceId
+                ) {
+                    tab_refresh
+                        = if (HerdrTabListSucceeded(call.result, assertion.destinationWorkspaceId)) {
+                            call.index
+                        } else {
+                            -1
+                        };
+                };
                 if (creates_tab || creates_workspace) {
                     if (
                         !environment_checked
@@ -144,6 +206,18 @@ function EvaluateHerdrCreationSequence(
                         violations
                             .push(
                                 `Tool call ${call.index}: creation lacks environment/help checks, proposal reads, or post-approval source/workspace refreshes.`,
+                            );
+                    };
+                    if (source_file_check <= source_refresh) {
+                        violations
+                            .push(
+                                `Tool call ${call.index}: creation lacks a successful file check after the source refresh.`,
+                            );
+                    };
+                    if (!assertion.newWorkspace && tab_refresh < 0) {
+                        violations
+                            .push(
+                                `Tool call ${call.index}: creation lacks a successful post-approval tab listing for workspace ${assertion.destinationWorkspaceId}.`,
                             );
                     };
                     if (creates_workspace != assertion.newWorkspace || create_index >= 0) {
@@ -240,8 +314,8 @@ function EvaluateHerdrCreationSequence(
     }
     ;
     let evidence = [
-        `Expected proposal reads, approval from turn ${assertion.fromTurn + 1}, refreshed source/workspaces, creation/naming, startup, idle/done wait, both pane reads, then both session-file checks.`,
-        `Tool call indices (-1 means missing): source refresh=${source_refresh}, workspace refresh=${workspace_refresh}, create=${create_index}, rename=${rename_index}, tab check=${tab_check_index}, start=${start_index}, wait=${wait_index}, source read=${source_index}, destination read=${destination_index}, files=${files_index}.`,
+        `Expected proposal reads, approval from turn ${assertion.fromTurn + 1}, refreshed source/workspaces, a source-file check and existing-destination tab listing before creation, creation/naming, startup, idle/done wait, both pane reads, then both session-file checks.`,
+        `Tool call indices (-1 means missing): source refresh=${source_refresh}, source file=${source_file_check}, workspace refresh=${workspace_refresh}, tab refresh=${tab_refresh}, create=${create_index}, rename=${rename_index}, tab check=${tab_check_index}, start=${start_index}, wait=${wait_index}, source read=${source_index}, destination read=${destination_index}, files=${files_index}.`,
     ];
     for (let violation in violations) {
         evidence.push(violation);

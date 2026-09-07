@@ -204,7 +204,7 @@ function HerdrCreationTrace(new_workspace: bool) -> ToolCallRecord[] {
     let scenario = HerdrCreationScenario(new_workspace);
     let calls: ToolCallRecord[] = [];
     let proposal = ["echo $HERDR_ENV", "herdr --help", "herdr pane current --current", "herdr workspace list"];
-    let approved = ["herdr pane current --current", "herdr workspace list"];
+    let approved = ["herdr pane current --current", "test -e /fixture/source.jsonl", "herdr workspace list"];
     let destination = if (new_workspace) {
         "w40:p1"
     } else {
@@ -493,6 +493,122 @@ testset "contracts" {
         ;
     }
 
+    test "Herdr creation requires a fresh destination-tab inventory" {
+        for (let anchor in ["herdr --help", "herdr agent start"]) {
+            let calls = HerdrMoveCall(HerdrCreationTrace(false), "herdr tab list", anchor, false);
+            assert.is_true(!HerdrCreationPasses(false, calls));
+        }
+        ;
+        for (let command in ["echo missing-tab-list", "herdr tab list --workspace w99"]) {
+            let calls = HerdrCreationTrace(false);
+            for (let call in calls) {
+                if ((call.command ?? "").includes("herdr tab list")) {
+                    call.command = command;
+                };
+            }
+            ;
+            assert.is_true(!HerdrCreationPasses(false, calls));
+        }
+        ;
+        for (
+            let result in [
+                "unavailable",
+                "{\"result\":{}}",
+                "{\"result\":{\"tabs\":[{\"workspace_id\":\"w99\"}]}}",
+                "{\"result\":{\"tabs\":[]}}",
+            ]
+        ) {
+            let calls = HerdrCreationTrace(false);
+            for (let call in calls) {
+                if ((call.command ?? "").includes("herdr tab list")) {
+                    call.result = result;
+                };
+            }
+            ;
+            assert.equal(HerdrCreationPasses(false, calls), result.includes("\"tabs\":[]"));
+        }
+        ;
+    }
+
+    test "Herdr creation checks the refreshed source file before mutation" {
+        let source_check = "test -e /fixture/source.jsonl";
+        for (let new_workspace in [false, true]) {
+            for (let anchor in ["herdr --help", "herdr agent start"]) {
+                let calls = HerdrMoveCall(HerdrCreationTrace(new_workspace), source_check, anchor, false);
+                assert.is_true(!HerdrCreationPasses(new_workspace, calls));
+            }
+            ;
+            let create = if (new_workspace) {
+                "herdr workspace create"
+            } else {
+                "herdr tab create"
+            };
+            for (let keep_original in [false, true]) {
+                let calls = HerdrMoveCall(HerdrCreationTrace(new_workspace), "herdr pane current", create, keep_original);
+                assert.is_true(!HerdrCreationPasses(new_workspace, calls));
+            }
+            ;
+            for (
+                let command in [
+                    "echo missing-source-check",
+                    "test -e /fixture/unrelated.jsonl",
+                    "test -f '/fixture/source.jsonl'",
+                ]
+            ) {
+                let calls = HerdrCreationTrace(new_workspace);
+                for (let call in calls) {
+                    if (call.command == source_check) {
+                        call.command = command;
+                        call.result = FixtureBash(HerdrCreationScenario(new_workspace), command);
+                    };
+                }
+                ;
+                assert
+                    .equal(
+                        HerdrCreationPasses(new_workspace, calls),
+                        command == "test -f '/fixture/source.jsonl'",
+                    );
+            }
+            ;
+            let failed = HerdrCreationTrace(new_workspace);
+            for (let call in failed) {
+                if (call.command == source_check) {
+                    call.result = "source file missing";
+                };
+            }
+            ;
+            assert.is_true(!HerdrCreationPasses(new_workspace, failed));
+        }
+        ;
+    }
+
+    test "Herdr quoted pane commands return the correct fixture evidence" {
+        for (let new_workspace in [false, true]) {
+            let scenario = HerdrCreationScenario(new_workspace);
+            let destination = if (new_workspace) {
+                "w40:p1"
+            } else {
+                "w30:p9"
+            };
+            for (let pane in ["w18:p1", destination]) {
+                let expected = FixtureBash(scenario, `herdr pane get ${pane}`);
+                assert.is_true(expected.includes(`"pane_id":"${pane}"`));
+                for (
+                    let command in [
+                        `herdr pane get '${pane}'`,
+                        `herdr pane get "${pane}"`,
+                        `  herdr  pane\tget '${pane}'  `,
+                    ]
+                ) {
+                    assert.equal(FixtureBash(scenario, command), expected);
+                }
+                ;
+            }
+            ;
+        }
+        ;
+    }
+
     test "Herdr startup follows creation and verified initial-tab naming" {
         for (let new_workspace in [false, true]) {
             let create = if (new_workspace) {
@@ -669,10 +785,13 @@ testset "contracts" {
                     = (call.command ?? "")
                         .replace(destination, `"${destination}"`)
                         .replace("w18:p1", "'w18:p1'");
+                call.result = FixtureBash(HerdrCreationScenario(new_workspace), call.command ?? "");
             }
             ;
             calls[calls.length() - 1].command
                 = "test -f '/fixture/source.jsonl' && test -f \"/fixture/destination.jsonl\"";
+            calls[calls.length() - 1].result
+                = FixtureBash(HerdrCreationScenario(new_workspace), calls[calls.length() - 1].command ?? "");
             assert.is_true(HerdrCreationPasses(new_workspace, calls));
             let extra = TestCall(calls.length(), "bash", 1);
             extra.command = `herdr agent wait ${destination} --timeout 120000`;

@@ -559,8 +559,16 @@ function FixtureFetch(scenario: Scenario, step: AgentStep) -> string {
 }
 
 function FixtureBash(scenario: Scenario, command: string) -> string {
+    // Pane IDs have the same meaning with or without shell quotes. Normalize
+    // only this direct command; preserve all other fixture matching behavior.
+    let words = HerdrCommandWords(command);
+    let fixture_command = if (HerdrCommandIs(words, "pane", "get") && words.length() == 4) {
+        words.join(" ")
+    } else {
+        command
+    };
     for (let fixture in scenario.bashResponses) {
-        if (command.includes(fixture.includes)) {
+        if (fixture_command.includes(fixture.includes)) {
             return fixture.output;
         };
     }
