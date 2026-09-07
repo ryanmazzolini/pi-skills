@@ -49,7 +49,7 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	intercomExtension(pi);
 	assert.deepEqual(tools.map((tool) => tool.name), ["intercom"]);
 	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "triage", "tail", "summarize", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"]);
-	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "summaryToken", "operationId", "limit", "tailScanBytes", "tailProjectionBytes"]);
+	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "summaryToken", "operationId", "limit", "tailScanBytes", "tailProjectionBytes", "paginate", "cursor"]);
 	assert.deepEqual(commands, []);
 	assert.deepEqual(shortcuts, []);
 	assert.equal(tools.some((tool) => tool.name === "contact_supervisor"), false);
@@ -92,6 +92,25 @@ test("validates action-specific fields while preserving attachment and reply sel
 	assert.throws(() => validateIntercomAction({ action: "status", replyTo: "extra" }), /not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "operations", limit: 1 }));
 	assert.throws(() => validateIntercomAction({ action: "cancel" }), /requires operationId/);
+});
+
+test("tail pagination accepts either a live target or a continuation without changing legacy calls", () => {
+	for (const input of [
+		{ action: "tail", to: "worker", paginate: true },
+		{ action: "tail", to: "worker", paginate: false },
+		{ action: "tail", cursor: "returned-token", limit: 4, tailProjectionBytes: 4096 },
+	]) assert.doesNotThrow(() => validateIntercomAction(input));
+	for (const input of [
+		{ action: "tail", paginate: true },
+		{ action: "tail", to: "worker", paginate: "true" },
+		{ action: "tail", cursor: "" },
+		{ action: "tail", cursor: "x".repeat(129) },
+		{ action: "tail", cursor: "token", to: "worker" },
+		{ action: "tail", cursor: "token", paginate: true },
+		{ action: "tail", cursor: "token", paginate: false },
+		{ action: "list", paginate: true },
+		{ action: "send", to: "worker", message: "hi", cursor: "token" },
+	]) assert.throws(() => validateIntercomAction(input));
 });
 
 test("selects at most four oldest confirmed 24-hour snapshots for isolated synthesis", () => {
@@ -899,6 +918,66 @@ test("tree and compaction fence both role publication race orders", async (t) =>
 	await assert.rejects(publishAfterCompactStarted, /disconnected|superseded/);
 	roleRequests[4].complete();
 	await waitFor(() => activeRole === undefined);
+});
+
+test("public paginated tails preserve legacy output, survive peer disconnect, and clear on session replacement", async (t) => {
+	const fixture = await isolatedIntercom(t, "index-pages-");
+	const previousHome = process.env.HOME;
+	process.env.HOME = fixture.home;
+	t.after(() => {
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+	});
+	const broker = await startOwnedBroker(fixture.paths);
+	t.after(() => stopChild(broker));
+	const peer = await connectNew(fixture.paths, "page-worker");
+	t.after(() => peer.disconnect());
+	const sessionId = peer.currentPiSessionId();
+	const sessionPath = join(fixture.base, "paged-target.jsonl");
+	const timestamp = "2026-01-01T00:00:00.000Z";
+	const records = [
+		{ type: "session", version: 3, id: sessionId, timestamp, cwd: "/repo" },
+		{ type: "message", id: "old", parentId: null, timestamp, message: { role: "user", content: "original request" } },
+		{ type: "message", id: "new", parentId: "old", timestamp, message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "latest answer" }] } },
+	];
+	await writeFile(sessionPath, records.map((record) => JSON.stringify(record)).join("\n") + "\n");
+	let messages = 0;
+	peer.on("message", () => { messages++; });
+	peer.updatePresence({ piSession: { sessionId, fileLocator: sessionPath, activeLeafId: "new", revision: 1 } });
+	await waitFor(async () => (await peer.listSessions()).find((item) => item.id === peer.sessionId)?.piSession?.revision === 1);
+	const tools = [];
+	const handlers = new Map();
+	intercomExtension({ registerTool: (tool) => tools.push(tool), registerMessageRenderer() {}, on: (name, handler) => handlers.set(name, handler), getSessionName: () => "page-caller", sendMessage() {}, appendEntry() {} });
+	const ctx = {
+		cwd: "/repo", model: { id: "fixture-model" }, isIdle: () => true,
+		sessionManager: { getSessionId: () => "page-inspector", getSessionFile: () => undefined, getLeafId: () => null, getBranch: () => [] },
+	};
+	await handlers.get("session_start")({}, ctx);
+	t.after(() => handlers.get("session_shutdown")());
+	const execute = (params) => tools[0].execute("call", params, undefined, undefined, { ...ctx });
+	await execute({ action: "status" });
+	const legacy = await execute({ action: "tail", to: sessionId, limit: 1 });
+	assert.match(legacy.content[0].text, /Intercom confirmed session tail/);
+	assert.equal(legacy.details.paged, undefined);
+	const paged = await execute({ action: "tail", to: sessionId, paginate: true, limit: 1, tailProjectionBytes: 4096 });
+	const first = JSON.parse(paged.content[0].text);
+	assert.ok(Buffer.byteLength(paged.content[0].text) <= 4096);
+	assert.equal(first.events[0].entryId, "new");
+	assert.ok(first.nextCursor);
+	assert.equal(paged.details.paged, true);
+	assert.equal(paged.content[0].text.includes(sessionPath), false);
+	assert.deepEqual(await execute({ action: "tail", to: sessionId, limit: 1 }), legacy);
+	await handlers.get("agent_end")();
+	await handlers.get("agent_start")();
+	assert.equal(messages, 0);
+	peer.disconnect();
+	const second = JSON.parse((await execute({ action: "tail", cursor: first.nextCursor, limit: 1 })).content[0].text);
+	assert.equal(second.events[0].entryId, "old");
+	assert.equal(second.events[0].text, "original request");
+	assert.equal(second.nextCursor, null);
+	await handlers.get("session_shutdown")();
+	await handlers.get("session_start")({}, ctx);
+	await assert.rejects(execute({ action: "tail", cursor: first.nextCursor }), /cursor is invalid or expired/);
 });
 
 test("successful tool actions report resolved peer IDs and persist only compact authoritative audits", async (t) => {
