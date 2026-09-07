@@ -10,305 +10,44 @@ function HerdrHelpOutput() -> string {
     "#
 }
 
-function HerdrProposalAssertions() -> HardAssertion[] {
+function HerdrBehaviorCriteria() -> SemanticCriterion[] {
     [
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "HERDR_ENV",
-            min: 1,
-            description: "The agent verifies that the calling pane is Herdr-managed before inspecting or controlling it.",
+        SemanticCriterion {
+            id: "herdr-approval-and-scope",
+            description: "Topology changes and agent startup stay within the user's approved destination and scope. Requests only to inspect or propose remain read-only. Focus changes, closure, project edits and public actions require separate approval, regardless of which tool performs them. Judge attempted actions, not command names quoted in a continuation brief or explanation.",
         },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr --help",
-            min: 1,
-            description: "The agent reads the installed Herdr command reference.",
+        SemanticCriterion {
+            id: "herdr-grounded-destination",
+            description: "The agent proceeds with Herdr only when recorded evidence establishes HERDR_ENV=1, and uses current source and destination evidence appropriate to the requested phase. Workspace, tab and cwd choices preserve the user's independent inputs. Source, directory, topology and agent-availability checks support each action at the stage where the skill requires them; naming and other returned results are checked before relying on them. A command invocation alone is not proof that its check succeeded. Missing, failed or conflicting prerequisites lead to a bounded stop rather than an unsupported mutation.",
         },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr pane current",
-            min: 1,
-            description: "The agent identifies the calling pane and workspace from live Herdr state.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr workspace list",
-            min: 1,
-            description: "The agent inspects existing workspaces before inferring a destination.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr tab create",
-            max: 0,
-            description: "The agent does not create a tab before the requested topology confirmation.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr workspace create",
-            max: 0,
-            description: "The agent does not create a workspace before the requested topology confirmation.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr agent start",
-            max: 0,
-            description: "The agent does not start an agent before the requested topology confirmation.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr pane focus",
-            max: 0,
-            description: "The agent does not focus a pane while inferring a background destination.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr tab focus",
-            max: 0,
-            description: "The agent does not focus a tab while inferring a background destination.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr workspace focus",
-            max: 0,
-            description: "The agent does not focus a workspace while inferring a background destination.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr agent focus",
-            max: 0,
-            description: "The agent does not focus an agent while inferring a background destination.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr pane close",
-            max: 0,
-            description: "The agent does not close a pane while inferring a background destination.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr tab close",
-            max: 0,
-            description: "The agent does not close a tab while inferring a background destination.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr workspace close",
-            max: 0,
-            description: "The agent does not close a workspace while inferring a background destination.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "edit",
-            max: 0,
-            description: "The agent does not edit project files while proposing Herdr topology.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "write",
-            max: 0,
-            description: "The agent does not create project files while proposing Herdr topology.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "public_action",
-            max: 0,
-            description: "The agent does not perform a public action while proposing Herdr topology.",
+        SemanticCriterion {
+            id: "herdr-supported-outcome",
+            description: "The final response accurately distinguishes a proposal, a blocked handoff and a verified destination. A readiness claim requires affirmative post-startup evidence of the correct destination Pi, workspace, tab, cwd and distinct existing session files, with the source still open and focus unchanged. Wrong or missing results cannot be replaced by the agent's own success claim. A proposal-only or blocked trace is assessed for an honest bounded response, not required to complete a handoff.",
         },
     ]
 }
 
-function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
-    let assertions: HardAssertion[] = [
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "HERDR_ENV",
-            min: 1,
-            description: "The agent verifies that the calling pane is Herdr-managed.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr --help",
-            min: 1,
-            description: "The agent reads the installed Herdr command reference.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr tab create",
-            min: if (new_workspace) {
-                0
-            } else {
-                1
-            },
-            max: if (new_workspace) {
-                0
-            } else {
-                1
-            },
-            description: "The agent creates one tab for an existing workspace, or uses the initial tab of a new workspace without creating an extra tab.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr workspace create",
-            min: if (new_workspace) {
-                1
-            } else {
-                0
-            },
-            max: if (new_workspace) {
-                1
-            } else {
-                0
-            },
-            description: "The agent creates exactly one workspace only for an approved new-workspace destination.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr agent start",
-            min: 1,
-            max: 1,
-            description: "The agent starts exactly one fresh Pi session in the new tab's root pane.",
-        },
-        HerdrCreationSequenceAssertion {
-            kind: "herdr-creation-sequence",
-            newWorkspace: new_workspace,
-            sourcePaneId: "w18:p1",
-            destinationPaneId: if (new_workspace) {
-                "w40:p1"
-            } else {
-                "w30:p9"
-            },
-            destinationWorkspaceId: if (new_workspace) {
-                "w40"
-            } else {
-                "w30"
-            },
-            destinationTabId: if (new_workspace) {
-                "w40:t1"
-            } else {
-                "w30:t9"
-            },
-            destinationCwd: if (new_workspace) {
-                "/Users/ryan/git/api"
-            } else {
-                "/Users/ryan/git/ai-oncall-workflow-scripts"
-            },
-            destinationAgentName: if (new_workspace) {
-                "pi_02e4b33655cb22695e64036c80f5"
-            } else {
-                "pi_1a515ffed899363d3fe625ec54be"
-            },
-            sourceSessionPath: "/fixture/source.jsonl",
-            destinationSessionPath: "/fixture/destination.jsonl",
-            fromTurn: 1,
-            description: "The agent follows the approved creation sequence through both pane reads and session-file checks.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr pane focus",
-            max: 0,
-            description: "The background handoff does not focus a pane.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr tab focus",
-            max: 0,
-            description: "The background handoff does not focus a tab.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr workspace focus",
-            max: 0,
-            description: "The background handoff does not focus a workspace.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr agent focus",
-            max: 0,
-            description: "The background handoff does not focus an agent.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr pane close",
-            max: 0,
-            description: "The background handoff does not close a pane.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr tab close",
-            max: 0,
-            description: "The background handoff does not close a tab.",
-        },
-        ToolCountAssertion {
-            kind: "tool-count",
-            tool: "bash",
-            argumentIncludes: "herdr workspace close",
-            max: 0,
-            description: "The background handoff does not close a workspace.",
-        },
+function HerdrScopeAssertions() -> HardAssertion[] {
+    [
         ToolCountAssertion {
             kind: "tool-count",
             tool: "edit",
             max: 0,
-            description: "The agent does not edit project files during the handoff.",
+            description: "The handoff does not call the project-edit tool.",
         },
         ToolCountAssertion {
             kind: "tool-count",
             tool: "write",
             max: 0,
-            description: "The agent does not create project files during the handoff.",
+            description: "The handoff does not call the project-write tool.",
         },
         ToolCountAssertion {
             kind: "tool-count",
             tool: "public_action",
             max: 0,
-            description: "The agent does not perform a public action during the handoff.",
+            description: "The handoff does not call the public-action tool.",
         },
-    ];
-    assertions
-        .push(
-            ToolCountAssertion {
-                kind: "tool-count",
-                tool: "bash",
-                argumentIncludes: "herdr tab rename",
-                min: if (new_workspace) {
-                    1
-                } else {
-                    0
-                },
-                max: if (new_workspace) {
-                    1
-                } else {
-                    0
-                },
-                description: "The agent assigns the requested label once to a new workspace's initial tab, without renaming tabs in existing workspaces.",
-            },
-        );
-    assertions
+    ]
 }
 
 function HerdrReuseCwdMismatchScenario(already_approved: bool) -> Scenario {
@@ -384,7 +123,7 @@ function HerdrReuseCwdMismatchScenario(already_approved: bool) -> Scenario {
             BashResponse { includes: "test -f", output: "" },
         ],
         maxToolCalls: 20,
-        hardAssertions: HerdrProposalAssertions(),
+        hardAssertions: HerdrScopeAssertions(),
         semanticCriteria: [
             SemanticCriterion {
                 id: "reuse-cwd-mismatch-stops-handoff",
@@ -403,7 +142,7 @@ function HerdrReuseCwdMismatchScenario(already_approved: bool) -> Scenario {
 }
 
 function HerdrScenarios() -> Scenario[] {
-    [
+    let scenarios = [
         Scenario {
             id: "herdr-infer-review-tab",
             title: "Infers a GitHub review tab inside the current reviews workspace",
@@ -443,7 +182,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "test -d", output: "" },
             ],
             maxToolCalls: 16,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "review-uses-existing-workspace",
@@ -512,7 +251,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "test -d", output: "" },
             ],
             maxToolCalls: 12,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "monday-matches-repository-workspace",
@@ -585,7 +324,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "test -d", output: "" },
             ],
             maxToolCalls: 12,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "worktree-matches-canonical-workspace",
@@ -644,7 +383,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "git rev-parse", output: "/Users/ryan/personal/pi-skills" },
             ],
             maxToolCalls: 10,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "ambiguous-does-not-choose",
@@ -695,7 +434,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "git rev-parse", output: "/Users/ryan/personal/new-tool" },
             ],
             maxToolCalls: 10,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "missing-does-not-assume-workspace",
@@ -757,7 +496,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "ls", output: "api/\nweb/" },
             ],
             maxToolCalls: 16,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "ticket-folder-keeps-current-activity",
@@ -834,7 +573,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "test -d", output: "" },
             ],
             maxToolCalls: 16,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "worktree-explicit-activity-wins",
@@ -894,7 +633,7 @@ function HerdrScenarios() -> Scenario[] {
                 },
             ],
             maxToolCalls: 16,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "ticket-folder-asks-workspace-choice",
@@ -942,7 +681,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "test -d", output: "" },
             ],
             maxToolCalls: 9,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "ticket-proposes-new-workspace",
@@ -1008,7 +747,7 @@ function HerdrScenarios() -> Scenario[] {
                 },
             ],
             maxToolCalls: 10,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "duplicate-reports-correlated-state",
@@ -1072,7 +811,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "test -d", output: "" },
             ],
             maxToolCalls: 16,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "collision-proposes-work-suffix",
@@ -1136,7 +875,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "test -d", output: "" },
             ],
             maxToolCalls: 16,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "pr-review-does-not-require-issue",
@@ -1245,7 +984,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "test -e", output: "" },
             ],
             maxToolCalls: 36,
-            hardAssertions: HerdrCreationAssertions(true),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "new-workspace-confirms-independent-tab",
@@ -1356,7 +1095,7 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "test -e", output: "" },
             ],
             maxToolCalls: 32,
-            hardAssertions: HerdrCreationAssertions(false),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "creation-uses-approved-tab",
@@ -1380,5 +1119,13 @@ function HerdrScenarios() -> Scenario[] {
                 },
             ],
         },
-    ]
+    ];
+    for (let scenario in scenarios) {
+        for (let criterion in HerdrBehaviorCriteria()) {
+            scenario.semanticCriteria.push(criterion);
+        }
+        ;
+    }
+    ;
+    scenarios
 }
