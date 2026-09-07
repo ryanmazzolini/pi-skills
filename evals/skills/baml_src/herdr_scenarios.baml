@@ -206,6 +206,16 @@ function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
             } else {
                 "w30:t9"
             },
+            destinationCwd: if (new_workspace) {
+                "/Users/dev/git/api"
+            } else {
+                "/Users/dev/git/oncall-scripts"
+            },
+            destinationAgentName: if (new_workspace) {
+                "pi_02e4b33655cb22695e64036c80f5"
+            } else {
+                "pi_1a515ffed899363d3fe625ec54be"
+            },
             sourceSessionPath: "/fixture/source.jsonl",
             destinationSessionPath: "/fixture/destination.jsonl",
             fromTurn: 1,

@@ -125,6 +125,7 @@ function EvaluateHerdrCreationSequence(
     let proposal_workspace = false;
     let environment_checked = false;
     let help_read = false;
+    let directory_check = -1;
     let source_refresh = -1;
     let source_file_check = -1;
     let workspace_refresh = -1;
@@ -132,6 +133,8 @@ function EvaluateHerdrCreationSequence(
     let create_index = -1;
     let rename_index = -1;
     let tab_check_index = -1;
+    let agent_lookup_index = -1;
+    let agent_lookup_failed = false;
     let start_index = -1;
     let wait_index = -1;
     let source_index = -1;
@@ -172,6 +175,19 @@ function EvaluateHerdrCreationSequence(
                 };
             };
             if (approved) {
+                if (
+                    words.length() == 3
+                        && words[0] == "test"
+                        && words[1] == "-d"
+                        && words[2] == assertion.destinationCwd
+                ) {
+                    directory_check
+                        = if (call.result.trim().length() == 0) {
+                            call.index
+                        } else {
+                            -1
+                        };
+                };
                 if (HerdrChecksSourceFile(words, assertion.sourceSessionPath) && source_refresh >= 0) {
                     // The fixture represents a successful file test with empty output.
                     source_file_check
@@ -206,6 +222,12 @@ function EvaluateHerdrCreationSequence(
                         violations
                             .push(
                                 `Tool call ${call.index}: creation lacks environment/help checks, proposal reads, or post-approval source/workspace refreshes.`,
+                            );
+                    };
+                    if (directory_check < 0) {
+                        violations
+                            .push(
+                                `Tool call ${call.index}: creation lacks a successful post-approval directory check for ${assertion.destinationCwd}.`,
                             );
                     };
                     if (source_file_check <= source_refresh) {
@@ -249,7 +271,30 @@ function EvaluateHerdrCreationSequence(
                         && rename_index >= 0
                 ) {
                     tab_check_index = call.index;
+                } else if (
+                    HerdrCommandIs(words, "agent", "get")
+                        && words.length() == 4
+                        && words[3] == assertion.destinationAgentName
+                        && create_index >= 0
+                ) {
+                    if (call.result.trim() == "agent_not_found") {
+                        agent_lookup_index = call.index;
+                    } else {
+                        agent_lookup_index = -1;
+                        agent_lookup_failed = true;
+                    };
                 } else if (starts_agent) {
+                    if (
+                        agent_lookup_index <= create_index
+                            || agent_lookup_failed
+                            || words.length() < 4
+                            || words[3] != assertion.destinationAgentName
+                    ) {
+                        violations
+                            .push(
+                                `Tool call ${call.index}: startup requires an agent_not_found lookup for ${assertion.destinationAgentName} after creation, with no failed lookup.`,
+                            );
+                    };
                     if (
                         create_index < 0
                             || !HerdrStartsPane(words, assertion.destinationPaneId)
@@ -314,8 +359,8 @@ function EvaluateHerdrCreationSequence(
     }
     ;
     let evidence = [
-        `Expected proposal reads, approval from turn ${assertion.fromTurn + 1}, refreshed source/workspaces, a source-file check and existing-destination tab listing before creation, creation/naming, startup, idle/done wait, both pane reads, then both session-file checks.`,
-        `Tool call indices (-1 means missing): source refresh=${source_refresh}, source file=${source_file_check}, workspace refresh=${workspace_refresh}, tab refresh=${tab_refresh}, create=${create_index}, rename=${rename_index}, tab check=${tab_check_index}, start=${start_index}, wait=${wait_index}, source read=${source_index}, destination read=${destination_index}, files=${files_index}.`,
+        `Expected proposal reads, approval from turn ${assertion.fromTurn + 1}, directory check, refreshed source/workspaces, a source-file check and existing-destination tab listing before creation, creation/naming, agent_not_found lookup for the pane-derived name, startup, idle/done wait, both pane reads, then both session-file checks.`,
+        `Tool call indices (-1 means missing): directory=${directory_check}, source refresh=${source_refresh}, source file=${source_file_check}, workspace refresh=${workspace_refresh}, tab refresh=${tab_refresh}, create=${create_index}, rename=${rename_index}, tab check=${tab_check_index}, agent lookup=${agent_lookup_index}, start=${start_index}, wait=${wait_index}, source read=${source_index}, destination read=${destination_index}, files=${files_index}.`,
     ];
     for (let violation in violations) {
         evidence.push(violation);
