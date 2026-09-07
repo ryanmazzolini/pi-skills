@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { projectRun } from "./runtime.ts";
 import { AgentDeskOverlayComponent, createDelegateUi, describeLatestActivity, listDeskAssignments, readChildHistory, RunOverlayComponent, stateIcon } from "./ui.ts";
@@ -74,8 +75,8 @@ test("pinned status is label-first, UUID-free, and reports elapsed time", () => 
   const rendered = component.render(120).join("\n");
 
   assert.match(rendered, /Agents · 2 running · total 19s/);
-  assert.match(rendered, /Reader 1 · Thinking\s+total 19s/);
-  assert.match(rendered, /Reader 2 · Thinking\s+total 19s/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 1 · sol · max · Thinking\s+total 19s/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 2 · sol · max · Thinking\s+total 19s/);
   assert.match(rendered, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Reader 1/);
   assert.doesNotMatch(rendered, /run-1|child-1/);
   component.dispose();
@@ -139,7 +140,7 @@ test("tool timing is right-aligned, survives heartbeats, and drops total first o
   const desk = new AgentDeskOverlayComponent(harness.runtime, {}, { requestRender() {}, terminal: { rows: 24 } }, theme, () => {}, { async resume() {} });
   t.after(() => { pinned.dispose(); desk.dispose(); });
   const row = pinned.render(100).find((line) => line.includes("Reader 1"));
-  assert.match(row, /Reader 1 · Running: npm test \+1 tool\s+tool 42s · total 2m 18s$/);
+  assert.match(stripVTControlCharacters(row), /Reader 1 · sol · max · Running: npm test \+1 tool\s+tool 42s · total 2m 18s$/);
   assert.equal(visibleWidth(row), 100);
   assert.doesNotMatch(row, /quiet|ago/);
   const narrow = desk.render(40).find((line) => line.includes("Reader 1"));
@@ -170,7 +171,7 @@ test("status labels use spare row space without losing activity or right-aligned
   const pinned = createDelegateUi(harness.runtime).createStatus(tui, ansiTheme);
   const desk = new AgentDeskOverlayComponent(harness.runtime, {}, tui, ansiTheme, () => {}, { async resume() {} });
   t.after(() => { pinned.dispose(); desk.dispose(); });
-  for (const width of [80, 100]) {
+  for (const width of [100, 120]) {
     for (const component of [pinned, desk]) {
       const lines = component.render(width);
       for (const child of activeRun.children) {
@@ -202,7 +203,7 @@ test("detailed tool status retains provider, model, and reasoning without changi
     tool: { callId: "a", startedAt: new Date(96_000).toISOString(), additionalCount: 1 },
   };
   harness.emit(activeRun);
-  assert.match(desk.render(100).join("\n"), /openai\/sol · max · Running: npm test \+1 tool\s+tool 42s · total 2m 18s/);
+  assert.match(stripVTControlCharacters(desk.render(100).join("\n")), /openai\/sol · max · Running: npm test \+1 tool\s+tool 42s · total 2m 18s/);
   for (const width of [20, 40, 60]) {
     const lines = desk.render(width);
     assert.ok(lines.every((line) => visibleWidth(line) <= width));
@@ -212,6 +213,65 @@ test("detailed tool status retains provider, model, and reasoning without changi
   const compact = desk.render(40).join("\n");
   assert.match(compact, /tool 42s/);
   assert.doesNotMatch(compact, /openai\/sol/);
+});
+
+test("model and thinking text uses the child's thinking hue with faint styling on every live surface", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  for (const [level, kind, color] of [["high", "tool", "\u001b[35m"], ["max", "retry", "\u001b[31m"], ["off", "message", "\u001b[37m"]]) {
+    const activeRun = run(kind === "message" ? "completed" : "running", new Date(137_000).toISOString());
+    const child = activeRun.children[0];
+    child.resolved.reasoning = level;
+    child.latestActivity = {
+      kind, summary: kind === "tool" ? "Running: sleep 40" : kind === "retry" ? "rate limited" : "Completed",
+      observedAt: new Date(137_000).toISOString(),
+      ...(kind === "tool" ? { tool: { callId: "a", startedAt: new Date(96_000).toISOString(), additionalCount: 0 } } : {}),
+      ...(kind === "retry" ? { retry: { attempt: 1, maxAttempts: 3, retryAt: new Date(150_000).toISOString() } } : {}),
+    };
+    const styledTheme = { ...theme, getThinkingBorderColor(actualLevel) {
+      assert.equal(actualLevel, level);
+      return (text) => `${color}${text}\u001b[39m`;
+    } };
+    const harness = runtimeFor(activeRun);
+    const tui = { requestRender() {}, terminal: { rows: 24 } };
+    const pinned = createDelegateUi(harness.runtime).createStatus(tui, styledTheme);
+    const desk = new AgentDeskOverlayComponent(harness.runtime, {}, tui, styledTheme, () => {}, { async resume() {} });
+    const detail = new RunOverlayComponent(harness.runtime, activeRun.id, tui, styledTheme, () => {}, async () => [], { detailOnly: true });
+    try {
+      for (const component of [pinned, desk, detail]) {
+        const model = component === detail ? "openai/sol" : "sol";
+        const lines = component.render(180);
+        assert.ok(lines.join("\n").includes(`\u001b[2m${color}${model} · ${level}\u001b[39m\u001b[22m · `));
+        assert.ok(lines.every((line) => visibleWidth(line) <= 180));
+      }
+      assert.doesNotMatch(stateIcon(child, styledTheme), /\u001b\[2m/);
+    } finally { pinned.dispose(); desk.dispose(); detail.dispose(); }
+  }
+});
+
+test("long model names keep the thinking label and do not consume tool timing or retry countdowns", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString());
+  const child = activeRun.children[0];
+  child.label = "A long 安全 review label";
+  child.resolved.model.id = "a-very-long-model-name-".repeat(8);
+  child.latestActivity = { kind: "tool", summary: "Running: sleep 40", observedAt: new Date(137_000).toISOString(), tool: { callId: "a", startedAt: new Date(96_000).toISOString(), additionalCount: 0 } };
+  const styledTheme = { ...theme, getThinkingBorderColor: () => text => `\u001b[35m${text}\u001b[39m` };
+  const harness = runtimeFor(activeRun);
+  const desk = new AgentDeskOverlayComponent(harness.runtime, {}, { requestRender() {}, terminal: { rows: 24 } }, styledTheme, () => {}, { async resume() {} });
+  t.after(() => desk.dispose());
+  for (const detail of [false, true]) {
+    if (detail) desk.handleInput("\r");
+    const wide = desk.render(120);
+    assert.match(wide.join("\n"), /\u001b\[2m\u001b\[35m[^\u001b]*\.\.\. · max\u001b\[39m\u001b\[22m/);
+    for (const width of [20, 40, 60, 120]) {
+      const lines = desk.render(width);
+      assert.ok(lines.every((line) => visibleWidth(line) <= width));
+      assert.match(lines.join("\n"), /tool 42s/);
+    }
+  }
+  child.latestActivity = { kind: "retry", summary: "rate limited", observedAt: new Date(137_000).toISOString(), retry: { attempt: 1, maxAttempts: 3, retryAt: new Date(150_000).toISOString() } };
+  harness.emit(activeRun);
+  for (const width of [40, 60, 120]) assert.match(desk.render(width).join("\n"), /Retry 1\/3 in 12s/);
 });
 
 test("tool timing handles old records and ANSI rows without inventing a start time", (t) => {
@@ -329,13 +389,13 @@ test("retry rows use a static warning cue and emphasize only the countdown", (t)
   );
   t.after(() => component.dispose());
   const before = component.render(120).join("\n");
-  assert.match(before, /↻ Reader 1 · Retry 2\/3 in 18s · rate limited\s+total 12s/);
+  assert.match(stripVTControlCharacters(before), /↻ Reader 1 · sol · max · Retry 2\/3 in 18s · rate limited\s+total 12s/);
   assert.doesNotMatch(before, /Still running|quiet/);
   assert.ok(calls.some((call) => call.color === "warning" && call.text === "↻"));
   assert.ok(calls.some((call) => call.bold === "Retry 2/3 in 18s"));
   assert.ok(calls.some((call) => call.color === "text" && call.text === "rate limited"));
   now += 1_000;
-  assert.match(component.render(120).join("\n"), /↻ Reader 1 · Retry 2\/3 in 17s/);
+  assert.match(stripVTControlCharacters(component.render(120).join("\n")), /↻ Reader 1 · sol · max · Retry 2\/3 in 17s/);
   const narrow = component.render(40);
   assert.match(narrow.join("\n"), /retrying/);
   assert.match(narrow.join("\n"), /\/agents/);
@@ -412,7 +472,7 @@ test("pinned retry rows precede ordinary work without displacing failures or att
   const lines = pinned.render(120);
   assert.match(lines[1], /Reader 9/);
   assert.match(lines[2], /Reader 8/);
-  assert.match(lines[3], /Reader 7 · Retry 2\/3 in 18s/);
+  assert.match(stripVTControlCharacters(lines[3]), /Reader 7 · sol · max · Retry 2\/3 in 18s/);
   assert.match(lines.at(-1), /3 more/);
 });
 
@@ -464,8 +524,8 @@ test("pinned status prioritizes attention, caps rows, and collapses on narrow te
   const rendered = wide.join("\n");
 
   assert.equal(wide.length, 8);
-  assert.match(rendered, /Reader 8 · Needs decision: Choose the cache policy/);
-  assert.match(rendered, /Reader 9 · Interrupted · resume in \/agents/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 8 · sol · max · Needs decision: Choose the cache policy/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 9 · sol · max · Interrupted · resume in \/agents/);
   assert.match(rendered, /… 3 more · \/agents/);
   assert.deepEqual(component.render(140), wide);
   const narrow = component.render(60);
@@ -523,14 +583,15 @@ test("every lifecycle state has explicit text and a non-color icon", () => {
   );
   const rendered = component.render(160).join("\n");
 
-  assert.match(rendered, /Reader 1 · Queued/);
-  assert.match(rendered, /Reader 2 · Starting/);
-  assert.match(rendered, /Reader 3 · Thinking/);
-  assert.match(rendered, /\? Reader 4 · Needs approval/);
-  assert.match(rendered, /✓ Reader 5 · Completed/);
-  assert.match(rendered, /✗ Reader 6 · Failed: Tests failed/);
-  assert.match(rendered, /○ Reader 7 · Cancelled/);
-  assert.match(rendered, /■ Reader 8 · Interrupted/);
+  const plain = stripVTControlCharacters(rendered);
+  assert.match(plain, /Reader 1 · sol · max · Queued/);
+  assert.match(plain, /Reader 2 · sol · max · Starting/);
+  assert.match(plain, /Reader 3 · sol · max · Thinking/);
+  assert.match(plain, /\? Reader 4 · sol · max · Needs approval/);
+  assert.match(plain, /✓ Reader 5 · sol · max · Completed/);
+  assert.match(plain, /✗ Reader 6 · sol · max · Failed: Tests failed/);
+  assert.match(plain, /○ Reader 7 · sol · max · Cancelled/);
+  assert.match(plain, /■ Reader 8 · sol · max · Interrupted/);
   component.dispose();
 });
 
@@ -569,7 +630,7 @@ test("terminal outcomes remain briefly and then clear", () => {
   completedRun.children[0].latestActivity = { kind: "message", summary: "Completed", observedAt: new Date(now).toISOString() };
   harness.emit(completedRun);
 
-  assert.match(component.render(100).join("\n"), /✓ Reader 1 · Completed\s+total 10s/);
+  assert.match(stripVTControlCharacters(component.render(100).join("\n")), /✓ Reader 1 · sol · max · Completed\s+total 10s/);
   now = 39_999;
   assert.notDeepEqual(component.render(100), []);
   now = 40_001;
@@ -614,18 +675,18 @@ test("a new user turn dismisses retained outcomes without hiding active work", (
     theme,
     { now: () => 10_000 },
   );
-  assert.match(component.render(120).join("\n"), /Reader 2 · Completed/);
+  assert.match(stripVTControlCharacters(component.render(120).join("\n")), /Reader 2 · sol · max · Completed/);
 
   component.dismissTerminal();
 
-  let rendered = component.render(120).join("\n");
-  assert.match(rendered, /Reader 1 · Thinking/);
+  let rendered = stripVTControlCharacters(component.render(120).join("\n"));
+  assert.match(rendered, /Reader 1 · sol · max · Thinking/);
   assert.doesNotMatch(rendered, /Reader 2|completed/);
   assert.equal(renders, 1);
 
   harness.emit(mixedRun);
-  rendered = component.render(120).join("\n");
-  assert.match(rendered, /Reader 1 · Thinking/);
+  rendered = stripVTControlCharacters(component.render(120).join("\n"));
+  assert.match(rendered, /Reader 1 · sol · max · Thinking/);
   assert.doesNotMatch(rendered, /Reader 2|completed/);
   component.dispose();
 });
@@ -740,6 +801,38 @@ test("agent desk tie-breaks equal run times and keeps terminal stale attention r
   ]);
 });
 
+test("completion cards emphasize results, completed states, and the agents command without changing layout", () => {
+  const batch = run("completed", new Date().toISOString(), 2);
+  for (const child of batch.children) child.result = { kind: "text", value: "Task finished.\nMore detail.", completedAt: new Date().toISOString() };
+  const view = projectRun(batch);
+  const ui = createDelegateUi(runtimeFor(batch).runtime);
+  const calls = [];
+  const styledTheme = { ...theme, fg(color, text) { calls.push({ color, text }); return text; } };
+  for (const expanded of [false, true]) {
+    calls.length = 0;
+    const rendered = ui.renderCompletion(view, expanded, styledTheme).render(100).map((line) => line.trimEnd()).join("\n");
+    assert.equal(calls.filter((call) => call.color === "success" && call.text === "completed").length, 3);
+    assert.equal(calls.filter((call) => call.color === "text" && call.text.startsWith("Task finished.")).length, 2);
+    assert.equal(calls.filter((call) => call.color === "dim" && call.text === "⎿").length, 2);
+    assert.equal(calls.some((call) => call.color === "accent" && call.text === "/agents"), !expanded);
+    if (!expanded) {
+      assert.ok(calls.some((call) => call.color === "muted" && call.text === "Open: "));
+      assert.equal(rendered, "✓ 2 agents completed\n  Reader 1 completed\n  ⎿  Task finished.\n  Reader 2 completed\n  ⎿  Task finished.\n  Open: /agents");
+    } else assert.match(rendered, /More detail\./);
+  }
+  view.status = "failed";
+  view.children[0].state = "failed";
+  delete view.children[0].result;
+  view.children[0].error = { message: "Tool failed" };
+  view.omittedChildren = 1;
+  calls.length = 0;
+  const mixed = ui.renderCompletion(view, false, styledTheme).render(100).join("\n");
+  assert.ok(calls.some((call) => call.color === "error" && call.text === "Tool failed"));
+  assert.ok(calls.some((call) => call.color === "dim" && call.text === "failed"));
+  assert.ok(calls.some((call) => call.color === "accent" && call.text === "/agents"));
+  assert.match(mixed, /… 1 more · \/agents/);
+});
+
 test("collapsed completion keeps late failures and cancellations visible without changing expanded order", () => {
   const batch = run("completed", new Date().toISOString(), 8);
   batch.children[6].state = "failed";
@@ -825,7 +918,7 @@ test("agent desk names conductor ownership and truthful attention delivery state
 
   assert.match(rendered, /conductor manages subagents/);
   assert.match(rendered, /NEEDS RECOVERY/);
-  assert.match(rendered, /Reader 1 · sol · Interrupted/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 1 · sol · max · Interrupted/);
   assert.match(rendered, /MANAGED BY CONDUCTOR/);
   assert.match(rendered, /RECENT/);
   assert.match(rendered, /Notifying conductor/);
@@ -977,12 +1070,12 @@ test("agent desk resume locks per child and reports launch errors", async () => 
   component.handleInput("R");
   component.handleInput("r");
   assert.deepEqual(calls, ["child-1"]);
-  assert.match(component.render(120).join("\n"), /First interrupted · sol · Resume requested/);
+  assert.match(stripVTControlCharacters(component.render(120).join("\n")), /First interrupted · sol · max · Resume requested/);
   component.handleInput("j");
   component.handleInput("r");
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(calls, ["child-1", "child-2"]);
-  assert.match(component.render(120).join("\n"), /Second interrupted · sol · Interrupted · Model unavailable/);
+  assert.match(stripVTControlCharacters(component.render(120).join("\n")), /Second interrupted · sol · max · Interrupted · Model unavailable/);
   resolveFirst();
   await new Promise((resolve) => setImmediate(resolve));
   component.dispose();
