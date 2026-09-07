@@ -1,5 +1,5 @@
 function TicketWorkspaceScenarios() -> Scenario[] {
-    [
+    let scenarios = [
         Scenario {
             id: "ticket-workspace-preserves-explicit-herdr-inputs",
             title: "Passes independent workspace, tab, and cwd choices through the ticket-workspace entry point",
@@ -46,7 +46,7 @@ function TicketWorkspaceScenarios() -> Scenario[] {
                 BashResponse { includes: "test -d", output: "" },
             ],
             maxToolCalls: 16,
-            hardAssertions: HerdrProposalAssertions(),
+            hardAssertions: HerdrScopeAssertions(),
             semanticCriteria: [
                 SemanticCriterion {
                     id: "ticket-entry-preserves-workspace",
@@ -62,5 +62,13 @@ function TicketWorkspaceScenarios() -> Scenario[] {
                 },
             ],
         },
-    ]
+    ];
+    for (let scenario in scenarios) {
+        for (let criterion in HerdrBehaviorCriteria()) {
+            scenario.semanticCriteria.push(criterion);
+        }
+        ;
+    }
+    ;
+    scenarios
 }

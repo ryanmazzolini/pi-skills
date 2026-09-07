@@ -558,11 +558,34 @@ function FixtureFetch(scenario: Scenario, step: AgentStep) -> string {
     results.join("\n\n")
 }
 
+// Normalize simple quoted arguments only for fixture lookup, not to judge
+// behavior or interpret arbitrary shell programs.
+function HerdrCommandWords(command: string) -> string[] {
+    let words: string[] = [];
+    for (let word in command.replace("\n", " ").replace("\t", " ").split(" ")) {
+        if (word.length() > 0) {
+            if (
+                word.length() >= 2
+                    && (
+                        (word.starts_with("'") && word.ends_with("'"))
+                            || (word.starts_with("\"") && word.ends_with("\""))
+                    )
+            ) {
+                words.push(word.substring(1, word.length() - 1));
+            } else {
+                words.push(word);
+            };
+        };
+    }
+    ;
+    words
+}
+
 function FixtureBash(scenario: Scenario, command: string) -> string {
     // Pane IDs have the same meaning with or without shell quotes. Normalize
     // only this direct command; preserve all other fixture matching behavior.
     let words = HerdrCommandWords(command);
-    let fixture_command = if (HerdrCommandIs(words, "pane", "get") && words.length() == 4) {
+    let fixture_command = if (words.length() == 4 && words[0] == "herdr" && words[1] == "pane" && words[2] == "get") {
         words.join(" ")
     } else {
         command

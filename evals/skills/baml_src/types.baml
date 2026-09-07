@@ -61,21 +61,6 @@ class ToolBeforeAssertion {
     description: string,
 }
 
-class HerdrCreationSequenceAssertion {
-    kind: "herdr-creation-sequence",
-    newWorkspace: bool,
-    sourcePaneId: string,
-    destinationPaneId: string,
-    destinationWorkspaceId: string,
-    destinationTabId: string,
-    destinationCwd: string,
-    destinationAgentName: string,
-    sourceSessionPath: string,
-    destinationSessionPath: string,
-    fromTurn: int,
-    description: string,
-}
-
 class QueryBatchAssertion {
     kind: "query-batch",
     tool: string,
@@ -100,7 +85,6 @@ class UrlCountAssertion {
 }
 
 type HardAssertion = ToolCountAssertion
-    | HerdrCreationSequenceAssertion
     | ToolBeforeAssertion
     | QueryBatchAssertion
     | CommandAllowlistAssertion
