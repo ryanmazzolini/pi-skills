@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	RUN_SCHEMA_VERSION,
 	type DelegationRun,
+	hasTemporaryWorkspaceEnvelope,
+	isGitTemporaryWorkspace,
 	type RunPaths,
 	type RunRepository,
 } from "./runtime.ts";
@@ -32,7 +34,9 @@ function normalizeDelegationRun(value: unknown): DelegationRun | undefined {
 				.map((skill) => typeof skill === "string" ? { name: skill, filePath: "" } : skill);
 		}
 	}
-	if (candidate.schemaVersion === 1 || candidate.schemaVersion === 2) candidate.schemaVersion = RUN_SCHEMA_VERSION;
+	if (candidate.schemaVersion === 1 || candidate.schemaVersion === 2 || candidate.schemaVersion === 3) {
+		candidate.schemaVersion = RUN_SCHEMA_VERSION;
+	}
 	const run = candidate as unknown as Partial<DelegationRun>;
 	if (run.schemaVersion !== RUN_SCHEMA_VERSION
 		|| typeof run.id !== "string"
@@ -46,10 +50,17 @@ function normalizeDelegationRun(value: unknown): DelegationRun | undefined {
 export class FileRunRepository implements RunRepository {
 	private readonly rootDir: string;
 	private readonly onDiagnostic: (message: string) => void;
+	private readonly temporaryRoot: string | undefined;
+	private readonly loadedEnvelopeKeys = new Set<string>();
 
-	constructor(rootDir: string, onDiagnostic: (message: string) => void = console.warn) {
+	constructor(
+		rootDir: string,
+		onDiagnostic: (message: string) => void = console.warn,
+		temporaryRoot?: string,
+	) {
 		this.rootDir = rootDir;
 		this.onDiagnostic = onDiagnostic;
+		this.temporaryRoot = temporaryRoot ? resolve(temporaryRoot) : undefined;
 	}
 
 	paths(parentSessionId: string, runId: string, childId: string): RunPaths {
@@ -58,7 +69,6 @@ export class FileRunRepository implements RunRepository {
 		return {
 			runFile: join(runDir, "run.json"),
 			childSessionDir: join(runDir, "children", safeChildId),
-			worktreeDir: join(runDir, "worktrees", safeChildId),
 			patchFile: join(runDir, "patches", `${safeChildId}.patch`),
 			manifestFile: join(runDir, "patches", `${safeChildId}.manifest.json`),
 		};
@@ -99,7 +109,8 @@ export class FileRunRepository implements RunRepository {
 				const value = normalizeDelegationRun(JSON.parse(raw) as unknown);
 				if (!value) throw new Error("unsupported or invalid run record");
 				if (value.parent.sessionId !== parentSessionId) continue;
-				this.validateRunPaths(value);
+				this.validateRunPaths(value, true);
+				this.rememberEnvelopeKeys(value);
 				runs.push(value);
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
@@ -110,7 +121,7 @@ export class FileRunRepository implements RunRepository {
 		return runs.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 	}
 
-	private validateRunPaths(run: DelegationRun): void {
+	private validateRunPaths(run: DelegationRun, allowForeignEnvelopes = false): void {
 		const expectedRunFile = join(this.runDir(run.parent.sessionId, run.id), "run.json");
 		if (run.recordRef !== expectedRunFile) throw new Error(`Delegation run ${run.id} has an invalid record path`);
 		for (const child of run.children) {
@@ -118,14 +129,74 @@ export class FileRunRepository implements RunRepository {
 			if (child.sessionDir !== expected.childSessionDir) {
 				throw new Error(`Delegation child ${child.id} has an invalid session path`);
 			}
-			if (child.workspace.kind === "temporary"
-				&& (child.workspace.worktreePath !== expected.worktreeDir
-					|| child.workspace.patchPath !== expected.patchFile
-					|| child.workspace.manifestPath !== expected.manifestFile
-					|| child.workspace.branch !== temporaryWorkspaceBranch(run.id, child.id))) {
-				throw new Error(`Delegation child ${child.id} has invalid temporary workspace ownership`);
+			if (child.workspace.kind === "temporary") {
+				if (hasTemporaryWorkspaceEnvelope(child.workspace)) {
+					const envelopeRoot = resolve(child.workspace.envelope.rootPath);
+					const root = this.temporaryRoot;
+					const path = root ? relative(root, envelopeRoot) : "..";
+					const insideRoot = root !== undefined
+						&& path !== ""
+						&& path !== ".."
+						&& !path.startsWith(`..${sep}`)
+						&& !isAbsolute(path);
+					const knownEnvelope = this.loadedEnvelopeKeys.has(this.envelopeKey(
+						run.parent.sessionId,
+						run.id,
+						child.id,
+						child.workspace.envelope.rootPath,
+						child.workspace.envelope.ownerToken,
+						child.workspace.envelope.directoryIdentity?.dev ?? "",
+						child.workspace.envelope.directoryIdentity?.ino ?? "",
+					));
+					if ((!insideRoot && !allowForeignEnvelopes && !knownEnvelope)
+						|| child.workspace.envelope.rootPath !== envelopeRoot
+						|| child.workspace.worktreePath !== join(envelopeRoot, "workspace")
+						|| !/^[A-Za-z0-9._-]{1,128}$/.test(child.workspace.envelope.ownerToken)
+						|| !/^\d+$/.test(child.workspace.envelope.directoryIdentity?.dev ?? "")
+						|| !/^\d+$/.test(child.workspace.envelope.directoryIdentity?.ino ?? "")) {
+						throw new Error(`Delegation child ${child.id} has invalid temporary workspace ownership`);
+					}
+				} else {
+					const legacyWorktreeDir = join(this.runDir(run.parent.sessionId, run.id), "worktrees", safeSegment(child.id));
+					if (child.workspace.worktreePath !== legacyWorktreeDir) {
+						throw new Error(`Delegation child ${child.id} has invalid temporary workspace ownership`);
+					}
+				}
+				if (isGitTemporaryWorkspace(child.workspace)
+					&& (child.workspace.patchPath !== expected.patchFile
+						|| child.workspace.manifestPath !== expected.manifestFile
+						|| child.workspace.branch !== temporaryWorkspaceBranch(run.id, child.id))) {
+					throw new Error(`Delegation child ${child.id} has invalid temporary workspace ownership`);
+				}
 			}
 		}
+	}
+
+	private rememberEnvelopeKeys(run: DelegationRun): void {
+		for (const child of run.children) {
+			if (child.workspace.kind !== "temporary" || !hasTemporaryWorkspaceEnvelope(child.workspace)) continue;
+			this.loadedEnvelopeKeys.add(this.envelopeKey(
+				run.parent.sessionId,
+				run.id,
+				child.id,
+				child.workspace.envelope.rootPath,
+				child.workspace.envelope.ownerToken,
+				child.workspace.envelope.directoryIdentity?.dev ?? "",
+				child.workspace.envelope.directoryIdentity?.ino ?? "",
+			));
+		}
+	}
+
+	private envelopeKey(
+		parentSessionId: string,
+		runId: string,
+		childId: string,
+		rootPath: string,
+		ownerToken: string,
+		device: string,
+		inode: string,
+	): string {
+		return JSON.stringify([parentSessionId, runId, childId, rootPath, ownerToken, device, inode]);
 	}
 
 	private parentDir(parentSessionId: string): string {
@@ -140,6 +211,7 @@ export class FileRunRepository implements RunRepository {
 export function createFileRunRepository(
 	rootDir: string,
 	onDiagnostic?: (message: string) => void,
+	temporaryRoot?: string,
 ): RunRepository {
-	return new FileRunRepository(rootDir, onDiagnostic);
+	return new FileRunRepository(rootDir, onDiagnostic, temporaryRoot);
 }
