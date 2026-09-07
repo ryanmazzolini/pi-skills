@@ -25,7 +25,7 @@ When a requested new workspace label already exists, report its ID and stop. Ask
 
 Before proposing a new tab, list the destination workspace's tabs. When an inferred `gh-<number>` label is taken, append a short work description from the context already supplied, such as `gh-72-retry-fix`. Check that this label is unused in the destination workspace, then propose it through the normal destination confirmation. Leave the existing tab untouched; do not require a repository or issue lookup just to name the new tab. If the context does not suggest a recognizable suffix or the suffixed label is also taken, ask the user for another label. Do not apply this fallback to an explicitly supplied tab or work label.
 
-For other label collisions, always run `herdr tab get <tab-id>` and `herdr pane list --workspace <workspace-id>`, then correlate panes by tab ID. Do not infer pane or agent state only from the tab summary, and do not ask the user how to proceed until this correlation is complete. Report the matching tab ID and each correlated pane's ID, agent, and shell state. Do not create a duplicate or replace a running agent. Ask whether to use that tab or choose another label. Reuse a tab only after verifying an exact pane at an interactive shell prompt and receiving approval; an existing Pi session is not a fresh destination.
+For other label collisions, always run `herdr tab get <tab-id>` and `herdr pane list --workspace <workspace-id>`, then correlate panes by tab ID. Do not infer pane or agent state only from the tab summary, and do not ask the user how to proceed until this correlation is complete. Report the matching tab ID and each correlated pane's ID, agent, shell state, and cwd. Do not create a duplicate or replace a running agent. Offer reuse only when an exact pane is at an interactive shell prompt and its cwd matches the requested destination; an existing Pi session is not a fresh destination. If no pane qualifies, ask for another tab label instead of offering reuse. Reuse requires approval.
 
 ## Confirm the topology
 
@@ -80,7 +80,7 @@ Use bullets rather than a table so long paths remain readable in narrow terminal
 
      Verify that this tab belongs to the new workspace and has the approved label. Do not create an extra tab. If naming or verification fails, stop before starting Pi, report the created IDs, and leave both the source and destination open without changing focus.
 
-   - For approved reuse, keep the verified workspace, tab, and shell-pane IDs instead of creating anything.
+   - For approved reuse, keep the verified workspace, tab, and shell-pane IDs instead of creating anything. Immediately before `herdr agent start`, re-read `herdr pane get <destination-pane>` and verify that it still belongs to the approved workspace and tab, is at an interactive shell prompt, and has the approved cwd. If any check fails, stop without starting Pi or changing the shell's directory. Report the mismatch and ask for another destination; leave both panes and focus unchanged.
 5. Build one concise initial user message for the destination. Begin with: “You are a fresh destination Pi session in Herdr, not the source session. The destination already exists; do not recreate it or repeat the handoff.” Include:
    - expected destination workspace, tab, pane, and cwd;
    - the user's current outcome and most recent request;
