@@ -4,7 +4,7 @@ Read this when domain terms are ambiguous, overloaded, or inconsistent. Build a 
 
 ## Choose the target
 
-Use the first existing target that fits:
+For a requested or already-approved glossary edit, use the first existing target that fits:
 
 1. `CONTEXT-MAP.md`, asking which bounded context when unclear;
 2. the relevant `CONTEXT.md`;
@@ -19,7 +19,7 @@ Preserve an existing file's structure and change only its language sections.
 2. Find one word used for different concepts, several words used for one concept, vague terms, and implementation names masquerading as domain terms.
 3. Choose canonical terms. Define each in one sentence, list aliases to avoid, and flag unresolved conflicts with a recommendation.
 4. Add relationships and cardinality when they matter. Include one short example dialogue only when it proves the terms work together naturally.
-5. Write or update the glossary, then lead the response with the important terminology decisions.
+5. Lead with the important terminology decisions. If glossary edits were requested or already approved, write or update the selected glossary. Otherwise stop at the proposed terms; ask before recording them.
 
 For a new glossary, use:
 
@@ -39,4 +39,4 @@ For a new glossary, use:
 - “account” referred to both **Customer** and **User**. Use **Customer** for the commercial relationship and **User** for the authenticated identity.
 ```
 
-Keep only domain-specific terms. Define what a term is, use one term per concept, and update the existing glossary in place on later runs.
+Keep only domain-specific terms. Define what a term is, use one term per concept, and reuse the existing glossary for later approved updates.

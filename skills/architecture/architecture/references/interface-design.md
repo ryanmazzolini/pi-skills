@@ -3,7 +3,7 @@
 Read this when creating or changing a module boundary or public API. Design from the caller's point of view before implementing. Aim for a small interface that hides the hard parts.
 
 1. Inspect the problem, callers, common operations, current conventions, compatibility needs, and constraints. Ask only about choices the code cannot answer.
-2. Sketch two or three credible interfaces with meaningfully different shapes or ownership. Do not add an alternative that could not reasonably win.
+2. Sketch two or three credible interfaces with meaningfully different shapes or ownership. If constraints leave only one credible interface, show it and explain why the alternatives do not fit. Do not add an alternative that could not reasonably win.
 3. For each option, show the contract, one ordinary caller example, what callers no longer need to know, errors and side effects, and the main cost.
 4. Compare only differences that affect the decision: caller effort, correct use, misuse, testing, compatibility, lifecycle ownership, or future change.
 5. Lead with the recommended interface and why it wins. Show the alternatives and consequential trade-offs beneath it. If a hybrid wins, show its concrete interface.
