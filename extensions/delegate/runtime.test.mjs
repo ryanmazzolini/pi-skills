@@ -213,6 +213,160 @@ test("coalesces duplicate streaming activity while preserving a liveness heartbe
   unsubscribe();
 });
 
+test("retry deadlines survive heartbeats and projection without hiding a new attempt", async () => {
+  let now = 1_000;
+  const { runtime, children, repository, deliveries } = runtimeFixture({ now: () => new Date(now) });
+  const handle = await runtime.start(startInput());
+  await settle();
+  const activity = {
+    kind: "retry", summary: "rate limited",
+    retry: { attempt: 1, maxAttempts: 3, retryAt: new Date(21_000).toISOString() },
+  };
+  const sink = children.launches[0].sink;
+  sink.activity(activity);
+  await settle();
+  assert.deepEqual(runtime.get(handle.runId).children[0].latestActivity.retry, activity.retry);
+  now += 6_000;
+  sink.activity(activity);
+  await settle();
+  const run = runtime.get(handle.runId);
+  assert.equal(run.children[0].latestActivity.observedAt, new Date(now).toISOString());
+  assert.deepEqual(run.children[0].latestActivity.retry, activity.retry);
+  assert.deepEqual(repository.records.get(handle.runId).children[0].latestActivity.retry, activity.retry);
+  assert.deepEqual(projectRun(run).children[0].lastActivity.retry, activity.retry);
+  const oversized = structuredClone(run);
+  oversized.children[0].task = "task".repeat(1_000);
+  oversized.children[0].label = "label".repeat(1_000);
+  oversized.children[0].latestActivity.summary = "provider reason".repeat(1_000);
+  oversized.children[0].latestActivity.retry.retryAt = "x".repeat(10_000);
+  const bounded = projectRun(oversized, 1_024);
+  assert.ok(Buffer.byteLength(JSON.stringify(bounded)) <= 1_024);
+  assert.ok(bounded.children[0].lastActivity.retry.retryAt.length <= 64);
+  assert.equal(bounded.truncated, true);
+  assert.equal(deliveries.length, 0);
+  assert.equal(run.children[0].state, "running");
+  await runtime.steer(handle.runId, undefined, "Keep reviewing");
+  assert.deepEqual(runtime.get(handle.runId).children[0].latestActivity.retry, activity.retry);
+
+  const next = { ...activity, retry: { ...activity.retry, attempt: 2, retryAt: new Date(47_000).toISOString() } };
+  sink.activity(next);
+  await settle();
+  assert.deepEqual(runtime.get(handle.runId).children[0].latestActivity.retry, next.retry);
+  sink.activity({ kind: "thinking", summary: "Thinking" });
+  await settle();
+  assert.equal(runtime.get(handle.runId).children[0].latestActivity.retry, undefined);
+});
+
+test("early retry activity survives launch and restores as interrupted, not a live countdown", async () => {
+  const children = fakeChildren();
+  const start = children.adapter.start;
+  const retry = { attempt: 1, maxAttempts: 3, retryAt: new Date(60_000).toISOString() };
+  children.adapter.start = async (input, sink) => {
+    sink.activity({ kind: "retry", summary: "rate limited", retry });
+    return start(input, sink);
+  };
+  const { runtime, repository } = runtimeFixture({ children });
+  const handle = await runtime.start(startInput());
+  await settle();
+  const child = runtime.get(handle.runId).children[0];
+  assert.equal(child.state, "running");
+  assert.deepEqual(child.latestActivity.retry, retry);
+  const restored = runtimeFixture({ repository });
+  await restored.runtime.restore("parent-1");
+  const restoredChild = restored.runtime.get(handle.runId).children[0];
+  assert.equal(restoredChild.state, "interrupted");
+  assert.equal(restoredChild.latestActivity.retry, undefined);
+  assert.equal(restored.children.launches.length, 0);
+});
+
+test("terminal outcomes and interruption clear retry display state", async () => {
+  for (const outcome of ["success", "failure", "cancel", "interrupt"]) {
+    const { runtime, children } = runtimeFixture();
+    const handle = await runtime.start(startInput());
+    await settle();
+    children.launches[0].sink.activity({
+      kind: "retry", summary: "rate limited",
+      retry: { attempt: 1, maxAttempts: 3, retryAt: new Date(60_000).toISOString() },
+    });
+    await settle();
+    if (outcome === "success") children.launches[0].done.resolve(success("Done"));
+    if (outcome === "failure") children.launches[0].done.resolve(failure());
+    if (outcome === "cancel") await runtime.cancel(handle.runId);
+    if (outcome === "interrupt") await runtime.interruptAll();
+    await settle();
+    const child = runtime.get(handle.runId).children[0];
+    assert.notEqual(child.latestActivity.kind, "retry", outcome);
+    assert.equal(child.latestActivity.retry, undefined, outcome);
+  }
+});
+
+test("tool timing survives launch, heartbeats, guidance, and bounded projection", async () => {
+  let now = 1_000;
+  const activity = {
+    kind: "tool", summary: "Running: npm test",
+    tool: { callId: "a", startedAt: new Date(now).toISOString(), additionalCount: 0 },
+  };
+  const children = fakeChildren();
+  const start = children.adapter.start;
+  children.adapter.start = async (input, sink) => {
+    sink.activity(activity);
+    return start(input, sink);
+  };
+  const { runtime, repository } = runtimeFixture({ children, now: () => new Date(now) });
+  const handle = await runtime.start(startInput());
+  await settle();
+  const sink = children.launches[0].sink;
+  assert.deepEqual(runtime.get(handle.runId).children[0].latestActivity.tool, activity.tool);
+  now += 6_000;
+  sink.activity(activity);
+  await settle();
+  let current = runtime.get(handle.runId);
+  assert.equal(current.children[0].latestActivity.observedAt, new Date(now).toISOString());
+  assert.deepEqual(current.children[0].latestActivity.tool, activity.tool);
+  await runtime.steer(handle.runId, undefined, "Keep reviewing");
+  assert.deepEqual(runtime.get(handle.runId).children[0].latestActivity.tool, activity.tool);
+  const overlapping = { ...activity, tool: { ...activity.tool, additionalCount: 1 } };
+  sink.activity(overlapping);
+  await settle();
+  current = runtime.get(handle.runId);
+  assert.deepEqual(current.children[0].latestActivity.tool, overlapping.tool);
+  assert.deepEqual(projectRun(current).children[0].lastActivity.tool, overlapping.tool);
+  assert.deepEqual(repository.records.get(handle.runId).children[0].latestActivity.tool, overlapping.tool);
+  current.children[0].task = "task".repeat(1_000);
+  current.children[0].latestActivity.summary = "command".repeat(1_000);
+  current.children[0].latestActivity.tool.callId = "x".repeat(10_000);
+  const bounded = projectRun(current, 1_024);
+  assert.ok(Buffer.byteLength(JSON.stringify(bounded)) <= 1_024);
+  assert.ok(bounded.children[0].lastActivity.tool.callId.length <= 128);
+  const restored = runtimeFixture({ repository });
+  await restored.runtime.restore("parent-1");
+  assert.equal(restored.runtime.get(handle.runId).children[0].latestActivity.tool, undefined);
+  sink.activity({ kind: "thinking", summary: "Thinking" });
+  await settle();
+  assert.equal(runtime.get(handle.runId).children[0].latestActivity.tool, undefined);
+});
+
+test("tool metadata clears on terminal outcomes, attention, and interruption", async () => {
+  for (const outcome of ["success", "failure", "cancel", "interrupt", "attention"]) {
+    const { runtime, children } = runtimeFixture();
+    const handle = await runtime.start(startInput());
+    await settle();
+    const sink = children.launches[0].sink;
+    const activity = { kind: "tool", summary: "Using read", tool: { callId: "a", startedAt: new Date(0).toISOString(), additionalCount: 1 } };
+    sink.activity(activity);
+    await settle();
+    if (outcome === "success") children.launches[0].done.resolve(success("Done"));
+    if (outcome === "failure") children.launches[0].done.resolve(failure());
+    if (outcome === "attention") children.launches[0].done.resolve({ kind: "attention", request: { kind: "approval", question: "Proceed?" }, usage: success("").usage });
+    if (outcome === "cancel") await runtime.cancel(handle.runId);
+    if (outcome === "interrupt") await runtime.interruptAll();
+    await settle();
+    sink.activity(activity); // A late event cannot revive the tool timer.
+    await settle();
+    assert.equal(runtime.get(handle.runId).children[0].latestActivity.tool, undefined, outcome);
+  }
+});
+
 test("an eleven-child batch runs ten children and starts the eleventh in FIFO order", async () => {
   const { runtime, children } = runtimeFixture();
   const labels = Array.from({ length: 11 }, (_, index) => `task-${index + 1}`);

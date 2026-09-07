@@ -1,4 +1,5 @@
 import { open } from "node:fs/promises";
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
 	Box,
@@ -91,6 +92,89 @@ function isFinalState(state: DelegatedChild["state"]): boolean {
 	return state === "completed" || state === "failed" || state === "cancelled";
 }
 
+function isRetrying(child: DelegatedChild): boolean {
+	return (child.state === "running" || child.state === "starting") && child.latestActivity.kind === "retry";
+}
+
+function hasWorkingSpinner(child: DelegatedChild): boolean {
+	return (child.state === "starting" || child.state === "running") && !isRetrying(child);
+}
+
+function retryActivity(child: DelegatedChild, now: number, theme?: Theme): string | undefined {
+	if (!isRetrying(child)) return undefined;
+	const retry = child.latestActivity.retry;
+	let label = retry ? `Retry ${retry.attempt}/${retry.maxAttempts}` : "Retrying";
+	const retryAt = Date.parse(retry?.retryAt ?? "");
+	if (Number.isFinite(retryAt)) {
+		const seconds = Math.ceil(Math.max(0, retryAt - now) / 1000);
+		label += seconds > 0 ? ` in ${compactDuration(seconds * 1000)}` : " pending";
+	}
+	const reason = firstDisplayLine(child.latestActivity.summary);
+	const heading = theme ? theme.fg("warning", theme.bold(label)) : label;
+	return reason ? `${heading} · ${theme ? theme.fg("text", reason) : reason}` : heading;
+}
+
+function activeTool(child: DelegatedChild): NonNullable<DelegatedChild["latestActivity"]["tool"]> | undefined {
+	const tool = child.latestActivity.tool;
+	return (child.state === "starting" || child.state === "running") && child.latestActivity.kind === "tool"
+		&& tool && Number.isFinite(Date.parse(tool.startedAt)) ? tool : undefined;
+}
+
+function toolSummary(child: DelegatedChild): string | undefined {
+	const tool = activeTool(child);
+	if (!tool) return undefined;
+	const extra = tool.additionalCount > 0 ? ` +${tool.additionalCount} tool${tool.additionalCount === 1 ? "" : "s"}` : "";
+	return firstDisplayLine(child.latestActivity.summary) + extra;
+}
+
+function totalElapsed(run: DelegationRun, child: DelegatedChild, now: number): number {
+	const start = Date.parse(run.createdAt);
+	const end = isFinalState(child.state) ? terminalTimestamp(run, child) : now;
+	return Math.max(0, end - (Number.isFinite(start) ? start : end));
+}
+
+function modelThinking(child: DelegatedChild, theme: Theme, width: number, showProvider: boolean): string {
+	const reasoning = firstDisplayLine(child.resolved.reasoning);
+	const suffix = ` · ${reasoning}`;
+	const modelWidth = width - visibleWidth(suffix);
+	if (modelWidth < 4) return "";
+	const model = showProvider ? `${child.resolved.model.provider}/${child.resolved.model.id}` : child.resolved.model.id;
+	const text = `${stripVTControlCharacters(truncateToWidth(firstDisplayLine(model), modelWidth))}${suffix}`;
+	const level = child.resolved.reasoning as Parameters<Theme["getThinkingBorderColor"]>[0];
+	// ANSI faint keeps the thinking hue; theme.fg("dim") would replace it with grey.
+	return `\x1b[2m${theme.getThinkingBorderColor(level)(text)}\x1b[22m`;
+}
+
+function statusRow(
+	prefix: string, label: string, detail: string,
+	run: DelegationRun, child: DelegatedChild, width: number, theme: Theme, now = Date.now(), showProvider = false,
+): string {
+	const minimumLabelWidth = Math.max(1, Math.floor(width / 3));
+	const leading = `${prefix}${truncateToWidth(label, minimumLabelWidth)} · `;
+	const retry = retryActivity(child, now, theme);
+	const activity = retry ?? detail;
+	const content = leading + activity;
+	const tool = activeTool(child);
+	const toolTime = tool ? `tool ${compactDuration(now - Date.parse(tool.startedAt))}` : undefined;
+	let timing = `${toolTime ? `${toolTime} · ` : ""}total ${compactDuration(totalElapsed(run, child, now))}`;
+	// Keep the retry heading intact; otherwise reserve enough room to recognise the activity.
+	const retryHeadingWidth = retry ? visibleWidth(retryActivity(child, now)?.split(" · ")[0] ?? "") + 3 : undefined;
+	const minimumContent = retryHeadingWidth !== undefined
+		? visibleWidth(leading) + retryHeadingWidth
+		: Math.min(visibleWidth(content), 24, Math.floor(width * 0.6));
+	if (!isFinalState(child.state) && minimumContent + visibleWidth(timing) + 2 > width) timing = toolTime ?? "";
+	if (visibleWidth(timing) + 2 >= width) timing = "";
+	const contentWidth = timing ? width - visibleWidth(timing) - 2 : width;
+	const activityWidth = retryHeadingWidth ?? Math.min(visibleWidth(activity), 24);
+	const modelWidth = contentWidth - visibleWidth(prefix) - Math.min(visibleWidth(label), minimumLabelWidth) - activityWidth - 6;
+	const configuration = modelThinking(child, theme, modelWidth, showProvider);
+	const description = configuration ? `${configuration} · ${activity}` : activity;
+	// Give spare columns back to the label without displacing activity or timing.
+	const labelWidth = Math.max(minimumLabelWidth, contentWidth - visibleWidth(prefix) - 3 - visibleWidth(description));
+	const fitted = truncateToWidth(`${prefix}${truncateToWidth(label, labelWidth)} · ${description}`, contentWidth);
+	return timing ? `${padAnsi(fitted, contentWidth)}  ${theme.fg("dim", timing)}` : fitted;
+}
+
 export function describeLatestActivity(
 	run: DelegationRun,
 	now = Date.now(),
@@ -99,6 +183,10 @@ export function describeLatestActivity(
 ): string {
 	const child = run.children[childIndex];
 	if (!child) return "No child activity";
+	const retry = retryActivity(child, now);
+	if (retry) return retry;
+	const tool = activeTool(child);
+	if (tool) return `${toolSummary(child)} · tool ${compactDuration(now - Date.parse(tool.startedAt))}`;
 	const observedAt = Date.parse(child.latestActivity.observedAt);
 	const age = Number.isFinite(observedAt) ? Math.max(0, now - observedAt) : 0;
 	const active = child.state === "starting" || child.state === "running";
@@ -111,17 +199,23 @@ export function describeLatestActivity(
 }
 
 export function stateIcon(
-	state: DelegatedChild["state"],
+	childOrState: DelegatedChild | DelegatedChild["state"],
 	theme: Theme,
 	animated = true,
 	now = Date.now(),
 	frameMs = SPINNER_FRAME_MS,
 ): string {
-	if (state === "running" || state === "starting" || state === "queued") {
+	const child = typeof childOrState === "string" ? undefined : childOrState;
+	const state = typeof childOrState === "string" ? childOrState : childOrState.state;
+	if (child && isRetrying(child)) return theme.fg("warning", "↻");
+	if (state === "queued") return theme.fg("muted", "○");
+	if (state === "running" || state === "starting") {
 		const frame = animated
 			? SPINNER[Math.floor(now / frameMs) % SPINNER.length] ?? "⠋"
 			: "◐";
-		return theme.fg(state === "queued" ? "muted" : "warning", frame);
+		if (!child) return theme.fg("muted", frame);
+		const level = child.resolved.reasoning as Parameters<Theme["getThinkingBorderColor"]>[0];
+		return theme.getThinkingBorderColor(level)(frame);
 	}
 	if (state === "completed") return theme.fg("success", "✓");
 	if (state === "failed") return theme.fg("error", "✗");
@@ -154,14 +248,16 @@ function terminalTimestamp(run: DelegationRun, child: DelegatedChild): number {
 	return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
-function pinnedPriority(state: DelegatedChild["state"]): number {
+function pinnedPriority(child: DelegatedChild): number {
+	const { state } = child;
 	if (state === "needs_attention") return 0;
 	if (state === "failed") return 1;
 	if (state === "interrupted") return 2;
-	if (state === "running" || state === "starting") return 3;
-	if (state === "queued") return 4;
-	if (state === "completed") return 5;
-	return 6;
+	if (isRetrying(child)) return 3;
+	if (state === "running" || state === "starting") return 4;
+	if (state === "queued") return 5;
+	if (state === "completed") return 6;
+	return 7;
 }
 
 function firstDisplayLine(value: string): string {
@@ -193,10 +289,11 @@ function pinnedStateSummary(child: DelegatedChild, now: number, staleAfterMs: nu
 function statusCounts(rows: PinnedChildRow[]): string[] {
 	const counts = new Map<string, number>();
 	for (const { child } of rows) {
-		const label = child.state === "starting" || child.state === "running" ? "running" : child.state.replace("_", " ");
+		const label = isRetrying(child) ? "retrying"
+			: child.state === "starting" || child.state === "running" ? "running" : child.state.replace("_", " ");
 		counts.set(label, (counts.get(label) ?? 0) + 1);
 	}
-	const order = ["needs attention", "failed", "interrupted", "running", "queued", "completed", "cancelled"];
+	const order = ["needs attention", "failed", "interrupted", "retrying", "running", "queued", "completed", "cancelled"];
 	return order.flatMap((label) => {
 		const count = counts.get(label);
 		return count ? [`${count} ${label}`] : [];
@@ -217,6 +314,7 @@ export class PinnedAgentStatusComponent implements Component {
 	private readonly dismissedTerminal = new Set<string>();
 	private readonly unsubscribe: () => void;
 	private animationTimer: ReturnType<typeof setInterval> | undefined;
+	private animationIntervalMs: number | undefined;
 	private expiryTimer: ReturnType<typeof setTimeout> | undefined;
 	private disposed = false;
 
@@ -251,28 +349,29 @@ export class PinnedAgentStatusComponent implements Component {
 		const now = this.now();
 		const rows = this.visibleRows(now);
 		if (rows.length === 0) return [];
-		const longestElapsed = Math.max(...rows.map(({ run, child }) => this.elapsedFor(run, child, now)));
+		const longestElapsed = Math.max(...rows.map(({ run, child }) => totalElapsed(run, child, now)));
 		const counts = statusCounts(rows);
-		const header = this.theme.bold(`Agents · ${counts.join(" · ")} · ${compactDuration(longestElapsed)}`);
+		const header = this.theme.bold(`Agents · ${counts.join(" · ")} · total ${compactDuration(longestElapsed)}`);
 		if (safeWidth < this.narrowWidth) {
 			const compactCounts = counts.map((count) => count.replace("needs attention", "attention").replace("completed", "done"));
-			const compactHeader = this.theme.bold(`Agents · ${compactCounts.join(" · ")} · ${compactDuration(longestElapsed)}`);
+			const compactHeader = this.theme.bold(`Agents · ${compactCounts.join(" · ")} · total ${compactDuration(longestElapsed)}`);
 			const suffix = this.theme.fg("dim", " · /agents");
 			if (safeWidth <= visibleWidth(suffix)) return [truncateToWidth(this.theme.fg("dim", "/agents"), safeWidth)];
 			return [`${truncateToWidth(compactHeader, safeWidth - visibleWidth(suffix))}${suffix}`];
 		}
 
-		const prioritized = [...rows].sort((left, right) => pinnedPriority(left.child.state) - pinnedPriority(right.child.state) || left.order - right.order);
+		const prioritized = [...rows].sort((left, right) => pinnedPriority(left.child) - pinnedPriority(right.child) || left.order - right.order);
 		const visible = prioritized.slice(0, this.maxRows);
 		const lines = [header];
 		for (const { run, child } of visible) {
-			const icon = stateIcon(child.state, this.theme, true, now, this.spinnerFrameMs);
+			const icon = stateIcon(child, this.theme, true, now, this.spinnerFrameMs);
 			const label = this.theme.fg("accent", firstDisplayLine(child.label));
+			const tool = toolSummary(child);
 			const detail = this.theme.fg(
-				child.state === "failed" ? "error" : child.state === "needs_attention" || child.state === "interrupted" ? "warning" : "dim",
-				`${firstDisplayLine(pinnedStateSummary(child, now, this.staleAfterMs))} · ${compactDuration(this.elapsedFor(run, child, now))}`,
+				tool ? "text" : child.state === "failed" ? "error" : child.state === "needs_attention" || child.state === "interrupted" ? "warning" : "dim",
+				tool ?? firstDisplayLine(pinnedStateSummary(child, now, this.staleAfterMs)),
 			);
-			lines.push(`${icon} ${label} · ${detail}`);
+			lines.push(statusRow(`${icon} `, label, detail, run, child, safeWidth, this.theme, now));
 		}
 		if (prioritized.length > visible.length) {
 			lines.push(this.theme.fg("dim", `… ${prioritized.length - visible.length} more · /agents`));
@@ -331,18 +430,19 @@ export class PinnedAgentStatusComponent implements Component {
 	}
 
 	private syncAnimationTimer(): void {
-		const active = this.runtime.list().some((run) => run.children.some((child) =>
-			child.state === "queued" || child.state === "starting" || child.state === "running",
-		));
-		if (!active || this.disposed) {
-			if (this.animationTimer) clearInterval(this.animationTimer);
-			this.animationTimer = undefined;
-			return;
-		}
-		if (this.animationTimer) return;
+		const children = this.runtime.list().flatMap((run) => run.children);
+		const active = children.some((child) => !isFinalState(child.state));
+		const interval = children.some(hasWorkingSpinner) ? this.spinnerFrameMs : 1_000;
+		if (this.animationTimer && active && !this.disposed && interval === this.animationIntervalMs) return;
+		if (this.animationTimer) clearInterval(this.animationTimer);
+		this.animationTimer = undefined;
+		this.animationIntervalMs = undefined;
+		if (!active || this.disposed) return;
+		// Static retry/parked rows only change once per second; don't repaint them at spinner speed.
+		this.animationIntervalMs = interval;
 		this.animationTimer = setInterval(() => {
 			if (!this.disposed) this.tui.requestRender();
-		}, this.spinnerFrameMs);
+		}, interval);
 		this.animationTimer.unref?.();
 	}
 
@@ -359,18 +459,6 @@ export class PinnedAgentStatusComponent implements Component {
 			this.scheduleTerminalExpiry();
 		}, Math.max(0, nextExpiry - this.now()));
 		this.expiryTimer.unref?.();
-	}
-
-	private elapsedFor(run: DelegationRun, child: DelegatedChild, now: number): number {
-		const startedAt = Date.parse(run.createdAt);
-		const paused = child.state === "needs_attention" || child.state === "interrupted";
-		const pausedAt = Date.parse(child.latestActivity.observedAt);
-		const end = isFinalState(child.state)
-			? terminalTimestamp(run, child)
-			: paused && Number.isFinite(pausedAt)
-				? pausedAt
-				: now;
-		return Math.max(0, end - (Number.isFinite(startedAt) ? startedAt : end));
 	}
 }
 
@@ -458,6 +546,21 @@ export async function readChildHistory(sessionFile: string): Promise<ChildHistor
 function padAnsi(value: string, width: number): string {
 	const truncated = truncateToWidth(value, Math.max(1, width));
 	return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
+}
+
+function fitFooterHints(width: number, alternatives: string[], exitHint: string): string {
+	return [...alternatives, exitHint].find((text) => visibleWidth(text) <= width)
+		?? truncateToWidth("Esc", Math.max(1, width), "");
+}
+
+function completionProblem(child: RunView["children"][number]): string | undefined {
+	if (child.state === "failed" || child.error) return "failed";
+	if (child.state === "needs_attention") return "awaiting attention";
+	if (child.state === "interrupted") return "interrupted";
+	if (child.state === "cancelled") return "cancelled";
+	if (child.workspace?.state === "conflict") return "workspace conflict";
+	if (child.workspace?.cleanupError) return "cleanup failed";
+	return undefined;
 }
 
 function boundedDisplay(value: string, maxChars = 16_000): string {
@@ -604,6 +707,7 @@ export class AgentDeskOverlayComponent implements Component {
 	private readonly resumeErrors = new Map<string, string>();
 	private selectedChildId: string | undefined;
 	private selectedIndexHint = 0;
+	private ticks = 0;
 	private detail: RunOverlayComponent | undefined;
 	private disposed = false;
 
@@ -633,8 +737,9 @@ export class AgentDeskOverlayComponent implements Component {
 		});
 		this.timer = setInterval(() => {
 			if (this.disposed) return;
-			const selected = this.selectedAssignment();
-			if (selected && (selected.child.state === "queued" || selected.child.state === "starting" || selected.child.state === "running")) {
+			this.ticks++;
+			const assignments = this.assignments();
+			if (assignments.some(({ child }) => hasWorkingSpinner(child) || (!isFinalState(child.state) && this.ticks % 5 === 0))) {
 				this.tui.requestRender();
 			}
 		}, SPINNER_FRAME_MS);
@@ -686,21 +791,27 @@ export class AgentDeskOverlayComponent implements Component {
 				truncateToWidth(header, innerWidth),
 				this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 				this.theme.fg("dim", "No agent assignments in this session."),
-				this.theme.fg("dim", "Esc close"),
+				this.theme.fg("dim", fitFooterHints(innerWidth, [], "Esc close")),
 			], safeWidth, this.theme);
 		}
 
 		const bodyHeight = this.bodyHeight();
-		const display = this.displayLines(assignments);
+		const display = this.displayLines(assignments, innerWidth);
 		const selectedLine = Math.max(0, display.findIndex((line) => line.childId === selected.child.id));
 		const maxStart = Math.max(0, display.length - bodyHeight);
 		const start = Math.min(Math.max(0, selectedLine - Math.floor(bodyHeight / 2)), maxStart);
 		const visible = this.maxLines() < 8
-			? [this.assignmentLine(selected, true)]
+			? [this.assignmentLine(selected, true, innerWidth)]
 			: display.slice(start, start + bodyHeight).map(({ text }) => text);
 		const padded = Array.from({ length: bodyHeight }, (_, index) => visible[index] ?? "");
-		const resume = selected.child.state === "interrupted" && !this.resumePending.has(selected.child.id) ? " · r/R resume" : "";
-		const footer = this.theme.fg("dim", `↑/↓ j/k select · Enter live status${resume} · Esc close`);
+		const canResume = selected.child.state === "interrupted" && !this.resumePending.has(selected.child.id);
+		const resume = canResume ? " · r/R resume" : "";
+		const compactResume = canResume ? " · r resume" : "";
+		const footer = this.theme.fg("dim", fitFooterHints(innerWidth, [
+			`↑/↓ j/k select · Enter live status${resume} · Esc close`,
+			`↑/↓ select · Enter view${compactResume} · Esc close`,
+			`Enter view${compactResume} · Esc close`,
+		], "Esc close"));
 		return framedOverlay([
 			truncateToWidth(header, innerWidth),
 			this.theme.fg("borderMuted", "─".repeat(innerWidth)),
@@ -760,7 +871,7 @@ export class AgentDeskOverlayComponent implements Component {
 		return index >= 0 ? assignments[index] : undefined;
 	}
 
-	private displayLines(assignments: DeskAssignment[]): DeskDisplayLine[] {
+	private displayLines(assignments: DeskAssignment[], width: number): DeskDisplayLine[] {
 		const lines: DeskDisplayLine[] = [];
 		for (const { section, label } of DESK_SECTIONS) {
 			const sectionAssignments = assignments.filter((assignment) => assignment.section === section);
@@ -768,16 +879,16 @@ export class AgentDeskOverlayComponent implements Component {
 			if (lines.length > 0) lines.push({ text: "" });
 			lines.push({ text: this.theme.fg("dim", label) });
 			for (const assignment of sectionAssignments) {
-				lines.push({ text: this.assignmentLine(assignment, assignment.child.id === this.selectedChildId), childId: assignment.child.id });
+				lines.push({ text: this.assignmentLine(assignment, assignment.child.id === this.selectedChildId, width), childId: assignment.child.id });
 			}
 		}
 		return lines;
 	}
 
-	private assignmentLine(assignment: DeskAssignment, selected: boolean): string {
-		const { child } = assignment;
+	private assignmentLine(assignment: DeskAssignment, selected: boolean, width: number): string {
+		const { run, child } = assignment;
 		const marker = selected ? this.theme.fg("accent", "›") : " ";
-		const label = selected ? this.theme.fg("accent", child.label) : child.label;
+		const label = selected ? this.theme.fg("accent", firstDisplayLine(child.label)) : firstDisplayLine(child.label);
 		const pending = this.resumePending.has(child.id) && child.state === "interrupted";
 		const error = this.resumeErrors.get(child.id);
 		const summary = pending
@@ -786,8 +897,9 @@ export class AgentDeskOverlayComponent implements Component {
 				? `Interrupted · ${error}`
 				: deskAssignmentSummary(assignment);
 		const color = child.state === "failed" ? "error" : child.state === "interrupted" || child.state === "needs_attention" ? "warning" : "dim";
-		const model = this.theme.fg("dim", child.resolved.model.id);
-		return `${marker} ${stateIcon(child.state, this.theme)} ${label} · ${model} · ${this.theme.fg(color, summary)}`;
+		const tool = toolSummary(child);
+		const detail = tool ? this.theme.fg("text", tool) : this.theme.fg(color, firstDisplayLine(summary));
+		return statusRow(`${marker} ${stateIcon(child, this.theme)} `, label, detail, run, child, width, this.theme);
 	}
 
 	private openDetail(): void {
@@ -890,7 +1002,7 @@ export class RunOverlayComponent implements Component {
 			if (this.disposed) return;
 			this.ticks++;
 			const run = this.runtime.get(this.runId);
-			if (run?.children.some((child) => child.state === "queued" || child.state === "starting" || child.state === "running")) {
+			if (run?.children.some((child) => hasWorkingSpinner(child) || (!isFinalState(child.state) && this.ticks % 5 === 0))) {
 				this.tui.requestRender();
 			}
 			const selected = run?.children[this.selected];
@@ -1003,11 +1115,11 @@ export class RunOverlayComponent implements Component {
 				? this.visibleTranscript(allTranscript, availableTranscriptLines)
 				: [];
 			const footer = availableTranscriptLines > 0
-				? this.footerHints(allTranscript.length > availableTranscriptLines)
-				: this.theme.fg("dim", "Compact detail · Esc agents");
+				? this.footerHints(allTranscript.length > availableTranscriptLines, innerWidth)
+				: this.theme.fg("dim", fitFooterHints(innerWidth, ["Compact detail · Esc agents"], "Esc agents"));
 			return framedOverlay([
 				truncateToWidth(header, innerWidth),
-				truncateToWidth(this.childHeader(run, child), innerWidth),
+				truncateToWidth(this.childHeader(run, child, innerWidth), innerWidth),
 				...transcript,
 				truncateToWidth(footer, innerWidth),
 			], safeWidth, this.theme);
@@ -1018,10 +1130,10 @@ export class RunOverlayComponent implements Component {
 			const transcript = this.transcriptLines(run, child, innerWidth);
 			const visibleTranscript = this.visibleTranscript(transcript, transcriptHeight);
 			const paddedTranscript = Array.from({ length: transcriptHeight }, (_, index) => visibleTranscript[index] ?? "");
-			const hints = this.footerHints(transcript.length > transcriptHeight);
+			const hints = this.footerHints(transcript.length > transcriptHeight, innerWidth);
 			return framedOverlay([
 				truncateToWidth(header, innerWidth),
-				truncateToWidth(this.childHeader(run, child), innerWidth),
+				truncateToWidth(this.childHeader(run, child, innerWidth), innerWidth),
 				this.theme.fg("borderMuted", "─".repeat(innerWidth)),
 				...paddedTranscript,
 				truncateToWidth(hints, innerWidth),
@@ -1033,7 +1145,7 @@ export class RunOverlayComponent implements Component {
 		const transcriptHeight = Math.max(1, bodyHeight - 1);
 		const transcript = this.transcriptLines(run, child, rightWidth);
 		const visibleTranscript = this.visibleTranscript(transcript, transcriptHeight);
-		const hints = this.footerHints(transcript.length > transcriptHeight);
+		const hints = this.footerHints(transcript.length > transcriptHeight, innerWidth);
 		const indexOffset = Math.min(
 			Math.max(0, this.selected - bodyHeight + 1),
 			Math.max(0, run.children.length - bodyHeight),
@@ -1043,11 +1155,11 @@ export class RunOverlayComponent implements Component {
 			const marker = index === this.selected
 				? this.theme.fg(this.transcriptFocused ? "muted" : "accent", this.transcriptFocused ? "•" : "›")
 				: " ";
-			return `${marker} ${stateIcon(candidate.state, this.theme)} ${index + 1}. ${candidate.label} ${this.theme.fg("dim", candidate.state)}`;
+			return `${marker} ${stateIcon(candidate, this.theme)} ${index + 1}. ${candidate.label} ${this.theme.fg("dim", candidate.state)}`;
 		});
 		const body: string[] = [];
 		for (let index = 0; index < bodyHeight; index++) {
-			const right = index === 0 ? this.childHeader(run, child) : visibleTranscript[index - 1] ?? "";
+			const right = index === 0 ? this.childHeader(run, child, rightWidth) : visibleTranscript[index - 1] ?? "";
 			body.push(`${padAnsi(left[index] ?? "", leftWidth)} ${this.theme.fg(this.transcriptFocused ? "borderAccent" : "borderMuted", "│")} ${truncateToWidth(right, rightWidth)}`);
 		}
 		return framedOverlay([
@@ -1080,23 +1192,25 @@ export class RunOverlayComponent implements Component {
 		return Math.max(1, this.bodyHeight() - 1);
 	}
 
-	private footerHints(scrollable: boolean): string {
-		const text = this.options.detailOnly
-			? scrollable
-				? "↑/↓ j/k scroll · PgUp/PgDn page · End live · Enter detail · Esc agents"
-				: "All transcript lines visible · Enter detail · Esc agents"
-			: !this.transcriptFocused
-				? "↑/↓ j/k select · Enter transcript · Esc close"
-				: scrollable
-					? "↑/↓ j/k scroll · PgUp/PgDn page · End live · Enter detail · Esc agents"
-					: "All transcript lines visible · Enter detail · Esc agents";
-		return this.theme.fg("dim", text);
+	private footerHints(scrollable: boolean, width: number): string {
+		const selecting = !this.options.detailOnly && !this.transcriptFocused;
+		const alternatives = selecting
+			? ["↑/↓ j/k select · Enter transcript · Esc close", "↑/↓ select · Enter view · Esc close", "Enter view · Esc close"]
+			: scrollable
+				? [
+					"↑/↓ j/k scroll · PgUp/PgDn page · End live · Enter detail · Esc agents",
+					"↑/↓ scroll · End live · Esc agents",
+					"End live · Esc agents",
+				]
+				: ["All transcript lines visible · Enter detail · Esc agents", "Enter detail · Esc agents"];
+		return this.theme.fg("dim", fitFooterHints(width, alternatives, selecting ? "Esc close" : "Esc agents"));
 	}
 
-	private childHeader(_run: DelegationRun, child: DelegatedChild): string {
+	private childHeader(run: DelegationRun, child: DelegatedChild, width: number): string {
 		const focus = this.transcriptFocused ? `${this.theme.fg("accent", "▶")} ` : "";
-		const route = `${child.resolved.model.provider}/${child.resolved.model.id} · ${child.resolved.reasoning}`;
-		return `${focus}${stateIcon(child.state, this.theme)} ${this.theme.bold(child.label)} ${this.theme.fg("dim", `${child.state} · ${route}`)}`;
+		const tool = toolSummary(child);
+		const detail = tool ? this.theme.fg("text", tool) : this.theme.fg("dim", child.state);
+		return statusRow(`${focus}${stateIcon(child, this.theme)} `, this.theme.bold(firstDisplayLine(child.label)), detail, run, child, width, this.theme, Date.now(), true);
 	}
 
 	private transcriptLines(run: DelegationRun, child: DelegatedChild, width: number): string[] {
@@ -1134,9 +1248,9 @@ export class RunOverlayComponent implements Component {
 			if (lines.length > 0) lines.push("");
 			lines.push(...workspaceLines.flatMap((line) => wrapTextWithAnsi(line, width)));
 		}
-		if (child.state === "queued" || child.state === "starting" || child.state === "running") {
+		if (!isRetrying(child) && !activeTool(child) && (child.state === "queued" || child.state === "starting" || child.state === "running")) {
 			if (lines.length > 0) lines.push("");
-			lines.push(this.theme.fg("dim", `${stateIcon(child.state, this.theme)} ${describeLatestActivity(run, Date.now(), 10_000, this.selected)}`));
+			lines.push(`${stateIcon(child, this.theme)} ${this.theme.fg("dim", describeLatestActivity(run, Date.now(), 10_000, this.selected))}`);
 		}
 		if (run.delivery.state === "held" && isFinalState(child.state)) {
 			if (lines.length > 0) lines.push("");
@@ -1207,15 +1321,18 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 		},
 		renderCompletion(view, expanded, theme) {
 			let text = `${view.status === "completed" ? theme.fg("success", "✓") : theme.fg("warning", view.status === "needs_attention" ? "?" : "◐")} `;
-			text += `${theme.bold(`${view.children.length + (view.omittedChildren ?? 0)} agent${view.children.length + (view.omittedChildren ?? 0) === 1 ? "" : "s"}`)} ${theme.fg("dim", view.status)}`;
-			const visibleChildren = expanded ? view.children : view.children.slice(0, 6);
+			text += `${theme.bold(`${view.children.length + (view.omittedChildren ?? 0)} agent${view.children.length + (view.omittedChildren ?? 0) === 1 ? "" : "s"}`)} ${theme.fg(view.status === "completed" ? "success" : "dim", view.status)}`;
+			const ordered = expanded ? view.children : [...view.children].sort((left, right) =>
+				Number(!!completionProblem(right)) - Number(!!completionProblem(left)),
+			);
+			const visibleChildren = expanded ? ordered : ordered.slice(0, 6);
 			for (const child of visibleChildren) {
-				text += `\n  ${theme.fg("accent", child.label)} ${theme.fg("dim", child.state)}`;
+				text += `\n  ${theme.fg("accent", child.label)} ${theme.fg(child.state === "completed" ? "success" : "dim", child.state)}`;
 				if (child.attention) text += `\n  ${theme.fg("warning", `?  ${child.attention.question}`)}`;
 				if (child.result) {
 					const value = resultText(child.result, expanded);
 					const rendered = expanded ? value : value.split("\n", 1)[0]?.trim();
-					if (rendered) text += `\n  ${theme.fg("dim", `⎿  ${rendered}`)}`;
+					if (rendered) text += `\n  ${theme.fg("dim", "⎿")}  ${theme.fg("text", rendered)}`;
 				}
 				if (child.error) text += `\n  ${theme.fg("error", child.error.message)}`;
 				if (child.workspace) {
@@ -1231,12 +1348,22 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 					}
 				}
 			}
-			const hidden = view.children.length - visibleChildren.length + (view.omittedChildren ?? 0);
-			if (hidden > 0) text += `\n  ${theme.fg("dim", `… ${hidden} more · /agents`)}`;
+			const hiddenChildren = ordered.slice(visibleChildren.length);
+			const hidden = hiddenChildren.length + (view.omittedChildren ?? 0);
+			if (hidden > 0) {
+				const problems = new Map<string, number>();
+				for (const child of hiddenChildren) {
+					const problem = completionProblem(child);
+					if (problem) problems.set(problem, (problems.get(problem) ?? 0) + 1);
+				}
+				const summary = [...problems].map(([problem, count]) => `${count} ${problem}`).join(" · ");
+				const warning = summary ? ` · ${theme.fg("warning", `including ${summary}`)}` : "";
+				text += `\n  ${theme.fg("dim", `… ${hidden} more`)}${warning}${theme.fg("dim", " · ")}${theme.fg("accent", "/agents")}`;
+			}
 			if (expanded) {
 				text += `\n${theme.fg("dim", `Run: ${view.runId}`)}`;
 				text += `\n${theme.fg("dim", `Record: ${view.recordRef}`)}`;
-			} else if (hidden === 0) text += `\n  ${theme.fg("dim", "Open: /agents")}`;
+			} else if (hidden === 0) text += `\n  ${theme.fg("muted", "Open: ")}${theme.fg("accent", "/agents")}`;
 			return new Text(text, 0, 0);
 		},
 		async openDesk(target, context, actions) {

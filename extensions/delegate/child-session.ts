@@ -16,6 +16,7 @@ import { Type, type TSchema } from "typebox";
 import { Check } from "typebox/value";
 import {
 	childWorkspaceCwd,
+	type Activity,
 	type AttentionKind,
 	type ChildOutcome,
 	type ChildOutputContract,
@@ -126,31 +127,82 @@ function summarizeTool(name: string, args: unknown): string {
 	return `Using ${name}`;
 }
 
-function emitActivity(event: AgentSessionEvent, sink: Parameters<ChildSessionAdapter["start"]>[1]): void {
-	switch (event.type) {
-		case "agent_start":
-		case "turn_start":
-			sink.activity({ kind: "thinking", summary: "Thinking" });
-			return;
-		case "message_update":
-			if (event.assistantMessageEvent.type === "thinking_delta") {
-				sink.activity({ kind: "thinking", summary: "Thinking" });
-			} else if (event.assistantMessageEvent.type === "text_delta") {
-				sink.activity({ kind: "message", summary: "Writing the response" });
-			}
-			return;
-		case "tool_execution_start":
-			sink.activity({ kind: "tool", summary: summarizeTool(event.toolName, event.args) });
-			return;
-		case "tool_execution_end":
+export function createActivityEmitter(
+	sink: Parameters<ChildSessionAdapter["start"]>[1],
+	now = Date.now,
+): (event: AgentSessionEvent) => void {
+	// Map order keeps the oldest remaining call first, even when tools finish out of order.
+	// Elapsed time starts at the SDK start event (including preparation), not at a heartbeat.
+	const tools = new Map<string, { summary: string; startedAt: string }>();
+	const publish = (fallback?: Omit<Activity, "observedAt">): void => {
+		const oldest = tools.entries().next().value;
+		if (oldest) {
+			const [callId, tool] = oldest;
 			sink.activity({
-				kind: event.isError ? "waiting" : "thinking",
-				summary: event.isError ? `${event.toolName} failed` : `${event.toolName} finished`,
+				kind: "tool", summary: tool.summary,
+				tool: { callId, startedAt: tool.startedAt, additionalCount: tools.size - 1 },
 			});
-			return;
-		default:
-			return;
-	}
+		} else if (fallback) sink.activity(fallback);
+	};
+	return (event) => {
+		switch (event.type) {
+			case "auto_retry_start":
+				tools.clear();
+				publish({
+					kind: "retry",
+					summary: event.errorMessage,
+					retry: {
+						attempt: event.attempt,
+						maxAttempts: event.maxAttempts,
+						retryAt: new Date(now() + event.delayMs).toISOString(),
+					},
+				});
+				return;
+			case "auto_retry_end":
+				// This ends the retry sequence, not just its sleep. Turn activity clears the wait sooner.
+				publish({
+					kind: event.success ? "thinking" : "waiting",
+					summary: event.success ? "Retry succeeded" : (event.finalError || "Retry failed").replace(/\s+/g, " ").trim(),
+				});
+				return;
+			case "agent_start":
+			case "turn_start":
+				tools.clear();
+				publish({ kind: "thinking", summary: "Thinking" });
+				return;
+			case "agent_end":
+				if (tools.size > 0) {
+					tools.clear();
+					publish({ kind: "waiting", summary: "Turn finished" });
+				}
+				return;
+			case "message_update":
+				if (event.assistantMessageEvent.type === "thinking_delta") {
+					publish({ kind: "thinking", summary: "Thinking" });
+				} else if (event.assistantMessageEvent.type === "text_delta") {
+					publish({ kind: "message", summary: "Writing the response" });
+				}
+				return;
+			case "tool_execution_start":
+				if (!tools.has(event.toolCallId)) {
+					tools.set(event.toolCallId, { summary: summarizeTool(event.toolName, event.args), startedAt: new Date(now()).toISOString() });
+				}
+				publish();
+				return;
+			case "tool_execution_update":
+				publish();
+				return;
+			case "tool_execution_end":
+				if (!tools.delete(event.toolCallId)) return;
+				publish({
+					kind: event.isError ? "waiting" : "thinking",
+					summary: event.isError ? `${event.toolName} failed` : `${event.toolName} finished`,
+				});
+				return;
+			default:
+				return;
+		}
+	};
 }
 
 function normalizeNames(values: readonly string[]): string[] {
@@ -365,7 +417,7 @@ async function createChild(
 	}
 
 	let disposed = false;
-	const unsubscribe = session.subscribe((event) => emitActivity(event, sink));
+	const unsubscribe = session.subscribe(createActivityEmitter(sink));
 	const onAbort = () => void session.abort();
 	signal.addEventListener("abort", onAbort, { once: true });
 	if (signal.aborted) {
