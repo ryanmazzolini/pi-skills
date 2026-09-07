@@ -77,12 +77,17 @@ function textEvent(
 	text: string,
 	start: number,
 	end: number,
+	originalRange?: { start: number; total: number },
 ): SessionPageEvent {
 	return Object.freeze({
 		entryId,
 		kind,
 		text: text.slice(start, end),
-		textRange: Object.freeze({ start, end, total: text.length }),
+		textRange: Object.freeze({
+			start: (originalRange?.start ?? 0) + start,
+			end: (originalRange?.start ?? 0) + end,
+			total: originalRange?.total ?? text.length,
+		}),
 	});
 }
 
@@ -101,18 +106,19 @@ function fittingTextSuffix(
 	end: number,
 	selected: readonly SessionPageEvent[],
 	maximumBytes: number,
+	originalRange?: { start: number; total: number },
 ): SessionPageEvent | undefined {
 	let low = 0;
 	let high = end;
 	while (low < high) {
 		const middle = Math.floor((low + high) / 2);
 		const start = nextCharacterBoundary(text, middle);
-		const candidate = textEvent(entryId, kind, text, start, end);
+		const candidate = textEvent(entryId, kind, text, start, end, originalRange);
 		if (bytes([candidate, ...selected]) <= maximumBytes) high = middle;
 		else low = middle + 1;
 	}
 	const start = nextCharacterBoundary(text, low);
-	return start < end ? textEvent(entryId, kind, text, start, end) : undefined;
+	return start < end ? textEvent(entryId, kind, text, start, end, originalRange) : undefined;
 }
 
 function verifyContinuation(snapshot: SessionBranchSnapshot, position: PagePosition): void {
@@ -120,7 +126,7 @@ function verifyContinuation(snapshot: SessionBranchSnapshot, position: PagePosit
 	const previous = position.fileState;
 	const boundary = snapshot.skippedLeaf ?? (snapshot.branch[0] && {
 		id: snapshot.branch[0].id,
-		digest: sessionEntryDigest(snapshot.branch[0].entry),
+		digest: snapshot.branch[0].digest ?? sessionEntryDigest(snapshot.branch[0].entry),
 	});
 	// Ordinary appends are allowed. This pins ancestry, not an immutable file copy.
 	// Each read must still be stable, and the exact previously returned boundary must survive.
@@ -146,8 +152,8 @@ function makePage(
 		const event = snapshot.tail.events[index]!;
 		const entryId = snapshot.eventEntryIds[index]!;
 		if (event.kind === "user" || event.kind === "assistant") {
-			const end = position?.entryId === entryId ? position.textEnd : event.text.length;
-			const part = fittingTextSuffix(entryId, event.kind, event.text, end, selected, input.maxEventBytes);
+			const originalRange = snapshot.branch.find((entry) => entry.id === entryId)?.textRange;
+			const part = fittingTextSuffix(entryId, event.kind, event.text, event.text.length, selected, input.maxEventBytes, originalRange);
 			if (!part) break;
 			selected.unshift(part);
 			if (part.kind === "user" || part.kind === "assistant") {
@@ -174,7 +180,7 @@ function makePage(
 				source,
 				fileState: snapshot.fileState,
 				entryId: boundary.id,
-				entryDigest: sessionEntryDigest(boundary.entry),
+				entryDigest: boundary.digest ?? sessionEntryDigest(boundary.entry),
 				textEnd,
 			});
 		}
@@ -212,7 +218,10 @@ export async function openSessionPage(input: OpenSessionPageInput): Promise<Sess
 		limit: input.limit,
 		...(input.scanBytes === undefined ? {} : { scanBytes: input.scanBytes }),
 		...(input.signal === undefined ? {} : { signal: input.signal }),
-	}, position?.textEnd === 0);
+	}, {
+		textBytes: input.maxEventBytes,
+		...(position === undefined ? {} : { textEnd: position.textEnd }),
+	});
 	try {
 		const snapshot = makePage(input, source, handle.snapshot, position);
 		handle.verifyStable();

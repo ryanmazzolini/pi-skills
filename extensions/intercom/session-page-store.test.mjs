@@ -64,6 +64,39 @@ test("returns source citations and an opaque token, then continues without resol
 	assert.equal(f.reads(), 1);
 });
 
+test("public page envelopes reconstruct eight large messages with the default limits", async (t) => {
+	const f = fixture(t);
+	const records = Array.from({ length: 8 }, (_, index) => ({
+		type: "message", id: `u${index}`, parentId: index === 0 ? null : `u${index - 1}`, timestamp: TS,
+		message: { role: "user", content: String(index).repeat(70_000) },
+	}));
+	writeFileSync(f.source.fileLocator, [
+		{ type: "session", version: 3, id: f.source.piSessionId, timestamp: TS, cwd: "/fixture" }, ...records,
+	].map((record) => JSON.stringify(record)).join("\n") + "\n");
+	f.source.activeLeafId = records.at(-1).id;
+	const store = new SessionPageStore();
+	const events = [];
+	let request = f.request;
+	for (let index = 0; ; index++) {
+		assert.ok(index < 100);
+		const result = decode(await store.read(request, { limit: 8, projectionBytes: 49152 }), 49152);
+		events.push(...result.events);
+		if (result.nextCursor === null) break;
+		request = { cursor: result.nextCursor };
+	}
+	for (const record of records) {
+		const fragments = events.filter((event) => event.entryId === record.id).sort((a, b) => a.textRange.start - b.textRange.start);
+		let end = 0;
+		for (const fragment of fragments) {
+			assert.equal(fragment.textRange.start, end);
+			end = fragment.textRange.end;
+		}
+		assert.equal(end, record.message.content.length);
+		assert.equal(fragments.map((fragment) => fragment.text).join(""), record.message.content);
+	}
+	assert.equal(f.reads(), 1);
+});
+
 test("the final JSON envelope, escaping, and cursor all fit without losing original text", async (t) => {
 	const original = ('\u001b]52;clipboard\u0007\u009b\u202e\u2066\u200d\u2028\u2029𐀀界\\\"\n').repeat(850);
 	const f = fixture(t, original);

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { openSessionPage, sessionPageJson } from "./session-page.ts";
+import { openSessionTail } from "./session-tail.ts";
 
 const SESSION_ID = "paged-session";
 const TS = "2026-01-01T00:00:00.000Z";
@@ -104,6 +105,51 @@ test("a fully consumed large boundary does not consume the next page's retained-
 	const events = texts(pages);
 	assert.equal(reconstruct(events, "old"), older);
 	assert.equal(reconstruct(events, "new"), newer);
+});
+
+test("page budgets apply before retaining full messages, without relaxing legacy tail limits", async (t) => {
+	for (const [count, size, limit] of [[2, 300_000, 2], [8, 70_000, 8], [1, 600_000, 8]]) {
+		await t.test(`${count} messages of ${size} characters, limit ${limit}`, async (t) => {
+			const records = Array.from({ length: count }, (_, index) => user(`u${index}`, index === 0 ? null : `u${index - 1}`, String(index).repeat(size)));
+			const source = fixture(t, records);
+			await assert.rejects(openSessionTail({ ...source, limit }), /exceeds safety limits/);
+			const events = texts(await allPages(source, { limit, maxEventBytes: 49152 }));
+			for (const record of records) assert.equal(reconstruct(events, record.id), record.message.content);
+		});
+	}
+});
+
+test("tool matching scans past the text budget without retaining large look-behind text", async (t) => {
+	const callText = "call\ud800界😀".repeat(60_000);
+	const middleText = "middle".repeat(20_000);
+	const source = fixture(t, [
+		user("u", null, "request"),
+		assistant("call", "u", callText, [{ type: "toolCall", id: "tc", name: "read", arguments: {} }]),
+		user("middle", "call", middleText),
+		message("result", "middle", { role: "toolResult", toolCallId: "tc", toolName: "read", isError: false, content: [] }),
+	]);
+	const pages = await allPages(source, { limit: 8, maxEventBytes: 49152 });
+	assert.ok(pages[0].events.some((event) => event.entryId === "result" && event.kind === "tool"));
+	assert.equal(reconstruct(texts(pages), "call"), callText);
+	assert.equal(reconstruct(texts(pages), "middle"), middleText);
+	assert.equal(reconstruct(texts(pages), "u"), "request");
+});
+
+test("large failed assistant text does not consume the page retention budget", async (t) => {
+	const source = fixture(t, [
+		user("u", null, "request"),
+		message("failed", "u", { role: "assistant", stopReason: "error", content: [{ type: "text", text: "x".repeat(600_000) }] }),
+	]);
+	assert.deepEqual(texts(await allPages(source)).map((event) => event.text), ["request"]);
+});
+
+test("a clipped boundary still verifies text outside the retained slice", async (t) => {
+	const source = fixture(t, [user("u", null, "HEAD" + "x".repeat(600_000))]);
+	const first = await page({ source });
+	assert.ok(first.events[0].textRange.start > 4);
+	const original = readFileSync(source.fileLocator, "utf8");
+	writeFileSync(source.fileLocator, original.replace("HEAD", "EDIT") + recordsText([user("new", "u", "append")]));
+	await assert.rejects(page({ cursor: first.next }), /Session page source changed/);
 });
 
 test("preserves escaped lone surrogates rather than normalizing the source text", async (t) => {

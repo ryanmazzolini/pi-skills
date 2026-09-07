@@ -407,6 +407,16 @@ interface BranchEntry {
 	id: string;
 	parentId: string | null;
 	entry: Record<string, unknown>;
+	/** Original compact-entry digest, computed before page text is sliced or discarded. */
+	digest?: string;
+	textRange?: { start: number; end: number; total: number };
+}
+
+export interface SessionBranchPageOptions {
+	/** Bound retained page text separately from the legacy aggregate retention limit. */
+	textBytes: number;
+	/** Resume the leaf's unread prefix; zero skips a fully consumed leaf. */
+	textEnd?: number;
 }
 
 /** Fingerprint only the compact entry fields that the reader exposes or uses for ancestry. */
@@ -510,6 +520,39 @@ function reserveCompactEntry(current: number, entry: Record<string, unknown>): n
 		return reserveRetained(retained, message.toolCallId as string, message.toolName as string);
 	}
 	return retained;
+}
+
+/** Keep only a copied suffix for a page, or tool-call metadata during look-behind. */
+function retainPageText(entry: Record<string, unknown>, selected: boolean, availableBytes: number, textEnd?: number): { range: NonNullable<BranchEntry["textRange"]>; bytes: number } | undefined {
+	if (entry.type !== "message") return undefined;
+	const message = entry.message as Record<string, unknown>;
+	if (message.role !== "user" && message.role !== "assistant") return undefined;
+	const text = selected ? (message.role === "user" ? textFromUser(message) : textFromAssistant(message)) : undefined;
+	let retained = "";
+	let range: BranchEntry["textRange"];
+	if (text !== undefined) {
+		const end = Math.min(textEnd ?? text.length, text.length);
+		let low = 0;
+		let high = end;
+		// Keep at least one code point so an undersized output budget fails explicitly downstream.
+		const budget = Math.max(4, availableBytes);
+		while (low < high) {
+			const middle = Math.floor((low + high) / 2);
+			if (utf8Bytes(text.slice(middle, end)) <= budget) high = middle;
+			else low = middle + 1;
+		}
+		if (low > 0 && low < end && text.charCodeAt(low) >= 0xdc00 && text.charCodeAt(low) <= 0xdfff
+			&& text.charCodeAt(low - 1) >= 0xd800 && text.charCodeAt(low - 1) <= 0xdbff) low++;
+		// Copy through UTF-16 to release the full source string without normalizing lone surrogates.
+		retained = Buffer.from(text.slice(low, end), "utf16le").toString("utf16le");
+		range = { start: low, end, total: text.length };
+	}
+	if (message.role === "user") message.content = retained;
+	else {
+		const calls = (message.content as Record<string, unknown>[]).filter((block) => block.type === "toolCall");
+		message.content = retained.length === 0 ? calls : [{ type: "text", text: retained }, ...calls];
+	}
+	return range === undefined ? undefined : { range, bytes: utf8Bytes(retained) };
 }
 
 interface PositionedEvent {
@@ -873,6 +916,7 @@ class ReverseLineReader {
 
 interface BranchScanResult {
 	branch: BranchEntry[];
+	textLimit: number;
 	skippedLeaf: Readonly<{ id: string; digest: string }> | null;
 	scannedEntries: number;
 	historyTruncated: boolean;
@@ -892,12 +936,13 @@ async function scanAdvertisedBranch(
 	activeLeafId: string | null,
 	limit: number,
 	version: 2 | 3,
-	skipLeaf: boolean,
+	page?: SessionBranchPageOptions,
 ): Promise<BranchScanResult> {
 	await reader.initialize();
 	if (activeLeafId === null) {
 		return {
 			branch: [],
+			textLimit: limit,
 			skippedLeaf: null,
 			scannedEntries: 0,
 			historyTruncated: false,
@@ -913,6 +958,8 @@ async function scanAdvertisedBranch(
 	let expectedId: string | null = activeLeafId;
 	let foundLeaf = false;
 	let eligibleTextEvents = 0;
+	let textLimit = limit;
+	let remainingTextBytes = page?.textBytes ?? 0;
 	const unresolvedToolResultIds = new Set<string>();
 
 	while (true) {
@@ -939,19 +986,31 @@ async function scanAdvertisedBranch(
 		const compact = compactValidatedEntry(entry);
 		expectedId = parentId;
 		// Verify a consumed boundary without retaining its text against the next page's budget.
-		if (skipLeaf && id === activeLeafId) {
+		if (page?.textEnd === 0 && id === activeLeafId) {
 			skippedLeaf = Object.freeze({ id, digest: sessionEntryDigest(compact) });
 			retainedBytes = reserveRetained(retainedBytes, skippedLeaf.digest);
 			if (expectedId === null) break;
 			continue;
 		}
+		const eligible = isEligibleTextEntry(compact);
+		const indexed: BranchEntry = { id, parentId, entry: compact };
+		if (page) {
+			indexed.digest = sessionEntryDigest(compact);
+			retainedBytes = reserveRetained(retainedBytes, indexed.digest);
+			const slice = retainPageText(compact, eligible && eligibleTextEvents < textLimit, remainingTextBytes,
+				id === activeLeafId ? page.textEnd : undefined);
+			if (slice) {
+				indexed.textRange = slice.range;
+				remainingTextBytes -= slice.bytes;
+			}
+		}
 		retainedBytes = reserveCompactEntry(retainedBytes, compact);
-		branch.push({ id, parentId, entry: compact });
+		branch.push(indexed);
 		if (compact.type === "message") {
 			const message = compact.message as Record<string, unknown>;
 			// Only results newer than the selected text boundary can be projected.
 			// Continue far enough to find the older calls that authenticate them.
-			if (message.role === "toolResult" && eligibleTextEvents < limit) {
+			if (message.role === "toolResult" && eligibleTextEvents < textLimit) {
 				unresolvedToolResultIds.add(message.toolCallId as string);
 			} else if (message.role === "assistant" && unresolvedToolResultIds.size > 0) {
 				for (const block of message.content as Record<string, unknown>[]) {
@@ -959,12 +1018,17 @@ async function scanAdvertisedBranch(
 				}
 			}
 		}
-		if (isEligibleTextEntry(compact)) eligibleTextEvents++;
-		if (expectedId === null || (eligibleTextEvents >= limit && unresolvedToolResultIds.size === 0)) break;
+		if (eligible) eligibleTextEvents++;
+		// A sliced message must be resumed before selecting any older text.
+		if (indexed.textRange && (indexed.textRange.start > 0 || remainingTextBytes <= 0)) {
+			textLimit = Math.min(textLimit, eligibleTextEvents);
+		}
+		if (expectedId === null || (eligibleTextEvents >= textLimit && unresolvedToolResultIds.size === 0)) break;
 	}
 
 	return {
 		branch,
+		textLimit,
 		skippedLeaf,
 		scannedEntries,
 		historyTruncated: expectedId !== null,
@@ -1001,7 +1065,7 @@ export async function openSessionTail(input: OpenSessionTailInput): Promise<Sess
 /** Shared bounded scan for the legacy tail and the paged reader. */
 export async function openSessionBranch(
 	input: OpenSessionTailInput,
-	skipLeaf = false,
+	page?: SessionBranchPageOptions,
 ): Promise<SessionReadHandle<SessionBranchSnapshot>> {
 	validateInput(input);
 	const uid = currentUid();
@@ -1043,10 +1107,10 @@ export async function openSessionBranch(
 			headerWindow.leadingBody,
 			input.signal,
 		);
-		const scanned = await scanAdvertisedBranch(reader, input.activeLeafId, input.limit, version, skipLeaf);
+		const scanned = await scanAdvertisedBranch(reader, input.activeLeafId, input.limit, version, page);
 		throwIfCancelled(input.signal);
 		assertPathAndDescriptorStable(fd, input.fileLocator, stableState, uid);
-		const projected = projectBranch(scanned.branch, input.limit);
+		const projected = projectBranch(scanned.branch, scanned.textLimit);
 		const snapshot: SessionTailSnapshot = Object.freeze({
 			events: projected.events,
 			counts: Object.freeze({
