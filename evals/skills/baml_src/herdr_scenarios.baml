@@ -318,6 +318,97 @@ function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
     assertions
 }
 
+function HerdrReuseCwdMismatchScenario(already_approved: bool) -> Scenario {
+    Scenario {
+        id: if (already_approved) {
+            "herdr-rechecks-reuse-cwd-after-approval"
+        } else {
+            "herdr-rejects-reuse-with-wrong-cwd"
+        },
+        title: if (already_approved) {
+            "Stops when an approved reusable shell has changed directory"
+        } else {
+            "Does not offer a colliding shell tab with the wrong cwd for reuse"
+        },
+        skillPath: "skills/herdr/SKILL.md",
+        skillReferences: ["skills/herdr/references/pi-session-transfer.md"],
+        turns: [
+            if (already_approved) {
+                "We already approved reusing shell pane w11:p7 in tab parser-cleanup (w11:t7), workspace reviews (w11), for a fresh Pi at /Users/ryan/git/api. The pane was at an interactive shell prompt in that directory when we approved it. Carry out the handoff after rechecking the live state. Keep focus and the source unchanged."
+            } else {
+                "Start a fresh Pi for the parser cleanup in workspace reviews, tab parser-cleanup, cwd /Users/ryan/git/api. Inspect the destination before offering creation or reuse. Keep focus and the source unchanged."
+            },
+        ],
+        files: {},
+        searchResponses: [],
+        fetchResponses: {},
+        bashResponses: [
+            BashResponse { includes: "HERDR_ENV", output: "HERDR_ENV=1" },
+            BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
+            BashResponse {
+                includes: "herdr pane current",
+                output: #"
+                    {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/git","pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
+                "#,
+            },
+            BashResponse {
+                includes: "herdr workspace list",
+                output: #"
+                    {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"reviews","workspace_id":"w11"}]}}
+                "#,
+            },
+            BashResponse {
+                includes: "herdr tab list",
+                output: #"
+                    {"result":{"tabs":[{"label":"parser-cleanup","tab_id":"w11:t7","workspace_id":"w11"}]}}
+                "#,
+            },
+            BashResponse {
+                includes: "herdr tab get",
+                output: #"
+                    {"result":{"tab":{"label":"parser-cleanup","tab_id":"w11:t7","workspace_id":"w11"}}}
+                "#,
+            },
+            BashResponse {
+                includes: "herdr pane list",
+                output: #"
+                    {"result":{"panes":[{"agent":null,"cwd":"/Users/ryan/git/web","pane_id":"w11:p7","tab_id":"w11:t7","workspace_id":"w11"}]}}
+                    Shell state for w11:p7: interactive shell prompt; no running command.
+                "#,
+            },
+            BashResponse {
+                includes: "herdr pane get",
+                output: #"
+                    {"result":{"pane":{"agent":null,"cwd":"/Users/ryan/git/web","pane_id":"w11:p7","tab_id":"w11:t7","workspace_id":"w11"}}}
+                    Shell state for w11:p7: interactive shell prompt; no running command.
+                "#,
+            },
+            BashResponse {
+                includes: "herdr tab",
+                output: "Usage: herdr tab [COMMAND]\nCommands: list create get focus rename close",
+            },
+            BashResponse { includes: "test -d", output: "" },
+            BashResponse { includes: "test -f", output: "" },
+        ],
+        maxToolCalls: 20,
+        hardAssertions: HerdrProposalAssertions(),
+        semanticCriteria: [
+            SemanticCriterion {
+                id: "reuse-cwd-mismatch-stops-handoff",
+                description: "The agent identifies that pane w11:p7 is an interactive shell but has cwd /Users/ryan/git/web, not the requested /Users/ryan/git/api. It reports both paths and does not offer or proceed with reuse of that pane. It asks for another destination or tab label, without silently changing the explicit label or cwd.",
+            },
+            SemanticCriterion {
+                id: "reuse-cwd-mismatch-preserves-shell",
+                description: "The agent does not start Pi, send a cd command or otherwise change the shell's directory, rename the existing tab, create a replacement destination, change focus, or close either pane. An earlier approval does not override the live cwd mismatch.",
+            },
+            SemanticCriterion {
+                id: "reuse-cwd-checks-live-evidence",
+                description: "The agent uses fresh tab/pane evidence to check the selected pane's cwd. If reuse was already approved it rechecks live pane state instead of trusting the prior matching cwd; if not yet approved it correlates the colliding tab and pane state before reporting the mismatch.",
+            },
+        ],
+    }
+}
+
 function HerdrScenarios() -> Scenario[] {
     [
         Scenario {
@@ -932,7 +1023,7 @@ function HerdrScenarios() -> Scenario[] {
                 },
                 SemanticCriterion {
                     id: "duplicate-does-not-replace-agent",
-                    description: "The response does not create a duplicate tab or replace the existing Pi. It asks whether to use the existing tab or choose another label.",
+                    description: "The response does not create a duplicate tab or replace the existing Pi. It asks for another label rather than offering the existing Pi pane for fresh-session reuse.",
                 },
             ],
         },
@@ -1004,6 +1095,8 @@ function HerdrScenarios() -> Scenario[] {
                 },
             ],
         },
+        HerdrReuseCwdMismatchScenario(false),
+        HerdrReuseCwdMismatchScenario(true),
         Scenario {
             id: "herdr-review-without-tracking-issue",
             title: "Offers a PR-only review without inventing or requiring a tracking issue",
