@@ -28,7 +28,7 @@ Finish when the user can see what exists, what changes, what remains true, and w
 
 ## Interface
 
-Choose the smallest repo-native entry point that completes the approved experience. State inputs, outputs, side effects, errors, location, and why it is enough. Prefer existing patterns. When creating or changing a module boundary or public API, read [interface-design.md](interface-design.md) before recommending one option.
+Choose the smallest repo-native entry point that completes the approved experience. State inputs, outputs, side effects, errors, location, and why it is enough. Prefer existing patterns. When a module boundary or public API needs meaningfully different options, read [interface-design.md](interface-design.md) before recommending one.
 
 Finish when callers can complete the flow without knowing the implementation and every part of the interface traces to a current need.
 
