@@ -35,9 +35,11 @@ export interface ParentOrigin {
 }
 
 export interface Activity {
-	kind: "queued" | "starting" | "thinking" | "tool" | "waiting" | "message";
+	kind: "queued" | "starting" | "thinking" | "tool" | "waiting" | "message" | "retry";
 	summary: string;
 	observedAt: string;
+	retry?: { attempt: number; maxAttempts: number; retryAt: string };
+	tool?: { callId: string; startedAt: string; additionalCount: number };
 }
 
 export interface ChildUsage {
@@ -525,6 +527,16 @@ export function projectRun(run: DelegationRun, maxBytes = DEFAULT_RESULT_LIMIT_B
 				kind: child.latestActivity.kind,
 				summary: bounded(child.latestActivity.summary, 512),
 				observedAt: bounded(child.latestActivity.observedAt, 64),
+				...(child.latestActivity.retry ? { retry: {
+					attempt: child.latestActivity.retry.attempt,
+					maxAttempts: child.latestActivity.retry.maxAttempts,
+					retryAt: bounded(child.latestActivity.retry.retryAt, 64),
+				} } : {}),
+				...(child.latestActivity.tool ? { tool: {
+					callId: bounded(child.latestActivity.tool.callId, 128),
+					startedAt: bounded(child.latestActivity.tool.startedAt, 64),
+					additionalCount: child.latestActivity.tool.additionalCount,
+				} } : {}),
 			},
 			...(workspace ? { workspace } : {}),
 			...(child.attention
@@ -574,6 +586,8 @@ export function projectRun(run: DelegationRun, maxBytes = DEFAULT_RESULT_LIMIT_B
 				kind: child.lastActivity.kind,
 				summary: clipUtf8(child.lastActivity.summary, 48).value,
 				observedAt: clipUtf8(child.lastActivity.observedAt, 40).value,
+				...(child.lastActivity.retry ? { retry: clone(child.lastActivity.retry) } : {}),
+				...(child.lastActivity.tool ? { tool: clone(child.lastActivity.tool) } : {}),
 			},
 			...(child.workspace
 				? {
@@ -831,7 +845,9 @@ export class DelegateRuntime {
 		if (!running) throw new Error(`Child ${child.id} has no live session to steer`);
 		await running.steer(text);
 		this.reauthorize(run, origin);
-		child.latestActivity = this.activity("message", "Parent guidance queued");
+		if (child.latestActivity.kind !== "retry" && !child.latestActivity.tool) {
+			child.latestActivity = this.activity("message", "Parent guidance queued");
+		}
 		run.updatedAt = this.timestamp();
 		await this.persist(run);
 		this.emit(run);
@@ -1304,7 +1320,10 @@ export class DelegateRuntime {
 			delete child.attention;
 			delete child.failure;
 			child.state = "running";
-			child.latestActivity = this.activity("thinking", "Child session is running");
+			// The adapter may emit activity before returning its session controller.
+			if (child.latestActivity.kind === "starting") {
+				child.latestActivity = this.activity("thinking", "Child session is running");
+			}
 			run.updatedAt = this.timestamp();
 			const generation = this.nextGeneration(child.id);
 			await this.persist(run);
@@ -1458,8 +1477,12 @@ export class DelegateRuntime {
 		const run = this.runs.get(runId);
 		const child = run?.children.find((candidate) => candidate.id === childId);
 		if (!run || !child || (child.state !== "starting" && child.state !== "running")) return;
-		const next = this.activity(value.kind, value.summary);
-		const unchanged = child.latestActivity.kind === next.kind && child.latestActivity.summary === next.summary;
+		const next = this.activity(value.kind, value.kind === "retry" ? clipUtf8(value.summary, 512).value : value.summary);
+		if (value.kind === "retry" && value.retry) next.retry = clone(value.retry);
+		if (value.kind === "tool" && value.tool) next.tool = clone(value.tool);
+		const unchanged = child.latestActivity.kind === next.kind && child.latestActivity.summary === next.summary
+			&& JSON.stringify(child.latestActivity.retry) === JSON.stringify(next.retry)
+			&& JSON.stringify(child.latestActivity.tool) === JSON.stringify(next.tool);
 		const elapsed = Math.max(0, Date.parse(next.observedAt) - Date.parse(child.latestActivity.observedAt));
 		if (unchanged && elapsed < ACTIVITY_HEARTBEAT_MS) return;
 		child.latestActivity = next;

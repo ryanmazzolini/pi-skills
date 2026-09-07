@@ -3,13 +3,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { AgentDeskOverlayComponent, createDelegateUi, describeLatestActivity, listDeskAssignments, readChildHistory, RunOverlayComponent } from "./ui.ts";
+import { projectRun } from "./runtime.ts";
+import { AgentDeskOverlayComponent, createDelegateUi, describeLatestActivity, listDeskAssignments, readChildHistory, RunOverlayComponent, stateIcon } from "./ui.ts";
 
 const theme = {
   fg: (_color, text) => text,
   bg: (_color, text) => text,
   bold: (text) => text,
+  getThinkingBorderColor: (_level) => (text) => text,
 };
 
 function run(state = "running", observedAt = new Date(0).toISOString(), count = 1) {
@@ -71,9 +74,9 @@ test("pinned status is label-first, UUID-free, and reports elapsed time", () => 
   const component = ui.createStatus({ requestRender() {} }, theme, { now: () => now });
   const rendered = component.render(120).join("\n");
 
-  assert.match(rendered, /Agents · 2 running · 19s/);
-  assert.match(rendered, /Reader 1 · Thinking · 19s/);
-  assert.match(rendered, /Reader 2 · Thinking · 19s/);
+  assert.match(rendered, /Agents · 2 running · total 19s/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 1 · sol · max · Thinking\s+total 19s/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 2 · sol · max · Thinking\s+total 19s/);
   assert.match(rendered, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Reader 1/);
   assert.doesNotMatch(rendered, /run-1|child-1/);
   component.dispose();
@@ -117,8 +120,387 @@ test("quiet active work reports activity age only after the stale threshold", ()
     theme,
     { now: () => 15_000 },
   );
-  assert.match(component.render(120).join("\n"), /Still running · Thinking · quiet 15s · 15s/);
+  assert.match(component.render(120).join("\n"), /Still running · Thinking · quiet 15s\s+total 15s/);
   component.dispose();
+});
+
+test("tool timing is right-aligned, survives heartbeats, and drops total first on narrow rows", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString());
+  const child = activeRun.children[0];
+  child.latestActivity = {
+    kind: "tool", summary: "Running: npm test", observedAt: new Date(137_000).toISOString(),
+    tool: { callId: "a", startedAt: new Date(96_000).toISOString(), additionalCount: 1 },
+  };
+  assert.equal(describeLatestActivity(activeRun, 138_000), "Running: npm test +1 tool · tool 42s");
+  child.latestActivity.observedAt = new Date(138_000).toISOString();
+  assert.equal(describeLatestActivity(activeRun, 138_000), "Running: npm test +1 tool · tool 42s");
+  const harness = runtimeFor(activeRun);
+  const pinned = createDelegateUi(harness.runtime).createStatus({ requestRender() {} }, theme);
+  const desk = new AgentDeskOverlayComponent(harness.runtime, {}, { requestRender() {}, terminal: { rows: 24 } }, theme, () => {}, { async resume() {} });
+  t.after(() => { pinned.dispose(); desk.dispose(); });
+  const row = pinned.render(100).find((line) => line.includes("Reader 1"));
+  assert.match(stripVTControlCharacters(row), /Reader 1 · sol · max · Running: npm test \+1 tool\s+tool 42s · total 2m 18s$/);
+  assert.equal(visibleWidth(row), 100);
+  assert.doesNotMatch(row, /quiet|ago/);
+  const narrow = desk.render(40).find((line) => line.includes("Reader 1"));
+  assert.match(narrow, /tool 42s/);
+  assert.doesNotMatch(narrow, /total/);
+  desk.handleInput("\r");
+  assert.match(desk.render(100).join("\n"), /Running: npm test \+1 tool\s+tool 42s · total 2m 18s/);
+  t.mock.timers.tick(1_000);
+  assert.match(desk.render(40).join("\n"), /tool 43s/);
+  child.state = "completed";
+  child.result = { kind: "text", value: "Done", completedAt: new Date(139_000).toISOString() };
+  child.latestActivity = { kind: "message", summary: "Completed", observedAt: new Date(139_000).toISOString() };
+  harness.emit(activeRun);
+  for (const width of [20, 30, 40]) assert.match(desk.render(width).join("\n"), /total 2m 19s/);
+  assert.doesNotMatch(desk.render(40).join("\n"), /tool \d/);
+  t.mock.timers.tick(5_000);
+  assert.match(desk.render(40).join("\n"), /total 2m 19s/);
+});
+
+test("status labels use spare row space without losing activity or right-aligned timing", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString(), 2);
+  activeRun.children[0].label = "Security review of a very long module name";
+  activeRun.children[1].label = "Security review of a very long module test";
+  const ansiTheme = { ...theme, fg: (_color, text) => `\u001b[33m${text}\u001b[39m`, bold: (text) => `\u001b[1m${text}\u001b[22m` };
+  const harness = runtimeFor(activeRun);
+  const tui = { requestRender() {}, terminal: { rows: 24 } };
+  const pinned = createDelegateUi(harness.runtime).createStatus(tui, ansiTheme);
+  const desk = new AgentDeskOverlayComponent(harness.runtime, {}, tui, ansiTheme, () => {}, { async resume() {} });
+  t.after(() => { pinned.dispose(); desk.dispose(); });
+  for (const width of [100, 120]) {
+    for (const component of [pinned, desk]) {
+      const lines = component.render(width);
+      for (const child of activeRun.children) {
+        const row = lines.find((line) => line.includes(child.label));
+        assert.ok(row, `Full label at width ${width}: ${child.label}`);
+        assert.match(row, /Thinking/);
+        assert.match(row, /total 2m 18s/);
+        assert.equal(visibleWidth(row), width);
+      }
+    }
+  }
+  desk.handleInput("\r");
+  const detail = desk.render(100);
+  assert.ok(detail.some((line) => line.includes(activeRun.children[0].label)));
+  assert.match(detail.join("\n"), /openai\/sol · max/);
+  assert.ok(detail.every((line) => visibleWidth(line) <= 100));
+});
+
+test("detailed tool status retains provider, model, and reasoning without changing compact Desk rows", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString());
+  const harness = runtimeFor(activeRun);
+  const desk = new AgentDeskOverlayComponent(harness.runtime, {}, { requestRender() {}, terminal: { rows: 24 } }, theme, () => {}, { async resume() {} });
+  t.after(() => desk.dispose());
+  desk.handleInput("\r");
+  assert.match(desk.render(100).join("\n"), /openai\/sol · max/);
+  activeRun.children[0].latestActivity = {
+    kind: "tool", summary: "Running: npm test", observedAt: new Date(137_000).toISOString(),
+    tool: { callId: "a", startedAt: new Date(96_000).toISOString(), additionalCount: 1 },
+  };
+  harness.emit(activeRun);
+  assert.match(stripVTControlCharacters(desk.render(100).join("\n")), /openai\/sol · max · Running: npm test \+1 tool\s+tool 42s · total 2m 18s/);
+  for (const width of [20, 40, 60]) {
+    const lines = desk.render(width);
+    assert.ok(lines.every((line) => visibleWidth(line) <= width));
+    assert.match(lines.join("\n"), /tool 42s/);
+  }
+  desk.handleInput("\u001b");
+  const compact = desk.render(40).join("\n");
+  assert.match(compact, /tool 42s/);
+  assert.doesNotMatch(compact, /openai\/sol/);
+});
+
+test("model and thinking text uses the child's thinking hue with faint styling on every live surface", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  for (const [level, kind, color] of [["high", "tool", "\u001b[35m"], ["max", "retry", "\u001b[31m"], ["off", "message", "\u001b[37m"]]) {
+    const activeRun = run(kind === "message" ? "completed" : "running", new Date(137_000).toISOString());
+    const child = activeRun.children[0];
+    child.resolved.reasoning = level;
+    child.latestActivity = {
+      kind, summary: kind === "tool" ? "Running: sleep 40" : kind === "retry" ? "rate limited" : "Completed",
+      observedAt: new Date(137_000).toISOString(),
+      ...(kind === "tool" ? { tool: { callId: "a", startedAt: new Date(96_000).toISOString(), additionalCount: 0 } } : {}),
+      ...(kind === "retry" ? { retry: { attempt: 1, maxAttempts: 3, retryAt: new Date(150_000).toISOString() } } : {}),
+    };
+    const styledTheme = { ...theme, getThinkingBorderColor(actualLevel) {
+      assert.equal(actualLevel, level);
+      return (text) => `${color}${text}\u001b[39m`;
+    } };
+    const harness = runtimeFor(activeRun);
+    const tui = { requestRender() {}, terminal: { rows: 24 } };
+    const pinned = createDelegateUi(harness.runtime).createStatus(tui, styledTheme);
+    const desk = new AgentDeskOverlayComponent(harness.runtime, {}, tui, styledTheme, () => {}, { async resume() {} });
+    const detail = new RunOverlayComponent(harness.runtime, activeRun.id, tui, styledTheme, () => {}, async () => [], { detailOnly: true });
+    try {
+      for (const component of [pinned, desk, detail]) {
+        const model = component === detail ? "openai/sol" : "sol";
+        const lines = component.render(180);
+        assert.ok(lines.join("\n").includes(`\u001b[2m${color}${model} · ${level}\u001b[39m\u001b[22m · `));
+        assert.ok(lines.every((line) => visibleWidth(line) <= 180));
+      }
+      assert.doesNotMatch(stateIcon(child, styledTheme), /\u001b\[2m/);
+    } finally { pinned.dispose(); desk.dispose(); detail.dispose(); }
+  }
+});
+
+test("long model names keep the thinking label and do not consume tool timing or retry countdowns", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString());
+  const child = activeRun.children[0];
+  child.label = "A long 安全 review label";
+  child.resolved.model.id = "a-very-long-model-name-".repeat(8);
+  child.latestActivity = { kind: "tool", summary: "Running: sleep 40", observedAt: new Date(137_000).toISOString(), tool: { callId: "a", startedAt: new Date(96_000).toISOString(), additionalCount: 0 } };
+  const styledTheme = { ...theme, getThinkingBorderColor: () => text => `\u001b[35m${text}\u001b[39m` };
+  const harness = runtimeFor(activeRun);
+  const desk = new AgentDeskOverlayComponent(harness.runtime, {}, { requestRender() {}, terminal: { rows: 24 } }, styledTheme, () => {}, { async resume() {} });
+  t.after(() => desk.dispose());
+  for (const detail of [false, true]) {
+    if (detail) desk.handleInput("\r");
+    const wide = desk.render(120);
+    assert.match(wide.join("\n"), /\u001b\[2m\u001b\[35m[^\u001b]*\.\.\. · max\u001b\[39m\u001b\[22m/);
+    for (const width of [20, 40, 60, 120]) {
+      const lines = desk.render(width);
+      assert.ok(lines.every((line) => visibleWidth(line) <= width));
+      assert.match(lines.join("\n"), /tool 42s/);
+    }
+  }
+  child.latestActivity = { kind: "retry", summary: "rate limited", observedAt: new Date(137_000).toISOString(), retry: { attempt: 1, maxAttempts: 3, retryAt: new Date(150_000).toISOString() } };
+  harness.emit(activeRun);
+  for (const width of [40, 60, 120]) assert.match(desk.render(width).join("\n"), /Retry 1\/3 in 12s/);
+});
+
+test("tool timing handles old records and ANSI rows without inventing a start time", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 138_000 });
+  const activeRun = run("running", new Date(137_000).toISOString());
+  const child = activeRun.children[0];
+  child.latestActivity = { kind: "tool", summary: "Running: npm test", observedAt: new Date(137_000).toISOString() };
+  assert.equal(describeLatestActivity(activeRun, 138_000), "Running: npm test · 1s ago");
+  child.latestActivity.tool = { callId: "a", startedAt: "invalid", additionalCount: 0 };
+  assert.doesNotMatch(describeLatestActivity(activeRun, 138_000), /NaN|tool \d/);
+  child.latestActivity.tool.startedAt = new Date(96_000).toISOString();
+  child.label = "A very long 安全 review label";
+  child.latestActivity.summary += "\nprovider output";
+  const ansiTheme = { ...theme, fg: (_color, text) => `\u001b[33m${text}\u001b[39m`, bold: (text) => `\u001b[1m${text}\u001b[22m` };
+  const desk = new AgentDeskOverlayComponent(runtimeFor(activeRun).runtime, {}, { requestRender() {}, terminal: { rows: 24 } }, ansiTheme, () => {}, { async resume() {} });
+  t.after(() => desk.dispose());
+  for (const detail of [false, true]) {
+    if (detail) desk.handleInput("\r");
+    for (const width of [1, 20, 40, 60, 100]) {
+      const lines = desk.render(width);
+      assert.ok(lines.every((line) => visibleWidth(line) <= width && !/[\r\n]/.test(line)));
+      if (width >= 40) assert.match(lines.join("\n"), /tool 42s/);
+    }
+  }
+});
+
+test("wall-clock totals keep repainting through attention and interruption and stop on terminal states", (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 20_000 });
+  for (const state of ["queued", "running", "needs_attention", "interrupted", "completed", "failed", "cancelled"]) {
+    const activeRun = run(state, new Date(10_000).toISOString());
+    const renders = [0, 0, 0];
+    const tuis = renders.map((_, index) => ({ requestRender() { renders[index]++; }, terminal: { rows: 24 } }));
+    const harness = runtimeFor(activeRun);
+    const pinned = createDelegateUi(harness.runtime).createStatus(tuis[0], theme);
+    const desk = new AgentDeskOverlayComponent(harness.runtime, {}, tuis[1], theme, () => {}, { async resume() {} });
+    const detail = new RunOverlayComponent(harness.runtime, activeRun.id, tuis[2], theme, () => {}, async () => [], { detailOnly: true });
+    const terminal = ["completed", "failed", "cancelled"].includes(state);
+    const expected = terminal ? 10 : Math.floor(Date.now() / 1_000) + 1;
+    const before = [...renders];
+    for (let tick = 0; tick < 10; tick++) t.mock.timers.tick(100);
+    for (const [index, component] of [pinned, desk, detail].entries()) {
+      assert.match(component.render(100).join("\n"), new RegExp(`total ${expected}s`), state);
+      assert.equal(renders[index] > before[index], !terminal, `${state}, surface ${index}`);
+      if (["queued", "needs_attention", "interrupted"].includes(state)) assert.equal(renders[index] - before[index], 1, `${state}, surface ${index}`);
+      if (terminal && index !== 0) assert.match(component.render(30).join("\n"), /total 10s/, state);
+    }
+    assert.equal(pinned.animationTimer === undefined, terminal, state);
+    pinned.dispose(); desk.dispose(); detail.dispose();
+  }
+});
+
+test("pinned repaint cadence follows transitions between a working spinner, retry, and a parked child", (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 20_000 });
+  const activeRun = run("running", new Date(19_000).toISOString());
+  const harness = runtimeFor(activeRun);
+  let renders = 0;
+  const pinned = createDelegateUi(harness.runtime).createStatus({ requestRender() { renders++; } }, theme);
+  t.after(() => pinned.dispose());
+  t.mock.timers.tick(80);
+  assert.equal(renders, 1);
+  activeRun.children[0].latestActivity = {
+    kind: "retry", summary: "rate limited", observedAt: new Date(20_000).toISOString(),
+    retry: { attempt: 1, maxAttempts: 3, retryAt: new Date(40_000).toISOString() },
+  };
+  harness.emit(activeRun);
+  let before = renders;
+  for (let tick = 0; tick < 10; tick++) t.mock.timers.tick(100);
+  assert.equal(renders - before, 1);
+  activeRun.children[0].state = "needs_attention";
+  harness.emit(activeRun);
+  before = renders;
+  for (let tick = 0; tick < 10; tick++) t.mock.timers.tick(100);
+  assert.equal(renders - before, 1);
+  activeRun.children[0].state = "running";
+  activeRun.children[0].latestActivity = { kind: "thinking", summary: "Thinking", observedAt: new Date().toISOString() };
+  harness.emit(activeRun);
+  before = renders;
+  t.mock.timers.tick(80);
+  assert.equal(renders - before, 1);
+});
+
+test("retry countdown uses the deadline, not the heartbeat, and never claims quiet work", () => {
+  const activeRun = run("running", new Date(10_000).toISOString());
+  const child = activeRun.children[0];
+  child.latestActivity = {
+    kind: "retry", summary: "rate limited\nprovider detail",
+    observedAt: new Date(10_000).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  assert.equal(describeLatestActivity(activeRun, 12_001), "Retry 2/3 in 18s · rate limited");
+  assert.equal(describeLatestActivity(activeRun, 29_999), "Retry 2/3 in 1s · rate limited");
+  assert.equal(describeLatestActivity(activeRun, 35_000), "Retry 2/3 pending · rate limited");
+  child.latestActivity.observedAt = new Date(28_000).toISOString();
+  assert.equal(describeLatestActivity(activeRun, 29_000), "Retry 2/3 in 1s · rate limited");
+  delete child.latestActivity.retry;
+  assert.equal(describeLatestActivity(activeRun, 35_000), "Retrying · rate limited");
+});
+
+test("retry rows use a static warning cue and emphasize only the countdown", (t) => {
+  let now = 12_000;
+  const activeRun = run("running", new Date(0).toISOString());
+  activeRun.children[0].latestActivity = {
+    kind: "retry", summary: "rate limited", observedAt: new Date(0).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  const calls = [];
+  const styledTheme = {
+    ...theme,
+    fg(color, text) { calls.push({ color, text }); return text; },
+    bold(text) { calls.push({ bold: text }); return text; },
+  };
+  const harness = runtimeFor(activeRun);
+  const component = createDelegateUi(harness.runtime).createStatus(
+    { requestRender() {} }, styledTheme, { now: () => now },
+  );
+  t.after(() => component.dispose());
+  const before = component.render(120).join("\n");
+  assert.match(stripVTControlCharacters(before), /↻ Reader 1 · sol · max · Retry 2\/3 in 18s · rate limited\s+total 12s/);
+  assert.doesNotMatch(before, /Still running|quiet/);
+  assert.ok(calls.some((call) => call.color === "warning" && call.text === "↻"));
+  assert.ok(calls.some((call) => call.bold === "Retry 2/3 in 18s"));
+  assert.ok(calls.some((call) => call.color === "text" && call.text === "rate limited"));
+  now += 1_000;
+  assert.match(stripVTControlCharacters(component.render(120).join("\n")), /↻ Reader 1 · sol · max · Retry 2\/3 in 17s/);
+  const narrow = component.render(40);
+  assert.match(narrow.join("\n"), /retrying/);
+  assert.match(narrow.join("\n"), /\/agents/);
+  assert.ok(narrow.every((line) => visibleWidth(line) <= 40));
+});
+
+test("retry details remain visible in narrow Desk and detail rows, then clear on recovery", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 12_000 });
+  const activeRun = run("running", new Date(0).toISOString());
+  const child = activeRun.children[0];
+  child.label = "Security review of a very long module name";
+  child.resolved.model.id = "model-name-that-would-hide-the-retry-countdown";
+  child.latestActivity = {
+    kind: "retry", summary: "rate limited\nprovider detail", observedAt: new Date(0).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  const ansiTheme = {
+    ...theme,
+    fg: (_color, text) => `\u001b[33m${text}\u001b[39m`,
+    bold: (text) => `\u001b[1m${text}\u001b[22m`,
+  };
+  const harness = runtimeFor(activeRun);
+  const desk = new AgentDeskOverlayComponent(
+    harness.runtime, {}, { requestRender() {}, terminal: { rows: 6 } }, ansiTheme, () => {}, { async resume() {} },
+  );
+  const pinned = createDelegateUi(harness.runtime).createStatus({ requestRender() {} }, ansiTheme);
+  t.after(() => { desk.dispose(); pinned.dispose(); });
+  for (const width of [40, 60, 120]) {
+    const lines = desk.render(width);
+    assert.match(lines.join("\n"), /Retry 2\/3 in 18s/);
+    assert.ok(lines.every((line) => visibleWidth(line) <= width && !/[\r\n]/.test(line)));
+  }
+  assert.match(pinned.render(80).join("\n"), /Retry 2\/3 in 18s/);
+  desk.handleInput("\r");
+  assert.match(desk.render(40).join("\n"), /Retry 2\/3 in 18s/);
+  t.mock.timers.tick(1_000);
+  assert.match(desk.render(40).join("\n"), /Retry 2\/3 in 17s/);
+  child.latestActivity = { kind: "thinking", summary: "Thinking", observedAt: new Date().toISOString() };
+  harness.emit(activeRun);
+  assert.doesNotMatch(desk.render(120).join("\n"), /Retry|↻/);
+  assert.doesNotMatch(pinned.render(120).join("\n"), /retrying|Retry|↻/);
+});
+
+test("Desk repaints a retry countdown even when an interrupted row is selected", (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 12_000 });
+  const activeRun = run("running", new Date(0).toISOString(), 2);
+  activeRun.children[0].state = "interrupted";
+  activeRun.children[1].latestActivity = {
+    kind: "retry", summary: "rate limited", observedAt: new Date(0).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  let renders = 0;
+  const desk = new AgentDeskOverlayComponent(
+    runtimeFor(activeRun).runtime, {}, { requestRender() { renders++; }, terminal: { rows: 24 } }, theme, () => {}, { async resume() {} },
+  );
+  t.after(() => desk.dispose());
+  assert.equal(desk.selectedChildId, activeRun.children[0].id);
+  assert.match(desk.render(100).join("\n"), /Retry 2\/3 in 18s/);
+  t.mock.timers.tick(1_000);
+  assert.ok(renders > 0);
+  assert.match(desk.render(100).join("\n"), /Retry 2\/3 in 17s/);
+});
+
+test("pinned retry rows precede ordinary work without displacing failures or attention", (t) => {
+  const activeRun = run("running", new Date(12_000).toISOString(), 9);
+  activeRun.children[6].latestActivity = {
+    kind: "retry", summary: "rate limited", observedAt: new Date(0).toISOString(),
+    retry: { attempt: 2, maxAttempts: 3, retryAt: new Date(30_000).toISOString() },
+  };
+  activeRun.children[7].state = "failed";
+  activeRun.children[8].state = "needs_attention";
+  const pinned = createDelegateUi(runtimeFor(activeRun).runtime).createStatus({ requestRender() {} }, theme, { now: () => 12_000 });
+  t.after(() => pinned.dispose());
+  const lines = pinned.render(120);
+  assert.match(lines[1], /Reader 9/);
+  assert.match(lines[2], /Reader 8/);
+  assert.match(stripVTControlCharacters(lines[3]), /Reader 7 · sol · max · Retry 2\/3 in 18s/);
+  assert.match(lines.at(-1), /3 more/);
+});
+
+test("working icons use each child's thinking level; other states keep status colours", () => {
+  const styledTheme = {
+    ...theme,
+    fg: (color, text) => `<${color}>${text}</${color}>`,
+    getThinkingBorderColor: (level) => (text) => `<thinking:${level}>${text}</thinking:${level}>`,
+  };
+  const child = run().children[0];
+  for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
+    child.resolved.reasoning = level;
+    for (const kind of ["thinking", "tool", "message"]) {
+      child.latestActivity.kind = kind;
+      assert.match(stateIcon(child, styledTheme, true, 0), new RegExp(`^<thinking:${level}>⠋`));
+    }
+  }
+  child.state = "queued";
+  assert.equal(stateIcon(child, styledTheme, true, 0), "<muted>○</muted>");
+  assert.equal(stateIcon(child, styledTheme, true, 200), "<muted>○</muted>");
+  child.state = "running";
+  child.latestActivity.kind = "retry";
+  assert.equal(stateIcon(child, styledTheme, true, 0), "<warning>↻</warning>");
+  assert.equal(stateIcon(child, styledTheme, true, 200), "<warning>↻</warning>");
+  for (const [state, expected] of [["failed", "<error>✗</error>"], ["completed", "<success>✓</success>"], ["needs_attention", "<warning>?</warning>"]]) {
+    child.state = state;
+    assert.equal(stateIcon(child, styledTheme), expected);
+  }
 });
 
 test("pinned status prioritizes attention, caps rows, and collapses on narrow terminals", () => {
@@ -142,8 +524,8 @@ test("pinned status prioritizes attention, caps rows, and collapses on narrow te
   const rendered = wide.join("\n");
 
   assert.equal(wide.length, 8);
-  assert.match(rendered, /Reader 8 · Needs decision: Choose the cache policy/);
-  assert.match(rendered, /Reader 9 · Interrupted · resume in \/agents/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 8 · sol · max · Needs decision: Choose the cache policy/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 9 · sol · max · Interrupted · resume in \/agents/);
   assert.match(rendered, /… 3 more · \/agents/);
   assert.deepEqual(component.render(140), wide);
   const narrow = component.render(60);
@@ -156,6 +538,7 @@ test("pinned status prioritizes attention, caps rows, and collapses on narrow te
 
 test("extreme narrow status remains width-safe with ANSI styling", () => {
   const ansiTheme = {
+    ...theme,
     fg: (_color, text) => `\u001b[31m${text}\u001b[0m`,
     bg: (_color, text) => text,
     bold: (text) => `\u001b[1m${text}\u001b[0m`,
@@ -200,14 +583,15 @@ test("every lifecycle state has explicit text and a non-color icon", () => {
   );
   const rendered = component.render(160).join("\n");
 
-  assert.match(rendered, /Reader 1 · Queued/);
-  assert.match(rendered, /Reader 2 · Starting/);
-  assert.match(rendered, /Reader 3 · Thinking/);
-  assert.match(rendered, /\? Reader 4 · Needs approval/);
-  assert.match(rendered, /✓ Reader 5 · Completed/);
-  assert.match(rendered, /✗ Reader 6 · Failed: Tests failed/);
-  assert.match(rendered, /○ Reader 7 · Cancelled/);
-  assert.match(rendered, /■ Reader 8 · Interrupted/);
+  const plain = stripVTControlCharacters(rendered);
+  assert.match(plain, /Reader 1 · sol · max · Queued/);
+  assert.match(plain, /Reader 2 · sol · max · Starting/);
+  assert.match(plain, /Reader 3 · sol · max · Thinking/);
+  assert.match(plain, /\? Reader 4 · sol · max · Needs approval/);
+  assert.match(plain, /✓ Reader 5 · sol · max · Completed/);
+  assert.match(plain, /✗ Reader 6 · sol · max · Failed: Tests failed/);
+  assert.match(plain, /○ Reader 7 · sol · max · Cancelled/);
+  assert.match(plain, /■ Reader 8 · sol · max · Interrupted/);
   component.dispose();
 });
 
@@ -246,7 +630,7 @@ test("terminal outcomes remain briefly and then clear", () => {
   completedRun.children[0].latestActivity = { kind: "message", summary: "Completed", observedAt: new Date(now).toISOString() };
   harness.emit(completedRun);
 
-  assert.match(component.render(100).join("\n"), /✓ Reader 1 · Completed · 10s/);
+  assert.match(stripVTControlCharacters(component.render(100).join("\n")), /✓ Reader 1 · sol · max · Completed\s+total 10s/);
   now = 39_999;
   assert.notDeepEqual(component.render(100), []);
   now = 40_001;
@@ -291,18 +675,18 @@ test("a new user turn dismisses retained outcomes without hiding active work", (
     theme,
     { now: () => 10_000 },
   );
-  assert.match(component.render(120).join("\n"), /Reader 2 · Completed/);
+  assert.match(stripVTControlCharacters(component.render(120).join("\n")), /Reader 2 · sol · max · Completed/);
 
   component.dismissTerminal();
 
-  let rendered = component.render(120).join("\n");
-  assert.match(rendered, /Reader 1 · Thinking/);
+  let rendered = stripVTControlCharacters(component.render(120).join("\n"));
+  assert.match(rendered, /Reader 1 · sol · max · Thinking/);
   assert.doesNotMatch(rendered, /Reader 2|completed/);
   assert.equal(renders, 1);
 
   harness.emit(mixedRun);
-  rendered = component.render(120).join("\n");
-  assert.match(rendered, /Reader 1 · Thinking/);
+  rendered = stripVTControlCharacters(component.render(120).join("\n"));
+  assert.match(rendered, /Reader 1 · sol · max · Thinking/);
   assert.doesNotMatch(rendered, /Reader 2|completed/);
   component.dispose();
 });
@@ -417,6 +801,85 @@ test("agent desk tie-breaks equal run times and keeps terminal stale attention r
   ]);
 });
 
+test("completion cards emphasize results, completed states, and the agents command without changing layout", () => {
+  const batch = run("completed", new Date().toISOString(), 2);
+  for (const child of batch.children) child.result = { kind: "text", value: "Task finished.\nMore detail.", completedAt: new Date().toISOString() };
+  const view = projectRun(batch);
+  const ui = createDelegateUi(runtimeFor(batch).runtime);
+  const calls = [];
+  const styledTheme = { ...theme, fg(color, text) { calls.push({ color, text }); return text; } };
+  for (const expanded of [false, true]) {
+    calls.length = 0;
+    const rendered = ui.renderCompletion(view, expanded, styledTheme).render(100).map((line) => line.trimEnd()).join("\n");
+    assert.equal(calls.filter((call) => call.color === "success" && call.text === "completed").length, 3);
+    assert.equal(calls.filter((call) => call.color === "text" && call.text.startsWith("Task finished.")).length, 2);
+    assert.equal(calls.filter((call) => call.color === "dim" && call.text === "⎿").length, 2);
+    assert.equal(calls.some((call) => call.color === "accent" && call.text === "/agents"), !expanded);
+    if (!expanded) {
+      assert.ok(calls.some((call) => call.color === "muted" && call.text === "Open: "));
+      assert.equal(rendered, "✓ 2 agents completed\n  Reader 1 completed\n  ⎿  Task finished.\n  Reader 2 completed\n  ⎿  Task finished.\n  Open: /agents");
+    } else assert.match(rendered, /More detail\./);
+  }
+  view.status = "failed";
+  view.children[0].state = "failed";
+  delete view.children[0].result;
+  view.children[0].error = { message: "Tool failed" };
+  view.omittedChildren = 1;
+  calls.length = 0;
+  const mixed = ui.renderCompletion(view, false, styledTheme).render(100).join("\n");
+  assert.ok(calls.some((call) => call.color === "error" && call.text === "Tool failed"));
+  assert.ok(calls.some((call) => call.color === "dim" && call.text === "failed"));
+  assert.ok(calls.some((call) => call.color === "accent" && call.text === "/agents"));
+  assert.match(mixed, /… 1 more · \/agents/);
+});
+
+test("collapsed completion keeps late failures and cancellations visible without changing expanded order", () => {
+  const batch = run("completed", new Date().toISOString(), 8);
+  batch.children[6].state = "failed";
+  batch.children[6].failure = { message: "Review failed", failedAt: new Date().toISOString() };
+  batch.children[7].state = "cancelled";
+  const view = projectRun(batch);
+  const before = structuredClone(view);
+  const ui = createDelegateUi(runtimeFor(batch).runtime);
+  const collapsed = ui.renderCompletion(view, false, theme).render(120).join("\n");
+  assert.match(collapsed, /Reader 7 failed/);
+  assert.match(collapsed, /Review failed/);
+  assert.match(collapsed, /Reader 8 cancelled/);
+  assert.match(collapsed, /… 2 more · \/agents/);
+  assert.doesNotMatch(collapsed, /Reader [56]/);
+  assert.equal((collapsed.match(/Reader \d+/g) ?? []).length, 6);
+  const expanded = ui.renderCompletion(view, true, theme).render(120).join("\n");
+  assert.deepEqual(expanded.match(/Reader \d+/g), batch.children.map((child) => child.label));
+  assert.deepEqual(view, before);
+});
+
+test("completion overflow identifies hidden problems and leaves unreported states unknown", () => {
+  const batch = run("failed", new Date().toISOString(), 8);
+  const view = { ...projectRun(batch), omittedChildren: 2 };
+  const ui = createDelegateUi(runtimeFor(batch).runtime);
+  const collapsed = ui.renderCompletion(view, false, theme).render(120).join("\n");
+  assert.match(collapsed, /… 4 more · including 2 failed · \/agents/);
+  const expanded = ui.renderCompletion(view, true, theme).render(120).join("\n");
+  assert.match(expanded, /… 2 more · \/agents/);
+  assert.doesNotMatch(expanded, /including/);
+});
+
+test("completion prioritizes attention and workspace failures even after a successful child turn", () => {
+  const batch = run("completed", new Date().toISOString(), 10);
+  const view = projectRun(batch);
+  view.children[6].state = "needs_attention";
+  view.children[6].attention = { kind: "decision", question: "Which target?" };
+  view.children[7].state = "interrupted";
+  view.children[8].workspace = { kind: "temporary", state: "conflict", message: "Patch conflict" };
+  view.children[9].workspace = { kind: "temporary", state: "applied", cleanupError: "Worktree remains" };
+  const ui = createDelegateUi(runtimeFor(batch).runtime);
+  const collapsed = ui.renderCompletion(view, false, theme).render(120).join("\n");
+  for (const label of ["Reader 7", "Reader 8", "Reader 9", "Reader 10"]) assert.ok(collapsed.includes(label));
+  assert.match(collapsed, /Which target\?/);
+  assert.match(collapsed, /Patch conflict/);
+  assert.match(collapsed, /Cleanup failed: Worktree remains/);
+});
+
 test("agent desk names conductor ownership and truthful attention delivery states", () => {
   const mixed = run("running", new Date().toISOString(), 7);
   mixed.id = "hidden-run-id";
@@ -455,7 +918,7 @@ test("agent desk names conductor ownership and truthful attention delivery state
 
   assert.match(rendered, /conductor manages subagents/);
   assert.match(rendered, /NEEDS RECOVERY/);
-  assert.match(rendered, /Reader 1 · sol · Interrupted/);
+  assert.match(stripVTControlCharacters(rendered), /Reader 1 · sol · max · Interrupted/);
   assert.match(rendered, /MANAGED BY CONDUCTOR/);
   assert.match(rendered, /RECENT/);
   assert.match(rendered, /Notifying conductor/);
@@ -607,12 +1070,12 @@ test("agent desk resume locks per child and reports launch errors", async () => 
   component.handleInput("R");
   component.handleInput("r");
   assert.deepEqual(calls, ["child-1"]);
-  assert.match(component.render(120).join("\n"), /First interrupted · sol · Resume requested/);
+  assert.match(stripVTControlCharacters(component.render(120).join("\n")), /First interrupted · sol · max · Resume requested/);
   component.handleInput("j");
   component.handleInput("r");
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(calls, ["child-1", "child-2"]);
-  assert.match(component.render(120).join("\n"), /Second interrupted · sol · Interrupted · Model unavailable/);
+  assert.match(stripVTControlCharacters(component.render(120).join("\n")), /Second interrupted · sol · max · Interrupted · Model unavailable/);
   resolveFirst();
   await new Promise((resolve) => setImmediate(resolve));
   component.dispose();
@@ -658,6 +1121,7 @@ test("agent desk shows queued, starting, running, and re-interrupted resume stat
 test("agent desk stays ANSI-safe on narrow and short terminals", () => {
   const many = run("running", new Date().toISOString(), 12);
   const ansiTheme = {
+    ...theme,
     fg: (_color, text) => `\u001b[31m${text}\u001b[0m`,
     bg: (_color, text) => `\u001b[40m${text}\u001b[0m`,
     bold: (text) => `\u001b[1m${text}\u001b[0m`,
@@ -674,6 +1138,7 @@ test("agent desk stays ANSI-safe on narrow and short terminals", () => {
     const lines = component.render(width);
     assert.ok(lines.length <= 6);
     assert.ok(lines.every((line) => visibleWidth(line) <= width));
+    assert.match(lines.at(-2), /Esc/);
     if (width >= 40) assert.match(lines.join("\n"), /Reader 1/);
   }
   component.handleInput("\r");
@@ -682,6 +1147,62 @@ test("agent desk stays ANSI-safe on narrow and short terminals", () => {
   assert.ok(detail.every((line) => visibleWidth(line) <= 40));
   assert.match(detail.join("\n"), /Agents \/ Reader 1/);
   component.dispose();
+});
+
+test("Agent Desk footers shorten complete hints and keep Escape visible", () => {
+  const component = new AgentDeskOverlayComponent(
+    runtimeFor(run("interrupted")).runtime,
+    {},
+    { requestRender() {}, terminal: { rows: 24 } },
+    theme,
+    () => {},
+    { async resume() {} },
+  );
+  try {
+    const wide = component.render(120).at(-2);
+    assert.match(wide, /↑\/↓ j\/k select · Enter live status · r\/R resume · Esc close/);
+    for (const width of [80, 60, 40, 23, 10, 5]) {
+      const lines = component.render(width);
+      assert.ok(lines.every((line) => visibleWidth(line) <= width));
+      assert.match(lines.at(-2), /Esc/);
+      assert.doesNotMatch(lines.at(-2), /…|\.\.\./);
+    }
+    assert.match(component.render(60).at(-2), /r resume/);
+    component.handleInput("\r");
+    for (const width of [80, 60, 40, 23, 10, 5]) {
+      assert.match(component.render(width).at(-2), /Esc/);
+      assert.doesNotMatch(component.render(width).at(-2), /…|\.\.\./);
+    }
+  } finally {
+    component.dispose();
+  }
+});
+
+test("scrollable transcript hints keep live and exit controls on narrow terminals", async () => {
+  const active = run();
+  active.children[0].sessionFile = "/tmp/unused.jsonl";
+  const component = new RunOverlayComponent(
+    runtimeFor(active).runtime,
+    active.id,
+    { requestRender() {}, terminal: { rows: 24 } },
+    theme,
+    () => {},
+    async () => [{ kind: "assistant", text: Array.from({ length: 50 }, (_, i) => `Line ${i}`).join("\n") }],
+    { detailOnly: true },
+  );
+  try {
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(component.render(120).at(-2), /PgUp\/PgDn page/);
+    assert.match(component.render(60).at(-2), /↑\/↓ scroll · End live · Esc agents/);
+    for (const width of [40, 23, 10, 5]) {
+      const lines = component.render(width);
+      assert.ok(lines.every((line) => visibleWidth(line) <= width));
+      assert.match(lines.at(-2), /Esc/);
+      assert.doesNotMatch(lines.at(-2), /…|\.\.\./);
+    }
+  } finally {
+    component.dispose();
+  }
 });
 
 test("compact Agent Desk detail keeps transcript scrolling truthful", async () => {
