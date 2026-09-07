@@ -1,4 +1,5 @@
 import { open } from "node:fs/promises";
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
 	Box,
@@ -132,9 +133,21 @@ function totalElapsed(run: DelegationRun, child: DelegatedChild, now: number): n
 	return Math.max(0, end - (Number.isFinite(start) ? start : end));
 }
 
+function modelThinking(child: DelegatedChild, theme: Theme, width: number, showProvider: boolean): string {
+	const reasoning = firstDisplayLine(child.resolved.reasoning);
+	const suffix = ` · ${reasoning}`;
+	const modelWidth = width - visibleWidth(suffix);
+	if (modelWidth < 4) return "";
+	const model = showProvider ? `${child.resolved.model.provider}/${child.resolved.model.id}` : child.resolved.model.id;
+	const text = `${stripVTControlCharacters(truncateToWidth(firstDisplayLine(model), modelWidth))}${suffix}`;
+	const level = child.resolved.reasoning as Parameters<Theme["getThinkingBorderColor"]>[0];
+	// ANSI faint keeps the thinking hue; theme.fg("dim") would replace it with grey.
+	return `\x1b[2m${theme.getThinkingBorderColor(level)(text)}\x1b[22m`;
+}
+
 function statusRow(
 	prefix: string, label: string, detail: string,
-	run: DelegationRun, child: DelegatedChild, width: number, theme: Theme, now = Date.now(),
+	run: DelegationRun, child: DelegatedChild, width: number, theme: Theme, now = Date.now(), showProvider = false,
 ): string {
 	const minimumLabelWidth = Math.max(1, Math.floor(width / 3));
 	const leading = `${prefix}${truncateToWidth(label, minimumLabelWidth)} · `;
@@ -145,15 +158,20 @@ function statusRow(
 	const toolTime = tool ? `tool ${compactDuration(now - Date.parse(tool.startedAt))}` : undefined;
 	let timing = `${toolTime ? `${toolTime} · ` : ""}total ${compactDuration(totalElapsed(run, child, now))}`;
 	// Keep the retry heading intact; otherwise reserve enough room to recognise the activity.
-	const minimumContent = retry
-		? visibleWidth(leading) + visibleWidth(retryActivity(child, now)?.split(" · ")[0] ?? "")
+	const retryHeadingWidth = retry ? visibleWidth(retryActivity(child, now)?.split(" · ")[0] ?? "") + 3 : undefined;
+	const minimumContent = retryHeadingWidth !== undefined
+		? visibleWidth(leading) + retryHeadingWidth
 		: Math.min(visibleWidth(content), 24, Math.floor(width * 0.6));
 	if (!isFinalState(child.state) && minimumContent + visibleWidth(timing) + 2 > width) timing = toolTime ?? "";
 	if (visibleWidth(timing) + 2 >= width) timing = "";
 	const contentWidth = timing ? width - visibleWidth(timing) - 2 : width;
+	const activityWidth = retryHeadingWidth ?? Math.min(visibleWidth(activity), 24);
+	const modelWidth = contentWidth - visibleWidth(prefix) - Math.min(visibleWidth(label), minimumLabelWidth) - activityWidth - 6;
+	const configuration = modelThinking(child, theme, modelWidth, showProvider);
+	const description = configuration ? `${configuration} · ${activity}` : activity;
 	// Give spare columns back to the label without displacing activity or timing.
-	const labelWidth = Math.max(minimumLabelWidth, contentWidth - visibleWidth(prefix) - 3 - visibleWidth(activity));
-	const fitted = truncateToWidth(`${prefix}${truncateToWidth(label, labelWidth)} · ${activity}`, contentWidth);
+	const labelWidth = Math.max(minimumLabelWidth, contentWidth - visibleWidth(prefix) - 3 - visibleWidth(description));
+	const fitted = truncateToWidth(`${prefix}${truncateToWidth(label, labelWidth)} · ${description}`, contentWidth);
 	return timing ? `${padAnsi(fitted, contentWidth)}  ${theme.fg("dim", timing)}` : fitted;
 }
 
@@ -879,9 +897,8 @@ export class AgentDeskOverlayComponent implements Component {
 				? `Interrupted · ${error}`
 				: deskAssignmentSummary(assignment);
 		const color = child.state === "failed" ? "error" : child.state === "interrupted" || child.state === "needs_attention" ? "warning" : "dim";
-		const model = this.theme.fg("dim", child.resolved.model.id);
 		const tool = toolSummary(child);
-		const detail = tool ? this.theme.fg("text", tool) : `${model} · ${this.theme.fg(color, firstDisplayLine(summary))}`;
+		const detail = tool ? this.theme.fg("text", tool) : this.theme.fg(color, firstDisplayLine(summary));
 		return statusRow(`${marker} ${stateIcon(child, this.theme)} `, label, detail, run, child, width, this.theme);
 	}
 
@@ -1191,12 +1208,9 @@ export class RunOverlayComponent implements Component {
 
 	private childHeader(run: DelegationRun, child: DelegatedChild, width: number): string {
 		const focus = this.transcriptFocused ? `${this.theme.fg("accent", "▶")} ` : "";
-		const route = `${child.resolved.model.provider}/${child.resolved.model.id} · ${child.resolved.reasoning}`;
 		const tool = toolSummary(child);
-		const detail = tool
-			? `${this.theme.fg("dim", route)} · ${this.theme.fg("text", tool)}`
-			: this.theme.fg("dim", `${child.state} · ${route}`);
-		return statusRow(`${focus}${stateIcon(child, this.theme)} `, this.theme.bold(firstDisplayLine(child.label)), detail, run, child, width, this.theme);
+		const detail = tool ? this.theme.fg("text", tool) : this.theme.fg("dim", child.state);
+		return statusRow(`${focus}${stateIcon(child, this.theme)} `, this.theme.bold(firstDisplayLine(child.label)), detail, run, child, width, this.theme, Date.now(), true);
 	}
 
 	private transcriptLines(run: DelegationRun, child: DelegatedChild, width: number): string[] {
@@ -1307,18 +1321,18 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 		},
 		renderCompletion(view, expanded, theme) {
 			let text = `${view.status === "completed" ? theme.fg("success", "✓") : theme.fg("warning", view.status === "needs_attention" ? "?" : "◐")} `;
-			text += `${theme.bold(`${view.children.length + (view.omittedChildren ?? 0)} agent${view.children.length + (view.omittedChildren ?? 0) === 1 ? "" : "s"}`)} ${theme.fg("dim", view.status)}`;
+			text += `${theme.bold(`${view.children.length + (view.omittedChildren ?? 0)} agent${view.children.length + (view.omittedChildren ?? 0) === 1 ? "" : "s"}`)} ${theme.fg(view.status === "completed" ? "success" : "dim", view.status)}`;
 			const ordered = expanded ? view.children : [...view.children].sort((left, right) =>
 				Number(!!completionProblem(right)) - Number(!!completionProblem(left)),
 			);
 			const visibleChildren = expanded ? ordered : ordered.slice(0, 6);
 			for (const child of visibleChildren) {
-				text += `\n  ${theme.fg("accent", child.label)} ${theme.fg("dim", child.state)}`;
+				text += `\n  ${theme.fg("accent", child.label)} ${theme.fg(child.state === "completed" ? "success" : "dim", child.state)}`;
 				if (child.attention) text += `\n  ${theme.fg("warning", `?  ${child.attention.question}`)}`;
 				if (child.result) {
 					const value = resultText(child.result, expanded);
 					const rendered = expanded ? value : value.split("\n", 1)[0]?.trim();
-					if (rendered) text += `\n  ${theme.fg("dim", `⎿  ${rendered}`)}`;
+					if (rendered) text += `\n  ${theme.fg("dim", "⎿")}  ${theme.fg("text", rendered)}`;
 				}
 				if (child.error) text += `\n  ${theme.fg("error", child.error.message)}`;
 				if (child.workspace) {
@@ -1344,12 +1358,12 @@ export function createDelegateUi(runtime: DelegateRuntime): DelegateUi {
 				}
 				const summary = [...problems].map(([problem, count]) => `${count} ${problem}`).join(" · ");
 				const warning = summary ? ` · ${theme.fg("warning", `including ${summary}`)}` : "";
-				text += `\n  ${theme.fg("dim", `… ${hidden} more`)}${warning}${theme.fg("dim", " · /agents")}`;
+				text += `\n  ${theme.fg("dim", `… ${hidden} more`)}${warning}${theme.fg("dim", " · ")}${theme.fg("accent", "/agents")}`;
 			}
 			if (expanded) {
 				text += `\n${theme.fg("dim", `Run: ${view.runId}`)}`;
 				text += `\n${theme.fg("dim", `Record: ${view.recordRef}`)}`;
-			} else if (hidden === 0) text += `\n  ${theme.fg("dim", "Open: /agents")}`;
+			} else if (hidden === 0) text += `\n  ${theme.fg("muted", "Open: ")}${theme.fg("accent", "/agents")}`;
 			return new Text(text, 0, 0);
 		},
 		async openDesk(target, context, actions) {
