@@ -196,6 +196,11 @@ function HerdrCreationAssertions(new_workspace: bool) -> HardAssertion[] {
             } else {
                 "w30:p9"
             },
+            destinationWorkspaceId: if (new_workspace) {
+                "w40"
+            } else {
+                "w30"
+            },
             destinationTabId: if (new_workspace) {
                 "w40:t1"
             } else {

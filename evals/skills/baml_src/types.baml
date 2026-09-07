@@ -66,6 +66,7 @@ class HerdrCreationSequenceAssertion {
     newWorkspace: bool,
     sourcePaneId: string,
     destinationPaneId: string,
+    destinationWorkspaceId: string,
     destinationTabId: string,
     sourceSessionPath: string,
     destinationSessionPath: string,
