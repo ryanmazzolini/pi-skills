@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { chmod, link, lstat, mkdir, mkdtemp, readFile, readlink, readdir, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, mkdtemp, opendir, readFile, readlink, readdir, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	WorkspaceConflictError,
@@ -824,20 +824,25 @@ async function inventoryScratchRoot(root: string): Promise<ScratchContentsSummar
 	let truncated = false;
 	while (directories.length > 0 && entries.length < 128 && bytes < 8 * 1024) {
 		const directory = directories.shift()!;
-		const children = await readdir(join(root, directory), { withFileTypes: true });
-		children.sort((left, right) => left.name.localeCompare(right.name));
-		for (const child of children) {
+		const directoryEntries: Array<{ name: string; display: string }> = [];
+		const childDirectories: string[] = [];
+		// Async iteration closes the handle on exhaustion, early exit, and errors.
+		for await (const child of await opendir(join(root, directory))) {
 			const path = directory ? `${directory}/${child.name}` : child.name;
 			const display = child.isDirectory() ? `${path}/` : child.isSymbolicLink() ? `${path}@` : path;
 			const size = Buffer.byteLength(display, "utf8");
-			if (entries.length >= 128 || bytes + size > 8 * 1024) {
+			if (entries.length + directoryEntries.length >= 128 || bytes + size > 8 * 1024) {
 				truncated = true;
 				break;
 			}
-			entries.push(display);
+			directoryEntries.push({ name: child.name, display });
 			bytes += size;
-			if (child.isDirectory()) directories.push(path);
+			if (child.isDirectory()) childDirectories.push(path);
 		}
+		directoryEntries.sort((left, right) => left.name.localeCompare(right.name));
+		entries.push(...directoryEntries.map((entry) => entry.display));
+		directories.push(...childDirectories.sort((left, right) => left.localeCompare(right)));
+		if (truncated) break;
 	}
 	if (directories.length > 0) truncated = true;
 	return { entries, truncated };

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -609,6 +611,107 @@ test("creates an empty scratch cwd inside a private temporary envelope", async (
   await manager.cleanup(workspace);
   assert.equal(fs.existsSync(workspace.envelope.rootPath), false);
   assert.equal(fs.readFileSync(path.join(source, "input.txt"), "utf8"), "source material\n");
+});
+
+function trackDirectoryReads(t, failAfter) {
+  const opened = [];
+  const opendir = fsPromises.opendir;
+  const mock = t.mock.method(fsPromises, "opendir", async (...args) => {
+    const handle = await opendir(...args);
+    const observation = { handle, reads: 0 };
+    opened.push(observation);
+    const iterator = handle[Symbol.asyncIterator].bind(handle);
+    handle[Symbol.asyncIterator] = async function* () {
+      for await (const entry of iterator()) {
+        observation.reads++;
+        if (observation.reads === failAfter) {
+          yield { name: entry.name, isDirectory() { throw new Error("entry inspection failed"); } };
+        } else {
+          yield entry;
+        }
+      }
+    };
+    return handle;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    mock.mock.restore();
+    syncBuiltinESMExports();
+  });
+  return opened;
+}
+
+function scratchFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-inventory-test-"));
+  const sourceCwd = path.join(root, "source");
+  fs.mkdirSync(sourceCwd);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new GitWorkspaceManager(path.join(root, "temporary"));
+  return {
+    manager,
+    input: {
+      sourceCwd,
+      runId: "run",
+      childId: "child",
+      patchPath: path.join(root, "patch.patch"),
+      manifestPath: path.join(root, "manifest.json"),
+    },
+  };
+}
+
+for (const { name, count, suffix, truncated } of [
+  { name: "entry limit", count: 256, suffix: "", truncated: true },
+  { name: "UTF-8 byte limit", count: 80, suffix: "é".repeat(90), truncated: true },
+  { name: "exact entry limit", count: 128, suffix: "", truncated: false },
+]) {
+  test(`streams scratch inventory to the ${name} and closes its directory`, async (t) => {
+    const { manager, input } = scratchFixture(t);
+    const workspace = await manager.prepare(input);
+    for (let index = 0; index < count; index++) {
+      fs.writeFileSync(path.join(workspace.worktreePath, `${String(index).padStart(3, "0")}${suffix}`), "");
+    }
+    const opened = trackDirectoryReads(t);
+
+    const contents = await manager.inspectScratch(workspace);
+
+    assert.equal(contents.truncated, truncated);
+    assert.ok(contents.entries.length > 0 && contents.entries.length <= 128);
+    assert.ok(contents.entries.reduce((bytes, entry) => bytes + Buffer.byteLength(entry), 0) <= 8 * 1024);
+    assert.equal(opened.length, 1);
+    assert.equal(opened[0].reads, contents.entries.length + (truncated ? 1 : 0));
+    assert.deepEqual(contents.entries, [...contents.entries].sort((left, right) => left.localeCompare(right)));
+    await assert.rejects(opened[0].handle.read(), { code: "ERR_DIR_CLOSED" });
+    await manager.cleanup(workspace);
+  });
+}
+
+test("preserves breadth-first alphabetical inventory and does not follow symlinks", async (t) => {
+  const { manager, input } = scratchFixture(t);
+  const workspace = await manager.prepare(input);
+  fs.writeFileSync(path.join(workspace.worktreePath, "z.txt"), "");
+  fs.mkdirSync(path.join(workspace.worktreePath, "a"));
+  fs.writeFileSync(path.join(workspace.worktreePath, "a", "nested.txt"), "");
+  fs.writeFileSync(path.join(workspace.worktreePath, "a.txt"), "");
+  fs.symlinkSync(workspace.worktreePath, path.join(workspace.worktreePath, "link"));
+
+  assert.deepEqual(await manager.inspectScratch(workspace), {
+    entries: ["a/", "a.txt", "link@", "z.txt", "a/nested.txt"],
+    truncated: false,
+  });
+  await manager.cleanup(workspace);
+});
+
+test("closes the scratch inventory directory when entry inspection throws", async (t) => {
+  const { manager, input } = scratchFixture(t);
+  const workspace = await manager.prepare(input);
+  for (const name of ["one", "two", "three"]) fs.writeFileSync(path.join(workspace.worktreePath, name), "");
+  const opened = trackDirectoryReads(t, 2);
+
+  await assert.rejects(manager.inspectScratch(workspace), /entry inspection failed/);
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].reads, 2);
+  await assert.rejects(opened[0].handle.read(), { code: "ERR_DIR_CLOSED" });
+  await manager.cleanup(workspace);
 });
 
 test("preserves a replaced or mismatched temporary envelope", async (t) => {
