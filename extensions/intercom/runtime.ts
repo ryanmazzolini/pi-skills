@@ -7,7 +7,6 @@ import {
 	IntercomClient,
 	piSessionIdOf,
 	type Attachment,
-	type IntercomRole,
 	type Message,
 	type PiSessionPresence,
 	type ReceivedMessage,
@@ -74,7 +73,7 @@ export interface RuntimeTriageResult {
 
 export interface RuntimeRoleResult {
 	sessionId: string;
-	role?: IntercomRole;
+	role?: string;
 }
 
 interface TriageSweepTail extends RuntimeTriageTail {
@@ -96,7 +95,7 @@ export interface IntercomStatus {
 	advertisingPiSession: boolean;
 	roleCapability: boolean;
 	advertisingFirstMate: boolean;
-	role?: IntercomRole;
+	role?: string;
 	error?: string;
 	initialConnectionError?: string;
 }
@@ -167,10 +166,10 @@ export class IntercomRuntime extends EventEmitter {
 			: session);
 	}
 
-	async setRole(role: IntercomRole | null): Promise<RuntimeRoleResult> {
+	async setRole(role: string | null): Promise<RuntimeRoleResult> {
 		await this.ensureConnected();
 		if (!this.client.supportsCapability(INTERCOM_ROLE_CAPABILITY)) {
-			throw new Error("The active intercom broker does not support First Mate roles; after it exits, wait for reconnect and invoke First Mate again");
+			throw new Error("The active intercom broker does not support generic role labels; update all clients and restart the broker before publishing a role");
 		}
 		const brokerSessionId = this.client.sessionId;
 		const sessionId = this.client.currentPiSessionId();

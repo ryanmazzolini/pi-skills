@@ -74,7 +74,11 @@ test("validates action-specific fields while preserving attachment and reply sel
 	assert.throws(() => validateIntercomAction({ action: "triage", limit: 1 }), /limit is not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "first-mate" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role" }));
-	assert.throws(() => validateIntercomAction({ action: "role", role: "supervisor" }), /Invalid intercom role/);
+	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "project-manager" }));
+	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "a".repeat(64) }));
+	for (const role of ["", "a".repeat(65), "First-Mate", "two words", "-a", "a-", "a--b", "a_b", "é", "a\n", "a\u202e", null, 1, ["first-mate"], { name: "first-mate" }]) {
+		assert.throws(() => validateIntercomAction({ action: "role", role }), /Invalid intercom role/);
+	}
 	assert.throws(() => validateIntercomAction({ action: "list", role: "first-mate" }), /not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "send", to: "worker", message: "update", attachments: [] }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "tail", to: "worker", limit: 8, tailScanBytes: 1_024, tailProjectionBytes: 4_096 }));
@@ -751,11 +755,23 @@ test("real SessionManager lifecycle clears First Mate role until explicit reinvo
 	assert.equal((await listedSession()).piSessionId, "role-life-a");
 	assert.equal(await listedRole(), undefined);
 
-	const invoke = async (client = observer) => {
-		const result = await execute({ action: "role", role: "first-mate" });
-		assert.match(result.content[0].text, /Published First Mate role/);
-		await waitFor(async () => await listedRole(client) === "first-mate");
+	const invoke = async (client = observer, role = "oncall-triage") => {
+		const result = await execute({ action: "role", role });
+		assert.ok(result.content[0].text.includes(`Published role ${JSON.stringify(role)}`));
+		assert.equal(result.details.role, role);
+		assert.equal(result.details.advertisingFirstMate, role === "first-mate");
+		await waitFor(async () => await listedRole(client) === role);
+		const status = await execute({ action: "status" });
+		assert.equal(status.details.role, role);
+		assert.ok(status.content[0].text.includes(`Published role: ${JSON.stringify(role)}`));
+		const list = await execute({ action: "list" });
+		assert.ok(list.content[0].text.includes(`role: ${role}`));
 	};
+	await invoke(observer, "first-mate");
+	const cleared = await execute({ action: "role" });
+	assert.match(cleared.content[0].text, /Cleared role/);
+	assert.equal(cleared.details.role, null);
+	assert.equal(await listedRole(), undefined);
 	await invoke();
 	manager.branch(firstEntry);
 	await handlers.get("session_tree")({ oldLeafId: undefined, newLeafId: firstEntry }, ctx);
@@ -838,7 +854,7 @@ test("tree and compaction fence both role publication race orders", async (t) =>
 			if (message?.type === "register") {
 				activeSocket = socket;
 				activeSession = { id: `role-race-${++nextId}`, ...message.session };
-				socket.write(encodeFrame({ type: "registered", sessionId: activeSession.id, capabilities: ["first-mate-role-v1"] }));
+				socket.write(encodeFrame({ type: "registered", sessionId: activeSession.id, capabilities: ["session-role-v1"] }));
 				return;
 			}
 			if (message?.type === "presence" && message.role !== undefined) {
