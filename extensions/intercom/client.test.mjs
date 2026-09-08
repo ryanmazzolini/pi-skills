@@ -77,14 +77,17 @@ test("stable Pi session identity is bounded and must match persisted presence", 
 	assert.throws(() => client.setRegistration({ ...registration, piSessionId: "different", piSession }), /Invalid intercom session registration/);
 });
 
-test("session roles accept only the exact bounded First Mate value without changing piSession", () => {
+test("session roles accept bounded discovery labels without changing piSession", () => {
 	const base = { id: "peer", cwd: "/tmp", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
 	const piSession = { sessionId: "pi-session", fileLocator: "/tmp/session.jsonl", activeLeafId: null, revision: 1 };
-	assert.equal(isIntercomRole("first-mate"), true);
-	assert.equal(isIntercomRole("supervisor"), false);
-	assert.equal(isSessionInfo({ ...base, role: "first-mate", piSession }), true);
-	assert.equal(isSessionInfo({ ...base, role: "supervisor", piSession }), false);
-	assert.equal(isSessionInfo({ ...base, role: { name: "first-mate" }, piSession }), false);
+	for (const role of ["first-mate", "oncall-triage", "project-manager", "a", "team-2", "a".repeat(64)]) {
+		assert.equal(isIntercomRole(role), true, role);
+		assert.equal(isSessionInfo({ ...base, role, piSession }), true, role);
+	}
+	for (const role of ["", "a".repeat(65), "First-Mate", "two words", "-a", "a-", "a--b", "a_b", "é", "a\n", "a\u202e", null, 1, ["first-mate"], { name: "first-mate" }]) {
+		assert.equal(isIntercomRole(role), false, JSON.stringify(role));
+		assert.equal(isSessionInfo({ ...base, role, piSession }), false, JSON.stringify(role));
+	}
 	assert.deepEqual(piSession, { sessionId: "pi-session", fileLocator: "/tmp/session.jsonl", activeLeafId: null, revision: 1 });
 });
 

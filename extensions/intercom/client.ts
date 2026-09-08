@@ -7,10 +7,10 @@ import path from "node:path";
 import { getBrokerSocketPath } from "./broker/paths.ts";
 
 export const INTERCOM_TAIL_CAPABILITY = "pi-session-tail-v1";
-export const INTERCOM_ROLE_CAPABILITY = "first-mate-role-v1";
+export const INTERCOM_ROLE_CAPABILITY = "session-role-v1";
 export const INTERCOM_IDENTITY_CAPABILITY = "pi-session-identity-v1";
 export const INTERCOM_CONVERSATION_AGE_CAPABILITY = "pi-session-conversation-age-v1";
-export type IntercomRole = "first-mate";
+export const INTERCOM_ROLE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export interface PiSessionPresence {
 	sessionId: string;
@@ -33,7 +33,8 @@ export interface SessionInfo {
 	/** Epoch milliseconds for the latest completed user/assistant text used by triage, or null when unavailable. */
 	lastConversationalTimestamp?: number | null;
 	status?: string;
-	role?: IntercomRole;
+	/** Self-declared discovery label, not authority or a message address. */
+	role?: string;
 	piSession?: PiSessionPresence;
 }
 
@@ -85,6 +86,7 @@ export const INTERCOM_LIMITS = Object.freeze({
 	maxIdBytes: 256,
 	maxTargetBytes: 1024,
 	maxSessionStringBytes: 4096,
+	maxRoleBytes: 64,
 	maxCapabilities: 16,
 	maxCapabilityBytes: 64,
 	maxPiSessionIdBytes: 256,
@@ -159,8 +161,8 @@ export function isMessage(value: unknown): value is Message {
 		&& (content.attachments === undefined || areAttachments(content.attachments));
 }
 
-export function isIntercomRole(value: unknown): value is IntercomRole {
-	return value === "first-mate";
+export function isIntercomRole(value: unknown): value is string {
+	return boundedString(value, INTERCOM_LIMITS.maxRoleBytes) && INTERCOM_ROLE_PATTERN.test(value);
 }
 
 export function isPiSessionPresence(value: unknown): value is PiSessionPresence {
@@ -356,8 +358,8 @@ interface AskWaiter extends Pending<ReceivedMessage> {
 	onAbort?: () => void;
 }
 
-interface RolePending extends Pending<IntercomRole | undefined> {
-	expectedRole?: IntercomRole;
+interface RolePending extends Pending<string | undefined> {
+	expectedRole?: string;
 	generation: number;
 	sessionId: string;
 	socket: Socket;
@@ -387,7 +389,7 @@ export class IntercomClient extends EventEmitter {
 	private pendingLists = new Map<string, Pending<SessionInfo[]>>();
 	private pendingRoles = new Map<string, RolePending>();
 	private askWaiters = new Map<string, AskWaiter>();
-	private advertisedRole: IntercomRole | undefined;
+	private advertisedRole: string | undefined;
 	private roleGeneration = 0;
 	private desired = false;
 	private lifecycleGeneration = 0;
@@ -439,7 +441,7 @@ export class IntercomClient extends EventEmitter {
 		return this.registration?.piSession ? { ...this.registration.piSession } : undefined;
 	}
 
-	currentRole(): IntercomRole | undefined {
+	currentRole(): string | undefined {
 		return this.advertisedRole;
 	}
 
@@ -1000,10 +1002,10 @@ export class IntercomClient extends EventEmitter {
 		})();
 	}
 
-	setRole(role: IntercomRole | null): Promise<IntercomRole | undefined> {
+	setRole(role: string | null): Promise<string | undefined> {
 		const socket = this.requireActiveSocket();
 		if (!this.supportsCapability(INTERCOM_ROLE_CAPABILITY)) {
-			return Promise.reject(new Error("The active intercom broker does not support First Mate roles; after it exits, wait for reconnect and invoke First Mate again"));
+			return Promise.reject(new Error("The active intercom broker does not support generic role labels; update all clients and restart the broker before publishing a role"));
 		}
 		if (role !== null && !isIntercomRole(role)) return Promise.reject(new Error("Invalid intercom role"));
 		if (this.pendingRoles.size >= INTERCOM_LIMITS.maxPendingRoles) return Promise.reject(new Error("Too many pending intercom role changes"));

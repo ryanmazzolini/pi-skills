@@ -11,7 +11,7 @@ import { isAbsolute, join } from "node:path";
 process.umask(0o077);
 
 const TAIL_CAPABILITY = "pi-session-tail-v1";
-const ROLE_CAPABILITY = "first-mate-role-v1";
+const ROLE_CAPABILITY = "session-role-v1";
 const IDENTITY_CAPABILITY = "pi-session-identity-v1";
 const CONVERSATION_AGE_CAPABILITY = "pi-session-conversation-age-v1";
 const BROKER_CAPABILITIES = Object.freeze([TAIL_CAPABILITY, ROLE_CAPABILITY, IDENTITY_CAPABILITY, CONVERSATION_AGE_CAPABILITY]);
@@ -27,6 +27,7 @@ const LIMITS = Object.freeze({
 	id: 256,
 	target: 1024,
 	sessionString: 4096,
+	role: 64,
 	piSessionId: 256,
 	piSessionFile: 4096,
 	piSessionLeaf: 256,
@@ -77,7 +78,7 @@ function isConversationalTimestamp(value) {
 }
 
 function isRole(value) {
-	return value === "first-mate";
+	return boundedString(value, LIMITS.role) && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
 }
 
 function isAttachment(value) {

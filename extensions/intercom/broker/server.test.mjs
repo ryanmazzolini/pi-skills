@@ -26,7 +26,7 @@ test("owned broker preserves registration, list, presence, attachments, disconne
 	t.after(() => closeAll(alice, bob));
 
 	assert.equal(alice.supportsCapability("pi-session-tail-v1"), true);
-	assert.equal(alice.supportsCapability("first-mate-role-v1"), true);
+	assert.equal(alice.supportsCapability("session-role-v1"), true);
 	assert.equal(alice.supportsCapability("pi-session-identity-v1"), true);
 	assert.equal(alice.supportsCapability("pi-session-conversation-age-v1"), true);
 	const sessions = await alice.listSessions();
@@ -461,7 +461,7 @@ test("owned broker propagates and atomically updates persisted Pi session presen
 	}
 });
 
-test("owned broker acknowledges exact First Mate role publication and clearing and rejects malformed roles", async (t) => {
+test("owned broker publishes discovery labels without reserving names or routing by role", async (t) => {
 	const { paths } = await isolatedIntercom(t, "role-pres-");
 	const broker = await startOwnedBroker(paths);
 	t.after(() => stopChild(broker));
@@ -473,12 +473,30 @@ test("owned broker acknowledges exact First Mate role publication and clearing a
 	assert.equal(await target.setRole("first-mate"), "first-mate");
 	assert.equal((await published)[0].role, "first-mate");
 	assert.equal((await observer.listSessions()).find((session) => session.id === target.sessionId).role, "first-mate");
+	for (const role of ["oncall-triage", "project-manager", "a".repeat(64)]) {
+		const changed = waitEvent(observer, "presence_update", (session) => session.id === target.sessionId && session.role === role);
+		assert.equal(await target.setRole(role), role);
+		assert.equal((await changed)[0].role, role);
+		assert.equal((await observer.listSessions()).find((session) => session.id === target.sessionId).role, role);
+	}
+	await target.setRole("oncall-triage");
+	await observer.setRole("oncall-triage");
+	assert.equal((await observer.listSessions()).filter((session) => session.role === "oncall-triage").length, 2);
+	const byRole = await observer.send("oncall-triage", { text: "not an address" });
+	assert.equal(byRole.delivered, false);
+	assert.match(byRole.reason, /Session not found/);
+	const received = waitEvent(target, "message", (_from, message) => message.id === "labeled-sender");
+	assert.equal((await observer.send(target.sessionId, { messageId: "labeled-sender", text: "exact recipient" }, undefined, undefined, target.currentPiSessionId())).delivered, true);
+	assert.equal((await received)[0].role, "oncall-triage");
+
 	const cleared = waitEvent(observer, "presence_update", (session) => session.id === target.sessionId && session.role === undefined);
 	assert.equal(await target.setRole(null), undefined);
 	assert.equal((await cleared)[0].role, undefined);
+	assert.equal((await observer.listSessions()).find((session) => session.id === target.sessionId).role, undefined);
+	assert.equal((await target.listSessions()).find((session) => session.id === observer.sessionId).role, "oncall-triage");
 
 	const registrationRole = await connectRaw(paths.socketPath);
-	registrationRole.write({ type: "register", session: registration("registration-role", { role: "first-mate" }) });
+	registrationRole.write({ type: "register", session: registration("registration-role", { role: "project-manager" }) });
 	const registered = await registrationRole.wait((message) => message.type === "registered");
 	assert.equal((await observer.listSessions()).find((session) => session.id === registered.sessionId).role, undefined);
 	registrationRole.socket.destroy();
@@ -487,7 +505,9 @@ test("owned broker acknowledges exact First Mate role publication and clearing a
 		["missing-role-id", { type: "presence", role: "first-mate" }],
 		["empty-role-id", { type: "presence", requestId: "", role: "first-mate" }],
 		["oversized-role-id", { type: "presence", requestId: "x".repeat(INTERCOM_LIMITS.maxIdBytes + 1), role: "first-mate" }],
-		["malformed-role", { type: "presence", requestId: "invalid-role", role: "supervisor" }],
+		...["", "a".repeat(65), "First-Mate", "two words", "-a", "a-", "a--b", "a_b", "é", "a\n", "a\u202e", 1, ["first-mate"], { name: "first-mate" }].map((role, index) => [
+			`malformed-role-${index}`, { type: "presence", requestId: "invalid-role", role },
+		]),
 	]) {
 		const raw = await connectRaw(paths.socketPath);
 		raw.write({ type: "register", session: registration(name) });
