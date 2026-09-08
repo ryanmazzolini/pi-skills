@@ -1,13 +1,13 @@
 # First Mate takeover
 
-Read this when triage finds another advertised First Mate or this session receives an exact takeover request.
+Read this when startup finds another advertised First Mate or this session receives an exact takeover request.
 
 ## Offer takeover
 
 When this session finds another First Mate:
 
 1. Retain the full IDs of every other advertised First Mate. Exclude this session's ID.
-2. Clear this session's First Mate role with `intercom` `action: "role"` and no `role` value. Do not use the returned peer evidence or contact project sessions. If the role cannot be cleared, report the limitation and stop.
+2. If this session advertises `first-mate`, clear it with `intercom` `action: "role"` and no `role` value. Do not inspect or contact project peers while the takeover choice is pending. If an advertised role cannot be cleared, report the limitation and stop.
 3. Ask one question: `Another First Mate is active. Take over here?`
 4. On a clear yes, make this exact `ask` to each retained other First Mate ID:
 
@@ -26,6 +26,6 @@ Stop automatic First Mate contact after clearing the role. The request transfers
 
 ## Complete takeover
 
-Accept a wake notice only from a retained other First Mate ID. Record each result without polling. After every retained other First Mate sends the success notice, run one fresh deterministic triage. Proceed only when that result shows this session as the sole advertised First Mate.
+Accept a wake notice only from a retained other First Mate ID. Record each result without polling. After every retained other First Mate sends the success notice, take a fresh coherent `status` and `list`. Require a complete inventory with this session's ID present exactly once and no other advertised First Mate. Publish `first-mate` with `action: "role"`, then resume the original request. No triage sweep is needed; approval still requires fresh verification through [decision handling](decision-handling.md).
 
 On a failure notice, report the limitation and make no automatic contact. If a holder remains unanswered, stay idle until its notice or the human's next request. Do not poll or retry automatically.

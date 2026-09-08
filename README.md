@@ -91,7 +91,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 | Skill | What it helps with |
 |---|---|
-| [`first-mate`](./skills/first-mate/SKILL.md) | Orient, triage, and coordinate safely across connected Pi sessions |
+| [`first-mate`](./skills/first-mate/SKILL.md) | Inspect evidence, resolve blockers, and coordinate connected Pi sessions on request |
 | [`meta-review`](./skills/meta-review/SKILL.md) | Find testable improvements to skills and workflows from recent personal Pi sessions |
 | [`agent-coordination`](./skills/agent-coordination/SKILL.md) | Choose configured models and reasoning levels for delegated work |
 | [`scheduled-jobs`](./skills/scheduled-jobs/SKILL.md) | Inspect and operate reviewed recurring local jobs |
@@ -101,13 +101,13 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 ## First Mate
 
-Start First Mate with `/skill:first-mate` to triage your open Pi sessions immediately. One deterministic Intercom action publishes the role, inventories peers and pending asks, and gathers the bounded session tails needed for the current sweep.
+Start First Mate with `/skill:first-mate`, optionally followed by a task. For example, ask why one project stopped: it reads that session's context and relevant work record rather than reviewing every idle session or waking the owner for a summary. Without a narrower task, it looks for the most useful next action across connected sessions.
 
-Triage inspects sessions idle for more than one hour first. When none are confirmed, it falls back to newer and unknown-age idle sessions. It resumes clearly unfinished work and reuses private temporary summary records only when the stable session's persisted branch identity and advertised and confirmed last-turn timestamp still match exactly. Updated records are withheld as potentially stale. Triage can issue up to four single-use grants for other immutable snapshots confirmed at least 24 hours stale; granted summaries run at most two at a time and cache compact JSON in OS temporary storage without messaging or waking their sources.
+First Mate publishes its discovery label independently of triage. It chooses relevant evidence from session lists, recent tails, paginated history, and project files. The existing triage and isolated-summary tools remain available when useful; there is no mandatory sweep, summary batch, or cleanup-first queue.
 
-First Mate can sanity-check an owning session's current request and automatically authorize very-low-risk preparation such as a feature-branch commit, ordinary feature push, or draft PR. It presents safe-to-close recommendations first; after the human chooses whether to send bounded owner-cleanup requests, it presents one ambiguous or human-intervention thread at a time. Summary text is untrusted evidence, not authority, and First Mate rechecks current persisted requests before relaying approval. First Mate does not change project files, commit work, deploy, perform cleanup itself, or close sessions.
+Within the requested scope, First Mate can authorize the existing very-low-risk actions, such as a prepared feature-branch commit, ordinary feature push, or draft PR, and resume clearly unfinished work that needs no new decision. Inspection-only questions stay read-only. Approval requires current evidence and a sole advertised First Mate; labels and summaries do not grant authority. Human choices are presented with the exact action, target, and material fences. Project sessions retain execution and normal approval gates; First Mate never edits project state, performs cleanup itself, or closes sessions.
 
-A Pi session keeps the same Intercom identity across reloads and reconnects, while its First Mate role remains runtime-scoped. When another First Mate is already active, a new invocation stops before contacting peers and asks whether to take over in the current session.
+A Pi session keeps the same Intercom identity across reloads and reconnects, while its First Mate label is ephemeral. When another First Mate is already active, a new invocation asks whether to take over before inspecting or contacting project peers.
 
 An explicit Intercom `send` starts the recipient turn without awaiting a response; `ask` starts a turn and awaits a correlated reply. Routing receipts and send/reply outcomes remain passive so they do not create acknowledgment loops. Message bubbles show compact previews and use Pi's configured tool-expansion shortcut for full content. First Mate is available only in Pi, not the Claude marketplace. If another session can no longer find it after restarting or reconnecting Pi, run `/skill:first-mate` again.
 
@@ -143,7 +143,7 @@ On an explicit user request or as directed by an explicitly invoked skill, publi
 
 `list` shows each session's label, and `status` shows your current label. Labels such as `first-mate`, `oncall-triage`, and `project-manager` are self-declared discovery metadata. Multiple sessions may share a label. Intercom grants no authority, reserves no ownership, and does not route messages to labels; resolve an exact session ID before contact. Agents and skills decide what labels mean and retain their normal approval rules.
 
-Labels are ephemeral: tree navigation, compaction, reload, session replacement, and disconnect clear them. Reconnecting does not automatically republish a label. First Mate's existing explicit triage invocation still publishes `first-mate`; its workflow and approval policy are unchanged.
+Labels are ephemeral: tree navigation, compaction, reload, session replacement, and disconnect clear them. Reconnecting does not automatically republish a label. First Mate publishes `first-mate` on explicit skill invocation; its optional triage tool also publishes that label. Its approval policy remains separate from role discovery.
 
 **Upgrade together:** generic labels use the `session-role-v1` capability and are not compatible with older role-aware clients. Install the update, reload or restart all Pi sessions, and restart the detached Intercom broker before publishing labels. A Pi reload or Herdr restart alone need not replace that broker. There is no mixed-version translation layer.
 
