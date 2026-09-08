@@ -79,7 +79,7 @@ A significant unresolved question may also prevent approval without becoming an 
 
 Write each introduced finding as a proposed inline comment on the smallest changed line or range that establishes the defect. For an **Existing issue**, use the smallest changed line or range that establishes its direct relevance to the reviewed behavior, such as a new caller of an affected helper, and identify the pre-existing defect in the comment. Use the old side for deleted lines when the host supports it. Do not anchor comments to unchanged surrounding code.
 
-Make the displayed file and line reference a deep link when the review host supports one. Use an immutable blob link pinned to the reviewed head, or to the base for deleted lines. A host-provided diff link is suitable only when it is pinned to the reviewed revision. Fall back to a plain path for local-only reviews rather than inventing a link. Display ranges as `path/to/file:81-86`; keep host-specific anchors such as `#L81-L86` in the URL.
+Provide a deep-link URL for the file and line reference when the review host supports one. Use an immutable blob link pinned to the reviewed head, or to the base for deleted lines. A host-provided diff link is suitable only when it is pinned to the reviewed revision. Fall back to a plain path for local-only reviews rather than inventing a link. Display ranges as `path/to/file:81-86`; keep host-specific anchors such as `#L81-L86` in the URL.
 
 Order comments by action—**Blocks approval**, **Blocks merge**, **Non-blocking**, then **Existing issue**—and then by impact. Use group headings when they make several comments easier to navigate.
 
@@ -134,7 +134,7 @@ Give each reviewed pull request, commit, or diff exactly one recommendation:
 
 Let proposed comments carry their own consequences. Add context, risk, validation, or recommendation rationale when it changes the decision, explains material uncertainty, tells the reviewer what to verify, or synthesizes several findings. State the supported consequence rather than a general risk category. Routine successful checks can remain implicit; link evidence that materially changes confidence.
 
-Show every proposed inline comment as a changed-line link followed by a blockquote containing the exact publishable body. Keep the classification and any required AI attribution inside that body. Let the recommendation and comment classifications carry the decision. Reserve wrapper headings, separate classification summaries, and grouping for multiple targets or findings that need them. Separate targets in a stack and assign each finding to the change that introduced it.
+Show every proposed inline comment with its changed-line reference followed by a blockquote containing the exact publishable body. In terminal responses, show the reference's full URL on its own line by default; use a labeled Markdown link only when the URL is very long and impairs readability. For local-only reviews, show the plain path instead. Preserve Markdown links inside the publishable body, including drafts shown in chat. Keep the classification and any required AI attribution inside that body. Let the recommendation and comment classifications carry the decision. Reserve wrapper headings, separate classification summaries, and grouping for multiple targets or findings that need them. Separate targets in a stack and assign each finding to the change that introduced it.
 
 Use **Existing issue** as the comment's classification, state that it predates the reviewed change, and link its tracking item when available.
 
