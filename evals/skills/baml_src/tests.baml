@@ -360,6 +360,34 @@ testset "contracts" {
         ;
     }
 
+    test "Herdr creation fixtures provide command-group help" {
+        for (let new_workspace in [false, true]) {
+            let scenario = HerdrCreationScenario(new_workspace);
+            for (let group in ["workspace", "tab", "pane", "agent"]) {
+                let command = `herdr ${group}`;
+                let help = FixtureBash(scenario, command);
+                assert.is_true(!help.starts_with("Fixture command unavailable:"));
+                assert.is_true(help.includes(command));
+                assert.equal(FixtureBash(scenario, command + " --help"), help);
+            }
+            ;
+        }
+        ;
+    }
+
+    test "Herdr creation help fixtures do not shadow command results" {
+        for (let new_workspace in [false, true]) {
+            let scenario = HerdrCreationScenario(new_workspace);
+            for (let fixture in scenario.bashResponses) {
+                if (fixture.includes.starts_with("herdr ") && fixture.includes.split(" ").length() >= 3) {
+                    assert.equal(FixtureBash(scenario, fixture.includes), fixture.output);
+                };
+            }
+            ;
+        }
+        ;
+    }
+
     test "Herdr quoted pane commands return the correct fixture evidence" {
         for (let new_workspace in [false, true]) {
             let scenario = HerdrCreationScenario(new_workspace);

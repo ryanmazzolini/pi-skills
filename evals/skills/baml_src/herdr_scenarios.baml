@@ -960,6 +960,10 @@ function HerdrScenarios() -> Scenario[] {
                     "#,
                 },
                 BashResponse {
+                    includes: "herdr agent",
+                    output: "herdr agent get <agent_name>\nherdr agent start <agent_name> --kind pi --pane <pane_id> -- <args...>\nherdr agent wait <pane_id> [--timeout <milliseconds>]",
+                },
+                BashResponse {
                     includes: "herdr pane get w18:p1",
                     output: #"
                         {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/git","pane_id":"w18:p1","workspace_id":"w18"}}}
@@ -970,6 +974,10 @@ function HerdrScenarios() -> Scenario[] {
                     output: #"
                         {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/destination.jsonl"},"agent_status":"idle","cwd":"/Users/ryan/git/api","pane_id":"w40:p1","tab_id":"w40:t1","workspace_id":"w40"}}}
                     "#,
+                },
+                BashResponse {
+                    includes: "herdr pane",
+                    output: "herdr pane current --current\nherdr pane list [--workspace <workspace_id>]\nherdr pane get <pane_id>",
                 },
                 BashResponse {
                     includes: "shasum",
@@ -1059,6 +1067,10 @@ function HerdrScenarios() -> Scenario[] {
                     "#,
                 },
                 BashResponse {
+                    includes: "herdr agent",
+                    output: "herdr agent get <agent_name>\nherdr agent start <agent_name> --kind pi --pane <pane_id> -- <args...>\nherdr agent wait <pane_id> [--timeout <milliseconds>]",
+                },
+                BashResponse {
                     includes: "herdr pane get w18:p1",
                     output: #"
                         {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan/git","pane_id":"w18:p1","workspace_id":"w18"}}}
@@ -1069,6 +1081,14 @@ function HerdrScenarios() -> Scenario[] {
                     output: #"
                         {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/destination.jsonl"},"agent_status":"idle","cwd":"/Users/ryan/git/ai-oncall-workflow-scripts","pane_id":"w30:p9","tab_id":"w30:t9","workspace_id":"w30"}}}
                     "#,
+                },
+                BashResponse {
+                    includes: "herdr pane",
+                    output: "herdr pane current --current\nherdr pane list [--workspace <workspace_id>]\nherdr pane get <pane_id>",
+                },
+                BashResponse {
+                    includes: "herdr workspace",
+                    output: "herdr workspace list\nherdr workspace create [--cwd PATH] [--label TEXT] [--no-focus]",
                 },
                 BashResponse {
                     includes: "herdr tab",
