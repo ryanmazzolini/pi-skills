@@ -50,7 +50,7 @@ class FakeClient extends EventEmitter {
 	isConnected() { return this.connected; }
 	supportsCapability(capability) {
 		if (capability === "pi-session-tail-v1") return this.tailCapability;
-		if (capability === "first-mate-role-v1") return this.roleCapability;
+		if (capability === "session-role-v1") return this.roleCapability;
 		if (capability === "pi-session-identity-v1") return true;
 		return false;
 	}
@@ -86,11 +86,13 @@ class FakeClient extends EventEmitter {
 	async disconnect() {}
 }
 
-test("runtime synchronously publishes and clears the capability-gated First Mate role without taking a list", async () => {
+test("runtime synchronously publishes and clears capability-gated role labels without taking a list", async () => {
 	const client = new FakeClient([peer("self", "caller")]);
 	const runtime = new IntercomRuntime({ client });
 	assert.deepEqual(await runtime.setRole("first-mate"), { sessionId: "pi-self", role: "first-mate" });
 	assert.equal(client.role, "first-mate");
+	assert.deepEqual(await runtime.setRole("project-manager"), { sessionId: "pi-self", role: "project-manager" });
+	assert.equal(client.role, "project-manager");
 	assert.deepEqual(await runtime.setRole(null), { sessionId: "pi-self" });
 	assert.equal(client.role, undefined);
 	assert.equal(client.listCalls, 0);
@@ -102,7 +104,7 @@ test("runtime synchronously publishes and clears the capability-gated First Mate
 	assert.equal(status.roleCapability, false);
 	assert.equal(status.advertisingFirstMate, false);
 	assert.equal(client.listCalls, 1);
-	await assert.rejects(runtime.setRole("first-mate"), /wait for reconnect and invoke First Mate again/);
+	await assert.rejects(runtime.setRole("first-mate"), /update all clients and restart the broker/);
 	await runtime.dispose();
 });
 
@@ -130,6 +132,11 @@ test("status awaits initial connection and derives role truth from the current b
 	assert.equal(advertised.sessionId, "pi-self");
 	assert.equal(advertised.advertisingFirstMate, true);
 	assert.equal(advertised.role, "first-mate");
+
+	client.sessions = [{ ...peer("self", "caller"), role: "project-manager" }];
+	const labeled = await runtime.status();
+	assert.equal(labeled.role, "project-manager");
+	assert.equal(labeled.advertisingFirstMate, false);
 
 	client.sessions = [peer("self", "caller")];
 	client.role = "first-mate";

@@ -131,11 +131,21 @@ Pi gets a few extras that are not skills:
 
 - `session-id` keeps the active Pi session ID visible in the footer.
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them.
-- `intercom` provides local peer messaging, capability-gated bounded read-only tails, exact-branch cached and single-use isolated stale-snapshot summaries, and an ephemeral First Mate presence role.
+- `intercom` provides local peer messaging, capability-gated bounded read-only tails, exact-branch cached and single-use isolated stale-snapshot summaries, and optional ephemeral role labels for discovery.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
 - `pi-monitors` gives asynchronous monitor adapters one session status and the human-only `/monitors` panel for inspection, refresh, stop, and dismissal of bounded recent outcomes. Completed outcomes remain in the current conversation after their domain notification becomes durable. Trusted extensions can contribute adapters without importing this package by registering synchronously through `pi-monitors:discover-adapters:v1` during session startup. `monitor_github_pr` explicitly monitors an open GitHub pull request, polls comments and reviews with read-only `gh` requests, and wakes the agent with bounded untrusted feedback. Arbitrary `gh` commands do not create monitors.
 - `scheduled-jobs` adds the human-only `/scheduler` dashboard for task health, next runs, bounded run history and output, and reviewed lifecycle operations. Use arrows or `j`/`k` to select, `Tab` to switch Tasks/Runs, `Enter` for details, `a` for actions, `r` to refresh, and `q` or `Esc` to go back or close. Actions use Pi's native selection, confirmation, and loader UI; Run now blocks until the installed snapshot finishes. A compact footer appears whenever the dashboard classifies a task as Needs attention. Scheduler changes publish one count-only file per manifest, so open Pi sessions update through filesystem events without periodic overview scans.
 - `daily-report` and `scheduled-jobs` are also available as command-line tools.
+
+### Advertise a role label
+
+On an explicit user request or as directed by an explicitly invoked skill, publish a label with `intercom({ action: "role", role: "oncall-triage" })`. Use `intercom({ action: "role" })` to clear it. Labels contain 1–64 lowercase letters or digits, with single hyphens separating words. Publishing replaces the session's previous label; new sessions have none.
+
+`list` shows each session's label, and `status` shows your current label. Labels such as `first-mate`, `oncall-triage`, and `project-manager` are self-declared discovery metadata. Multiple sessions may share a label. Intercom grants no authority, reserves no ownership, and does not route messages to labels; resolve an exact session ID before contact. Agents and skills decide what labels mean and retain their normal approval rules.
+
+Labels are ephemeral: tree navigation, compaction, reload, session replacement, and disconnect clear them. Reconnecting does not automatically republish a label. First Mate's existing explicit triage invocation still publishes `first-mate`; its workflow and approval policy are unchanged.
+
+**Upgrade together:** generic labels use the `session-role-v1` capability and are not compatible with older role-aware clients. Install the update, reload or restart all Pi sessions, and restart the detached Intercom broker before publishing labels. A Pi reload or Herdr restart alone need not replace that broker. There is no mixed-version translation layer.
 
 ### Read older session messages
 

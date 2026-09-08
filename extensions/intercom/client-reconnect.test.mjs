@@ -128,8 +128,8 @@ test("client preserves messaging and tails when an older broker omits role capab
 	assert.deepEqual(presence.piSession, { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "second", revision: 2 });
 	assert.equal(presence.role, undefined);
 	assert.equal(client.supportsCapability("pi-session-tail-v1"), true);
-	assert.equal(client.supportsCapability("first-mate-role-v1"), false);
-	await assert.rejects(client.setRole("first-mate"), /wait for reconnect and invoke First Mate again/);
+	assert.equal(client.supportsCapability("session-role-v1"), false);
+	await assert.rejects(client.setRole("first-mate"), /update all clients and restart the broker/);
 	assert.deepEqual(await client.send("still-routes", { messageId: "after-unsupported-role", text: "messaging continues" }), {
 		id: "after-unsupported-role",
 		delivered: true,
@@ -152,7 +152,7 @@ test("publish and clear timeouts abandon the broker session and all local role s
 		});
 		const decoder = new FrameDecoder((message) => {
 			if (message?.type === "register") {
-				socket.write(encodeFrame({ type: "registered", sessionId: `role-timeout-${++nextSession}`, capabilities: ["first-mate-role-v1"] }));
+				socket.write(encodeFrame({ type: "registered", sessionId: `role-timeout-${++nextSession}`, capabilities: ["session-role-v1"] }));
 				return;
 			}
 			if (message?.type !== "presence" || message.role === undefined) return;
@@ -211,8 +211,8 @@ test("client fails waiters on broker disconnect and reconnects one implementatio
 	const originalId = client.sessionId;
 	const peer = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
 	await peer.connect(registration("peer"));
-	assert.equal(await client.setRole("first-mate"), "first-mate");
-	assert.equal((await peer.listSessions()).find((session) => session.id === client.sessionId).role, "first-mate");
+	assert.equal(await client.setRole("oncall-triage"), "oncall-triage");
+	assert.equal((await peer.listSessions()).find((session) => session.id === client.sessionId).role, "oncall-triage");
 
 	const pending = client.ask(peer.sessionId, { messageId: "disconnect-cleanup", text: "wait" });
 	const pendingAssertion = assert.rejects(pending, /disconnected|closed/);
