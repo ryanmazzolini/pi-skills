@@ -124,7 +124,11 @@ Then scan every proposed change or test. Rewrite commands, including sentences u
 
 ## Return the result
 
-Before returning, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review. Return the shortest result that gives the human enough context to decide and act.
+Before returning, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review. Keep the result concise while giving the human enough context to understand the change, decide, and act.
+
+For every reviewed pull request, commit, or diff, include a compact summary even when there are no findings. Explain the original problem and intended outcome, what changes from the previous behavior, and how the implementation achieves it, including consequential design choices. Ground the summary in the issue or other available intent source and the inspected implementation. When intent is unavailable, name the context used and describe the observed behavior without inventing requirements. Link the issue when available and defining implementation where useful.
+
+Use connected prose rather than a file inventory or fixed “Original issue / Change / Notable” template. The summary helps the reader understand the change; the recommendation and findings explain what to do about it.
 
 Give each reviewed pull request, commit, or diff exactly one recommendation:
 
@@ -132,7 +136,7 @@ Give each reviewed pull request, commit, or diff exactly one recommendation:
 - **Approve with comments** when **Blocks merge**, **Non-blocking**, or **Discussion** items remain without a **Blocks approval** finding or material confidence gap.
 - **Wait before approving** when a **Blocks approval** finding or material confidence gap remains.
 
-Let proposed comments carry their own consequences. Add context, risk, validation, or recommendation rationale when it changes the decision, explains material uncertainty, tells the reviewer what to verify, or synthesizes several findings. State the supported consequence rather than a general risk category. Routine successful checks can remain implicit; link evidence that materially changes confidence.
+Let proposed comments carry their own consequences without repeating them in the summary. Beyond the required change summary, add risk, validation, or recommendation rationale when it changes the decision, explains material uncertainty, tells the reviewer what to verify, or synthesizes several findings. State the supported consequence rather than a general risk category. Routine successful checks can remain implicit; link evidence that materially changes confidence.
 
 Show every proposed inline comment with its changed-line reference followed by a blockquote containing the exact publishable body. In terminal responses, show the reference's full URL on its own line by default; use a labeled Markdown link only when the URL is very long and impairs readability. For local-only reviews, show the plain path instead. Preserve Markdown links inside the publishable body, including drafts shown in chat. Keep the classification and any required AI attribution inside that body. Let the recommendation and comment classifications carry the decision. Reserve wrapper headings, separate classification summaries, and grouping for multiple targets or findings that need them. Separate targets in a stack and assign each finding to the change that introduced it.
 
@@ -140,7 +144,7 @@ Use **Existing issue** as the comment's classification, state that it predates t
 
 The recommendation advises the human reviewer. Publishing, approving, and requesting changes remain separate actions that require their applicable authorization.
 
-When another skill supplies an output schema, follow its structure while preserving the issue validation, per-target separation, recommendation, finding, and publication requirements above.
+When another skill supplies an output schema, follow its structure while preserving the change summary, issue validation, per-target separation, recommendation, finding, and publication requirements above.
 
 ## PR-level discussion
 
