@@ -4,6 +4,8 @@ Use this workflow to continue active work in a fresh Pi session. Put the destina
 
 A Herdr tab contains one or more panes. Use the work item's human-recognizable name as the tab label; do not describe this as naming a pane.
 
+Shell-escape every path and label passed to a shell command, including creation, renaming and file checks, so whitespace and shell metacharacters remain literal rather than splitting arguments or being interpreted as shell syntax.
+
 ## Infer the destination
 
 Infer the Herdr workspace, tab label, and cwd independently. A Herdr workspace groups workstreams; each tab represents one workstream. Its cwd may be a shared checkout, an individual worktree, or a ticket folder containing several worktrees. A ticket folder does not require its own Herdr workspace. A ticket, branch, worktree, and ticket folder are optional inputs, not prerequisites.
