@@ -1,8 +1,12 @@
 client<llm> SubjectClient {
     provider: openai-responses,
     options: {
-        model: "gpt-5.6-luna",
+        model: "gpt-6-astra",
+        base_url: env.SKILL_EVAL_OPENAI_BASE_URL,
         api_key: env.OPENAI_API_KEY,
+        reasoning: {
+            effort: "low",
+        },
     },
 }
 
@@ -439,13 +443,7 @@ function RunSubjectIntoStateWithDecider(
             state.error = stop_message;
             state
                 .transcript
-                .push(
-                    TranscriptEntry {
-                        turn: turn_index,
-                        role: "assistant",
-                        text: stop_message,
-                    },
-                );
+                .push(TranscriptEntry { turn: turn_index, role: "assistant", text: stop_message });
         };
         turn_index += 1;
     }

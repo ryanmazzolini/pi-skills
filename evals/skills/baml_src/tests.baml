@@ -288,14 +288,57 @@ testset "contracts" {
         assert.equal(research_case[0].id, "research");
     }
 
-    test "ticket-workspace handoff scenarios enter through the calling skill" {
+    test "ticket-workspace scenarios enter through the calling skill" {
         let suites = SelectScenarioSuites(ScenarioSuites(), "ticket-workspace", null);
-        let scenario = suites[0].scenarios[0];
-        assert.equal(scenario.skillPath, "skills/ticket-workspace/ticket-workspace/SKILL.md");
-        assert.is_true(scenario.skillReferences.includes("skills/herdr/SKILL.md"));
+        for (let scenario in suites[0].scenarios) {
+            assert.equal(scenario.skillPath, "skills/ticket-workspace/ticket-workspace/SKILL.md");
+            assert.is_true(scenario.skillReferences.includes("skills/herdr/SKILL.md"));
+            assert
+                .is_true(
+                    scenario
+                        .skillReferences
+                        .includes("skills/herdr/references/pi-session-transfer.md"),
+                );
+        }
+        ;
+    }
+
+    test "ticket-workspace fixtures answer help without shadowing specific commands" {
+        for (let scenario in TicketWorkspaceScenarios()) {
+            for (let group in ["workspace", "tab", "pane", "agent"]) {
+                for (let suffix in ["", " --help"]) {
+                    assert
+                        .is_true(
+                            FixtureBash(scenario, `herdr ${group}${suffix}`)
+                                .starts_with(`Usage: herdr ${group}`),
+                        );
+                }
+                ;
+            }
+            ;
+            for (let fixture in scenario.bashResponses) {
+                assert.equal(FixtureBash(scenario, fixture.includes), fixture.output);
+            }
+            ;
+            assert
+                .equal(
+                    FixtureBash(scenario, "herdr pane get 'w11:p7'"),
+                    FixtureBash(scenario, "herdr pane get w11:p7"),
+                );
+        }
+        ;
+    }
+
+    test "epic tab fixtures do not return unrelated review tabs" {
+        assert
+            .equal(
+                FixtureBash(TicketEpicScenario(false), "herdr tab list --workspace w30"),
+                #"{"result":{"tabs":[]}}"#,
+            );
         assert
             .is_true(
-                scenario.skillReferences.includes("skills/herdr/references/pi-session-transfer.md"),
+                FixtureBash(TicketContinuationScenario("existing-pi"), "herdr tab list --workspace w11")
+                    .includes("w11:t7"),
             );
     }
 
@@ -379,7 +422,10 @@ testset "contracts" {
         for (let new_workspace in [false, true]) {
             let scenario = HerdrCreationScenario(new_workspace);
             for (let fixture in scenario.bashResponses) {
-                if (fixture.includes.starts_with("herdr ") && fixture.includes.split(" ").length() >= 3) {
+                if (
+                    fixture.includes.starts_with("herdr ")
+                        && fixture.includes.split(" ").length() >= 3
+                ) {
                     assert.equal(FixtureBash(scenario, fixture.includes), fixture.output);
                 };
             }
@@ -481,7 +527,11 @@ testset "contracts" {
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureLocalEvidenceDecider);
         assert.equal(state.toolCalls.length(), 2);
         assert.equal(state.error, null);
-        assert.equal(state.transcript[state.transcript.length() - 1].text, "Use SQLite because the approved architecture is embedded and offline-first.");
+        assert
+            .equal(
+                state.transcript[state.transcript.length() - 1].text,
+                "Use SQLite because the approved architecture is embedded and offline-first.",
+            );
     }
 
     test "tool budget rejects extra tools and records an incomplete run" {
@@ -582,12 +632,13 @@ testset "contracts" {
     test "source bounds count every URL in a fetch batch" {
         let scenario = SelectScenarios(ResearchScenarios(), "research-external-evidence-needed")[0];
         let fetch_call = TestCall(1, "fetch_content", 0);
-        fetch_call.urls = [
-            "https://example.test/one",
-            "https://example.test/two",
-            "https://example.test/three",
-            "https://example.test/four",
-        ];
+        fetch_call.urls
+            = [
+                "https://example.test/one",
+                "https://example.test/two",
+                "https://example.test/three",
+                "https://example.test/four",
+            ];
         let results = EvaluateHardAssertions(scenario, [fetch_call]);
         assert.is_true(results[4].passed);
         assert.is_true(!results[5].passed);
@@ -689,6 +740,19 @@ testset "contracts" {
         };
         let normalized = NormalizeJudgeResult(scenario, hard, result);
         assert.equal(normalized.verdict, "PASS");
+    }
+
+    test "model labels identify Astra reasoning and the selected route" {
+        assert
+            .equal(
+                EvalModelLabel("direct"),
+                "openai-responses/gpt-6-astra (reasoning: low) via direct",
+            );
+        assert
+            .equal(
+                EvalModelLabel("codex-local"),
+                "openai-responses/gpt-6-astra (reasoning: low) via codex-local",
+            );
     }
 
     test "report renders bounded review paths" {

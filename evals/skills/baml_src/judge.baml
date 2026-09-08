@@ -1,8 +1,12 @@
 client<llm> JudgeClient {
     provider: openai-responses,
     options: {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-astra",
+        base_url: env.SKILL_EVAL_OPENAI_BASE_URL,
         api_key: env.OPENAI_API_KEY,
+        reasoning: {
+            effort: "low",
+        },
     },
 }
 
