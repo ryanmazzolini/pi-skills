@@ -24,7 +24,8 @@ BAML itself is not a security sandbox. The isolation boundary is the fixture dis
 
 - New BAML wrapper on `PATH`
 - BAML toolchain `0.15.0`, installed with `baml toolchain install 0.15.0`
-- `OPENAI_API_KEY` in the repository root `.env` file, or exported in the shell, for live subject and judge calls
+- For direct OpenAI calls, `OPENAI_API_KEY` in the repository root `.env` file or exported in the shell
+- For subscription-backed Codex calls, `openai-api-server-via-codex` listening on `http://127.0.0.1:18080`
 
 Start from the ignored local template if needed:
 
@@ -34,7 +35,7 @@ cp .env.example .env
 
 The live npm commands use `dotenv-cli` to load the root `.env` before launching BAML. Existing process variables remain available. The deterministic check does not load credentials.
 
-The project pins the exact toolchain in `baml.toml`. Repository scripts enter `evals/skills/` before invoking BAML so the wrapper selects that manifest rather than its global default. The subject uses `openai-responses/gpt-5.6-luna`; the semantic judge uses `openai-responses/gpt-5.6-terra`.
+The project pins the exact toolchain in `baml.toml`. Repository scripts enter `evals/skills/` before invoking BAML so the wrapper selects that manifest rather than its global default. Both the subject and semantic judge use `openai-responses/gpt-6-astra` with low reasoning, on direct and local runs. Reports identify the model, reasoning level and selected route.
 
 ## Commands
 
@@ -63,6 +64,20 @@ Run all scenarios and write separate JSON and Markdown reports for each skill:
 ```bash
 npm run eval:skills
 ```
+
+To use the local Codex-backed endpoint instead of direct OpenAI, start the bridge separately, then run the local command:
+
+```bash
+uvx openai-api-server-via-codex
+```
+
+In another terminal:
+
+```bash
+npm run eval:skills:codex -- --suite_id ticket-workspace
+```
+
+The local command targets `http://127.0.0.1:18080/v1`, uses a dummy client key instead of your OpenAI key, and labels reports `codex-local`. It does not start or stop the bridge, edit `.env`, or fall back to the paid API if the bridge is unavailable. Arguments work as they do with `eval:skills`; omit the suite selector to run all suites. The bridge is unofficial and uses the signed-in ChatGPT plan's Codex limits, so treat the route as part of the evidence when comparing results.
 
 Run a research scenario:
 

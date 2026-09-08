@@ -1,3 +1,7 @@
+function EvalModelLabel(route: string) -> string {
+    `openai-responses/gpt-6-astra (reasoning: low) via ${route}`
+}
+
 function RunOne(
     scenario: Scenario,
     skill_text: string,
@@ -124,6 +128,7 @@ function BuildEvalReport(
         ;
     }
     ;
+    let model_label = EvalModelLabel(baml.env.get("SKILL_EVAL_ROUTE") ?? "direct");
     EvalReport {
         formatVersion: 2,
         createdAtMs: baml.sys.now_ms(),
@@ -131,11 +136,11 @@ function BuildEvalReport(
         skillPath: skill_path,
         scenarioSkillTarget: scenario_skill_target,
         bamlVersion: BamlVersion(),
-        subjectModel: "openai-responses/gpt-5.6-luna",
+        subjectModel: model_label,
         judgeModel: if (skip_judge) {
             null
         } else {
-            "openai-responses/gpt-5.6-terra"
+            model_label
         },
         repetitions: repetitions,
         runs: runs,

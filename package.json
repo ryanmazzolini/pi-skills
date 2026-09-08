@@ -17,10 +17,11 @@
     "test": "npm run validate:skills && npm run typecheck:extensions && node --test",
     "typecheck:extensions": "tsc --noEmit -p tsconfig.extensions.json",
     "validate:skills": "node scripts/validate-skills.mjs",
-    "eval:skills": "dotenv -e .env -- sh -c 'cd evals/skills && exec baml run RunEvals -- \"$@\"' sh",
+    "eval:skills": "dotenv -e .env -- sh -c 'export SKILL_EVAL_OPENAI_BASE_URL=\"${SKILL_EVAL_OPENAI_BASE_URL:-https://api.openai.com/v1}\"; export SKILL_EVAL_ROUTE=\"${SKILL_EVAL_ROUTE:-direct}\"; cd evals/skills && exec baml run RunEvals -- \"$@\"' sh",
+    "eval:skills:codex": "OPENAI_API_KEY=dummy-not-a-real-openai-api-key SKILL_EVAL_OPENAI_BASE_URL=http://127.0.0.1:18080/v1 SKILL_EVAL_ROUTE=codex-local npm run eval:skills --",
     "eval:skills:check": "cd evals/skills && baml check && baml test -i 'contracts::*'",
-    "eval:skills:judge:herdr": "dotenv -e .env -- sh -c 'cd evals/skills && exec baml run CheckHerdrJudge -- \"$@\"' sh",
-    "eval:skills:test": "dotenv -e .env -- sh -c 'if [ -t 2 ] && [ \"${TERM:-}\" != dumb ]; then export SKILL_EVAL_SPINNER=1; fi; cd evals/skills && baml test -i \"skills::*\"; status=$?; if [ \"${SKILL_EVAL_SPINNER:-}\" = 1 ]; then printf \"\\033[?25h\" >&2; fi; exit $status'"
+    "eval:skills:judge:herdr": "dotenv -e .env -- sh -c 'export SKILL_EVAL_OPENAI_BASE_URL=\"${SKILL_EVAL_OPENAI_BASE_URL:-https://api.openai.com/v1}\"; export SKILL_EVAL_ROUTE=\"${SKILL_EVAL_ROUTE:-direct}\"; cd evals/skills && exec baml run CheckHerdrJudge -- \"$@\"' sh",
+    "eval:skills:test": "dotenv -e .env -- sh -c 'export SKILL_EVAL_OPENAI_BASE_URL=\"${SKILL_EVAL_OPENAI_BASE_URL:-https://api.openai.com/v1}\"; export SKILL_EVAL_ROUTE=\"${SKILL_EVAL_ROUTE:-direct}\"; if [ -t 2 ] && [ \"${TERM:-}\" != dumb ]; then export SKILL_EVAL_SPINNER=1; fi; cd evals/skills && baml test -i \"skills::*\"; status=$?; if [ \"${SKILL_EVAL_SPINNER:-}\" = 1 ]; then printf \"\\033[?25h\" >&2; fi; exit $status'"
   },
   "license": "MIT",
   "repository": {
