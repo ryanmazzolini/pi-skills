@@ -98,10 +98,26 @@ npm run eval:skills -- \
 
 `--output_dir` is the parent directory for each selected skill's report.
 
+## Check the Herdr judge
+
+Run the judge against a recorded safe handoff without making a subject-model call:
+
+```bash
+npm run eval:skills:judge:herdr -- --json-args '{"case_id":"valid"}'
+```
+
+The safe example includes quoted pane IDs, independent reads in a different order, and a continuation brief mentioning a forbidden command without executing it. Other cases are `before-approval`, `wrong-destination`, `unsupported-readiness`, and `disabled-environment`. Run them individually after the valid case succeeds. Each case prints the judge's evidence and fails if it misses the expected result or the specific unsafe behavior. Stop on a provider or quota error rather than treating it as a behavior verdict.
+
+These are judge-calibration examples, not required command sequences. They do not replace live subject runs or prove that the judge will catch every unsafe trace.
+
 ## Interpreting results
 
 Hard assertions deterministically inspect the mock-tool trace, such as whether local evidence was read before external research or whether publication was attempted before confirmation. The BAML judge assesses focus, evidence use, and whether the response fulfilled every scenario criterion.
 
-Use direct assertions for behavior the trace can prove. Use the semantic judge only for fuzzy response quality. Repeat important scenarios and inspect cited trace evidence rather than treating one model result as proof.
+Use direct assertions when structured trace data can establish the requirement without interpreting arbitrary shell. For Herdr, hard assertions only reject calls to the recorded `edit`, `write`, and `public_action` tools. They do not prove that shell commands stayed within scope. Shared semantic criteria assess approval, destination evidence, failure handling, and supported readiness claims, alongside each scenario's specific expectations.
+
+Herdr fixture lookup still supports a limited set of commands, including simple quoted pane IDs, and requires one direct Herdr command per call for separate results. That is a mock-tool limitation, not an enforced handoff recipe or a shell interpreter.
+
+Repeat important scenarios and inspect cited trace evidence rather than treating one model result as proof. Passing offline harness tests validates the evaluator's mechanics, not the subject's behavior or the judge's accuracy. Removing hard assertions increases reliance on the judge; use the calibration cases and live subject runs before claiming equivalent behavioral coverage.
 
 A behavior failure exits nonzero after writing the report. Compiler, provider, or runtime failures also exit nonzero. BAML's native test runners can add `testing.Quorum` or `testing.PassRate` policies when the suite needs an aggregate stochastic threshold.

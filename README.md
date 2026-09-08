@@ -97,7 +97,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`scheduled-jobs`](./skills/scheduled-jobs/SKILL.md) | Inspect and operate reviewed recurring local jobs |
 | [`shortcut`](./skills/shortcut/shortcut/SKILL.md) | Work with Shortcut stories through the `short` CLI |
 | [`agent-browser`](./skills/agent-browser/agent-browser/SKILL.md) | Automate browsers and Electron apps |
-| [`herdr`](./skills/herdr/SKILL.md) | Control Herdr or hand a Pi conversation to another workspace |
+| [`herdr`](./skills/herdr/SKILL.md) | Control Herdr or continue Pi work in a fresh tab or workspace |
 
 ## First Mate
 

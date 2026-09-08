@@ -39,7 +39,9 @@ function DecideNextDecision(
         - web_search: queries
         - fetch_content: url or urls
         - bash: command. Use exactly `gh issue view <number>` for fixture-backed GitHub
-          issue inspection; do not add options or shell operators.
+          issue inspection; do not add options or shell operators. For fixture-backed
+          Herdr operations, issue one direct `herdr ...` command per Bash call so each
+          command gets a separate result.
         - edit: path and content
         - write: path and content
         - public_action: command and content. Reserve this only for a public mutation or
@@ -556,9 +558,40 @@ function FixtureFetch(scenario: Scenario, step: AgentStep) -> string {
     results.join("\n\n")
 }
 
+// Normalize simple quoted arguments only for fixture lookup, not to judge
+// behavior or interpret arbitrary shell programs.
+function HerdrCommandWords(command: string) -> string[] {
+    let words: string[] = [];
+    for (let word in command.replace("\n", " ").replace("\t", " ").split(" ")) {
+        if (word.length() > 0) {
+            if (
+                word.length() >= 2
+                    && (
+                        (word.starts_with("'") && word.ends_with("'"))
+                            || (word.starts_with("\"") && word.ends_with("\""))
+                    )
+            ) {
+                words.push(word.substring(1, word.length() - 1));
+            } else {
+                words.push(word);
+            };
+        };
+    }
+    ;
+    words
+}
+
 function FixtureBash(scenario: Scenario, command: string) -> string {
+    // Pane IDs have the same meaning with or without shell quotes. Normalize
+    // only this direct command; preserve all other fixture matching behavior.
+    let words = HerdrCommandWords(command);
+    let fixture_command = if (words.length() == 4 && words[0] == "herdr" && words[1] == "pane" && words[2] == "get") {
+        words.join(" ")
+    } else {
+        command
+    };
     for (let fixture in scenario.bashResponses) {
-        if (command.includes(fixture.includes)) {
+        if (fixture_command.includes(fixture.includes)) {
             return fixture.output;
         };
     }

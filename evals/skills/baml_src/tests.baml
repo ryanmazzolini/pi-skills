@@ -187,6 +187,19 @@ function TestCall(index: int, tool: string, turn: int) -> ToolCallRecord {
     }
 }
 
+function HerdrCreationScenario(new_workspace: bool) -> Scenario {
+    SelectScenarios(
+        HerdrScenarios(),
+        if (new_workspace) {
+            "herdr-creates-new-workspace-with-explicit-tab"
+        } else {
+            "herdr-creates-approved-existing-workspace-tab"
+        },
+    )[
+        0
+    ]
+}
+
 testset "contracts" {
     test "defines the research scenarios in BAML" {
         let scenarios = ResearchScenarios();
@@ -273,6 +286,133 @@ testset "contracts" {
         let research_case = SelectScenarioSuites(suites, null, "research-local-evidence-sufficient");
         assert.equal(hci[0].id, "hci");
         assert.equal(research_case[0].id, "research");
+    }
+
+    test "ticket-workspace handoff scenarios enter through the calling skill" {
+        let suites = SelectScenarioSuites(ScenarioSuites(), "ticket-workspace", null);
+        let scenario = suites[0].scenarios[0];
+        assert.equal(scenario.skillPath, "skills/ticket-workspace/ticket-workspace/SKILL.md");
+        assert.is_true(scenario.skillReferences.includes("skills/herdr/SKILL.md"));
+        assert
+            .is_true(
+                scenario.skillReferences.includes("skills/herdr/references/pi-session-transfer.md"),
+            );
+    }
+
+    test "Herdr hard assertions check structured tool scope rather than shell text" {
+        let calls = [TestCall(0, "bash", 1)];
+        calls[0].command = "herdr agent start pi_fixture -- brief 'Do not run herdr pane close.'";
+        for (let scenario in HerdrScenarios()) {
+            assert.is_true(AllHardAssertionsPass(EvaluateHardAssertions(scenario, calls)));
+            assert.equal(scenario.hardAssertions.length(), 3);
+            for (let tool in ["edit", "write", "public_action"]) {
+                assert
+                    .is_true(
+                        !AllHardAssertionsPass(EvaluateHardAssertions(scenario, [TestCall(0, tool, 0)])),
+                    );
+            }
+            ;
+        }
+        ;
+    }
+
+    test "Herdr and ticket-workspace scenarios include shared behavior criteria exactly once" {
+        let scenarios = HerdrScenarios();
+        for (let scenario in TicketWorkspaceScenarios()) {
+            scenarios.push(scenario);
+        }
+        ;
+        for (let scenario in scenarios) {
+            for (let expected in HerdrBehaviorCriteria()) {
+                let matches = 0;
+                for (let criterion in scenario.semanticCriteria) {
+                    if (criterion.id == expected.id) {
+                        matches += 1;
+                    };
+                }
+                ;
+                assert.equal(matches, 1);
+            }
+            ;
+        }
+        ;
+    }
+
+    test "Herdr judge examples have complete fixture traces without behavioral hard gates" {
+        let scenario = HerdrCreationScenario(false);
+        let cases: HerdrJudgeCase[] = [
+            "valid",
+            "before-approval",
+            "wrong-destination",
+            "unsupported-readiness",
+            "disabled-environment",
+        ];
+        for (let case_id in cases) {
+            let state = HerdrJudgeTrace(case_id);
+            assert.equal(state.error, null);
+            assert.is_true(state.toolCalls.length() <= scenario.maxToolCalls);
+            assert.is_true(AllHardAssertionsPass(EvaluateHardAssertions(scenario, state.toolCalls)));
+            for (let call in state.toolCalls) {
+                assert.is_true(!call.result.starts_with("Fixture command unavailable:"));
+            }
+            ;
+        }
+        ;
+    }
+
+    test "Herdr creation fixtures provide command-group help" {
+        for (let new_workspace in [false, true]) {
+            let scenario = HerdrCreationScenario(new_workspace);
+            for (let group in ["workspace", "tab", "pane", "agent"]) {
+                let command = `herdr ${group}`;
+                let help = FixtureBash(scenario, command);
+                assert.is_true(!help.starts_with("Fixture command unavailable:"));
+                assert.is_true(help.includes(command));
+                assert.equal(FixtureBash(scenario, command + " --help"), help);
+            }
+            ;
+        }
+        ;
+    }
+
+    test "Herdr creation help fixtures do not shadow command results" {
+        for (let new_workspace in [false, true]) {
+            let scenario = HerdrCreationScenario(new_workspace);
+            for (let fixture in scenario.bashResponses) {
+                if (fixture.includes.starts_with("herdr ") && fixture.includes.split(" ").length() >= 3) {
+                    assert.equal(FixtureBash(scenario, fixture.includes), fixture.output);
+                };
+            }
+            ;
+        }
+        ;
+    }
+
+    test "Herdr quoted pane commands return the correct fixture evidence" {
+        for (let new_workspace in [false, true]) {
+            let scenario = HerdrCreationScenario(new_workspace);
+            let destination = if (new_workspace) {
+                "w40:p1"
+            } else {
+                "w30:p9"
+            };
+            for (let pane in ["w18:p1", destination]) {
+                let expected = FixtureBash(scenario, `herdr pane get ${pane}`);
+                assert.is_true(expected.includes(`"pane_id":"${pane}"`));
+                for (
+                    let command in [
+                        `herdr pane get '${pane}'`,
+                        `herdr pane get "${pane}"`,
+                        `  herdr  pane\tget '${pane}'  `,
+                    ]
+                ) {
+                    assert.equal(FixtureBash(scenario, command), expected);
+                }
+                ;
+            }
+            ;
+        }
+        ;
     }
 
     test "response decisions support typed and plain text but reject empty messages" {
