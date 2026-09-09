@@ -78,19 +78,26 @@ Keep findings focused on supported risks with specific next steps. Generic reque
 
 Treat a pre-existing problem as an **Existing issue** only when it is concrete, material, directly relevant to the reviewed behavior, and likely to receive a specific follow-up. Present it as a non-blocking inline comment after introduced findings and state that the pull request did not introduce it. It leaves the pull-request recommendation unchanged. Publication requires the same valid changed-line anchor as any other inline comment.
 
-Before classifying findings or recommending an action, assess the risk to the business if the reviewed revision merges unchanged. Start with the concrete consequence visible in the available evidence. Ground the affected users, operations, systems, or records; the scale and frequency; the path to detection and recovery; and any wider business effect in the issue, code, tests, documentation, or repository context. When a missing fact could change the classification, name that fact and the decision it affects.
+## Assess business risk and classify findings
 
-Use **Low**, **Moderate**, or **High** internally to calibrate the review. Consider the worst supported consequence, the supported reach and likelihood, how readily people can detect and recover from it, and the controls that limit it. Complexity and novelty affect confidence that undiscovered defects remain; they do not increase the business impact of a proven finding.
+A reproduction showing 12 reported units becoming 24 proves a reporting error, not its effect on business decisions. Trace who uses those totals and what the error changes for them. Neither assume staffing or payroll harm nor dismiss the error because it affects only reporting.
 
-Classify each introduced finding by the consequence of merging without its correction:
+Before classifying findings or recommending an action, assess the consequences for people and operations if the reviewed revision merges unchanged. Business impact includes inability to complete work, misleading operational decisions, lost or exposed data, contractual failures, support burden, and costly recovery—not only revenue or payments. Ground each claimed consequence in the issue, code, tests, documentation, or repository context; distinguish established effects from plausible downstream harms.
 
-- **Non-blocking** means merging without the correction presents an acceptable business risk. The correction is optional or suitable for follow-up.
-- **Blocks merge** is the normal classification for a proven defect that should be corrected before merge. The reviewer may approve while leaving the correction with the pull-request author.
-- **Blocks approval** means the evidence establishes a significant business consequence if the author merges the current revision after approval. The reviewer should see the correction first.
+Use **Low**, **Moderate**, or **High** internally to calibrate the review. Consider the worst supported consequence, supported reach and likelihood, persistence, detection and recovery, and controls that limit the risk. Compare merging with correction deferred against the current behavior and the benefit delayed by holding the change, not against an imaginary defect-free system. A useful benefit does not by itself excuse an unacceptable regression. Complexity and novelty affect confidence that undiscovered defects remain; they do not increase the business impact of a proven finding.
+
+Resolve decision-changing uncertainty from available sources. Unknown frequency is neither evidence that a failure is rare nor a reason to inflate its severity. Missing evidence of harm does not establish safety. Name a remaining missing fact and the decision it could change; do not demand production statistics when the supported consequence already settles the decision, such as a demonstrated path to irreversible data loss.
+
+Classify each introduced finding in two steps:
+
+1. **Decide whether correction can wait until after merge.** A reproduction establishes a defect, not a requirement to delay delivery. Explain the supported consequence that makes deferral acceptable or unacceptable. A material failure of the promised outcome can justify correction before merge without catastrophic harm; establish which agreed outcome fails and how much of the intended use it prevents. An error in the behavior being improved does not by itself establish that the outcome fails materially. Respect explicit partial scope and distinguish a useful partial improvement from failure to deliver the agreed outcome. Use **Non-blocking** when the supported risk is acceptable and correction is optional or suitable for follow-up. Otherwise, identify why correction is required before merge and continue to step 2.
+2. **Decide whether the reviewer must see the correction before approving.** Use **Blocks approval** when the evidence establishes a significant business consequence if the current revision merges after approval. The reviewer should see the correction first. Use **Blocks merge** when correction is required before merge but the supported consequence does not warrant withholding approval; the reviewer may approve while leaving the correction with the author. Lack of a significant business consequence does not by itself make a finding non-blocking.
 
 Choose the classification before considering the remediation. Use the correction's size or simplicity only to shape the suggestion.
 
-A significant unresolved question may also prevent approval without becoming an inline finding. Treat it as a material confidence gap when a specific missing contract, fact, or validation result prevents a risk-proportionate decision. Name the missing evidence and the decision it would settle. A lower-consequence question may become a **Discussion** item when it meets the PR-level criteria below.
+A specific missing contract, fact, or validation result may prevent a risk-proportionate decision without proving a defect. Treat it as a material confidence gap only when the unresolved consequence could justify withholding approval. Name the missing evidence and the decision it would settle; do not turn uncertainty alone into a blocking finding. A lower-consequence question may become a **Discussion** item when it meets the PR-level criteria below.
+
+When challenged or reviewing a new revision, reassess these decisions rather than carrying forward a label or agreeing with the challenge. If the classification changes, identify the new evidence, changed assumption, or error in the earlier reasoning and explain why it changes the required action. If none changes the decision, retain the classification and explain why.
 
 ## Write the comment
 
