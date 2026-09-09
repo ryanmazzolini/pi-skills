@@ -37,6 +37,12 @@ Before returning the review result, stop processes and remove every clone, workt
 
 Trace the requested outcome and each acceptance criterion into the implementation and tests. Confirm that the change produces the promised behavior rather than merely resembling the requested implementation. Respect explicit partial scope; when a pull request claims to close an issue, report a material unmet outcome as an introduced finding.
 
+Inspect removed or narrowed behavior as well as additions, including changes to instructions and documentation. Trace affected existing use cases, callers, safeguards, and fallback paths into the revised behavior. When a procedure or abstraction disappears, check which guarantees it supplied and where any still-required guarantees now live; a replacement name or a passing new-use-case test is not enough.
+
+Verify that consequential behavior removals match the approved scope and have a stated reason in the available change context. Do not infer permission to drop an existing use case from permission to add another or simplify its implementation. Report a proven unintended loss under the finding criteria below. When intent remains unclear, name the missing decision and its effect on the recommendation rather than inventing a defect or a justification.
+
+Support justified removal without demanding preservation for its own sake. Recommend deprecation notices, compatibility layers, or transitional machinery only for a concrete consumer, contract, or rollout need. Put removal reasons in the change explanation, not permanent tombstones in the implementation.
+
 Trace changed state and side effects beyond the edited lines.
 
 - For each temporary flag or bypass, find where the previous state is restored. Inspect every operation that can run before restoration. If the code never restores it, inspect later operations on the same instance and report any unintended wider behavior that meets the requirements below.
@@ -48,8 +54,8 @@ Prioritize correctness, data loss, security, broken control flow, races, contrac
 
 Report a finding only when all of these are clear:
 
-- The changed code causes it or makes it worse.
-- A concrete input or runtime path triggers it.
+- The change causes it or makes it worse.
+- A concrete input, runtime path, or instructed workflow triggers it.
 - The consequence matters to a caller, user, operator, or maintainer.
 - The author can take a specific next step within the change's scope.
 
@@ -127,6 +133,8 @@ Then scan every proposed change or test. Rewrite commands, including sentences u
 Write for a capable engineer who has not read the issue, diff, or investigation. Give every reviewed pull request, commit, or diff a summary, including clean approvals. Establish who uses the affected workflow, what they are trying to do, and what happens today before explaining the change and how it works. For a preparatory refactor, explain what it enables and what stays unchanged. Use a concrete example when it makes the behavior easier to understand.
 
 Ground that explanation in the issue or other available intent source and the inspected implementation. Include consequential design choices and scope limits that affect how the reader should interpret the change. When intent is unavailable, name the context used and describe observed behavior without inventing requirements. Link the pull request and available issue; use implementation links for supporting detail, not as substitutes for the explanation.
+
+Acknowledge consequential behavior removals in the summary and give their stated reasons. If a reason is missing, say so; do not present the loss as an agreed simplification.
 
 For related pull requests, first explain the combined outcome and any merge or rollout dependencies needed to understand the parts. Then keep each target's summary, recommendation, and proposed comments together. Use headings and paragraphs where they help navigation rather than forcing a fixed “Original issue / Change / Notable” template. Size the explanation to the change, not a sentence limit.
 
