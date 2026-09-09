@@ -8,7 +8,9 @@ license: "MIT; adapted from mattpocock/skills"
 
 Treat agent-facing writing as a behavior contract. Make the intended process predictable without prescribing work the agent can discover or decide safely.
 
-Before revising an existing document, inspect the live environment and recent history. Name the behavior each section protects. Preserve, change, or remove it deliberately, especially approval boundaries, stopping points, optional branches, and handoffs.
+Before revising an existing document, inspect the live environment and recent history. Identify the existing use cases and behavior its instructions protect, especially approval boundaries, stopping points, optional branches, and handoffs. Check that a rewrite for a new use case does not silently narrow them. When removing a procedure, trace the safeguards and fallback behavior it supplied; removing the procedure does not by itself authorize removing those behaviors.
+
+Within the approved scope, remove instructions that no longer serve the intended outcome rather than retaining obsolete paths or deprecation notices. For intentional behavior removals or narrowing, state what stops being supported and why in the change explanation, not as permanent notices in the instructions. Distinguish behavior removed from behavior preserved elsewhere, and verify the replacement covers the same conditions. Ask before changing behavior outside the approved scope.
 
 After the behavior contract is correct, apply [`clear-writing`](../clear-writing/SKILL.md) when drafting or rewriting reader-facing prose. It improves clarity without replacing the constraints above.
 

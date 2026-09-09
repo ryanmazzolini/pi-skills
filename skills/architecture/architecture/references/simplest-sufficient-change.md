@@ -13,4 +13,8 @@ Choose the first rung that fully satisfies the approved target benefit:
 
 **Sufficient** includes explicit requirements and necessary risk controls: trust-boundary validation, data-loss protection, security, accessibility, compatibility, and verification proportional to risk.
 
+Prefer deleting or simplifying existing code when that best serves the approved user outcome. Retain complexity only for a current requirement or necessary risk control. Distinguish removing an implementation from retiring behavior: verify remaining use cases and the guarantees the removed code supplied. Explain intentional behavior removals and their reasons in the change context; seek approval when they exceed the agreed scope.
+
+Add deprecation notices, compatibility layers, or transitional machinery only for a concrete consumer, contract, or rollout need. When no such need remains, remove the obsolete path cleanly rather than preserving it just because it existed.
+
 Defer speculative flexibility. Every added file, dependency, abstraction, configuration point, and extension point must trace to the current change. Finish when the selected rung is the earliest one that satisfies the contract and every new concept pays for itself now.
