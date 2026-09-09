@@ -124,11 +124,11 @@ Then scan every proposed change or test. Rewrite commands, including sentences u
 
 ## Return the result
 
-Before returning, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review. Keep the result concise while giving the human enough context to understand the change, decide, and act.
+Write for a capable engineer who has not read the issue, diff, or investigation. Give every reviewed pull request, commit, or diff a summary, including clean approvals. Establish who uses the affected workflow, what they are trying to do, and what happens today before explaining the change and how it works. For a preparatory refactor, explain what it enables and what stays unchanged. Use a concrete example when it makes the behavior easier to understand.
 
-For every reviewed pull request, commit, or diff, include a compact summary even when there are no findings. Explain the original problem and intended outcome, what changes from the previous behavior, and how the implementation achieves it, including consequential design choices. Ground the summary in the issue or other available intent source and the inspected implementation. When intent is unavailable, name the context used and describe the observed behavior without inventing requirements. Link the issue when available and defining implementation where useful.
+Ground that explanation in the issue or other available intent source and the inspected implementation. Include consequential design choices and scope limits that affect how the reader should interpret the change. When intent is unavailable, name the context used and describe observed behavior without inventing requirements. Link the pull request and available issue; use implementation links for supporting detail, not as substitutes for the explanation.
 
-Use connected prose rather than a file inventory or fixed “Original issue / Change / Notable” template. The summary helps the reader understand the change; the recommendation and findings explain what to do about it.
+For related pull requests, first explain the combined outcome and any merge or rollout dependencies needed to understand the parts. Then keep each target's summary, recommendation, and proposed comments together. Use headings and paragraphs where they help navigation rather than forcing a fixed “Original issue / Change / Notable” template. Size the explanation to the change, not a sentence limit.
 
 Give each reviewed pull request, commit, or diff exactly one recommendation:
 
@@ -136,7 +136,9 @@ Give each reviewed pull request, commit, or diff exactly one recommendation:
 - **Approve with comments** when **Blocks merge**, **Non-blocking**, or **Discussion** items remain without a **Blocks approval** finding or material confidence gap.
 - **Wait before approving** when a **Blocks approval** finding or material confidence gap remains.
 
-Let proposed comments carry their own consequences without repeating them in the summary. Beyond the required change summary, add risk, validation, or recommendation rationale when it changes the decision, explains material uncertainty, tells the reviewer what to verify, or synthesizes several findings. State the supported consequence rather than a general risk category. Routine successful checks can remain implicit; link evidence that materially changes confidence.
+Explain material limitations and business risks through their practical effects: what remains unavailable, whose work or data can be affected, and what detection or recovery involves where the evidence establishes it. Connect those consequences to the recommendation. Summarize the overall consequence when needed, while leaving each finding's triggering path and correction in its comment. A classification alone does not explain why the recommendation fits. Avoid speculative harms and routine risk paragraphs that add no useful context.
+
+Include validation when it changes confidence, explains uncertainty, or tells the reviewer what remains to verify. Routine successful checks can remain implicit; link evidence that materially changes confidence.
 
 Show every proposed inline comment with its changed-line reference followed by a blockquote containing the exact publishable body. In terminal responses, show the reference's full URL on its own line by default; use a labeled Markdown link only when the URL is very long and impairs readability. For local-only reviews, show the plain path instead. Preserve Markdown links inside the publishable body, including drafts shown in chat. Keep the classification and any required AI attribution inside that body. Let the recommendation and comment classifications carry the decision. Reserve wrapper headings, separate classification summaries, and grouping for multiple targets or findings that need them. Separate targets in a stack and assign each finding to the change that introduced it.
 
@@ -145,6 +147,10 @@ Use **Existing issue** as the comment's classification, state that it predates t
 The recommendation advises the human reviewer. Publishing, approving, and requesting changes remain separate actions that require their applicable authorization.
 
 When another skill supplies an output schema, follow its structure while preserving the change summary, issue validation, per-target separation, recommendation, finding, and publication requirements above.
+
+After drafting, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review, including the inline comments. Treat investigation notes and unapproved comment drafts as source material, not finished prose to copy. In each summary and comment, explain what a component, field, or background process does before relying on its name. Prefer the action and its result to internal shorthand; retain identifiers where they help locate or distinguish the code.
+
+Check whether the reader can explain the workflow, the change, and why the recommendation fits without opening links or reconstructing the story from comments. If a sentence only names a mechanism, limitation, or risk, explain what it means for the affected person or system. Restore missing context before trimming repetition; concision means removing unnecessary work for the reader, not merely using fewer words.
 
 ## PR-level discussion
 
