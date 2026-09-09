@@ -22,6 +22,7 @@ Use before finalizing generated frontend code or addressing PR review feedback.
 
 - Loading, empty, error, disabled, and success states are explicit.
 - Forms have labels, constraints, and field-level errors.
+- Added or changed visible text follows [HCI's flow-first copy guidance](../../../ux-accessibility/hci/SKILL.md): no change narration, repeated explanations, or filler one-liners. Necessary labels, constraints, accessible text, errors, and verified recovery guidance remain.
 - Custom controls have keyboard behavior and ARIA state, or are replaced with native controls.
 - Focus indicators are visible.
 - Touch targets are large enough for primary actions.

@@ -16,6 +16,7 @@ Default skill for React/Next.js frontend implementation and review. Optimize for
 - For Tailwind/shadcn class composition, use the project `cn` helper for conditional classes and caller-provided overrides.
 - Prefer native HTML semantics before custom controls; use `hci` for deeper interaction details.
 - Make loading, empty, error, disabled, and success states explicit where users make decisions.
+- When adding or changing visible text, read [HCI's flow-first copy guidance](../../ux-accessibility/hci/SKILL.md). Use controls and state to communicate before adding explanatory prose. Do not add change narration or filler one-liners; keep text that helps the user understand, decide, or act.
 - In Next.js App Router, default to Server Components; use Client Components only for interactivity, hooks, or browser APIs.
 - Before finalizing generated frontend code, scan for reviewer-hostile JSX: nested ternaries, hidden state machines, oversized components, inaccessible custom controls, and missing async states.
 

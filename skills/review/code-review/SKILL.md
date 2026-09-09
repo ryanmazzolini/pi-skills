@@ -48,6 +48,17 @@ Trace changed state and side effects beyond the edited lines.
 - For each temporary flag or bypass, find where the previous state is restored. Inspect every operation that can run before restoration. If the code never restores it, inspect later operations on the same instance and report any unintended wider behavior that meets the requirements below.
 - For each lock, resource, or subscription, verify that every exit path releases it.
 
+## Check the final diff against scope
+
+Before returning the review, explicitly check both questions against the final reviewed diff and the available approved goal. These complement correctness and acceptance checks; passing tests does not answer them.
+
+1. **What changed that should have stayed unchanged?** Check edits and removals for behavior outside the approved scope, including guarantees lost indirectly through removed procedures or abstractions. Use the behavior tracing above rather than assuming an unchanged caller or passing new-use-case test proves preservation.
+2. **What was added that the goal does not need?** Check for unrelated cleanup, speculative features, unnecessary abstractions or dependencies, and extra UI or documentation. Identify the approved boundary or concrete burden that makes a change unnecessary; fewer lines or a different style alone is not a reason to remove it.
+
+When visible text changes, read [HCI's flow-first copy guidance](../../ux-accessibility/hci/SKILL.md) and check each added or changed string against the user's task. Flag change narration, repeated explanations, or implementation commentary that adds noise instead of useful information. Prefer communicating through the control or flow; preserve necessary labels, constraints, accessible text, errors, and verified recovery guidance.
+
+Apply the finding and uncertainty criteria below to both checks. Do not invent missing scope or demand removal of necessary supporting work. Keep internal coverage separate from the concise review result; these checks do not require boilerplate sections or two reviewers. The caller chooses reviewer count and independence to fit the change.
+
 ## What to report
 
 Prioritize correctness, data loss, security, broken control flow, races, contract changes, failure handling, rollout risk, and repository rules whose violation would have a meaningful consequence.
