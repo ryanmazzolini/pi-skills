@@ -11,7 +11,9 @@ Rewrite prose for a capable reader who needs the relevant context without unnece
 
 Before rewriting, identify the main point, intended reader, and useful result. Preserve facts, requirements, safeguards, conditions, uncertainty, and any technical term whose exact wording carries meaning. Preserve precise meaning, not terminology for its own sake. Follow any format or content rules for the artifact.
 
-Read enough surrounding context to understand what the text means. If an ambiguity could materially change the rewrite, explain it and ask one focused question. Do not silently resolve it.
+Decide whether the reader needs clearer sentences or a fuller explanation. A draft can be accurate and grammatical while assuming the reader already knows the workflow, why it matters, or what a limitation prevents. When supporting sources are supplied, read the relevant parts before deciding the draft contains enough context. Use them to establish the missing facts, not to restart the investigation.
+
+When context is missing, rebuild the passage around the reader's question using the available evidence. Explain the situation and practical consequence before the mechanism. Preserve the source's meaning, not the draft's omissions or order. Add only context supported by the sources; if a material ambiguity remains, name it and ask one focused question rather than silently resolving it.
 
 Treat pasted text as output-only unless the user asks you to edit a file.
 
@@ -25,7 +27,7 @@ Prefer facts to shorthand. Write requirements as actions or conditions, not name
 
 If the source gives a deadline of 3 pm today, replace “this request is urgent” with “send the answer before 3 pm today.” If it defines the opening checks as unlocking both exits and testing the smoke alarm, replace “finish the opening checks” with those actions. Without those facts, preserve the original meaning rather than inventing specifics.
 
-If the text already says what the reader needs in plain words, leave it alone. Change a sentence only when you can name what the reader could misunderstand or struggle to find. Style preference is not enough. Do not swap synonyms, join or split sentences, or add transitions merely to produce a rewrite.
+Once the explanation supplies the context the reader needs, leave clear sentences alone. Change a sentence only when you can name what the reader could misunderstand or struggle to find. Style preference is not enough. Do not swap synonyms, join or split sentences, or add transitions merely to produce a rewrite.
 
 Treat reader competence and reader context separately. Do not infer familiarity with a system, domain, incident, or local vocabulary from general technical expertise. Prefer the reader's terms. Introduce a local term only when the reader needs its exact name to act or continue the discussion, and explain its practical meaning first.
 
@@ -39,7 +41,7 @@ Remove repeated context, process narration, and detail that does not help the re
 
 When explaining an unfamiliar process, system, or trade-off, begin with one concrete example. Reuse that example when comparing options or introducing lower-level details.
 
-When rewriting a technical explanation because it is dense or did not land, read [`explain-code`](../explain-code/SKILL.md). Return the high-level layer or the specific drill-down the user requested, then give explicit breadcrumbs for useful areas they can explore next. Do not reproduce every layer of the source explanation at once.
+For technical explanations, read [`explain-code`](../explain-code/SKILL.md) before rewriting when the draft is dense, did not land, assumes unexplained system knowledge, or the reader asks for more context. Return the high-level layer or the specific drill-down the user requested, then give explicit breadcrumbs for useful areas they can explore next. Do not reproduce every layer of the source explanation at once.
 
 Before asking a question, explain the situation that makes the answer necessary. Then ask one short, focused question.
 
