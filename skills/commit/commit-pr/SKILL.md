@@ -26,9 +26,9 @@ Wait for confirmation before removing work or rewriting history.
 
 ## Title
 
-Use sentence case and an unambiguous action verb. Prefer a concrete outcome verb such as `prevent`, `preserve`, `create`, or `remove` over a word that can read as an adjective or result state. Treat ticket, branch, and commit wording as context, not an approved title; rewrite it when it does not satisfy this rule. Name the resulting behavior rather than the internal operation that produces it. Keep precise project terms when they help the reviewer, but rewrite phrases that stack several nouns.
+Before drafting, privately answer: without this PR, what goes wrong for a user, caller, or operator, or what can they not do? Build the title from that consequence, not by rewording the code summary. Use sentence case and a direct action verb. Add the mechanism only after the purpose, when it helps explain the result. Keep the claim within this PR's scope; for preparation, follow the scope guidance above.
 
-The title must make sense without the original discussion. Repository conventions may add metadata such as a ticket ID. For example, prefer `[sc-65248] Create putaway suggestions for new receiving balances` over `[sc-65248] Refresh newly observed putaway balances`.
+Treat existing PR, ticket, branch, and commit wording as context, not an approved title. The title alone should tell a teammate why the change matters without the original discussion. Keep useful project terms, but avoid stacked nouns. Repository conventions may add metadata such as a ticket ID. For example, prefer `[sc-65850] Prevent putaway lock-order deadlocks` over `[sc-65850] Acquire putaway planning locks once per operation`.
 
 ## Body
 
@@ -38,7 +38,7 @@ Use `Description`, `Details`, and `Testing` as headings.
 
 ### Description
 
-Lead with the concrete new behavior or result. Then explain what happened before and why it was a problem in one or two short paragraphs. When the behavior is not immediately obvious, use one representative example to ground the explanation. Explain project terms when you first use them.
+Open with the same practical consequence used to frame the title: the problem experienced or the capability enabled. A problem-first or result-first sentence is fine; a description of internal storage or processing alone is not. The opening should explain why this PR matters without relying on the title or Details. Then explain what happened before, its practical consequence, and how behavior changes in one or two short paragraphs. When the behavior is not immediately obvious, use one representative example to ground the explanation. Explain project terms when you first use them.
 
 ### Details
 
@@ -63,4 +63,5 @@ Before presenting the draft:
 - Make sure every changed commit and file supports the PR's one purpose.
 - Remove repeated context, abstract phrasing that hides who or what performs the action, and detail that does not help review.
 - Keep simple changes short.
+- Read the title and opening sentence separately. Each should explain why the change matters, not just what the code does, without claiming benefits deferred to later work.
 - Make sure a teammate with limited context can explain the problem, the new behavior, what is deliberately deferred, and the details that matter.

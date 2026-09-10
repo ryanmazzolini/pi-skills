@@ -1,6 +1,6 @@
 function CommitPrWorkItem() -> string {
     #"
-        # SC-65850 — Prevent reconciliation waits from exhausting connections
+        # SC-65850 — Replace inner advisory locks with row locks
 
         Shortcut: https://app.shortcut.com/odeko/story/65850
 
@@ -53,7 +53,7 @@ function CommitPrScenarios() -> Scenario[] {
                 },
                 BashResponse {
                     includes: "git log",
-                    output: "ed4135f5 fix(putaway): prevent reconciliation waits from exhausting connections",
+                    output: "ed4135f5 refactor(putaway): replace inner advisory locks with row locks",
                 },
                 BashResponse {
                     includes: "git diff main...HEAD --stat",
@@ -63,7 +63,7 @@ function CommitPrScenarios() -> Scenario[] {
                 BashResponse { includes: "git diff", output: CommitReconciliationDiff() },
                 BashResponse {
                     includes: "gh pr view",
-                    output: "no pull requests found for branch fix/sc-65850/bound-reconciliation-lock-waits",
+                    output: "Draft PR #1300, base main, head fix/sc-65850/bound-reconciliation-lock-waits. Title: [sc-65850] Replace inner advisory locks with row locks. Body: Use canonical row ordering and NOWAIT for reconciliation. Existing title and body may be revised; publication is not approved.",
                 },
                 BashResponse {
                     includes: "bundle exec rspec",

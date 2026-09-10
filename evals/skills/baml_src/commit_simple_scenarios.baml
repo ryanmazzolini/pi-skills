@@ -1,6 +1,8 @@
 function CommitReconciliationWorkItem() -> string {
     #"
-        # SC-65850 — Bound reconciliation lock waits
+        # SC-65850 — Replace inner advisory locks with row locks
+
+        Existing message draft: refactor(putaway): replace inner advisory locks with row locks. This is not approved wording.
 
         Receipt and transfer reconciliation runs inside Coil's per-message process lock. It previously acquired a second advisory lock for every connected reconciliation component. When components overlapped, workers waited for that inner lock inside open transactions while retaining database connections. A convoy behind one slow holder could exhaust the LDS connection pool. Some inner lock failures were also treated as duplicate Coil jobs, so the message was marked processed instead of retried.
 

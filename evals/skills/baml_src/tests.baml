@@ -280,6 +280,35 @@ testset "contracts" {
         assert.is_true(rejected_creation);
     }
 
+    test "registers wording-only framing regressions without mutation authority" {
+        let suites = ScenarioSuites();
+        let ids = [
+            "commit-pr-reframe-planning-lock-draft",
+            "commit-pr-reframe-quantity-draft",
+            "commit-simple-reframe-normalization-draft",
+            "commit-simple-frame-preparatory-refactor",
+            "shortcut-reframe-quantity-title",
+            "shortcut-frame-backend-preparation",
+        ];
+        for (let id in ids) {
+            let suite = SelectScenarioSuites(suites, null, id)[0];
+            let scenario = SelectScenarios(suite.scenarios, id)[0];
+            assert.equal(ValidateScenarioSkillTarget(suite.scenarios), scenario.skillPath);
+            assert.is_true(scenario.turns[0].includes("wording-only"));
+            assert.is_true(scenario.semanticCriteria.length() >= 2);
+            let assertions = EvaluateHardAssertions(scenario, [
+                TestCall(1, "bash", 0),
+                TestCall(2, "edit", 0),
+                TestCall(3, "write", 0),
+                TestCall(4, "public_action", 0),
+            ]);
+            assert.equal(assertions.length(), 4);
+            for (let assertion in assertions) {
+                assert.equal(assertion.passed, false);
+            };
+        };
+    }
+
     test "selects a suite or one globally unique scenario" {
         let suites = ScenarioSuites();
         let hci = SelectScenarioSuites(suites, "hci", null);

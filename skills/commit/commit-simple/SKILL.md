@@ -21,9 +21,21 @@ Name a new branch `{type}/sc-{number}/{slug}`, `{type}/gh-{number}/{slug}`, `{ty
 
 Decide whether the changes belong in one commit or several. Draft a Conventional Commit message for each commit.
 
+Before drafting, privately answer: without this commit, what goes wrong for a user, caller, or operator, or what can they not do? If the commit only prepares for a later change, name that next change and the specific risk this preparation reduces; do not claim the later benefit is already delivered.
+
+### Subject
+
+Build the subject from that consequence, not by rewording the code summary. Name the problem solved or capability enabled; a `fix` prefix alone does not explain the defect. Treat ticket, branch, and existing message wording as context rather than approved framing. Add the mechanism after the purpose when useful.
+
+For example, prefer `fix(billing): prevent duplicate charges on retries` over `fix(billing): add idempotency keys to charge requests`. The first explains why the commit matters; the second only names the implementation.
+
+### Body
+
 Give every non-trivial commit a human-readable body that lets a reviewer understand the result without reopening the diff. Keep it proportional to the change. A trivial commit may omit the body.
 
-Lead the body with the resulting behavior or operational result. Then explain what changed, what happened before, why it was a problem, and how the implementation produces the result. When correctness depends on a failure, rollback, or retry path, name enough of that path to make the causal chain clear. Include relevant trade-offs, compatibility, risks, or verification. Do not describe the conversation, prompting, agent workflow, or how the change was produced.
+Open with the same consequence used to frame the subject. A problem-first or result-first opening is fine; a description of internal storage or processing alone is not. Explain what changed, what happened before, why it was a problem, and how the implementation produces the result. When correctness depends on a failure, rollback, or retry path, name enough of that path to make the causal chain clear. Include relevant trade-offs, compatibility, risks, or verification. Do not describe the conversation, prompting, agent workflow, or how the change was produced.
+
+Before presenting the message, read the subject and body opening separately. Each should explain why this commit matters without relying on the other or claiming benefits outside this commit.
 
 Record the body with multiple `-m` flags or an editor.
 

@@ -25,6 +25,14 @@ Prefer `-q` to suppress loading output when piping or parsing.
 
 Before drafting or changing story text, apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md). A Shortcut story is a team-facing description of what needs to become true, not an investigation log, implementation plan, or continuation record.
 
+### Title
+
+Name the problem the story should resolve or the capability it should enable, not just an implementation task. The title alone should tell a teammate why the work matters. For example, prefer “Show correct putaway quantities for stock-case inventory” over “Convert observed stock quantities to base units.” Add the mechanism only when it helps explain the outcome.
+
+Treat an existing title, branch name, or proposed implementation as context rather than approved framing. Keep the claim within the story's acceptance boundary. If the story only prepares for later work, name the next change and the specific risk the preparation reduces rather than promising the later benefit.
+
+### Description
+
 Use this shape by default and omit sections that add no value:
 
 ```md
@@ -100,6 +108,7 @@ Branch names and ticket worktree folders often embed the story id (e.g. `feat/sc
 
 Before showing or publishing story text, confirm that:
 
+- the title alone explains why the work matters, not just what to implement;
 - the main point and useful result are clear without reading **Details**;
 - **Problem** and **Outcome** are concise for the story's complexity;
 - incident chronology and supporting service mechanics are in **Details**, not a second problem report;
