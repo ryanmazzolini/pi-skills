@@ -11,6 +11,8 @@ import {
   runNeedsControl,
 } from "./runtime.ts";
 import { GitWorkspaceManager } from "./workspace.ts";
+import { createParentDelivery } from "./delivery.ts";
+import { toolText } from "./index.ts";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const settle = async () => { await tick(); await tick(); await tick(); };
@@ -939,6 +941,78 @@ test("delivers a bounded inventory from a real scratch workspace", async (t) => 
   await runtime.cleanup(handle.runId);
   assert.equal(fs.existsSync(scratch), false);
 });
+
+test("completion delivery reports a scratch envelope removed before the child finishes", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-expired-delivery-test-"));
+  const source = path.join(root, "source");
+  const store = path.join(root, "delegate-runs");
+  fs.mkdirSync(source);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const delivered = deferred();
+  const delivery = createParentDelivery({
+    current: () => ({ sessionId: "parent-1", inputGeneration: 2, branchIds: ["leaf-1"] }),
+    send: (content) => delivered.resolve(content),
+  });
+  const { runtime, children } = runtimeFixture({
+    repository: memoryRepository([], store),
+    workspaces: new GitWorkspaceManager(store),
+    deliver: (run, view) => delivery.deliver(run, view),
+  });
+  await runtime.start(startInput({ cwd: source, workspace: "temporary" }));
+  await settle();
+  const workspace = children.launches[0].input.child.workspace;
+  fs.rmSync(workspace.envelope.rootPath, { recursive: true });
+  children.launches[0].done.resolve(success("research complete"));
+
+  const content = await delivered.promise;
+  assert.match(content, /Workspace note: Scratch workspace expired/);
+  assert.doesNotMatch(content, /workspace preserved|Preserve useful artifacts/);
+});
+
+for (const segments of [24, 150]) {
+  test(`keeps a complete ${segments}-segment scratch path in normal and compact views`, async () => {
+    const workspaces = fakeWorkspaceManager({ scratch: true });
+    const { runtime, children } = runtimeFixture({ workspaces: workspaces.manager });
+    const handle = await runtime.start(startInput({ workspace: "temporary" }));
+    await settle();
+    children.launches[0].done.resolve(success("research complete"));
+    await settle();
+    const run = structuredClone(runtime.get(handle.runId));
+    const child = run.children[0];
+    const fullPath = `/tmp/${"segment/".repeat(segments)}workspace`;
+    child.workspace.worktreePath = fullPath;
+
+    const normal = projectRun(run);
+    assert.equal(normal.children[0].workspace.pathRef, fullPath);
+
+    child.result.value = "x".repeat(40_000);
+    child.workspace.contents = {
+      entries: Array.from({ length: 128 }, (_, index) => `${index}-${"f".repeat(58)}`),
+      truncated: true,
+    };
+    const compact = projectRun(run);
+    assert.equal(compact.truncated, true);
+    assert.equal(compact.children.length, 1);
+    assert.ok(compact.children[0].workspace.contents.length <= 8, "must exercise the compact fallback");
+    assert.equal(compact.children[0].workspace.pathRef, fullPath);
+    assert.ok(Buffer.byteLength(JSON.stringify(compact)) <= 32 * 1024);
+    assert.ok(toolText(compact).includes(`Path: ${fullPath}`));
+
+    const sent = [];
+    const delivery = createParentDelivery({
+      current: () => ({ sessionId: run.parent.sessionId, inputGeneration: run.parent.inputGeneration, branchIds: [run.parent.leafId] }),
+      send: (content) => sent.push(content),
+    });
+    assert.equal(await delivery.deliver(run, compact), "delivered");
+    assert.ok(sent[0].includes(`Scratch workspace preserved at ${fullPath}.`));
+
+    const crowded = projectRun({ ...run, children: Array.from({ length: 32 }, () => structuredClone(child)) });
+    assert.ok(Buffer.byteLength(JSON.stringify(crowded)) <= 32 * 1024);
+    assert.ok(crowded.children.length > 0);
+    assert.ok(crowded.children.every((entry) => entry.workspace.pathRef === fullPath));
+    assert.equal(crowded.children.length + (crowded.omittedChildren ?? 0), 32);
+  });
+}
 
 test("preserves finalized scratch work until explicit cleanup", async () => {
   const workspaces = fakeWorkspaceManager({

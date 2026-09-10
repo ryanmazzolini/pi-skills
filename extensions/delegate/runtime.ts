@@ -542,7 +542,8 @@ export function projectRun(run: DelegationRun, maxBytes = DEFAULT_RESULT_LIMIT_B
 				kind: "temporary",
 				backing: isGitTemporaryWorkspace(child.workspace) ? "git" : "scratch",
 				state: integration.state,
-				pathRef: bounded(child.workspace.worktreePath, 1024),
+				// Paths must remain usable; the aggregate fallback can omit whole child views.
+				pathRef: child.workspace.worktreePath,
 				...(review || finalRevision ? { revision: bounded(review?.revision ?? finalRevision!, 128) } : {}),
 				...(review
 					? {
@@ -632,7 +633,7 @@ export function projectRun(run: DelegationRun, maxBytes = DEFAULT_RESULT_LIMIT_B
 						kind: "temporary" as const,
 						backing: child.workspace.backing,
 						state: child.workspace.state,
-						pathRef: clipUtf8(child.workspace.pathRef, 96).value,
+						pathRef: child.workspace.pathRef,
 						...(child.workspace.revision ? { revision: clipUtf8(child.workspace.revision, 64).value } : {}),
 						...(child.workspace.patchRef ? { patchRef: clipUtf8(child.workspace.patchRef, 96).value } : {}),
 						...(child.workspace.manifestRef ? { manifestRef: clipUtf8(child.workspace.manifestRef, 96).value } : {}),
