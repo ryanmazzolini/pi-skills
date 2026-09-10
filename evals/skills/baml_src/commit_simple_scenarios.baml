@@ -1,6 +1,8 @@
 function CommitSyncWorkItem() -> string {
     #"
-        # SC-10101 — Bound sync lock waits
+        # SC-10101 — Replace inner advisory locks with row locks
+
+        Existing message draft: refactor(shelving): replace inner advisory locks with row locks. This is not approved wording.
 
         Return and transfer sync runs inside Inbox's per-message process lock. It previously acquired a second advisory lock for every connected sync component. When components overlapped, workers waited for that inner lock inside open transactions while retaining database connections. A convoy behind one slow holder could exhaust the lending service connection pool. Some inner lock failures were also treated as duplicate Inbox jobs, so the message was marked processed instead of retried.
 

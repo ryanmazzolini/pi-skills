@@ -1,10 +1,19 @@
 function ScenarioSuites() -> ScenarioSuite[] {
+    let commit_scenarios = CommitSimpleScenarios();
+    for (let scenario in CommitSimpleFramingScenarios()) {
+        commit_scenarios.push(scenario);
+    };
+    let pr_scenarios = CommitPrScenarios();
+    for (let scenario in CommitPrFramingScenarios()) {
+        pr_scenarios.push(scenario);
+    };
     [
         ScenarioSuite { id: "research", scenarios: ResearchScenarios() },
         ScenarioSuite { id: "hci", scenarios: HciScenarios() },
         ScenarioSuite { id: "architecture", scenarios: ArchitectureScenarios() },
-        ScenarioSuite { id: "commit-simple", scenarios: CommitSimpleScenarios() },
-        ScenarioSuite { id: "commit-pr", scenarios: CommitPrScenarios() },
+        ScenarioSuite { id: "commit-simple", scenarios: commit_scenarios },
+        ScenarioSuite { id: "commit-pr", scenarios: pr_scenarios },
+        ScenarioSuite { id: "shortcut", scenarios: ShortcutFramingScenarios() },
         ScenarioSuite { id: "herdr", scenarios: HerdrScenarios() },
         ScenarioSuite { id: "ticket-workspace", scenarios: TicketWorkspaceScenarios() },
     ]

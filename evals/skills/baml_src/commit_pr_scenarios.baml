@@ -1,6 +1,6 @@
 function CommitPrWorkItem() -> string {
     #"
-        # SC-10101 — Prevent sync waits from exhausting connections
+        # SC-10101 — Replace inner advisory locks with row locks
 
         Shortcut: https://app.shortcut.com/acme/story/10101
 
@@ -53,7 +53,7 @@ function CommitPrScenarios() -> Scenario[] {
                 },
                 BashResponse {
                     includes: "git log",
-                    output: "a1b2c3d4 fix(shelving): prevent sync waits from exhausting connections",
+                    output: "a1b2c3d4 refactor(shelving): replace inner advisory locks with row locks",
                 },
                 BashResponse {
                     includes: "git diff main...HEAD --stat",
@@ -63,7 +63,7 @@ function CommitPrScenarios() -> Scenario[] {
                 BashResponse { includes: "git diff", output: CommitSyncDiff() },
                 BashResponse {
                     includes: "gh pr view",
-                    output: "no pull requests found for branch fix/sc-10101/bound-sync-lock-waits",
+                    output: "Draft PR #77, base main, head fix/sc-10101/bound-sync-lock-waits. Title: [sc-10101] Replace inner advisory locks with row locks. Body: Use canonical row ordering and NOWAIT for sync. Existing title and body may be revised; publication is not approved.",
                 },
                 BashResponse {
                     includes: "bundle exec rspec",
