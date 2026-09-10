@@ -73,17 +73,21 @@ For an approved ticketless quick fix, use `{type}/{short-description}`, such as 
 
 After confirmation, create only the approved folder, branch, and worktree. Keep later PR worktrees deferred until those PRs become real.
 
-## Offer the Herdr handoff
+## Choose where to continue
 
-After the ticket folder and first PR worktree are ready, load the model-invoked `herdr` skill and offer to hand off the active work only when all of these are true:
+Preparing a ticket folder and worktrees does not require a new terminal destination or a fresh Pi session. Honor the user's choice to stay in the current session or use a particular destination without asking them to choose again. Keep the filesystem layout above unchanged; Herdr grouping is independent of the folder layout.
 
-- the current agent is Pi
-- `HERDR_ENV=1`
-- the Pi session is still rooted outside the ticket folder
+When the current agent is Pi and `HERDR_ENV=1`, use the following guidance if the user has not chosen where to continue. Establish the ticket's parent epic from the supplied context or read-only ticket metadata when needed. Do not infer an epic from a repository or folder name, or treat missing metadata as proof that there is no epic.
 
-Preserve the user's Herdr workspace, tab or work label, and cwd choices independently. Only when the user has not supplied a cwd, propose the ticket folder so the session can reach every repo worktree. Only when the user has not supplied a tab or work label, propose the ticket slug. The folder layout does not decide the Herdr workspace: let `herdr` infer a named tab in an existing workspace or ask where the work belongs. Request a new Herdr workspace only when the user chooses one.
+- **Ticket in an epic:** propose a Herdr workspace for the epic, with one tab for the ticket. Load `herdr` to inspect live workspaces and tabs first. Propose the matching epic workspace when unambiguous; if none exists, propose creating one named for the epic, with its initial tab named for the ticket. If several destinations match, ask which one to use. An existing ticket tab is not permission to create a duplicate or replace its Pi session; inspect it and ask how the user wants to continue there.
+- **Isolated ticket or ticketless fix:** ask whether to continue in the current session, use an existing workspace/tab/pane or Pi session, or create a workspace/tab. Present relevant options from the work context and live topology, not an automatic project or activity fallback. The current location is an option, not an inferred choice.
+- **Epic relationship still unknown:** ask for the missing context or the user's destination choice instead of inventing a grouping.
 
-The default starts a fresh Pi session with a concise continuation brief, preserves human focus, and keeps the source pane open. Let the `herdr` skill control its separate confirmation and verification. Focusing the destination or closing the source requires the additional, distinct approval defined by that skill.
+If the user chooses the current session, continue using the approved worktree paths without creating terminal resources or starting another Pi. For another existing destination, use `herdr` to inspect the exact workspace, tab and pane and confirm the intended action. Choosing an existing workspace does not itself choose between an existing session and a fresh Pi in a new tab. Do not replace or restart an existing agent, or send work to another Pi, without explicit approval.
+
+Preserve workspace, tab or work label, and cwd choices independently. When a new destination needs defaults, propose the ticket folder as cwd so the session can reach every repo worktree, and the ticket slug as the tab label. For a new epic workspace, pass both the epic workspace label and the ticket tab label to `herdr`; the first ticket uses the workspace's initial tab, not an extra tab.
+
+Only when the user chooses a fresh Pi destination, follow `herdr`'s fresh-session confirmation and verification. A proposal to create a workspace or tab still needs approval before creation. Keep the existing confirmation format, preserve human focus and the source pane, and require the separate approvals defined by `herdr` before focusing or closing anything.
 
 ## Keep consent explicit
 

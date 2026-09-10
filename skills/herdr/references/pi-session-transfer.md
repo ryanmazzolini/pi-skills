@@ -21,7 +21,13 @@ Prefer evidence in this order:
 5. Infer the tab label from the clearest work identity already present. Prefer an explicit tab or work-item name, `gh-<number>` for the main GitHub issue in a review, the Monday item ID for an AI workflow task, or another stable work-item ID. For a GitHub review with a supplied main issue number, do not require its repository, title, or an issue lookup only to name the tab. Without an explicit tab or work label, use `<work-item>` for a ticket folder at `<root>/worktrees/<work-item>` or a worktree inside it, not the repository name. When that work-item slug starts with `sc-<number>-`, keep the full slug as the default label and describe the work in the confirmation as Shortcut story `SC-<number>`. A project name alone does not identify the work. Otherwise derive a short recognizable label from the user's request.
 6. Use the requested project or worktree directory as cwd. When continuing work already represented by the calling pane, default to that pane's cwd. The cwd need not be a Git repository.
 
-Use an inferred existing workspace only when exactly one candidate matches. Prefer an exact workspace-label match over path or repository-name matches. If no workspace matches, retain the explicit work label when one was supplied; otherwise retain the inferred work label. Keep the requested or inferred cwd while asking the user to choose between a named existing workspace and creating a new workspace. Use the work label as the proposed tab label for an existing workspace or the proposed workspace label for a new one; do not replace it with the repository name or present new-workspace creation as the only proposal. If several workspaces match, inspect the panes for every candidate before responding. Use existing pane-list evidence when it covers every candidate; otherwise run `herdr pane list --workspace <workspace-id>` for each one. Show each candidate’s ID, label, and relevant pane cwd values, then ask which exact workspace to use. Do not silently choose or create one.
+Use an inferred existing workspace only when exactly one candidate matches. Prefer an exact workspace-label match over path or repository-name matches.
+
+If no workspace matches and the calling skill supplies a workspace recommendation, propose creating that workspace with the supplied tab label and cwd through the normal destination confirmation. This lets a ticket skill recommend a new epic workspace with its initial ticket tab. The recommendation is not approval to create anything, and explicit user choices still take precedence.
+
+For other unmatched destinations, retain the explicit work label when one was supplied; otherwise retain the inferred work label. Keep the requested or inferred cwd while asking the user to choose between a named existing workspace and creating a new workspace. Use the work label as the proposed tab label for an existing workspace or the proposed workspace label for a new one; do not replace it with the repository name or present new-workspace creation as the only proposal.
+
+If several workspaces match, inspect the panes for every candidate before responding. Use existing pane-list evidence when it covers every candidate; otherwise run `herdr pane list --workspace <workspace-id>` for each one. Show each candidate’s ID, label, and relevant pane cwd values, then ask which exact workspace to use. Do not silently choose or create one.
 
 When a requested new workspace label already exists, report its ID and stop. Ask whether to use that existing workspace through the tab flow or choose a distinct workspace label.
 
@@ -44,7 +50,7 @@ For a new workspace, follow with these bullets:
 - New workspace: `<label>`
 - Working directory: `<cwd>`
 
-If the user explicitly supplied a tab label for the new workspace, insert a `New tab` bullet between them with the supplied tab label as its value. This approves naming the workspace's initial tab, not creating another tab. Otherwise leave its default label unchanged.
+If the user or calling skill supplied a tab label for the new workspace, insert a `New tab` bullet between them with that label as its value. A calling skill may supply a default, such as the ticket slug inside an epic workspace; an explicit user label takes precedence. This approves naming the workspace's initial tab, not creating another tab. Otherwise leave its default label unchanged.
 
 Do not add other bullets. Keep each bullet label as plain text and format only its value as inline code. The cwd may instead be a clickable Markdown link whose label is inline code. Keep Herdr IDs, source details, continuation-brief details, and background-operation details out of a concrete destination proposal. State focus only with the exact sentence below. Include IDs only when the user must distinguish ambiguous candidates or diagnose a failure.
 
@@ -73,7 +79,7 @@ Use bullets rather than a table so long paths remain readable in narrow terminal
      herdr workspace create --cwd <cwd> --label <workspace-label> --no-focus
      ```
 
-     If the approved proposal includes an explicit tab label, name the returned initial tab before starting Pi:
+     If the approved proposal includes a tab label, name the returned initial tab before starting Pi:
 
      ```bash
      herdr tab rename <tab-id> <tab-label>
