@@ -96,6 +96,31 @@ test("completion delivery preserves scratch artifacts for explicit disposition",
   assert.doesNotMatch(sent[0], /action=review/);
 });
 
+for (const message of ["Scratch workspace expired", "Could not inspect scratch contents: permission denied"]) {
+  test(`completion delivery surfaces working scratch warnings: ${message}`, async () => {
+    const sent = [];
+    const delivery = createParentDelivery({
+      current: () => ({ sessionId: "parent-1", inputGeneration: 1, branchIds: ["leaf-1"] }),
+      send: (content) => sent.push(content),
+    });
+    const scratchView = structuredClone(view);
+    scratchView.children[0].workspace = {
+      kind: "temporary",
+      backing: "scratch",
+      state: "working",
+      pathRef: "/tmp/delegate/scratch",
+      message,
+      contents: [],
+      contentsTruncated: false,
+    };
+
+    assert.equal(await delivery.deliver(run(), scratchView), "delivered");
+    assert.ok(sent[0].includes(`Workspace note: ${message}`));
+    assert.ok(sent[0].includes("/tmp/delegate/scratch"));
+    assert.doesNotMatch(sent[0], /workspace preserved|Preserve useful artifacts/);
+  });
+}
+
 test("completion delivery preserves temporary review evidence references", async () => {
   const sent = [];
   const delivery = createParentDelivery({
