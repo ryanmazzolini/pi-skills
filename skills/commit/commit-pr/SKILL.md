@@ -32,13 +32,13 @@ Treat existing PR, ticket, branch, and commit wording as context, not an approve
 
 ## Body
 
-Write a short note to a capable teammate who has not followed the discussion, not a report. Do not narrate the investigation. Include only the problem, new behavior, important details that are easy to miss, and validation.
+Write for a capable engineer who has not read the ticket or followed the work. Give them a self-contained explanation of the affected workflow and change, not an investigation report. Establish the context needed to understand the problem, new behavior, important limits, and validation before trimming repetition.
 
 Use `Description`, `Details`, and `Testing` as headings.
 
 ### Description
 
-Open with the same practical consequence used to frame the title: the problem experienced or the capability enabled. A problem-first or result-first sentence is fine; a description of internal storage or processing alone is not. The opening should explain why this PR matters without relying on the title or Details. Then explain what happened before, its practical consequence, and how behavior changes in one or two short paragraphs. When the behavior is not immediately obvious, use one representative example to ground the explanation. Explain project terms when you first use them.
+Open with the same practical consequence used to frame the title: the problem experienced or the capability enabled. A problem-first or result-first sentence is fine; a description of internal storage or processing alone is not. The opening should explain why this PR matters without relying on the title or Details. Then explain who uses the affected workflow, what they are trying to do, what happened before, and how the change improves it. Walk through the changed behavior, including consequential interactions and what stays unchanged. Size the explanation to what the reader needs to understand, not a paragraph limit; a list of changed features is not a substitute for that explanation. When the behavior is not immediately obvious, use one representative example to ground the explanation. Explain project terms when you first use them.
 
 ### Details
 
@@ -64,4 +64,4 @@ Before presenting the draft:
 - Remove repeated context, abstract phrasing that hides who or what performs the action, and detail that does not help review.
 - Keep simple changes short.
 - Read the title and opening sentence separately. Each should explain why the change matters, not just what the code does, without claiming benefits deferred to later work.
-- Make sure a teammate with limited context can explain the problem, the new behavior, what is deliberately deferred, and the details that matter.
+- Read the Description without Details or links. Make sure a teammate new to the work can explain the previous workflow, the problem, the changed workflow, and important limits without reconstructing the story from feature bullets. Restore missing context before trimming; keep supporting mechanics in Details.
