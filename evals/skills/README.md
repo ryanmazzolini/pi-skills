@@ -35,7 +35,7 @@ cp .env.example .env
 
 The live npm commands use `dotenv-cli` to load the root `.env` before launching BAML. Existing process variables remain available. The deterministic check does not load credentials.
 
-The project pins the exact toolchain in `baml.toml`. Repository scripts enter `evals/skills/` before invoking BAML so the wrapper selects that manifest rather than its global default. Both the subject and semantic judge use `openai-responses/gpt-6-astra` with low reasoning, on direct and local runs. Reports identify the model, reasoning level and selected route.
+The project pins the exact toolchain in `baml.toml`. Repository scripts enter `evals/skills/` before invoking BAML so the wrapper selects that manifest rather than its global default. Both the subject and semantic judge use `openai-responses/gpt-5.6-luna` with high reasoning, on direct and local runs. Reports identify the model, reasoning level and selected route.
 
 ## Commands
 
