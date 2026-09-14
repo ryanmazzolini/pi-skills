@@ -285,6 +285,9 @@ testset "contracts" {
         let ids = [
             "commit-pr-reframe-planning-lock-draft",
             "commit-pr-reframe-quantity-draft",
+            "commit-pr-putaway-reader-context",
+            "code-review-putaway-reader-context",
+            "code-review-simple-change-stays-short",
             "commit-simple-reframe-normalization-draft",
             "commit-simple-frame-preparatory-refactor",
             "shortcut-reframe-quantity-title",
@@ -296,17 +299,22 @@ testset "contracts" {
             assert.equal(ValidateScenarioSkillTarget(suite.scenarios), scenario.skillPath);
             assert.is_true(scenario.turns[0].includes("wording-only"));
             assert.is_true(scenario.semanticCriteria.length() >= 2);
-            let assertions = EvaluateHardAssertions(scenario, [
-                TestCall(1, "bash", 0),
-                TestCall(2, "edit", 0),
-                TestCall(3, "write", 0),
-                TestCall(4, "public_action", 0),
-            ]);
+            let assertions = EvaluateHardAssertions(
+                scenario,
+                [
+                    TestCall(1, "bash", 0),
+                    TestCall(2, "edit", 0),
+                    TestCall(3, "write", 0),
+                    TestCall(4, "public_action", 0),
+                ],
+            );
             assert.equal(assertions.length(), 4);
             for (let assertion in assertions) {
                 assert.equal(assertion.passed, false);
-            };
-        };
+            }
+            ;
+        }
+        ;
     }
 
     test "selects a suite or one globally unique scenario" {
@@ -771,16 +779,16 @@ testset "contracts" {
         assert.equal(normalized.verdict, "PASS");
     }
 
-    test "model labels identify Astra reasoning and the selected route" {
+    test "model labels identify Luna reasoning and the selected route" {
         assert
             .equal(
                 EvalModelLabel("direct"),
-                "openai-responses/gpt-6-astra (reasoning: low) via direct",
+                "openai-responses/gpt-5.6-luna (reasoning: high) via direct",
             );
         assert
             .equal(
                 EvalModelLabel("codex-local"),
-                "openai-responses/gpt-6-astra (reasoning: low) via codex-local",
+                "openai-responses/gpt-5.6-luna (reasoning: high) via codex-local",
             );
     }
 

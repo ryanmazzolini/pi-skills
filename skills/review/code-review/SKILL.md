@@ -148,7 +148,7 @@ Then scan every proposed change or test. Rewrite commands, including sentences u
 
 ## Return the result
 
-Write for a capable engineer who has not read the issue, diff, or investigation. Give every reviewed pull request, commit, or diff a summary, including clean approvals. Establish who uses the affected workflow, what they are trying to do, and what happens today before explaining the change and how it works. For a preparatory refactor, explain what it enables and what stays unchanged. Use a concrete example when it makes the behavior easier to understand.
+Write for a capable engineer who has not read the issue, diff, or investigation. Give every reviewed pull request, commit, or diff a summary, including clean approvals. Open the summary by explaining who uses the affected workflow, what they are trying to do, and what the previous behavior prevented or made difficult. State that previous behavior and its practical consequence explicitly; saying users can “now” do something does not explain what was wrong before. Then walk through the changed behavior and how it addresses that problem. For a preparatory refactor, explain what it enables and what stays unchanged. Use a concrete example when it makes the behavior easier to understand.
 
 Ground that explanation in the issue or other available intent source and the inspected implementation. Include consequential design choices and scope limits that affect how the reader should interpret the change. When intent is unavailable, name the context used and describe observed behavior without inventing requirements. Link the pull request and available issue; use implementation links for supporting detail, not as substitutes for the explanation.
 
@@ -176,7 +176,7 @@ When another skill supplies an output schema, follow its structure while preserv
 
 After drafting, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review, including the inline comments. Treat investigation notes and unapproved comment drafts as source material, not finished prose to copy. In each summary and comment, explain what a component, field, or background process does before relying on its name. Prefer the action and its result to internal shorthand; retain identifiers where they help locate or distinguish the code.
 
-Check whether the reader can explain the workflow, the change, and why the recommendation fits without opening links or reconstructing the story from comments. If a sentence only names a mechanism, limitation, or risk, explain what it means for the affected person or system. Restore missing context before trimming repetition; concision means removing unnecessary work for the reader, not merely using fewer words.
+Read the change summary without the findings or links. Check whether an engineer new to the work can explain the previous workflow, the problem, the changed workflow, and important limits without reconstructing the story from feature bullets. Then check that the review explains why the recommendation fits. If a sentence only names a mechanism, limitation, or risk, explain what it means for the affected person or system. Restore missing context before trimming repetition. Keep simple changes short when that explanation is already complete; concision means removing unnecessary work for the reader, not merely using fewer words.
 
 ## PR-level discussion
 

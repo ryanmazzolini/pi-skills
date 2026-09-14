@@ -1,5 +1,5 @@
 function EvalModelLabel(route: string) -> string {
-    `openai-responses/gpt-6-astra (reasoning: low) via ${route}`
+    `openai-responses/gpt-5.6-luna (reasoning: high) via ${route}`
 }
 
 function RunOne(
