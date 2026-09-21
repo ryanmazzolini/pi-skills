@@ -32,13 +32,15 @@ After loading the runtime instructions, prefer the standard snapshot → ref →
 1. Open or connect to the target page/app.
 2. Take a snapshot, usually of interactive elements.
 3. Use returned element refs like `@e1`, `@e2` for interactions.
-4. Re-snapshot after the page changes.
+4. Wait for the expected result and verify it in the page state; a successful interaction command alone does not prove success. Re-snapshot after the page changes before using refs again.
 5. Capture screenshots, text, or other output the user asked for.
+
+Take and inspect screenshots when judging layout, interacting with canvas content, resolving ambiguous controls, or investigating unexpected results. Use snapshots for ordinary element-based interactions; screenshots are not required after every click.
 
 ## Session Hygiene
 
-- Prefer one stable session per task or worktree. Reuse it across testing passes; create separate sessions only for parallel browsers or isolated identities.
-- Close sessions when browser work finishes. If a workflow created several sessions, use `agent-browser close --all`.
-- Accumulated Chromium sessions can consume substantial memory and graphics resources, including WindowServer memory on macOS. If shutdown stalls or memory remains high, run `agent-browser doctor` and confirm that no daemons remain before launching more sessions.
+- Before browser work, select a named session owned by this task and use it on every command. Follow the runtime instructions for session naming; do not share a session with another active task. Reuse it across testing passes; create separate sessions only for parallel browsers or isolated identities.
+- When browser work finishes, close each session this task created by name. Do not use `close --all` or close browsers or sessions owned by the user or another task.
+- Accumulated Chromium sessions can consume substantial memory and graphics resources, including WindowServer memory on macOS. If shutdown stalls or memory remains high, run `agent-browser doctor` and confirm that this task's session is gone before launching more sessions. Leave unrelated sessions alone.
 
 If a command fails unexpectedly, run `agent-browser doctor` before improvising.
