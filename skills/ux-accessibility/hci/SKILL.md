@@ -9,6 +9,10 @@ Prefer native platform behavior and observable user outcomes over custom interac
 
 Before proposing UI copy, check whether status, labels, values, actions, or layout can communicate the state directly. Fix a misleading flow or action before adding prose that explains around it. Persistent copy must add information the surrounding interface cannot carry. Keep implementation boundaries and unverified recovery out of user-facing text.
 
+## Ask for a recording when words leave the interaction unclear
+
+When a task depends on how an existing or reference UI moves, responds, or recovers, and screenshots or prose leave that ambiguous, ask the user for a short screen recording of the flow, narrated if they can. Extract frames at the moments that matter (before an action, during feedback, after completion, on failure) and read them in sequence with their timing so transitions, feedback, and recovery are clear. Report what the recording shows separately from what you infer. Do not ask for a recording when the existing evidence already answers the question.
+
 Load only the references the task touches:
 
 - [references/HEURISTICS.md](references/HEURISTICS.md) — usability heuristics as review lenses. Medium-agnostic: apply to UI, API responses, CLI output, and error surfaces.

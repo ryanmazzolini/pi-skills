@@ -29,7 +29,7 @@ Follow [`durable-context.md`](../ship/references/durable-context.md) to choose o
 Scale the document to the expensive choices:
 
 - **Product promise:** translate settled intent into a concrete future-facing launch paragraph or caller example, observable success, primary walkthrough, important failure or recovery path, and explicit non-goals. Do not restate the whole alignment.
-- **Experience artifact:** when prose is hard to judge, link the smallest useful mockup, state storyboard, CLI transcript, or API example and say exactly what the reviewer should assess. Summarize accepted behavior in `design.md`.
+- **Experience artifact:** when prose is hard to judge, link the smallest useful mockup, state storyboard, CLI transcript, or API example and say exactly what the reviewer should assess. Summarize accepted behavior in `design.md`. When the design must match how an existing or reference UI behaves and that behavior is unclear, ask for a short screen recording first, following the recording guidance in [`hci`](../../ux-accessibility/hci/SKILL.md).
 - **System design:** show the current fit, desired runtime flow, contracts, data transformations, and only the security, reliability, compatibility, migration, rollout, or operational risks that can change the solution.
 - **Program design:** show the proposed file-tree diff, key types or signatures without bodies, important call-stack trees, ownership of state and side effects, error paths, and test seams. Expose the least-confident decisions an implementer would otherwise make silently.
 - **Vertical build outline:** start with the thinnest touchable tracer, then add end-to-end increments with an observable check after each. This decides a useful build order, not PR boundaries.
