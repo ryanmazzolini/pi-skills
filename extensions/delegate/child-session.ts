@@ -1,5 +1,5 @@
-import { mkdir } from "node:fs/promises";
-import { isAbsolute, relative, sep } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
@@ -209,11 +209,42 @@ function normalizeNames(values: readonly string[]): string[] {
 	return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+// Children load no ambient extensions, but some providers only work when their
+// extension runs in the session that prompts them. claude-bridge, for example,
+// records each session's system prompt from before_agent_start and refuses a
+// prompt it never saw. `<agentDir>/delegate.json` lists the packages whose
+// extensions a child loads too: { "childExtensions": ["pi-claude-bridge"] }.
+// ponytail: npm packages only (<agentDir>/npm/node_modules/<name>); add git
+// package resolution when a child needs one.
+export async function childExtensionPaths(agentDir = getAgentDir()): Promise<string[]> {
+	let names: string[] = [];
+	try {
+		const config = JSON.parse(await readFile(join(agentDir, "delegate.json"), "utf8")) as { childExtensions?: unknown };
+		names = normalizeNames(Array.isArray(config.childExtensions) ? config.childExtensions.map(String) : []);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+	const paths: string[] = [];
+	for (const name of names) {
+		const packageDir = join(agentDir, "npm", "node_modules", name);
+		let manifest: { pi?: { extensions?: unknown } };
+		try {
+			manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
+		} catch {
+			throw new Error(`Delegate child extension package is not installed: ${name} (expected ${packageDir})`);
+		}
+		const entries = Array.isArray(manifest.pi?.extensions) ? manifest.pi.extensions.map(String) : [];
+		paths.push(...entries.map((entry) => resolve(packageDir, entry)));
+	}
+	return paths;
+}
+
 export async function createChildResourceLoader(
 	cwd: string,
 	agentDir = getAgentDir(),
 	selectedSkillNames: readonly string[] = [],
 	additionalGuidance: readonly string[] = [],
+	extensionPaths: readonly string[] = [],
 ): Promise<{
 	loader: DefaultResourceLoader;
 	settingsManager: SettingsManager;
@@ -227,6 +258,7 @@ export async function createChildResourceLoader(
 		agentDir,
 		settingsManager,
 		noExtensions: true,
+		additionalExtensionPaths: [...extensionPaths],
 		noSkills: requested.length === 0,
 		noPromptTemplates: true,
 		noThemes: true,
@@ -373,6 +405,7 @@ async function createChild(
 		agentDir,
 		child.resolved.skills.map((skill) => skill.name),
 		additionalGuidance,
+		await childExtensionPaths(agentDir),
 	);
 	const expectedSkills = child.resolved.skills
 		.map((skill) => resolvedSkillIdentity(child, skill, false))
