@@ -18,7 +18,7 @@ description: Create or update a draft pull request from the current branch. Use 
 
 ## Scope
 
-Each PR should have one purpose: deliver a useful result or safely prepare for one immediate next change. When a PR is preparation, name the next change and the specific risk reduced by landing the preparation separately.
+Each PR should have one purpose: deliver a useful result or safely prepare for one immediate next change. When a PR is preparation, explain in the body what it delivers, how that supports the next change, and what remains undelivered.
 
 Stop and propose splitting or deferring work when the branch also contains another useful result, unrelated cleanup or optimization, generalization for a possible future need, or unrelated formatting. Keep extra work only when this PR or the repository checks require it for safety, compatibility, or formatting enforced by project tools.
 
@@ -26,9 +26,9 @@ Wait for confirmation before removing work or rewriting history.
 
 ## Title
 
-Before drafting, privately answer: without this PR, what goes wrong for a user, caller, or operator, or what can they not do? Build the title from that consequence, not by rewording the code summary. Use sentence case and a direct action verb. Add the mechanism only after the purpose, when it helps explain the result. Keep the claim within this PR's scope; for preparation, follow the scope guidance above.
+Name the concrete change or problem solved at the level this PR delivers. An API capability or refactor is a valid result; the title need not promise a downstream user benefit. Prefer a specific change over a vague phrase about preparing for future work. Use sentence case and a direct action verb. Keep the claim within this PR's scope; explain its broader purpose and any follow-up work in the body.
 
-Treat existing PR, ticket, branch, and commit wording as context, not an approved title. The title alone should tell a teammate why the change matters without the original discussion. Keep useful project terms, but avoid stacked nouns. Repository conventions may add metadata such as a ticket ID. For example, prefer `[sc-65850] Prevent putaway lock-order deadlocks` over `[sc-65850] Acquire putaway planning locks once per operation`.
+Treat existing PR, ticket, branch, and commit wording as context, not an approved title. The title should tell a teammate what changes or what problem is solved without the original discussion. Keep useful project terms, but avoid stacked nouns. Repository conventions may add metadata such as a ticket ID. For example, prefer `[sc-65850] Prevent putaway lock-order deadlocks` over `[sc-65850] Acquire putaway planning locks once per operation`.
 
 ## Body
 
@@ -38,7 +38,7 @@ Use `Description`, `Details`, and `Testing` as headings.
 
 ### Description
 
-Open with the same practical consequence used to frame the title: the problem experienced or the capability enabled. A problem-first or result-first sentence is fine; a description of internal storage or processing alone is not. The opening should explain why this PR matters without relying on the title or Details. Then explain who uses the affected workflow, what they are trying to do, what happened before, and how the change improves it. Walk through the changed behavior, including consequential interactions and what stays unchanged. Size the explanation to what the reader needs to understand, not a paragraph limit; a list of changed features is not a substitute for that explanation. When the behavior is not immediately obvious, use one representative example to ground the explanation. Explain project terms when you first use them.
+Explain the surrounding workflow, why this change is needed, and what it delivers. Establish who uses the workflow, what they are trying to do, and how the previous behavior or missing capability leads to this change. For example, an API change adding search and pallet details should explain that it supports finding a putaway item before choosing its lot and staging bin, while retaining existing item details and correction controls. Make clear which capabilities this PR delivers and which require later integration. Order the explanation for understanding rather than requiring the first sentence to carry both context and result. Walk through the changed behavior, including consequential interactions and what stays unchanged. Size the explanation to what the reader needs to understand, not a paragraph limit; a list of changed features is not a substitute for that explanation. When the behavior is not immediately obvious, use one representative example to ground the explanation. Explain project terms when you first use them.
 
 ### Details
 
@@ -49,6 +49,8 @@ Include only the behavior, limits, and trade-offs needed to review the change. O
 ### Testing
 
 List the checks run on the current branch and their results. Add relevant manual, UI, or deployment verification, and say what could not be tested. Include screenshots or video for UI changes. Keep review and agent process out of this section.
+
+Upload screenshots and videos with `--attach '<path>#<alt text>'` on `gh pr create`, `gh pr edit`, or `gh pr comment`, one flag per file, run from inside the repository. Reference each file in the body with the exact path string passed to the flag, such as `![Nothing left to move](./empty.png)`, and gh rewrites it to the uploaded URL in place. An unreferenced file is appended to the end of the body. Alt text should name the state shown.
 
 ## Links
 
@@ -63,5 +65,5 @@ Before presenting the draft:
 - Make sure every changed commit and file supports the PR's one purpose.
 - Remove repeated context, abstract phrasing that hides who or what performs the action, and detail that does not help review.
 - Keep simple changes short.
-- Read the title and opening sentence separately. Each should explain why the change matters, not just what the code does, without claiming benefits deferred to later work.
+- Check that the title names the concrete change or problem solved and the Description independently explains its context, purpose, and scope. Neither should claim benefits deferred to later work.
 - Read the Description without Details or links. Make sure a teammate new to the work can explain the previous workflow, the problem, the changed workflow, and important limits without reconstructing the story from feature bullets. Restore missing context before trimming; keep supporting mechanics in Details.
