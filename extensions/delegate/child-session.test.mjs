@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { childOutputGuidance, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, createActivityEmitter, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
+import { childExtensionPaths, childOutputGuidance, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, createActivityEmitter, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-resources-test-"));
@@ -148,6 +148,28 @@ test("child resources keep AGENTS.md while excluding ambient resources", async (
 
   const { loader: temporaryLoader } = await createChildResourceLoader(cwd, agentDir, [], ["Do not commit temporary changes."]);
   assert.match(temporaryLoader.getAppendSystemPrompt().join("\n"), /Do not commit temporary changes/);
+});
+
+test("configured child extension packages load beside the no-extension default", async (t) => {
+  const { cwd, agentDir } = fixture(t);
+  assert.deepEqual(await childExtensionPaths(agentDir), []);
+
+  const packageDir = path.join(agentDir, "npm", "node_modules", "fake-bridge");
+  fs.mkdirSync(path.join(packageDir, "src"), { recursive: true });
+  fs.writeFileSync(path.join(packageDir, "package.json"), JSON.stringify({ name: "fake-bridge", pi: { extensions: ["./src/index.ts"] } }));
+  fs.writeFileSync(path.join(packageDir, "src", "index.ts"), "export default function (pi) { pi.on('agent_start', () => {}); }\n");
+  fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: ["fake-bridge", "fake-bridge"] }));
+
+  const paths = await childExtensionPaths(agentDir);
+  assert.deepEqual(paths, [path.join(packageDir, "src", "index.ts")]);
+
+  const { loader } = await createChildResourceLoader(cwd, agentDir, [], [], paths);
+  const loaded = loader.getExtensions();
+  assert.deepEqual(loaded.errors, []);
+  assert.deepEqual(loaded.extensions.map((extension) => extension.path), paths);
+
+  fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: ["absent-package"] }));
+  await assert.rejects(() => childExtensionPaths(agentDir), /not installed: absent-package/);
 });
 
 test("selected skills are resolved exactly without exposing ambient siblings", async (t) => {
