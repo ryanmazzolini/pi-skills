@@ -152,24 +152,37 @@ test("child resources keep AGENTS.md while excluding ambient resources", async (
 
 test("configured child extension packages load beside the no-extension default", async (t) => {
   const { cwd, agentDir } = fixture(t);
-  assert.deepEqual(await childExtensionPaths(agentDir), []);
+  assert.deepEqual(await childExtensionPaths(cwd, agentDir), []);
 
-  const packageDir = path.join(agentDir, "npm", "node_modules", "fake-bridge");
-  fs.mkdirSync(path.join(packageDir, "src"), { recursive: true });
-  fs.writeFileSync(path.join(packageDir, "package.json"), JSON.stringify({ name: "fake-bridge", pi: { extensions: ["./src/index.ts"] } }));
-  fs.writeFileSync(path.join(packageDir, "src", "index.ts"), "export default function (pi) { pi.on('agent_start', () => {}); }\n");
-  fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: ["fake-bridge", "fake-bridge"] }));
+  const installPackage = (dir, name) => {
+    fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name, version: "1.0.0", pi: { extensions: ["./src/index.ts"] } }));
+    fs.writeFileSync(path.join(dir, "src", "index.ts"), "export default function (pi) { pi.on('agent_start', () => {}); }\n");
+    return path.join(dir, "src", "index.ts");
+  };
+  const npmPath = installPackage(path.join(agentDir, "npm", "node_modules", "fake-npm"), "fake-npm");
+  const gitPath = installPackage(path.join(agentDir, "git", "github.com", "example", "fake-git-repo"), "fake-git");
+  installPackage(path.join(agentDir, "npm", "node_modules", "unlisted"), "unlisted");
+  fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
+    packages: ["npm:fake-npm", "https://github.com/example/fake-git-repo", "npm:unlisted"],
+  }));
+  fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: ["fake-git", "fake-npm", "fake-npm"] }));
 
-  const paths = await childExtensionPaths(agentDir);
-  assert.deepEqual(paths, [path.join(packageDir, "src", "index.ts")]);
+  const paths = await childExtensionPaths(cwd, agentDir);
+  assert.deepEqual(paths.sort(), [gitPath, npmPath].sort());
 
   const { loader } = await createChildResourceLoader(cwd, agentDir, [], [], paths);
   const loaded = loader.getExtensions();
   assert.deepEqual(loaded.errors, []);
-  assert.deepEqual(loaded.extensions.map((extension) => extension.path), paths);
+  assert.deepEqual(loaded.extensions.map((extension) => extension.path).sort(), paths.sort());
 
-  fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: ["absent-package"] }));
-  await assert.rejects(() => childExtensionPaths(agentDir), /not installed: absent-package/);
+  fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: ["fake-npm", "absent-package"] }));
+  await assert.rejects(() => childExtensionPaths(cwd, agentDir), /childExtensions: absent-package$/);
+
+  fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: "fake-npm" }));
+  await assert.rejects(() => childExtensionPaths(cwd, agentDir), /delegate\.json: childExtensions must be an array/);
+  fs.writeFileSync(path.join(agentDir, "delegate.json"), "{ childExtensions: [] }");
+  await assert.rejects(() => childExtensionPaths(cwd, agentDir), /Invalid JSON in .*delegate\.json/);
 });
 
 test("selected skills are resolved exactly without exposing ambient siblings", async (t) => {
