@@ -6,6 +6,8 @@ import {
 	DefaultResourceLoader,
 	defineTool,
 	getAgentDir,
+	hasTrustRequiringProjectResources,
+	ProjectTrustStore,
 	SessionManager,
 	SettingsManager,
 	type AgentSessionEvent,
@@ -217,7 +219,11 @@ function normalizeNames(values: readonly string[]): string[] {
 // extensions a child loads too: { "childExtensions": ["pi-claude-bridge"] }.
 // Names match each installed package's package.json name, so the same entry
 // works whether the package came from npm, git, or a local path.
-export async function childExtensionPaths(cwd: string, agentDir = getAgentDir()): Promise<string[]> {
+export async function childExtensionPaths(
+	cwd: string,
+	agentDir = getAgentDir(),
+	projectTrusted = childProjectTrusted(cwd, agentDir),
+): Promise<string[]> {
 	const configPath = join(agentDir, "delegate.json");
 	let raw: string;
 	try {
@@ -232,13 +238,14 @@ export async function childExtensionPaths(cwd: string, agentDir = getAgentDir())
 	} catch (error) {
 		throw new Error(`Invalid JSON in ${configPath}: ${(error as Error).message}`);
 	}
-	const childExtensions = config?.childExtensions ?? [];
+	const childExtensions = config?.childExtensions;
+	if (childExtensions === undefined) return [];
 	if (!Array.isArray(childExtensions) || !childExtensions.every((name) => typeof name === "string")) {
 		throw new Error(`${configPath}: childExtensions must be an array of package names`);
 	}
 	const names = normalizeNames(childExtensions);
 	if (names.length === 0) return [];
-	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir) });
+	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir, { projectTrusted }) });
 	// "skip" keeps this read-only: missing packages are never installed here.
 	const { extensions } = await packageManager.resolve(async () => "skip");
 	const packageNames = new Map<string, string | undefined>();
@@ -260,6 +267,18 @@ export async function childExtensionPaths(cwd: string, agentDir = getAgentDir())
 	return paths;
 }
 
+// Pi's startup trust rule for the child's source directory, minus the prompt a
+// child can't show. Without trust, the child gets no project settings,
+// packages, or skills, so a project can't pose as an allowlisted package.
+// ponytail: a parent's session-only trust isn't saved, so the child treats that
+// project as untrusted; carry the parent's decision on the run record if needed.
+export function childProjectTrusted(sourceCwd: string, agentDir = getAgentDir()): boolean {
+	if (!hasTrustRequiringProjectResources(sourceCwd)) return true;
+	const decision = new ProjectTrustStore(agentDir).get(sourceCwd);
+	if (decision !== null) return decision;
+	return SettingsManager.create(sourceCwd, agentDir, { projectTrusted: false }).getDefaultProjectTrust() === "always";
+}
+
 async function packageName(packageDir: string): Promise<string | undefined> {
 	try {
 		const { name } = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as { name?: unknown };
@@ -275,6 +294,7 @@ export async function createChildResourceLoader(
 	selectedSkillNames: readonly string[] = [],
 	additionalGuidance: readonly string[] = [],
 	extensionPaths: readonly string[] = [],
+	projectTrusted = childProjectTrusted(cwd, agentDir),
 ): Promise<{
 	loader: DefaultResourceLoader;
 	settingsManager: SettingsManager;
@@ -282,7 +302,7 @@ export async function createChildResourceLoader(
 }> {
 	const requested = normalizeNames(selectedSkillNames);
 	const requestedSet = new Set(requested);
-	const settingsManager = SettingsManager.create(cwd, agentDir);
+	const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
 	const loader = new DefaultResourceLoader({
 		cwd,
 		agentDir,
@@ -304,6 +324,10 @@ export async function createChildResourceLoader(
 			: {}),
 	});
 	await loader.reload();
+	const { errors } = loader.getExtensions();
+	if (errors.length > 0) {
+		throw new Error(`Delegate child extension failed to load: ${errors.map((error) => `${error.path}: ${error.error}`).join("; ")}`);
+	}
 	const skills = loader.getSkills().skills;
 	const found = new Set(skills.map((skill) => skill.name));
 	const missing = requested.filter((name) => !found.has(name));
@@ -430,12 +454,17 @@ async function createChild(
 			? ["This is an extension-owned temporary workspace. Do not commit, create branches, or change Git history; leave filesystem changes for parent review."]
 			: []),
 	];
+	const projectTrusted = childProjectTrusted(
+		child.workspace.kind === "existing" ? child.workspace.cwd : child.workspace.sourceCwd,
+		agentDir,
+	);
 	const { loader, settingsManager, resolvedSkills } = await createChildResourceLoader(
 		cwd,
 		agentDir,
 		child.resolved.skills.map((skill) => skill.name),
 		additionalGuidance,
-		await childExtensionPaths(cwd, agentDir),
+		await childExtensionPaths(cwd, agentDir, projectTrusted),
+		projectTrusted,
 	);
 	const expectedSkills = child.resolved.skills
 		.map((skill) => resolvedSkillIdentity(child, skill, false))

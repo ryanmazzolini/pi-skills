@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { childExtensionPaths, childOutputGuidance, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, createActivityEmitter, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
+import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
+import { childExtensionPaths, childOutputGuidance, childProjectTrusted, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, createActivityEmitter, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-resources-test-"));
@@ -27,8 +28,16 @@ function fixture(t) {
     fs.writeFileSync(path.join(skillDir, "SKILL.md"), `---\nname: ${name}\ndescription: ${name} skill\n---\n\n${name}.\n`);
   }
 
+  new ProjectTrustStore(agentDir).set(project, true);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  return { agentDir, cwd };
+  return { root, agentDir, project, cwd };
+}
+
+function installPackage(dir, name, source = "export default function (pi) { pi.on('agent_start', () => {}); }\n") {
+  fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name, version: "1.0.0", pi: { extensions: ["./src/index.ts"] } }));
+  fs.writeFileSync(path.join(dir, "src", "index.ts"), source);
+  return path.join(dir, "src", "index.ts");
 }
 
 test("retry events expose a fixed deadline and clear on retry completion", () => {
@@ -154,12 +163,6 @@ test("configured child extension packages load beside the no-extension default",
   const { cwd, agentDir } = fixture(t);
   assert.deepEqual(await childExtensionPaths(cwd, agentDir), []);
 
-  const installPackage = (dir, name) => {
-    fs.mkdirSync(path.join(dir, "src"), { recursive: true });
-    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name, version: "1.0.0", pi: { extensions: ["./src/index.ts"] } }));
-    fs.writeFileSync(path.join(dir, "src", "index.ts"), "export default function (pi) { pi.on('agent_start', () => {}); }\n");
-    return path.join(dir, "src", "index.ts");
-  };
   const npmPath = installPackage(path.join(agentDir, "npm", "node_modules", "fake-npm"), "fake-npm");
   const gitPath = installPackage(path.join(agentDir, "git", "github.com", "example", "fake-git-repo"), "fake-git");
   installPackage(path.join(agentDir, "npm", "node_modules", "unlisted"), "unlisted");
@@ -179,10 +182,44 @@ test("configured child extension packages load beside the no-extension default",
   fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: ["fake-npm", "absent-package"] }));
   await assert.rejects(() => childExtensionPaths(cwd, agentDir), /childExtensions: absent-package$/);
 
-  fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: "fake-npm" }));
-  await assert.rejects(() => childExtensionPaths(cwd, agentDir), /delegate\.json: childExtensions must be an array/);
+  for (const childExtensions of ["fake-npm", null]) {
+    fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions }));
+    await assert.rejects(() => childExtensionPaths(cwd, agentDir), /delegate\.json: childExtensions must be an array/);
+  }
   fs.writeFileSync(path.join(agentDir, "delegate.json"), "{ childExtensions: [] }");
   await assert.rejects(() => childExtensionPaths(cwd, agentDir), /Invalid JSON in .*delegate\.json/);
+
+  const throwingPath = installPackage(path.join(agentDir, "npm", "node_modules", "throwing"), "throwing", "export default function () { throw new Error('bridge broke'); }\n");
+  await assert.rejects(
+    () => createChildResourceLoader(cwd, agentDir, [], [], [throwingPath]),
+    /Delegate child extension failed to load: .*throwing.*bridge broke/,
+  );
+});
+
+test("untrusted projects can't supply child extensions, settings, or skills", async (t) => {
+  const { root, agentDir, project, cwd } = fixture(t);
+  const trust = new ProjectTrustStore(agentDir);
+  const userPath = installPackage(path.join(agentDir, "npm", "node_modules", "fake-bridge"), "fake-bridge");
+  const projectPath = installPackage(path.join(root, "impostor"), "fake-bridge");
+  fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({ packages: ["npm:fake-bridge"] }));
+  fs.mkdirSync(path.join(cwd, ".pi"));
+  fs.writeFileSync(path.join(cwd, ".pi", "settings.json"), JSON.stringify({ packages: [path.join(root, "impostor")] }));
+  fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: ["fake-bridge"] }));
+
+  assert.equal(childProjectTrusted(cwd, agentDir), true);
+  assert.equal((await childExtensionPaths(cwd, agentDir)).includes(projectPath), true);
+
+  trust.set(project, false);
+  assert.equal(childProjectTrusted(cwd, agentDir), false);
+  assert.deepEqual(await childExtensionPaths(cwd, agentDir), [userPath]);
+  await assert.rejects(() => createChildResourceLoader(cwd, agentDir, ["selected"]), /Unknown delegated skill: selected/);
+
+  // With no saved answer the child can't ask, so only defaultProjectTrust "always" trusts.
+  trust.set(project, null);
+  assert.equal(childProjectTrusted(cwd, agentDir), false);
+  fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({ packages: ["npm:fake-bridge"], defaultProjectTrust: "always" }));
+  assert.equal(childProjectTrusted(cwd, agentDir), true);
+  assert.equal(childProjectTrusted(path.join(root, "impostor"), agentDir), true, "no project resources, nothing to trust");
 });
 
 test("selected skills are resolved exactly without exposing ambient siblings", async (t) => {
