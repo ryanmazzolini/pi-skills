@@ -1,7 +1,8 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import {
 	createAgentSession,
+	DefaultPackageManager,
 	DefaultResourceLoader,
 	defineTool,
 	getAgentDir,
@@ -214,29 +215,58 @@ function normalizeNames(values: readonly string[]): string[] {
 // records each session's system prompt from before_agent_start and refuses a
 // prompt it never saw. `<agentDir>/delegate.json` lists the packages whose
 // extensions a child loads too: { "childExtensions": ["pi-claude-bridge"] }.
-// ponytail: npm packages only (<agentDir>/npm/node_modules/<name>); add git
-// package resolution when a child needs one.
-export async function childExtensionPaths(agentDir = getAgentDir()): Promise<string[]> {
-	let names: string[] = [];
+// Names match each installed package's package.json name, so the same entry
+// works whether the package came from npm, git, or a local path.
+export async function childExtensionPaths(cwd: string, agentDir = getAgentDir()): Promise<string[]> {
+	const configPath = join(agentDir, "delegate.json");
+	let raw: string;
 	try {
-		const config = JSON.parse(await readFile(join(agentDir, "delegate.json"), "utf8")) as { childExtensions?: unknown };
-		names = normalizeNames(Array.isArray(config.childExtensions) ? config.childExtensions.map(String) : []);
+		raw = await readFile(configPath, "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+		throw error;
 	}
+	let config: { childExtensions?: unknown } | null;
+	try {
+		config = JSON.parse(raw);
+	} catch (error) {
+		throw new Error(`Invalid JSON in ${configPath}: ${(error as Error).message}`);
+	}
+	const childExtensions = config?.childExtensions ?? [];
+	if (!Array.isArray(childExtensions) || !childExtensions.every((name) => typeof name === "string")) {
+		throw new Error(`${configPath}: childExtensions must be an array of package names`);
+	}
+	const names = normalizeNames(childExtensions);
+	if (names.length === 0) return [];
+	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir) });
+	// "skip" keeps this read-only: missing packages are never installed here.
+	const { extensions } = await packageManager.resolve(async () => "skip");
+	const packageNames = new Map<string, string | undefined>();
 	const paths: string[] = [];
-	for (const name of names) {
-		const packageDir = join(agentDir, "npm", "node_modules", name);
-		let manifest: { pi?: { extensions?: unknown } };
-		try {
-			manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
-		} catch {
-			throw new Error(`Delegate child extension package is not installed: ${name} (expected ${packageDir})`);
-		}
-		const entries = Array.isArray(manifest.pi?.extensions) ? manifest.pi.extensions.map(String) : [];
-		paths.push(...entries.map((entry) => resolve(packageDir, entry)));
+	const found = new Set<string>();
+	for (const extension of extensions) {
+		const baseDir = extension.metadata.origin === "package" ? extension.metadata.baseDir : undefined;
+		if (!extension.enabled || !baseDir) continue;
+		if (!packageNames.has(baseDir)) packageNames.set(baseDir, await packageName(baseDir));
+		const name = packageNames.get(baseDir);
+		if (name === undefined || !names.includes(name)) continue;
+		paths.push(extension.path);
+		found.add(name);
+	}
+	const missing = names.filter((name) => !found.has(name));
+	if (missing.length > 0) {
+		throw new Error(`No installed package with enabled extensions for delegate childExtensions: ${missing.join(", ")}`);
 	}
 	return paths;
+}
+
+async function packageName(packageDir: string): Promise<string | undefined> {
+	try {
+		const { name } = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as { name?: unknown };
+		return typeof name === "string" ? name : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 export async function createChildResourceLoader(
@@ -405,7 +435,7 @@ async function createChild(
 		agentDir,
 		child.resolved.skills.map((skill) => skill.name),
 		additionalGuidance,
-		await childExtensionPaths(agentDir),
+		await childExtensionPaths(cwd, agentDir),
 	);
 	const expectedSkills = child.resolved.skills
 		.map((skill) => resolvedSkillIdentity(child, skill, false))
