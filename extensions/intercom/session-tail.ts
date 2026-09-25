@@ -345,6 +345,9 @@ function validateMessage(message: unknown, version: 2 | 3): void {
 		case "compactionSummary":
 			if (typeof message.summary !== "string" || typeof message.tokensBefore !== "number") fail(ERROR.malformed);
 			break;
+		case "system":
+			// Pi 0.86+ persists the prompt and tool loadout; never projected.
+			break;
 		default:
 			fail(ERROR.unsupported);
 	}
@@ -360,6 +363,10 @@ const SUPPORTED_ENTRY_TYPES = new Set([
 	"custom_message",
 	"label",
 	"session_info",
+	// Pi 0.86+: context_edit changes only future model context, and usage carries
+	// token counts. Neither is projected; the tail shows raw history like pi's UI.
+	"context_edit",
+	"usage",
 ]);
 
 function validateEntryShape(entry: Record<string, unknown>, version: 2 | 3): void {
@@ -392,6 +399,9 @@ function validateEntryShape(entry: Record<string, unknown>, version: 2 | 3): voi
 		case "custom_message":
 			if (!boundedNonemptyString(entry.customType) || typeof entry.display !== "boolean") fail(ERROR.malformed);
 			if (typeof entry.content !== "string") validateTextOrImageContent(entry.content);
+			break;
+		case "context_edit":
+			if (!boundedNonemptyString(entry.targetId)) fail(ERROR.malformed);
 			break;
 		case "label":
 			if (!boundedNonemptyString(entry.targetId)

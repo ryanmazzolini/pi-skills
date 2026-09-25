@@ -510,6 +510,29 @@ test("accepts exact v2 and v3 headers without migration", async (t) => {
 	}
 });
 
+test("accepts pi 0.86+ system messages, context edits, and usage without projecting them", async (t) => {
+	const secret = "PRIVACY_SENTINEL_NEVER_PROJECT";
+	const records = [
+		header(),
+		entry("message", "s1", null, { message: { role: "system", content: "", sections: { preamble: secret }, toolsAdded: [{ name: "read" }], timestamp: 1 } }),
+		user("u1", "s1", "hello"),
+		assistant("a1", "u1", [{ type: "text", text: "Prompt is too long" }], "error"),
+		entry("context_edit", "e1", "a1", { targetId: "a1", replacement: null }),
+		entry("usage", "g1", "e1", { kind: "cache_warm", provider: "p", model: "m", usage: { totalTokens: 1 } }),
+		assistant("a2", "g1", [{ type: "text", text: "recovered" }]),
+	];
+	const path = writeRecords(t, records);
+	await withHandle(open(path, "a2"), (handle) => {
+		assert.deepEqual(handle.snapshot.events, [
+			{ kind: "user", text: "hello" },
+			{ kind: "assistant", text: "recovered" },
+		]);
+		assert.equal(JSON.stringify(handle.snapshot).includes(secret), false);
+	});
+	const badEdit = writeRecords(t, [header(), user("u1", null, "hi"), entry("context_edit", "e1", "u1", { replacement: null })], { name: "bad-edit.jsonl" });
+	await assert.rejects(open(badEdit, "e1"), /Session file is malformed/);
+});
+
 test("rejects malformed, blank, unsupported, mismatched, duplicate, cyclic, and orphaned input", async (t) => {
 	const malformedSentinel = "MALFORMED_SOURCE_SENTINEL";
 	const cases = [
