@@ -31,7 +31,7 @@ function hasTextContent(content: unknown): boolean {
 		&& block.text.length > 0);
 }
 
-/** Latest canonical timestamp among the newest text events used by triage tails. */
+/** Latest canonical timestamp among the newest text events shown by list and tail. */
 export function lastConversationalTimestamp(source: { getBranch(): SessionEntry[] }): number | null {
 	const branch = source.getBranch();
 	let eligible = 0;

@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { INTERCOM_LIMITS, isMessage } from "./client.ts";
-import { INBOUND_DELIVERY_LIMITS, InboundDelivery, deliverInboundMessage, selectRotatingSummaryCandidates } from "./index.ts";
+import { INBOUND_DELIVERY_LIMITS, InboundDelivery, deliverInboundMessage } from "./index.ts";
 import { connectNew, isolatedIntercom, startOwnedBroker, stopChild, waitEvent } from "../../tests/intercom/helpers.mjs";
 import {
 	INTERCOM_PROJECTION_MAX_BYTES,
 	INTERCOM_TAIL_PROJECTION_MIN_BYTES,
 	INTERCOM_TRUNCATION_NOTICE,
 	projectAskReply,
-	projectFirstMateTriage,
 	projectInboundEntry,
 	projectPendingEntries,
 	projectSessionList,
@@ -118,18 +117,17 @@ test("list projection preserves adjacent role markers and stable IDs for 32 maxi
 	const sessions = Array.from({ length: 32 }, (_, index) => {
 		const prefix = `broker-${String(index).padStart(2, "0")}-`;
 		const id = `${prefix}${"i".repeat(INTERCOM_LIMITS.maxIdBytes - prefix.length)}`;
-		return session(id, { name: metadata, cwd: metadata, model: metadata, status: metadata, role: "first-mate" });
+		return session(id, { name: metadata, cwd: metadata, model: metadata, status: metadata, role: "coordinator" });
 	});
 	const projected = projectSessionList(sessions, sessions[0]);
 	assertBounded(projected.text, "32-session role list");
 	assert.equal(projected.truncated, true);
 	for (const peer of sessions) {
-		assert.ok(projected.text.includes(`${JSON.stringify(peer.piSessionId)} [role: first-mate]`), `missing adjacent role marker for ${peer.piSessionId}`);
+		assert.ok(projected.text.includes(`${JSON.stringify(peer.piSessionId)} [role: coordinator]`), `missing adjacent role marker for ${peer.piSessionId}`);
 	}
 	const details = {
 		currentSessionId: sessions[0].piSessionId,
 		sessionIds: sessions.map((peer) => peer.piSessionId),
-		firstMateSessionIds: sessions.map((peer) => peer.piSessionId),
 		count: sessions.length,
 		truncated: true,
 	};
@@ -176,14 +174,14 @@ test("session list projection uses stable IDs advertised through persisted prese
 	assert.doesNotMatch(projected.text, /compatible\.jsonl/);
 });
 
-test("session list projection exposes exact First Mate roles with stable Pi session IDs", () => {
-	const current = session("current-full-id", { role: "first-mate" });
-	const duplicate = session("duplicate-first-mate-full-id", { role: "first-mate" });
+test("session list projection exposes exact roles with stable Pi session IDs", () => {
+	const current = session("current-full-id", { role: "coordinator" });
+	const duplicate = session("duplicate-coordinator-full-id", { role: "coordinator" });
 	const ordinary = session("ordinary-full-id");
 	const projected = projectSessionList([current, duplicate, ordinary], current);
 	assertBounded(projected.text, "role-tagged session list");
-	assert.match(projected.text, /current-full-id.*role: first-mate/);
-	assert.match(projected.text, /duplicate-first-mate-full-id.*role: first-mate/);
+	assert.match(projected.text, /current-full-id.*role: coordinator/);
+	assert.match(projected.text, /duplicate-coordinator-full-id.*role: coordinator/);
 	assert.match(projected.text, /ordinary-full-id/);
 });
 
@@ -222,96 +220,6 @@ test("session tail projection is bounded, locator-free, and preserves newest mul
 	assert.doesNotMatch(projected.text, /private\/session\/path/);
 	assert.ok(projectSessionList([target], target).text.includes("persisted tail advertised"));
 	assert.doesNotMatch(projectSessionList([target], target).text, /private\/session\/path/);
-});
-
-test("First Mate triage projection fairly bounds a multi-peer evidence sweep", () => {
-	const snapshotTimestamp = Date.parse("2026-07-31T12:00:00.000Z");
-	const tails = Array.from({ length: 12 }, (_, index) => {
-		const target = session(`triage-${index}`, {
-			piSessionId: `pi-triage-${index}`,
-			name: `worker-${index}`,
-			piSession: { sessionId: `pi-triage-${index}`, fileLocator: `/private/${index}.jsonl`, activeLeafId: `leaf-${index}`, revision: 1 },
-		});
-		return {
-			target,
-			targetSessionId: target.piSessionId,
-			advertisedLastConversationalTimestamp: snapshotTimestamp - (index + 2) * 60 * 60 * 1_000,
-			snapshot: {
-				events: [
-					{ kind: "user", text: `request-${index}-${"界".repeat(2_000)}` },
-					{ kind: "assistant", text: `latest-${index}-${"🙂".repeat(2_000)}` },
-				],
-				counts: { scannedEntries: 2, branchEntries: 2, eligibleTextEvents: 2, returnedTextEvents: 2, toolEvents: 0, bashEvents: 0 },
-				lastConversationalTimestamp: snapshotTimestamp - (index + 2) * 60 * 60 * 1_000,
-				truncated: false,
-				historyTruncated: false,
-				outcomeEventsTruncated: false,
-				ignoredFinalFragment: false,
-			},
-		};
-	});
-	const projected = projectFirstMateTriage({
-		currentSessionId: "pi-current",
-		inventoryTruncated: false,
-		omittedSessionIds: 0,
-		snapshotTimestamp,
-		idleThresholdMs: 60 * 60 * 1_000,
-		selectedSweep: "older",
-		roleCapability: true,
-		firstMateSessionIds: ["pi-current"],
-		pending: [],
-		tails,
-		activePeersSkipped: 2,
-		firstMatePeersSkipped: 1,
-		pendingPeersSkipped: 1,
-		unidentifiedPeers: 0,
-		ambiguousPeers: 0,
-	});
-	assertBounded(projected.text, "First Mate triage evidence");
-	assert.equal(projected.bytes, Buffer.byteLength(projected.text, "utf8"));
-	assert.equal(projected.truncated, true);
-	assert.match(projected.text, /Inventory: complete/);
-	assert.match(projected.text, /1 other First Mate/);
-	for (let index = 0; index < tails.length; index++) {
-		assert.match(projected.text, new RegExp(`pi-triage-${index}`));
-		assert.match(projected.text, new RegExp(`latest-${index}`));
-	}
-	assert.doesNotMatch(projected.text, /\/private\//);
-});
-
-test("rotating cached-summary windows keep each first card visible under projection truncation", () => {
-	const candidates = Array.from({ length: 10 }, (_, index) => ({
-		targetSessionId: `cached-${index}`,
-		text: `## Cached ${index}\n${"x".repeat(12_000)}`,
-	}));
-	let cursor = 0;
-	for (let index = 0; index < candidates.length; index++) {
-		const window = selectRotatingSummaryCandidates(candidates, 8, cursor);
-		const projected = projectFirstMateTriage({
-			currentSessionId: "pi-current",
-			inventoryTruncated: false,
-			omittedSessionIds: 0,
-			snapshotTimestamp: Date.parse("2026-07-31T12:00:00.000Z"),
-			idleThresholdMs: 60 * 60 * 1_000,
-			selectedSweep: "none",
-			roleCapability: true,
-			firstMateSessionIds: ["pi-current"],
-			pending: [],
-			tails: [],
-			activePeersSkipped: 0,
-			firstMatePeersSkipped: 0,
-			pendingPeersSkipped: 0,
-			unidentifiedPeers: 0,
-			ambiguousPeers: 0,
-			cachedSummaries: window.selected,
-			cachedSummariesDeferred: window.omitted,
-		});
-		assertBounded(projected.text, "rotating cached summaries");
-		assert.equal(projected.truncated, true);
-		assert.match(projected.text, new RegExp(window.selected[0].targetSessionId));
-		cursor = window.nextCursor;
-	}
-	assert.equal(cursor, 0);
 });
 
 test("tail projection reports omitted outcome events as truncated source context", () => {

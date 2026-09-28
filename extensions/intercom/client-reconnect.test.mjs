@@ -66,9 +66,9 @@ test("client uses the latest registration after blocked broker preparation", asy
 	let release;
 	const gate = new Promise((resolve) => { release = resolve; });
 	const client = new IntercomClient({ socketPath: paths.socketPath, reconnectDelaysMs: [20] });
-	const starting = client.start(registration("stale", { model: "stale-model", status: "stale", role: "first-mate", piSession: { sessionId: "pi-session", fileLocator: "/tmp/stale.jsonl", activeLeafId: "old", revision: 1 } }), () => gate);
+	const starting = client.start(registration("stale", { model: "stale-model", status: "stale", role: "coordinator", piSession: { sessionId: "pi-session", fileLocator: "/tmp/stale.jsonl", activeLeafId: "old", revision: 1 } }), () => gate);
 	await new Promise((resolve) => setImmediate(resolve));
-	client.setRegistration(registration("latest", { model: "latest-model", status: "latest", role: "first-mate", piSession: { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "new", revision: 2 } }));
+	client.setRegistration(registration("latest", { model: "latest-model", status: "latest", role: "coordinator", piSession: { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "new", revision: 2 } }));
 	release();
 	await starting;
 	t.after(() => client.disconnect());
@@ -113,11 +113,11 @@ test("client preserves messaging and tails when an older broker omits role capab
 		await new Promise((resolve) => server.close(resolve));
 	});
 	const client = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500 });
-	const starting = client.start(registration("initial", { role: "first-mate", lastConversationalTimestamp: 1_000, piSession: { sessionId: "pi-session", fileLocator: "/tmp/initial.jsonl", activeLeafId: "first", revision: 1 } }), async () => undefined);
+	const starting = client.start(registration("initial", { role: "coordinator", lastConversationalTimestamp: 1_000, piSession: { sessionId: "pi-session", fileLocator: "/tmp/initial.jsonl", activeLeafId: "first", revision: 1 } }), async () => undefined);
 	const sentRegistration = await sawRegister;
 	assert.equal(sentRegistration.piSession, undefined);
 	assert.equal(sentRegistration.lastConversationalTimestamp, undefined);
-	client.setRegistration(registration("latest", { model: "latest-model", status: "thinking", role: "first-mate", lastConversationalTimestamp: 2_000, piSession: { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "second", revision: 2 } }));
+	client.setRegistration(registration("latest", { model: "latest-model", status: "thinking", role: "coordinator", lastConversationalTimestamp: 2_000, piSession: { sessionId: "pi-session", fileLocator: "/tmp/latest.jsonl", activeLeafId: "second", revision: 2 } }));
 	releaseRegistered();
 	await starting;
 	const presence = await sawPresence;
@@ -129,7 +129,7 @@ test("client preserves messaging and tails when an older broker omits role capab
 	assert.equal(presence.role, undefined);
 	assert.equal(client.supportsCapability("pi-session-tail-v1"), true);
 	assert.equal(client.supportsCapability("session-role-v1"), false);
-	await assert.rejects(client.setRole("first-mate"), /update all clients and restart the broker/);
+	await assert.rejects(client.setRole("coordinator"), /update all clients and restart the broker/);
 	assert.deepEqual(await client.send("still-routes", { messageId: "after-unsupported-role", text: "messaging continues" }), {
 		id: "after-unsupported-role",
 		delivered: true,
@@ -158,7 +158,7 @@ test("publish and clear timeouts abandon the broker session and all local role s
 			if (message?.type !== "presence" || message.role === undefined) return;
 			if (message.role === null) remoteRoles.delete(socket);
 			else remoteRoles.set(socket, message.role);
-			if (message.role === "first-mate" && message.requestId && message.acknowledge !== false && nextSession === 2) {
+			if (message.role === "coordinator" && message.requestId && message.acknowledge !== false && nextSession === 2) {
 				socket.write(encodeFrame({ type: "role_updated", requestId: message.requestId, role: message.role }));
 			}
 		}, () => socket.destroy());
@@ -176,7 +176,7 @@ test("publish and clear timeouts abandon the broker session and all local role s
 	const publishing = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500, sendTimeoutMs: 30 });
 	await publishing.connect(registration("publish-timeout"));
 	const publishDisconnected = waitEvent(publishing, "disconnected");
-	await assert.rejects(publishing.setRole("first-mate"), /Role update timeout/);
+	await assert.rejects(publishing.setRole("coordinator"), /Role update timeout/);
 	await publishDisconnected;
 	assert.equal(publishing.currentRole(), undefined);
 	assert.equal(publishing.isConnected(), false);
@@ -184,8 +184,8 @@ test("publish and clear timeouts abandon the broker session and all local role s
 
 	const clearing = new IntercomClient({ socketPath: paths.socketPath, connectTimeoutMs: 500, sendTimeoutMs: 30 });
 	await clearing.connect(registration("clear-timeout"));
-	assert.equal(await clearing.setRole("first-mate"), "first-mate");
-	assert.equal(clearing.currentRole(), "first-mate");
+	assert.equal(await clearing.setRole("coordinator"), "coordinator");
+	assert.equal(clearing.currentRole(), "coordinator");
 	const clearDisconnected = waitEvent(clearing, "disconnected");
 	await assert.rejects(clearing.setRole(null), /Role update timeout/);
 	await clearDisconnected;

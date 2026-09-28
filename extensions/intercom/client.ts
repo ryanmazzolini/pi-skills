@@ -30,7 +30,7 @@ export interface SessionInfo {
 	pid: number;
 	startedAt: number;
 	lastActivity: number;
-	/** Epoch milliseconds for the latest completed user/assistant text used by triage, or null when unavailable. */
+	/** Epoch milliseconds for the latest completed user/assistant text shown by list and tail, or null when unavailable. */
 	lastConversationalTimestamp?: number | null;
 	status?: string;
 	/** Self-declared discovery label, not authority or a message address. */

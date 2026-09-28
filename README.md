@@ -103,7 +103,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 Start First Mate with `/skill:first-mate`, optionally followed by a task. For example, ask why one project stopped: it reads that session's context and relevant work record rather than reviewing every idle session or waking the owner for a summary. Without a narrower task, it looks for the most useful next action across connected sessions.
 
-First Mate publishes its discovery label independently of triage. It chooses relevant evidence from session lists, recent tails, paginated history, and project files. The existing triage and isolated-summary tools remain available when useful; there is no mandatory sweep, summary batch, or cleanup-first queue.
+First Mate uses Intercom's general tools: it lists sessions, reads the relevant ones with `tail`, and summarizes what it reads, along with project files.
 
 Within the requested scope, First Mate can authorize the existing very-low-risk actions, such as a prepared feature-branch commit, ordinary feature push, or draft PR, and resume clearly unfinished work that needs no new decision. Inspection-only questions stay read-only. Approval requires current evidence and a sole advertised First Mate; labels and summaries do not grant authority. Human choices are presented with the exact action, target, and material fences. Project sessions retain execution and normal approval gates; First Mate never edits project state, performs cleanup itself, or closes sessions.
 
@@ -131,7 +131,7 @@ Pi gets a few extras that are not skills:
 
 - `session-id` keeps the active Pi session ID visible in the footer.
 - `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them. Children load no ambient extensions; to also load the extensions of installed packages a child's model needs (for example `pi-claude-bridge`), list them in `~/.pi/agent/delegate.json` as `{ "childExtensions": ["pi-claude-bridge"] }`.
-- `intercom` provides local peer messaging, capability-gated bounded read-only tails, exact-branch cached and single-use isolated stale-snapshot summaries, and optional ephemeral role labels for discovery.
+- `intercom` provides local peer messaging, capability-gated bounded read-only tails, and optional ephemeral role labels for discovery.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
 - `pi-monitors` gives asynchronous monitor adapters one session status and the human-only `/monitors` panel for inspection, refresh, stop, and dismissal of bounded recent outcomes. Completed outcomes remain in the current conversation after their domain notification becomes durable. Trusted extensions can contribute adapters without importing this package by registering synchronously through `pi-monitors:discover-adapters:v1` during session startup. `monitor_github_pr` explicitly monitors an open GitHub pull request, polls comments and reviews with read-only `gh` requests, wakes the agent with bounded untrusted feedback, and reports one durable merged or closed outcome before stopping. Arbitrary `gh` commands do not create monitors.
 - `scheduled-jobs` adds the human-only `/scheduler` dashboard for task health, next runs, bounded run history and output, and reviewed lifecycle operations. Use arrows or `j`/`k` to select, `Tab` to switch Tasks/Runs, `Enter` for details, `a` for actions, `r` to refresh, and `q` or `Esc` to go back or close. Actions use Pi's native selection, confirmation, and loader UI; Run now blocks until the installed snapshot finishes. A compact footer appears whenever the dashboard classifies a task as Needs attention. Scheduler changes publish one count-only file per manifest, so open Pi sessions update through filesystem events without periodic overview scans.
@@ -143,7 +143,7 @@ On an explicit user request or as directed by an explicitly invoked skill, publi
 
 `list` shows each session's label, and `status` shows your current label. Labels such as `first-mate`, `oncall-triage`, and `project-manager` are self-declared discovery metadata. Multiple sessions may share a label. Intercom grants no authority, reserves no ownership, and does not route messages to labels; resolve an exact session ID before contact. Agents and skills decide what labels mean and retain their normal approval rules.
 
-Labels are ephemeral: tree navigation, compaction, reload, session replacement, and disconnect clear them. Reconnecting does not automatically republish a label. First Mate publishes `first-mate` on explicit skill invocation; its optional triage tool also publishes that label. Its approval policy remains separate from role discovery.
+Labels are ephemeral: tree navigation, compaction, reload, session replacement, and disconnect clear them. Reconnecting does not automatically republish a label. First Mate publishes `first-mate` on explicit skill invocation. Its approval policy remains separate from role discovery.
 
 **Upgrade together:** generic labels use the `session-role-v1` capability and are not compatible with older role-aware clients. Install the update, reload or restart all Pi sessions, and restart the detached Intercom broker before publishing labels. A Pi reload or Herdr restart alone need not replace that broker. There is no mixed-version translation layer.
 

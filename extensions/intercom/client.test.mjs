@@ -80,11 +80,11 @@ test("stable Pi session identity is bounded and must match persisted presence", 
 test("session roles accept bounded discovery labels without changing piSession", () => {
 	const base = { id: "peer", cwd: "/tmp", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
 	const piSession = { sessionId: "pi-session", fileLocator: "/tmp/session.jsonl", activeLeafId: null, revision: 1 };
-	for (const role of ["first-mate", "oncall-triage", "project-manager", "a", "team-2", "a".repeat(64)]) {
+	for (const role of ["coordinator", "oncall-triage", "project-manager", "a", "team-2", "a".repeat(64)]) {
 		assert.equal(isIntercomRole(role), true, role);
 		assert.equal(isSessionInfo({ ...base, role, piSession }), true, role);
 	}
-	for (const role of ["", "a".repeat(65), "First-Mate", "two words", "-a", "a-", "a--b", "a_b", "é", "a\n", "a\u202e", null, 1, ["first-mate"], { name: "first-mate" }]) {
+	for (const role of ["", "a".repeat(65), "Coordinator", "two words", "-a", "a-", "a--b", "a_b", "é", "a\n", "a\u202e", null, 1, ["coordinator"], { name: "coordinator" }]) {
 		assert.equal(isIntercomRole(role), false, JSON.stringify(role));
 		assert.equal(isSessionInfo({ ...base, role, piSession }), false, JSON.stringify(role));
 	}

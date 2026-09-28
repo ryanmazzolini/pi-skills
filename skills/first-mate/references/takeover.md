@@ -26,6 +26,6 @@ Stop automatic First Mate contact after clearing the role. The request transfers
 
 ## Complete takeover
 
-Accept a wake notice only from a retained other First Mate ID. Record each result without polling. After every retained other First Mate sends the success notice, take a fresh coherent `status` and `list`. Require a complete inventory with this session's ID present exactly once and no other advertised First Mate. Publish `first-mate` with `action: "role"`, then resume the original request. No triage sweep is needed; approval still requires fresh verification through [decision handling](decision-handling.md).
+Accept a wake notice only from a retained other First Mate ID. Record each result without polling. After every retained other First Mate sends the success notice, take a fresh coherent `status` and `list`. Require a complete inventory with this session's ID present exactly once and no other advertised First Mate. Publish `first-mate` with `action: "role"`, then resume the original request. Approval still requires fresh verification through [decision handling](decision-handling.md).
 
 On a failure notice, report the limitation and make no automatic contact. If a holder remains unanswered, stay idle until its notice or the human's next request. Do not poll or retry automatically.
