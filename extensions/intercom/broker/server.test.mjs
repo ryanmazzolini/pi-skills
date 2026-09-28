@@ -469,10 +469,10 @@ test("owned broker publishes discovery labels without reserving names or routing
 	const target = await connectNew(paths, "target");
 	t.after(() => closeAll(observer, target));
 
-	const published = waitEvent(observer, "presence_update", (session) => session.id === target.sessionId && session.role === "first-mate");
-	assert.equal(await target.setRole("first-mate"), "first-mate");
-	assert.equal((await published)[0].role, "first-mate");
-	assert.equal((await observer.listSessions()).find((session) => session.id === target.sessionId).role, "first-mate");
+	const published = waitEvent(observer, "presence_update", (session) => session.id === target.sessionId && session.role === "coordinator");
+	assert.equal(await target.setRole("coordinator"), "coordinator");
+	assert.equal((await published)[0].role, "coordinator");
+	assert.equal((await observer.listSessions()).find((session) => session.id === target.sessionId).role, "coordinator");
 	for (const role of ["oncall-triage", "project-manager", "a".repeat(64)]) {
 		const changed = waitEvent(observer, "presence_update", (session) => session.id === target.sessionId && session.role === role);
 		assert.equal(await target.setRole(role), role);
@@ -502,10 +502,10 @@ test("owned broker publishes discovery labels without reserving names or routing
 	registrationRole.socket.destroy();
 
 	for (const [name, request] of [
-		["missing-role-id", { type: "presence", role: "first-mate" }],
-		["empty-role-id", { type: "presence", requestId: "", role: "first-mate" }],
-		["oversized-role-id", { type: "presence", requestId: "x".repeat(INTERCOM_LIMITS.maxIdBytes + 1), role: "first-mate" }],
-		...["", "a".repeat(65), "First-Mate", "two words", "-a", "a-", "a--b", "a_b", "é", "a\n", "a\u202e", 1, ["first-mate"], { name: "first-mate" }].map((role, index) => [
+		["missing-role-id", { type: "presence", role: "coordinator" }],
+		["empty-role-id", { type: "presence", requestId: "", role: "coordinator" }],
+		["oversized-role-id", { type: "presence", requestId: "x".repeat(INTERCOM_LIMITS.maxIdBytes + 1), role: "coordinator" }],
+		...["", "a".repeat(65), "Coordinator", "two words", "-a", "a-", "a--b", "a_b", "é", "a\n", "a\u202e", 1, ["coordinator"], { name: "coordinator" }].map((role, index) => [
 			`malformed-role-${index}`, { type: "presence", requestId: "invalid-role", role },
 		]),
 	]) {

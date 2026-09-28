@@ -7,29 +7,6 @@ function peer(id, name, piSessionId = `pi-${id}`) {
 	return { id, piSessionId, name, cwd: "/repo", model: "test", pid: 1, startedAt: 1, lastActivity: 1 };
 }
 
-function persistedPeer(id, name, timestamp, overrides = {}) {
-	const piSessionId = `pi-${id}`;
-	return {
-		...peer(id, name, piSessionId),
-		status: "idle",
-		lastConversationalTimestamp: timestamp,
-		piSession: { sessionId: piSessionId, fileLocator: `/tmp/${id}.jsonl`, activeLeafId: `${id}-leaf`, revision: 1 },
-		...overrides,
-	};
-}
-
-function tailSnapshot(lastConversationalTimestamp, text = "current evidence") {
-	return {
-		events: [{ kind: "assistant", text }],
-		counts: { scannedEntries: 1, branchEntries: 1, eligibleTextEvents: 1, returnedTextEvents: 1, toolEvents: 0, bashEvents: 0 },
-		lastConversationalTimestamp,
-		truncated: false,
-		historyTruncated: false,
-		outcomeEventsTruncated: false,
-		ignoredFinalFragment: false,
-	};
-}
-
 class FakeClient extends EventEmitter {
 	constructor(sessions) {
 		super();
@@ -89,8 +66,8 @@ class FakeClient extends EventEmitter {
 test("runtime synchronously publishes and clears capability-gated role labels without taking a list", async () => {
 	const client = new FakeClient([peer("self", "caller")]);
 	const runtime = new IntercomRuntime({ client });
-	assert.deepEqual(await runtime.setRole("first-mate"), { sessionId: "pi-self", role: "first-mate" });
-	assert.equal(client.role, "first-mate");
+	assert.deepEqual(await runtime.setRole("coordinator"), { sessionId: "pi-self", role: "coordinator" });
+	assert.equal(client.role, "coordinator");
 	assert.deepEqual(await runtime.setRole("project-manager"), { sessionId: "pi-self", role: "project-manager" });
 	assert.equal(client.role, "project-manager");
 	assert.deepEqual(await runtime.setRole(null), { sessionId: "pi-self" });
@@ -102,14 +79,13 @@ test("runtime synchronously publishes and clears capability-gated role labels wi
 	const status = await runtime.status();
 	assert.equal(status.tailCapability, true);
 	assert.equal(status.roleCapability, false);
-	assert.equal(status.advertisingFirstMate, false);
 	assert.equal(client.listCalls, 1);
-	await assert.rejects(runtime.setRole("first-mate"), /update all clients and restart the broker/);
+	await assert.rejects(runtime.setRole("coordinator"), /update all clients and restart the broker/);
 	await runtime.dispose();
 });
 
 test("status awaits initial connection and derives role truth from the current broker list", async () => {
-	const client = new FakeClient([{ ...peer("self", "caller"), role: "first-mate" }]);
+	const client = new FakeClient([{ ...peer("self", "caller"), role: "coordinator" }]);
 	client.connected = false;
 	let releaseConnection;
 	let connectionStarted;
@@ -130,18 +106,15 @@ test("status awaits initial connection and derives role truth from the current b
 	releaseConnection();
 	const advertised = await pending;
 	assert.equal(advertised.sessionId, "pi-self");
-	assert.equal(advertised.advertisingFirstMate, true);
-	assert.equal(advertised.role, "first-mate");
+	assert.equal(advertised.role, "coordinator");
 
 	client.sessions = [{ ...peer("self", "caller"), role: "project-manager" }];
 	const labeled = await runtime.status();
 	assert.equal(labeled.role, "project-manager");
-	assert.equal(labeled.advertisingFirstMate, false);
 
 	client.sessions = [peer("self", "caller")];
-	client.role = "first-mate";
+	client.role = "coordinator";
 	const absent = await runtime.status();
-	assert.equal(absent.advertisingFirstMate, false);
 	assert.equal(absent.role, undefined);
 
 	client.sessions = [peer("self", "caller"), peer("duplicate-self", "duplicate", "pi-self")];
@@ -159,7 +132,7 @@ test("role acknowledgement fails when reconnect replaces the acknowledged transp
 		return role;
 	};
 	const runtime = new IntercomRuntime({ client });
-	await assert.rejects(runtime.setRole("first-mate"), /no longer matches the current transport connection/);
+	await assert.rejects(runtime.setRole("coordinator"), /no longer matches the current transport connection/);
 	assert.equal(client.invalidated, 1);
 	assert.equal(client.role, undefined);
 	assert.equal(client.connected, false);
@@ -190,31 +163,6 @@ test("runtime resolves a stable presence identity without messaging the target",
 	assert.equal(closed, 1);
 	assert.equal(client.sent.length, 0);
 	await runtime.dispose();
-});
-
-test("isolated summary capture rejects active peers and pending asks before reading", async () => {
-	const presence = { sessionId: "pi-target", fileLocator: "/tmp/session.jsonl", activeLeafId: "leaf", revision: 1 };
-	let opens = 0;
-	let starts = 0;
-	const constraints = { requireIdle: true, requireNoPending: true, onCaptureStart: () => { starts++; } };
-	const opener = () => {
-		opens++;
-		return { snapshot: { events: [] }, verifyStable() {}, close() {} };
-	};
-	const activeTarget = { ...peer("target", "worker"), status: "thinking", piSession: presence };
-	const activeRuntime = new IntercomRuntime({ client: new FakeClient([peer("self", "caller"), activeTarget]), openTail: opener });
-	await assert.rejects(activeRuntime.tail("pi-target", 32, undefined, undefined, constraints), /not idle/);
-	assert.equal(opens, 0);
-	assert.equal(starts, 0);
-	await activeRuntime.dispose();
-
-	const idleTarget = { ...activeTarget, status: "idle" };
-	const pendingRuntime = new IntercomRuntime({ client: new FakeClient([peer("self", "caller"), idleTarget]), openTail: opener });
-	pendingRuntime.inbox.record(idleTarget, { id: "ask-1", timestamp: 1, expectsReply: true, content: { text: "decision?" } });
-	await assert.rejects(pendingRuntime.tail("pi-target", 32, undefined, undefined, constraints), /pending ask/);
-	assert.equal(opens, 0);
-	assert.equal(starts, 0);
-	await pendingRuntime.dispose();
 });
 
 test("runtime rejects unavailable, duplicate, and changed tail advertisements", async () => {
@@ -256,201 +204,6 @@ test("runtime rejects unavailable, duplicate, and changed tail advertisements", 
 	const disconnectedClient = new FakeClient([peer("self", "caller"), target]);
 	disconnectedClient.listResponses = [disconnectedClient.sessions, [peer("self", "caller")]];
 	await assert.rejects(new IntercomRuntime({ client: disconnectedClient, openTail: opener }).tail("worker", 8), /advertisement changed/);
-});
-
-test("triage uses a strict one-hour first sweep and deterministically falls back after confirmed evidence", async () => {
-	const now = Date.parse("2026-07-31T12:00:00.000Z");
-	const old = persistedPeer("old", "old", now - 2 * 60 * 60 * 1_000);
-	const exactHour = persistedPeer("exact", "exact", now - 60 * 60 * 1_000);
-	const unknown = persistedPeer("unknown", "unknown", null);
-	const active = persistedPeer("active", "active", now - 3 * 60 * 60 * 1_000, { status: "thinking" });
-	const otherFirstMate = persistedPeer("first-mate", "first-mate", now - 5 * 60 * 60 * 1_000, { role: "first-mate" });
-	const pending = persistedPeer("pending", "pending", now - 4 * 60 * 60 * 1_000);
-	const client = new FakeClient([{ ...peer("self", "caller"), status: "idle" }, old, exactHour, unknown, active, otherFirstMate, pending]);
-	const opened = [];
-	let verified = 0;
-	let reverified = 0;
-	const reopenedById = new Map();
-	let closed = 0;
-	const runtime = new IntercomRuntime({
-		client,
-		now: () => now,
-		openTail: async ({ piSessionId }) => {
-			opened.push(piSessionId);
-			const confirmed = piSessionId === old.piSessionId ? now - 30 * 60 * 1_000 : now - 10 * 60 * 1_000;
-			return {
-				snapshot: tailSnapshot(confirmed, piSessionId),
-				verifyStable: () => { verified++; },
-				verifyReopenedStable: () => {
-					reverified++;
-					const count = (reopenedById.get(piSessionId) ?? 0) + 1;
-					reopenedById.set(piSessionId, count);
-					if (piSessionId === old.piSessionId && count === 2) throw new Error("old sweep changed during fallback");
-				},
-				close: () => { closed++; },
-			};
-		},
-	});
-	client.emit("message", pending, { id: "pending-ask", timestamp: now, expectsReply: true, content: { text: "decision needed" } });
-
-	const result = await runtime.triage();
-	assert.equal(result.selectedSweep, "fallback");
-	assert.deepEqual(opened, [old.piSessionId, exactHour.piSessionId, unknown.piSessionId]);
-	assert.deepEqual(result.tails.map((tail) => tail.targetSessionId), opened);
-	assert.equal(result.tails[0].snapshot, undefined);
-	assert.match(result.tails[0].error, /changed during fallback/);
-	assert.equal(result.pendingPeersSkipped, 1);
-	assert.equal(result.activePeersSkipped, 1);
-	assert.equal(result.firstMatePeersSkipped, 1);
-	assert.equal(result.pending.length, 1);
-	assert.equal(client.listCalls, 3);
-	assert.equal(verified, 3);
-	assert.equal(reverified, 6);
-	assert.equal(closed, 3);
-	await runtime.dispose();
-});
-
-test("triage invalidates a tail and enters fallback when that peer asks during inspection", async () => {
-	const now = Date.parse("2026-07-31T12:00:00.000Z");
-	const old = persistedPeer("late-ask", "late-ask", now - 2 * 60 * 60 * 1_000);
-	const fallback = persistedPeer("fallback", "fallback", now - 30 * 60 * 1_000);
-	const client = new FakeClient([{ ...peer("self", "caller"), status: "idle" }, old, fallback]);
-	const runtime = new IntercomRuntime({
-		client,
-		now: () => now,
-		openTail: async ({ piSessionId }) => {
-			if (piSessionId === old.piSessionId) {
-				client.emit("message", old, { id: "late-ask", timestamp: now, expectsReply: true, content: { text: "I need a decision" } });
-			}
-			return {
-				snapshot: tailSnapshot(piSessionId === old.piSessionId ? now - 2 * 60 * 60 * 1_000 : now - 30 * 60 * 1_000),
-				verifyStable() {},
-				verifyReopenedStable() {},
-				close() {},
-			};
-		},
-	});
-
-	const result = await runtime.triage();
-	assert.equal(result.selectedSweep, "fallback");
-	assert.equal(result.pending.length, 1);
-	assert.equal(result.pendingPeersSkipped, 1);
-	assert.equal(result.tails[0].snapshot, undefined);
-	assert.match(result.tails[0].error, /pending ask/);
-	assert.equal(result.tails[1].targetSessionId, fallback.piSessionId);
-	await runtime.dispose();
-});
-
-test("triage scans an older sweep with at most two concurrent readers and preserves selection order", async () => {
-	const now = Date.parse("2026-07-31T12:00:00.000Z");
-	const oldest = persistedPeer("oldest", "oldest", now - 4 * 60 * 60 * 1_000);
-	const middle = persistedPeer("middle", "middle", now - 3 * 60 * 60 * 1_000);
-	const newest = persistedPeer("newest", "newest", now - 2 * 60 * 60 * 1_000);
-	const client = new FakeClient([{ ...peer("self", "caller"), status: "idle" }, newest, oldest, middle]);
-	let activeReaders = 0;
-	let maximumReaders = 0;
-	const completionOrder = [];
-	const delays = new Map([[oldest.piSessionId, 30], [middle.piSessionId, 10], [newest.piSessionId, 0]]);
-	const runtime = new IntercomRuntime({
-		client,
-		now: () => now,
-		openTail: async (request) => {
-			const { piSessionId } = request;
-			assert.equal(request.limit, 8);
-			assert.equal("scanBytes" in request, false);
-			activeReaders++;
-			maximumReaders = Math.max(maximumReaders, activeReaders);
-			await new Promise((resolve) => setTimeout(resolve, delays.get(piSessionId)));
-			activeReaders--;
-			completionOrder.push(piSessionId);
-			return {
-				snapshot: tailSnapshot(now - 2 * 60 * 60 * 1_000, piSessionId),
-				verifyStable() {},
-				verifyReopenedStable() {},
-				close() {},
-			};
-		},
-	});
-
-	const result = await runtime.triage();
-	assert.equal(result.selectedSweep, "older");
-	assert.equal(maximumReaders, 2);
-	assert.deepEqual(result.tails.map((tail) => tail.targetSessionId), [oldest.piSessionId, middle.piSessionId, newest.piSessionId]);
-	assert.notDeepEqual(completionOrder, result.tails.map((tail) => tail.targetSessionId));
-	assert.equal(client.listCalls, 2);
-	await runtime.dispose();
-});
-
-test("triage processes every selected peer across internal pages in one command", async () => {
-	const now = Date.parse("2026-07-31T12:00:00.000Z");
-	const targets = Array.from({ length: 10 }, (_, index) =>
-		persistedPeer(`paged-${index}`, `paged-${index}`, now - (index + 2) * 60 * 60 * 1_000));
-	const client = new FakeClient([{ ...peer("self", "caller"), status: "idle" }, ...targets]);
-	const staleId = targets.at(-1).piSessionId;
-	const runtime = new IntercomRuntime({
-		client,
-		now: () => now,
-		openTail: async ({ piSessionId }) => ({
-			snapshot: tailSnapshot(now - 2 * 60 * 60 * 1_000, piSessionId),
-			verifyStable() {},
-			verifyReopenedStable() {
-				if (piSessionId === staleId) throw new Error("final file checkpoint changed");
-			},
-			close() {},
-		}),
-	});
-
-	const result = await runtime.triage();
-	assert.equal(result.selectedSweep, "older");
-	assert.equal(result.tails.length, targets.length);
-	assert.equal(result.tails.find((tail) => tail.targetSessionId === staleId).snapshot, undefined);
-	assert.match(result.tails.find((tail) => tail.targetSessionId === staleId).error, /checkpoint changed/);
-	assert.equal(client.listCalls, 3);
-	await runtime.dispose();
-});
-
-test("triage closes handles and rejects evidence when a selected peer becomes active", async () => {
-	const now = Date.parse("2026-07-31T12:00:00.000Z");
-	const target = persistedPeer("target", "target", now - 2 * 60 * 60 * 1_000);
-	const self = { ...peer("self", "caller"), status: "idle" };
-	const client = new FakeClient([self, target]);
-	client.listResponses = [[self, target], [self, { ...target, status: "thinking" }]];
-	let verified = 0;
-	let closed = 0;
-	const runtime = new IntercomRuntime({
-		client,
-		now: () => now,
-		openTail: async () => ({
-			snapshot: tailSnapshot(now - 2 * 60 * 60 * 1_000),
-			verifyStable: () => { verified++; },
-			close: () => { closed++; },
-		}),
-	});
-
-	const result = await runtime.triage();
-	assert.equal(result.tails.length, 1);
-	assert.equal(result.tails[0].snapshot, undefined);
-	assert.match(result.tails[0].error, /became active/);
-	assert.equal(verified, 0);
-	assert.equal(closed, 1);
-	await runtime.dispose();
-});
-
-test("triage excludes a stable ID that conflicts with another peer namespace", async () => {
-	const now = Date.parse("2026-07-31T12:00:00.000Z");
-	const target = persistedPeer("target", "target", now - 2 * 60 * 60 * 1_000);
-	const shadow = persistedPeer("shadow", target.piSessionId, now - 2 * 60 * 60 * 1_000, { status: "thinking" });
-	const client = new FakeClient([{ ...peer("self", "caller"), status: "idle" }, target, shadow]);
-	const runtime = new IntercomRuntime({
-		client,
-		now: () => now,
-		openTail: async () => { throw new Error("ambiguous target must not be opened"); },
-	});
-
-	const result = await runtime.triage();
-	assert.equal(result.ambiguousPeers, 1);
-	assert.equal(result.tails.length, 0);
-	await runtime.dispose();
 });
 
 test("runtime refuses ambiguous duplicate peer names instead of routing arbitrarily", async () => {

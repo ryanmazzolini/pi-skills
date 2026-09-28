@@ -10,28 +10,18 @@ import intercomExtension, {
 	InboundDelivery,
 	IntercomParams,
 	boundedSessionIdentityDetails,
-	cachedSummaryMatchesTail,
 	deliverInboundMessage,
 	formatAttachments,
 	formatSession,
 	incomingContent,
 	presenceName,
 	sanitizeSelfDeclaredMetadata,
-	selectRotatingSummaryCandidates,
-	selectSessionSummaryCandidates,
-	sessionSummaryCacheRoot,
-	tailIdentityDigest,
 	validateIntercomAction,
 } from "./index.ts";
 import { FrameDecoder, encodeFrame } from "./client.ts";
-import { FileSessionSummaryCache } from "./summary-cache.ts";
 import { connectNew, isolatedIntercom, startOwnedBroker, stopChild, waitEvent, waitFor } from "../../tests/intercom/helpers.mjs";
 
 initTheme("dark");
-
-test("places disposable summary caches in a current-user OS temporary path", () => {
-	assert.equal(sessionSummaryCacheRoot("temporary-root", "501"), join("temporary-root", "pi-intercom-summaries-501"));
-});
 
 test("registers one compatible flat intercom tool and no deferred UI or bridge surface", () => {
 	const tools = [];
@@ -48,8 +38,8 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	};
 	intercomExtension(pi);
 	assert.deepEqual(tools.map((tool) => tool.name), ["intercom"]);
-	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "triage", "tail", "summarize", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"]);
-	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "summaryToken", "operationId", "limit", "tailScanBytes", "tailProjectionBytes", "paginate", "cursor"]);
+	assert.deepEqual(IntercomParams.properties.action.enum, ["list", "tail", "send", "ask", "reply", "pending", "operations", "cancel", "status", "role"]);
+	assert.deepEqual(Object.keys(IntercomParams.properties), ["action", "role", "to", "message", "attachments", "replyTo", "operationId", "limit", "tailScanBytes", "tailProjectionBytes", "paginate", "cursor"]);
 	assert.deepEqual(commands, []);
 	assert.deepEqual(shortcuts, []);
 	assert.equal(tools.some((tool) => tool.name === "contact_supervisor"), false);
@@ -60,7 +50,7 @@ test("registers one compatible flat intercom tool and no deferred UI or bridge s
 	assert.match(tools[0].promptGuidelines.join("\n"), /use intercom tail with a small limit/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /Missing persisted or durable evidence does not by itself authorize contact/);
 	assert.ok(tools[0].promptGuidelines.includes("When inspecting or reviewing another session, use persisted evidence read-only. Do not send, ask, or reply to that session unless the user explicitly requests contact, or you explain why contact is a last resort and the user approves the specific contact."));
-	assert.match(tools[0].promptGuidelines.join("\n"), /single-use summaryToken/);
+	assert.doesNotMatch(`${tools[0].description}\n${tools[0].promptGuidelines.join("\n")}`, /First Mate|triage|summarize/);
 	assert.match(tools[0].promptGuidelines.join("\n"), /do not acknowledge routine updates or receipts/);
 	assert.equal(events.some((event) => event.name === "session_start"), true);
 	assert.equal(events.some((event) => event.name === "session_shutdown"), true);
@@ -70,24 +60,18 @@ test("validates action-specific fields while preserving attachment and reply sel
 	assert.doesNotThrow(() => validateIntercomAction({ action: "list" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "list", limit: 1 }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "pending", limit: 1 }));
-	assert.doesNotThrow(() => validateIntercomAction({ action: "triage" }));
-	assert.throws(() => validateIntercomAction({ action: "triage", limit: 1 }), /limit is not valid/);
-	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "first-mate" }));
+	assert.throws(() => validateIntercomAction({ action: "status", limit: 1 }), /limit is not valid/);
+	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "coordinator" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "project-manager" }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "role", role: "a".repeat(64) }));
-	for (const role of ["", "a".repeat(65), "First-Mate", "two words", "-a", "a-", "a--b", "a_b", "é", "a\n", "a\u202e", null, 1, ["first-mate"], { name: "first-mate" }]) {
+	for (const role of ["", "a".repeat(65), "Coordinator", "two words", "-a", "a-", "a--b", "a_b", "é", "a\n", "a\u202e", null, 1, ["coordinator"], { name: "coordinator" }]) {
 		assert.throws(() => validateIntercomAction({ action: "role", role }), /Invalid intercom role/);
 	}
-	assert.throws(() => validateIntercomAction({ action: "list", role: "first-mate" }), /not valid/);
+	assert.throws(() => validateIntercomAction({ action: "list", role: "coordinator" }), /not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "send", to: "worker", message: "update", attachments: [] }));
 	assert.doesNotThrow(() => validateIntercomAction({ action: "tail", to: "worker", limit: 8, tailScanBytes: 1_024, tailProjectionBytes: 4_096 }));
 	assert.throws(() => validateIntercomAction({ action: "tail" }), /requires to/);
-	assert.doesNotThrow(() => validateIntercomAction({ action: "summarize", summaryToken: "grant" }));
-	assert.throws(() => validateIntercomAction({ action: "summarize" }), /requires summaryToken/);
-	assert.throws(() => validateIntercomAction({ action: "summarize", summaryToken: "grant", to: "worker" }), /to is not valid/);
-	assert.throws(() => validateIntercomAction({ action: "summarize", summaryToken: "grant", limit: 8 }), /limit is not valid/);
-	assert.throws(() => validateIntercomAction({ action: "list", summaryToken: "grant" }), /summaryToken is not valid/);
 	assert.throws(() => validateIntercomAction({ action: "list", tailScanBytes: 1_024 }), /tailScanBytes is not valid/);
 	assert.throws(() => validateIntercomAction({ action: "send", to: "worker", message: "update", tailProjectionBytes: 4_096 }), /tailProjectionBytes is not valid/);
 	assert.doesNotThrow(() => validateIntercomAction({ action: "reply", message: "answer", replyTo: "ask-1" }));
@@ -115,102 +99,6 @@ test("tail pagination accepts either a live target or a continuation without cha
 		{ action: "list", paginate: true },
 		{ action: "send", to: "worker", message: "hi", cursor: "token" },
 	]) assert.throws(() => validateIntercomAction(input));
-});
-
-test("selects at most four oldest confirmed 24-hour snapshots for isolated synthesis", () => {
-	const now = Date.parse("2026-07-31T12:00:00.000Z");
-	const makeTail = (id, ageHours, withEvidence = true) => ({
-		target: {},
-		targetSessionId: id,
-		snapshot: {
-			events: withEvidence ? [{ kind: "assistant", text: id }] : [],
-			lastConversationalTimestamp: now - ageHours * 60 * 60 * 1_000,
-		},
-	});
-	const result = {
-		snapshotTimestamp: now,
-		tails: [
-			makeTail("25-hours", 25),
-			makeTail("30-hours", 30),
-			makeTail("29-hours", 29),
-			makeTail("28-hours", 28),
-			makeTail("27-hours", 27),
-			makeTail("23-hours", 23),
-			makeTail("empty", 40, false),
-		],
-	};
-	const selected = selectSessionSummaryCandidates(result, 4);
-	assert.deepEqual(selected.selected.map((tail) => tail.targetSessionId), ["30-hours", "29-hours", "28-hours", "27-hours"]);
-	assert.equal(selected.omitted, 1);
-	assert.deepEqual(selectSessionSummaryCandidates(result, 0), { selected: [], omitted: 5 });
-	assert.throws(() => selectSessionSummaryCandidates(result, 5), /limit is invalid/);
-});
-
-test("cached summaries require the exact persisted branch identity", () => {
-	const timestamp = Date.parse("2026-07-31T12:00:00.000Z");
-	const record = {
-		schemaVersion: 1,
-		sessionId: "stable-session",
-		createdAt: "2026-08-01T12:00:00.000Z",
-		capturedAtSummary: "2026-08-01T11:00:00.000Z",
-		lastTurnAtSummary: "2026-07-31T12:00:00.000Z",
-		activeLeafIdAtSummary: "leaf-1",
-		revisionAtSummary: 4,
-		tailDigestAtSummary: tailIdentityDigest({ events: [] }),
-		card: {
-			title: "Completed work",
-			state: "complete",
-			mainPoint: "The work is complete.",
-			safeToClose: "yes",
-			decision: null,
-			limitations: [],
-		},
-	};
-	const tail = {
-		targetSessionId: "stable-session",
-		advertisedLastConversationalTimestamp: timestamp,
-		target: {
-			piSession: {
-				sessionId: "stable-session",
-				fileLocator: "/session.jsonl",
-				activeLeafId: "leaf-1",
-				revision: 4,
-			},
-		},
-		snapshot: { lastConversationalTimestamp: timestamp, events: [] },
-	};
-	assert.equal(cachedSummaryMatchesTail(record, tail), true);
-	assert.equal(cachedSummaryMatchesTail(record, {
-		...tail,
-		target: { ...tail.target, piSession: { ...tail.target.piSession, revision: 5 } },
-	}), false);
-	assert.equal(cachedSummaryMatchesTail(record, {
-		...tail,
-		target: { ...tail.target, piSession: { ...tail.target.piSession, activeLeafId: "tool-result-leaf" } },
-	}), false);
-	assert.equal(cachedSummaryMatchesTail(record, {
-		...tail,
-		snapshot: { ...tail.snapshot, events: [{ kind: "bash", outcome: "succeeded" }] },
-	}), false);
-});
-
-test("rotates the first bounded cached summary so projection cannot starve deferred records", () => {
-	const candidates = Array.from({ length: 10 }, (_, index) => `session-${index}`);
-	const firstCandidates = [];
-	let cursor = 0;
-	for (let index = 0; index < candidates.length; index++) {
-		const window = selectRotatingSummaryCandidates(candidates, 8, cursor);
-		firstCandidates.push(window.selected[0]);
-		assert.equal(window.omitted, 2);
-		cursor = window.nextCursor;
-	}
-	assert.deepEqual(firstCandidates, candidates);
-	assert.equal(cursor, 0);
-	assert.deepEqual(selectRotatingSummaryCandidates([], 8, cursor), {
-		selected: [],
-		omitted: 0,
-		nextCursor: 0,
-	});
 });
 
 test("uses the legacy unnamed alias and preserves attachment bodies", () => {
@@ -311,16 +199,6 @@ test("intercom tool rows keep messages visible while collapsing long results", (
 	assert.doesNotMatch(collapsedResult, /hidden result detail/);
 	assert.match(collapsedResult, /to expand/);
 	assert.match(tool.renderResult(result, { expanded: true, isPartial: false }, theme, { isError: false }).render(120).join("\n"), /hidden result detail/);
-
-	const summaryResult = {
-		content: [{ type: "text", text: "## Compact summary" }],
-		details: { kind: "session_summary", evidence: [{ id: "E1", kind: "assistant", text: "exact persisted evidence" }] },
-	};
-	const collapsedSummary = tool.renderResult(summaryResult, { expanded: false, isPartial: false }, theme, { isError: false }).render(120).join("\n");
-	assert.doesNotMatch(collapsedSummary, /exact persisted evidence/);
-	const expandedSummary = tool.renderResult(summaryResult, { expanded: true, isPartial: false }, theme, { isError: false }).render(120).join("\n");
-	assert.match(expandedSummary, /Exact immutable snapshot evidence/);
-	assert.match(expandedSummary, /\[E1 · assistant\]\s*\nexact persisted evidence/);
 });
 
 test("renders stable Pi session IDs and sanitizes self-declared identity metadata", () => {
@@ -365,7 +243,7 @@ test("bounds maximum-inventory identity details without dropping the current ses
 			pid: index + 1,
 			startedAt: 1,
 			lastActivity: 1,
-			role: "first-mate",
+			role: "coordinator",
 		};
 	});
 	const current = sessions.at(-1);
@@ -375,7 +253,6 @@ test("bounds maximum-inventory identity details without dropping the current ses
 	assert.ok(details.omittedSessionIds > 0);
 	assert.equal(details.truncated, true);
 	assert.ok(details.sessionIds.includes(current.piSessionId));
-	assert.ok(details.firstMateSessionIds.includes(current.piSessionId));
 });
 
 test("inventory details retain stable IDs advertised through persisted presence", () => {
@@ -719,7 +596,7 @@ test("a Bash started before first persistence refreshes when it finishes after a
 	assert.notEqual(bashPresence.piSession.revision, assistantPresence.piSession.revision);
 });
 
-test("real SessionManager lifecycle clears First Mate role until explicit reinvocation", async (t) => {
+test("real SessionManager lifecycle clears a published role until explicit reinvocation", async (t) => {
 	const fixture = await isolatedIntercom(t, "role-life-");
 	const previousHome = process.env.HOME;
 	process.env.HOME = fixture.home;
@@ -737,7 +614,7 @@ test("real SessionManager lifecycle clears First Mate role until explicit reinvo
 		registerTool: (tool) => tools.push(tool),
 		registerMessageRenderer() {},
 		on: (name, handler) => handlers.set(name, handler),
-		getSessionName: () => "lifecycle-first-mate",
+		getSessionName: () => "lifecycle-coordinator",
 		appendEntry() {},
 		sendMessage() {},
 	});
@@ -749,9 +626,9 @@ test("real SessionManager lifecycle clears First Mate role until explicit reinvo
 	let ctx = { cwd: fixture.base, model: { id: "fixture-model" }, sessionManager: manager };
 	await handlers.get("session_start")({ reason: "startup" }, ctx);
 	const execute = (params) => tools[0].execute("call", params, undefined, undefined, ctx);
-	const listedSession = async (client = observer) => (await client.listSessions()).find((session) => session.name === "lifecycle-first-mate");
+	const listedSession = async (client = observer) => (await client.listSessions()).find((session) => session.name === "lifecycle-coordinator");
 	const listedRole = async (client = observer) => (await listedSession(client))?.role;
-	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-coordinator"));
 	assert.equal((await listedSession()).piSessionId, "role-life-a");
 	assert.equal(await listedRole(), undefined);
 
@@ -759,7 +636,6 @@ test("real SessionManager lifecycle clears First Mate role until explicit reinvo
 		const result = await execute({ action: "role", role });
 		assert.ok(result.content[0].text.includes(`Published role ${JSON.stringify(role)}`));
 		assert.equal(result.details.role, role);
-		assert.equal(result.details.advertisingFirstMate, role === "first-mate");
 		await waitFor(async () => await listedRole(client) === role);
 		const status = await execute({ action: "status" });
 		assert.equal(status.details.role, role);
@@ -767,7 +643,7 @@ test("real SessionManager lifecycle clears First Mate role until explicit reinvo
 		const list = await execute({ action: "list" });
 		assert.ok(list.content[0].text.includes(`role: ${role}`));
 	};
-	await invoke(observer, "first-mate");
+	await invoke(observer, "coordinator");
 	const cleared = await execute({ action: "role" });
 	assert.match(cleared.content[0].text, /Cleared role/);
 	assert.equal(cleared.details.role, null);
@@ -784,9 +660,9 @@ test("real SessionManager lifecycle clears First Mate role until explicit reinvo
 
 	await invoke();
 	await handlers.get("session_shutdown")({ reason: "reload" }, ctx);
-	await waitFor(async () => !(await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	await waitFor(async () => !(await observer.listSessions()).some((session) => session.name === "lifecycle-coordinator"));
 	await handlers.get("session_start")({ reason: "reload" }, ctx);
-	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-coordinator"));
 	assert.equal((await listedSession()).piSessionId, "role-life-a");
 	assert.equal(await listedRole(), undefined);
 	await invoke();
@@ -796,7 +672,7 @@ test("real SessionManager lifecycle clears First Mate role until explicit reinvo
 	replacement.appendMessage({ role: "user", content: "replacement", timestamp: 3 });
 	ctx = { cwd: fixture.base, model: { id: "fixture-model" }, sessionManager: replacement };
 	await handlers.get("session_start")({ reason: "new", previousSessionFile: manager.getSessionFile() }, ctx);
-	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-coordinator"));
 	assert.equal((await listedSession()).piSessionId, "role-life-b");
 	assert.equal(await listedRole(), undefined);
 	await invoke();
@@ -806,7 +682,7 @@ test("real SessionManager lifecycle clears First Mate role until explicit reinvo
 	resumed.appendMessage({ role: "user", content: "resumed", timestamp: 4 });
 	ctx = { cwd: fixture.base, model: { id: "fixture-model" }, sessionManager: resumed };
 	await handlers.get("session_start")({ reason: "resume", previousSessionFile: replacement.getSessionFile() }, ctx);
-	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-coordinator"));
 	assert.equal((await listedSession()).piSessionId, "role-life-c");
 	assert.equal(await listedRole(), undefined);
 	await invoke();
@@ -816,13 +692,13 @@ test("real SessionManager lifecycle clears First Mate role until explicit reinvo
 	await disconnected;
 	broker = await startOwnedBroker(fixture.paths);
 	observer = await connectNew(fixture.paths, "role-observer-reconnected");
-	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"), 5_000);
+	await waitFor(async () => (await observer.listSessions()).some((session) => session.name === "lifecycle-coordinator"), 5_000);
 	assert.equal((await listedSession()).piSessionId, "role-life-c");
 	assert.equal(await listedRole(), undefined);
 	await invoke(observer);
 
 	await handlers.get("session_shutdown")({ reason: "quit" }, ctx);
-	await waitFor(async () => !(await observer.listSessions()).some((session) => session.name === "lifecycle-first-mate"));
+	await waitFor(async () => !(await observer.listSessions()).some((session) => session.name === "lifecycle-coordinator"));
 });
 
 test("tree and compaction fence both role publication race orders", async (t) => {
@@ -907,7 +783,7 @@ test("tree and compaction fence both role publication race orders", async (t) =>
 	await handlers.get("session_start")({}, ctx);
 	t.after(() => handlers.get("session_shutdown")());
 	await waitFor(() => activeSession);
-	const executeRole = () => tools[0].execute("call", { action: "role", role: "first-mate" }, undefined, undefined, ctx);
+	const executeRole = () => tools[0].execute("call", { action: "role", role: "coordinator" }, undefined, undefined, ctx);
 
 	const publishBeforeTree = executeRole();
 	await waitFor(() => roleRequests.length === 1);
@@ -923,7 +799,7 @@ test("tree and compaction fence both role publication race orders", async (t) =>
 	await waitFor(() => roleRequests.length === 3);
 	roleRequests[2].complete();
 	await republish;
-	assert.equal(activeRole, "first-mate");
+	assert.equal(activeRole, "coordinator");
 
 	const compact = handlers.get("session_compact")({}, ctx);
 	await waitFor(() => roleRequests.length === 4);
@@ -1021,53 +897,7 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 		sendMessage: (...args) => delivered.push(args),
 	};
 	let idle = true;
-	const summaryModelCalls = [];
-	const fileSummaryCache = new FileSessionSummaryCache(`${fixture.home}/.pi/agent/intercom/summaries`);
-	let pausedSummaryCacheRead;
-	const summaryCache = {
-		async read(sessionId) {
-			const pause = pausedSummaryCacheRead;
-			if (pause) {
-				pause.started.resolve();
-				await pause.release.promise;
-				if (pausedSummaryCacheRead === pause) pausedSummaryCacheRead = undefined;
-			}
-			return fileSummaryCache.read(sessionId);
-		},
-		write: (record) => fileSummaryCache.write(record),
-	};
-	const summaryUsage = {
-		input: 10,
-		output: 5,
-		cacheRead: 2,
-		cacheWrite: 1,
-		reasoning: 3,
-		totalTokens: 18,
-		cost: { input: 0.01, output: 0.02, cacheRead: 0.003, cacheWrite: 0.004, total: 0.037 },
-	};
-	intercomExtension(pi, {
-		summaryCache,
-		summaryModel: {
-			async complete(systemPrompt, prompt, timestamp, signal) {
-				summaryModelCalls.push({ systemPrompt, prompt, timestamp, signal });
-				return {
-					text: JSON.stringify({
-						title: "Tail decision",
-						state: "awaiting_decision",
-						mainPoint: "The persisted answer leaves one bounded decision.",
-						safeToClose: "no",
-						decision: {
-							action: "Approve the exact follow-up.",
-							fences: ["Preserve unrelated work"],
-						},
-						limitations: ["Persisted evidence is not live verification."],
-						evidenceIds: ["E1", "E2"],
-					}),
-					usage: summaryUsage,
-				};
-			},
-		},
-	});
+	intercomExtension(pi);
 	const ctx = {
 		cwd: "/repo",
 		model: { id: "fixture-model" },
@@ -1085,32 +915,27 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.equal(connectedStatus.details.tailCapability, true);
 	assert.equal(connectedStatus.details.advertisingPiSession, false);
 	assert.equal(connectedStatus.details.roleCapability, true);
-	assert.equal(connectedStatus.details.advertisingFirstMate, false);
 	const ownedId = (await peer.listSessions()).find((item) => item.name === "caller").id;
 	const peerSessionId = peer.currentPiSessionId();
 
-	assert.equal(await peer.setRole("first-mate"), "first-mate");
-	const advertisedRole = await execute({ action: "role", role: "first-mate" });
+	assert.equal(await peer.setRole("coordinator"), "coordinator");
+	const advertisedRole = await execute({ action: "role", role: "coordinator" });
 	assert.equal(advertisedRole.details.sessionId, "full-pi-session-id");
-	assert.equal(advertisedRole.details.role, "first-mate");
-	assert.equal(advertisedRole.details.advertisingFirstMate, true);
+	assert.equal(advertisedRole.details.role, "coordinator");
 	assert.match(advertisedRole.content[0].text, /full-pi-session-id/);
 	assert.doesNotMatch(advertisedRole.content[0].text, new RegExp(ownedId));
-	await waitFor(async () => (await peer.listSessions()).find((item) => item.id === ownedId)?.role === "first-mate");
+	await waitFor(async () => (await peer.listSessions()).find((item) => item.id === ownedId)?.role === "coordinator");
 
 	const listed = await execute({ action: "list", limit: 1 });
 	assert.ok(Buffer.byteLength(listed.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
 	assert.equal(listed.details.count, 2);
 	assert.equal(listed.details.currentSessionId, advertisedRole.details.sessionId);
 	assert.equal(listed.details.sessionIds.includes(peerSessionId), true);
-	assert.deepEqual(listed.details.firstMateSessionIds, [peerSessionId, "full-pi-session-id"]);
-	assert.equal(listed.details.firstMateSessionIds.includes(advertisedRole.details.sessionId), true);
-	for (const id of listed.details.firstMateSessionIds) assert.match(listed.content[0].text, new RegExp(id));
-	assert.match(listed.content[0].text, /role: first-mate/);
+	for (const id of [peerSessionId, "full-pi-session-id"]) assert.match(listed.content[0].text, new RegExp(`${id}" \\[role: coordinator\\]`));
+	assert.match(listed.content[0].text, /role: coordinator/);
 	assert.equal("sessions" in listed.details, false);
 	const clearedRole = await execute({ action: "role" });
 	assert.equal(clearedRole.details.role, null);
-	assert.equal(clearedRole.details.advertisingFirstMate, false);
 	await waitFor(async () => (await peer.listSessions()).find((item) => item.id === ownedId)?.role === undefined);
 
 	const privateSentinel = "PRIVATE_TAIL_SENTINEL";
@@ -1130,94 +955,13 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "tail-r", revision: 1 },
 	});
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 1);
-	const coordinatorTriage = await execute({ action: "triage" });
-	assert.equal(coordinatorTriage.details.advertisingFirstMate, true);
-	assert.equal(coordinatorTriage.details.selectedSweep, "none");
-	assert.equal(coordinatorTriage.details.firstMatePeersSkipped, 1);
-	assert.equal(coordinatorTriage.details.tails.length, 0);
-
-	assert.equal(await peer.setRole(null), undefined);
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.role === undefined);
-	const triaged = await execute({ action: "triage" });
-	assert.equal(triaged.details.advertisingFirstMate, true);
-	assert.equal(triaged.details.selectedSweep, "older");
-	assert.equal(triaged.details.firstMatePeersSkipped, 0);
-	assert.equal(triaged.details.tails.length, 1);
-	assert.equal(triaged.details.tails[0].targetSessionId, peerSessionId);
-	assert.equal(triaged.details.summaryCandidateCount, 1);
-	assert.equal(triaged.details.summaryCandidatesDeferred, 0);
-	assert.equal(triaged.details.summaryCandidatesUnavailable, 0);
-	let summaryToken = triaged.content[0].text.match(/summaryToken "([^"]+)"/)?.[1];
-	assert.ok(summaryToken);
-	assert.match(triaged.content[0].text, /confirmed at least 24 hours stale/);
-	assert.match(triaged.content[0].text, /tail question/);
-	assert.ok(Buffer.byteLength(triaged.content[0].text) <= INTERCOM_PROJECTION_MAX_BYTES);
-	assert.ok(Buffer.byteLength(JSON.stringify(triaged.details)) <= INTERCOM_PROJECTION_MAX_BYTES);
-
-	const cancelledRefreshTriage = new AbortController();
-	cancelledRefreshTriage.abort();
-	await assert.rejects(execute({ action: "triage" }, cancelledRefreshTriage.signal), /cancelled/);
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === "first-mate");
-	assert.equal((await execute({ action: "status" })).details.advertisingFirstMate, true);
-	const survivedFailedTriage = await execute({ action: "summarize", summaryToken });
-	assert.match(survivedFailedTriage.content[0].text, /## Tail decision/);
-	assert.equal(survivedFailedTriage.details.cacheStored, true);
-	assert.equal(survivedFailedTriage.details.cacheWriteResult, "stored");
-	assert.equal(survivedFailedTriage.details.lastTurnAtSummary, "2026-01-01T00:00:02.000Z");
-	assert.match(survivedFailedTriage.details.createdAt, /^\d{4}-\d{2}-\d{2}T/);
-	assert.equal(summaryModelCalls.length, 1);
-
-	const reusedTriage = await execute({ action: "triage" });
-	assert.equal(reusedTriage.details.cachedSummaryCount, 1);
-	assert.equal(reusedTriage.details.cachedSummaries[0].targetSessionId, peerSessionId);
-	assert.equal(reusedTriage.details.cachedSummaries[0].lastTurnAtSummary, "2026-01-01T00:00:02.000Z");
-	assert.equal(reusedTriage.details.summaryCandidateCount, 0);
-	assert.equal(reusedTriage.details.potentiallyStaleCachedSummaries, 0);
-	assert.match(reusedTriage.content[0].text, /Reusable cached summaries/);
-	assert.match(reusedTriage.content[0].text, /reused without model inference/);
-	assert.equal(summaryModelCalls.length, 1);
-
-	const refreshedBeforeGrant = "REFRESHED_BEFORE_SUMMARY_GRANT";
-	pausedSummaryCacheRead = { started: Promise.withResolvers(), release: Promise.withResolvers() };
-	const preRefreshTriagePromise = execute({ action: "triage" });
-	await pausedSummaryCacheRead.started.promise;
-	await appendFile(sessionPath, `${JSON.stringify({ type: "message", id: "refreshed-before-grant", parentId: "tail-r", timestamp: "2026-01-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: refreshedBeforeGrant }], stopReason: "stop", timestamp: 4 } })}\n`);
+	await appendFile(sessionPath, `${JSON.stringify({ type: "message", id: "latest-answer", parentId: "tail-r", timestamp: "2026-01-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "LATEST_TAIL_ANSWER" }], stopReason: "stop", timestamp: 4 } })}\n`);
 	peer.updatePresence({
 		status: "idle",
 		lastConversationalTimestamp: Date.parse("2026-01-01T00:00:04.000Z"),
-		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "refreshed-before-grant", revision: 2 },
+		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "latest-answer", revision: 2 },
 	});
 	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 2);
-	pausedSummaryCacheRead.release.resolve();
-	const racedTriage = await preRefreshTriagePromise;
-	assert.equal(racedTriage.details.cachedSummaryCount, 0);
-	assert.equal(racedTriage.details.potentiallyStaleCachedSummaries, 1);
-	assert.equal(racedTriage.details.summaryCandidateCount, 0);
-	assert.match(racedTriage.content[0].text, /withheld as potentially stale/);
-
-	const preRefreshTriage = await execute({ action: "triage" });
-	summaryToken = preRefreshTriage.content[0].text.match(/summaryToken "([^"]+)"/)?.[1];
-	assert.ok(summaryToken);
-
-	await execute({ action: "role" });
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
-	const previousSummaryToken = summaryToken;
-	const firstConcurrentTriage = execute({ action: "triage" });
-	await assert.rejects(execute({ action: "triage" }), /already in progress/);
-	const refreshedTriage = await firstConcurrentTriage;
-	summaryToken = refreshedTriage.content[0].text.match(/summaryToken "([^"]+)"/)?.[1];
-	assert.ok(summaryToken);
-	assert.notEqual(summaryToken, previousSummaryToken);
-	await assert.rejects(execute({ action: "summarize", summaryToken: previousSummaryToken }), /invalid, expired, or already used/);
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === "first-mate");
-
-	await execute({ action: "role" });
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
-	const cancelledTriage = new AbortController();
-	cancelledTriage.abort();
-	await assert.rejects(execute({ action: "triage" }, cancelledTriage.signal), /cancelled/);
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === ownedId)?.role === undefined);
-	assert.equal((await execute({ action: "status" })).details.advertisingFirstMate, false);
 
 	const beforeTail = await readFile(sessionPath);
 	const tailed = await execute({
@@ -1237,57 +981,13 @@ test("successful tool actions report resolved peer IDs and persist only compact 
 	assert.ok(Buffer.byteLength(tailed.content[0].text, "utf8") <= 4_096);
 	assert.match(tailed.content[0].text, /tail question/);
 	assert.match(tailed.content[0].text, /tail answer/);
-	assert.match(tailed.content[0].text, /REFRESHED_BEFORE_SUMMARY_GRANT/);
+	assert.match(tailed.content[0].text, /LATEST_TAIL_ANSWER/);
 	assert.match(tailed.content[0].text, /Tool "read": succeeded/);
 	assert.equal(tailed.content[0].text.includes(privateSentinel), false);
 	assert.equal(JSON.stringify(tailed.details).includes(sessionPath), false);
 	assert.equal(JSON.stringify(tailed.details).includes(privateSentinel), false);
 	assert.deepEqual(afterTail, beforeTail);
 	assert.equal(targetMessages, 0);
-
-	const activeAfterGrant = "ACTIVE_AFTER_SUMMARY_GRANT";
-	await appendFile(sessionPath, `${JSON.stringify({ type: "message", id: "after-grant", parentId: "refreshed-before-grant", timestamp: "2026-01-01T00:00:05.000Z", message: { role: "assistant", content: [{ type: "text", text: activeAfterGrant }], stopReason: "stop", timestamp: 5 } })}\n`);
-	peer.updatePresence({
-		status: "thinking",
-		lastConversationalTimestamp: Date.now(),
-		piSession: { sessionId: peerSessionId, fileLocator: sessionPath, activeLeafId: "after-grant", revision: 3 },
-	});
-	await waitFor(async () => (await peer.listSessions()).find((session) => session.id === peer.sessionId)?.piSession?.revision === 3);
-	const beforeSummary = await readFile(sessionPath);
-	const summarized = await execute({ action: "summarize", summaryToken });
-	const afterSummary = await readFile(sessionPath);
-	assert.match(summarized.content[0].text, /## Tail decision/);
-	assert.match(summarized.content[0].text, /\*\*Needs a decision\.\*\*/);
-	assert.match(summarized.content[0].text, /\*\*Next:\*\* Inspect the owning session's current persisted request/);
-	assert.match(summarized.content[0].text, /\*\*Proposed:\*\* Approve the exact follow-up\./);
-	assert.match(summarized.content[0].text, /\*\*Keep:\*\* Preserve unrelated work\./);
-	assert.match(summarized.content[0].text, /\*\*Then:\*\* First Mate rechecks/);
-	assert.match(summarized.content[0].text, /source session not messaged/);
-	assert.equal(summarized.details.kind, "session_summary");
-	assert.equal(summarized.details.targetSessionId, peerSessionId);
-	assert.equal(summarized.details.model, "openai-codex/gpt-5.6-luna");
-	assert.equal(summarized.details.reasoning, "xhigh");
-	assert.equal(summarized.details.sourceMessaged, false);
-	assert.equal(summarized.details.attempts, 1);
-	assert.deepEqual(summarized.usage, summaryUsage);
-	assert.equal(summaryModelCalls.length, 2);
-	const latestSummaryModelCall = summaryModelCalls.at(-1);
-	assert.equal(latestSummaryModelCall.prompt.includes(privateSentinel), false);
-	assert.equal(latestSummaryModelCall.prompt.includes(activeAfterGrant), false);
-	assert.match(latestSummaryModelCall.prompt, /REFRESHED_BEFORE_SUMMARY_GRANT/);
-	assert.match(latestSummaryModelCall.prompt, /tail question/);
-	assert.match(latestSummaryModelCall.prompt, /tail answer/);
-	assert.deepEqual(summarized.details.evidence.map(({ id, kind, text }) => ({ id, kind, text })), [
-		{ id: "E1", kind: "user", text: "tail question" },
-		{ id: "E2", kind: "assistant", text: "tail answer" },
-		{ id: "E3", kind: "outcome", text: 'Tool "read": succeeded' },
-		{ id: "E4", kind: "assistant", text: refreshedBeforeGrant },
-	]);
-	assert.equal(JSON.stringify(summarized).includes(privateSentinel), false);
-	assert.ok(Buffer.byteLength(JSON.stringify(summarized.details)) <= INTERCOM_PROJECTION_MAX_BYTES);
-	assert.deepEqual(afterSummary, beforeSummary);
-	assert.equal(targetMessages, 0);
-	await assert.rejects(execute({ action: "summarize", summaryToken }), /invalid, expired, or already used/);
 
 	const windowedRecords = [
 		sessionRecords[0],

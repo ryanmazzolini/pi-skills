@@ -279,5 +279,4 @@ test("page handles detect post-read mutations and close deterministically", asyn
 	handle.close();
 	handle.close();
 	assert.throws(() => handle.verifyStable(), /closed/);
-	assert.throws(() => handle.verifyReopenedStable(), /changed/);
 });

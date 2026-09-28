@@ -60,8 +60,6 @@ export interface SessionTailSnapshot {
 export interface SessionReadHandle<T> {
 	readonly snapshot: T;
 	verifyStable(): void;
-	/** Reopen and compare the original descriptor state after the handle has been closed. */
-	verifyReopenedStable(): void;
 	close(): void;
 }
 
@@ -196,35 +194,6 @@ function assertPathAndDescriptorStable(
 		|| !sameState(descriptor, expected)
 		|| !sameState(path, expected)) {
 		fail(ERROR.unstable);
-	}
-}
-
-function assertReopenedPathStable(locator: string, expected: StableFileState, uid: bigint): void {
-	let before: BigIntStats;
-	try {
-		before = lstatSync(locator, { bigint: true });
-	} catch {
-		fail(ERROR.unstable);
-	}
-	if (!ownedRegularFile(before, uid) || !sameState(before, expected)) fail(ERROR.unstable);
-	const noFollow = fsConstants.O_NOFOLLOW;
-	if (typeof noFollow !== "number") fail(ERROR.unsafe);
-	let fd: number | undefined;
-	try {
-		try {
-			fd = openSync(locator, fsConstants.O_RDONLY | noFollow | (fsConstants.O_NONBLOCK ?? 0));
-		} catch {
-			fail(ERROR.unstable);
-		}
-		assertPathAndDescriptorStable(fd, locator, expected, uid);
-	} finally {
-		if (fd !== undefined) {
-			try {
-				closeSync(fd);
-			} catch {
-				fail(ERROR.unsafe);
-			}
-		}
 	}
 }
 
@@ -1148,9 +1117,6 @@ export async function openSessionBranch(
 			verifyStable(): void {
 				if (!open) fail(ERROR.closed);
 				assertPathAndDescriptorStable(handleFd, input.fileLocator, stableState, uid);
-			},
-			verifyReopenedStable(): void {
-				assertReopenedPathStable(input.fileLocator, stableState, uid);
 			},
 			close(): void {
 				if (!open) return;

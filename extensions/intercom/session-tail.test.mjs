@@ -746,12 +746,6 @@ test("detects post-open append and path replacement", async (t) => {
 	} finally {
 		appended.close();
 	}
-	await assertStaticSafeError(() => appended.verifyReopenedStable(), [appendPath, "not advertised"]);
-
-	const stablePath = writeRecords(t, [header(), user("u", null, "stable")], { name: "stable-reopen.jsonl" });
-	const stable = await open(stablePath, "u");
-	stable.close();
-	stable.verifyReopenedStable();
 
 	const replacementPath = writeRecords(t, [header(), user("u", null, "stable")], { name: "replacement.jsonl" });
 	const originalContents = `${JSON.stringify(header())}\n${JSON.stringify(user("u", null, "stable"))}\n`;
@@ -764,7 +758,6 @@ test("detects post-open append and path replacement", async (t) => {
 		replaced.close();
 	}
 	await assertStaticSafeError(() => replaced.verifyStable(), [replacementPath]);
-	await assertStaticSafeError(() => replaced.verifyReopenedStable(), [replacementPath]);
 
 	const shrinkPath = writeRecords(t, [header(), user("u", null, "stable")], { name: "shrink.jsonl" });
 	const shrunk = await open(shrinkPath, "u");

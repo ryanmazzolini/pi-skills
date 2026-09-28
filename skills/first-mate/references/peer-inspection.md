@@ -16,11 +16,11 @@ Stop when the question is answered or `nextCursor` is null. If a cursor expires,
 
 Read relevant project files when they can materially improve the answer. Confirm the located workspace exists and read its repository instructions first. Follow an explicit work-item pointer through [project evidence](project-evidence.md); stay within that repository or work item rather than searching unrelated roots or every workflow profile. Read only enough current evidence to answer the question.
 
-Summarize the evidence directly when that suffices. Read [isolated summaries](summaries.md) only when using cached cards or the grant-based tool. Distinguish last-known session state from verified current project state.
+Summarize the evidence directly. Distinguish last-known session state from verified current project state.
 
 ## Contact only when needed and authorized
 
-Before asking for status or context, check a recent tail and any relevant durable pointer. If those answer the question, use the evidence rather than waking the owner. Human-requested notices and exact replies can proceed after identity verification without a redundant status inquiry. Missing evidence alone does not authorize contact: explain the remaining question and obtain approval unless an exact inbound ask or the [decision](decision-handling.md) or [Resume](triage.md) policy already covers it.
+Before asking for status or context, check a recent tail and any relevant durable pointer. If those answer the question, use the evidence rather than waking the owner. Human-requested notices and exact replies can proceed after identity verification without a redundant status inquiry. Missing evidence alone does not authorize contact: explain the remaining question and obtain approval unless an exact inbound ask or the [decision](decision-handling.md) or [Resume](broader-inspection.md) policy already covers it.
 
 Use `send` for a one-way message the recipient should process, `ask` when a correlated reply is useful, and `reply` for one exact inbound ask. Use its exact ask ID; call `pending` when disambiguation is needed. Send and ask both start a recipient turn. A routing receipt proves delivery, not handling; continue independent work instead of polling or acknowledging routine updates.
 
