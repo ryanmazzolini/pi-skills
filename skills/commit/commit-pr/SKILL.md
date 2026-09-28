@@ -28,7 +28,7 @@ Wait for confirmation before removing work or rewriting history.
 
 Name the concrete change or problem solved at the level this PR delivers. An API capability or refactor is a valid result; the title need not promise a downstream user benefit. Prefer a specific change over a vague phrase about preparing for future work. Use sentence case and a direct action verb. Keep the claim within this PR's scope; explain its broader purpose and any follow-up work in the body.
 
-Treat existing PR, ticket, branch, and commit wording as context, not an approved title. The title should tell a teammate what changes or what problem is solved without the original discussion. Keep useful project terms, but avoid stacked nouns. Repository conventions may add metadata such as a ticket ID. For example, prefer `[sc-65850] Prevent putaway lock-order deadlocks` over `[sc-65850] Acquire putaway planning locks once per operation`.
+Treat existing PR, ticket, branch, and commit wording as context, not an approved title. The title should tell a teammate what changes or what problem is solved without the original discussion. Keep useful project terms, but avoid stacked nouns. Repository conventions may add metadata such as a ticket ID.
 
 ## Body
 
@@ -38,7 +38,7 @@ Use `Description`, `Details`, and `Testing` as headings.
 
 ### Description
 
-Explain the surrounding workflow, why this change is needed, and what it delivers. Establish who uses the workflow, what they are trying to do, and how the previous behavior or missing capability leads to this change. For example, an API change adding search and pallet details should explain that it supports finding a putaway item before choosing its lot and staging bin, while retaining existing item details and correction controls. Make clear which capabilities this PR delivers and which require later integration. Order the explanation for understanding rather than requiring the first sentence to carry both context and result. Walk through the changed behavior, including consequential interactions and what stays unchanged. Size the explanation to what the reader needs to understand, not a paragraph limit; a list of changed features is not a substitute for that explanation. When the behavior is not immediately obvious, use one representative example to ground the explanation. Explain project terms when you first use them.
+Explain the surrounding workflow, why this change is needed, and what it delivers. Establish who uses the workflow, what they are trying to do, and how the previous behavior or missing capability leads to this change. Make clear which capabilities this PR delivers and which require later integration. Order the explanation for understanding rather than requiring the first sentence to carry both context and result. Walk through the changed behavior, including consequential interactions and what stays unchanged. Size the explanation to what the reader needs to understand, not a paragraph limit; a list of changed features is not a substitute for that explanation. When the behavior is not immediately obvious, use one representative example to ground the explanation. Explain project terms when you first use them.
 
 ### Details
 

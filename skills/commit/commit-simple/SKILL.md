@@ -27,8 +27,6 @@ Before drafting, identify what this commit delivers, the surrounding workflow, a
 
 Name the concrete change or problem solved at the level this commit delivers. An API capability or refactor is a valid subject; it need not promise a downstream user benefit. Prefer a specific change over a vague phrase about preparing for future work. A `fix` prefix alone does not explain the defect. Treat ticket, branch, and existing message wording as context rather than approved framing.
 
-For example, prefer `fix(billing): prevent duplicate charges on retries` over `fix(billing): add idempotency keys to charge requests`. The first explains why the commit matters; the second only names the implementation.
-
 ### Body
 
 Give every non-trivial commit a human-readable body that lets a reviewer understand the result without reopening the diff. Keep it proportional to the change. A trivial commit may omit the body.

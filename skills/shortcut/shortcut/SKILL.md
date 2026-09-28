@@ -27,9 +27,9 @@ Before drafting or changing story text, apply [`clear-writing`](../../ai-authori
 
 ### Title
 
-Name the problem the story should resolve or the capability it should enable, not just an implementation task. The title alone should tell a teammate why the work matters. For example, prefer “Show correct putaway quantities for stock-case inventory” over “Convert observed stock quantities to base units.” Add the mechanism only when it helps explain the outcome.
+Name the concrete change or problem to solve within this story's acceptance boundary. An API or infrastructure capability is a valid result; the title need not promise a downstream user benefit. Prefer a specific change over a vague phrase about preparing for future work.
 
-Treat an existing title, branch name, or proposed implementation as context rather than approved framing. Keep the claim within the story's acceptance boundary. If the story only prepares for later work, name the next change and the specific risk the preparation reduces rather than promising the later benefit.
+Treat an existing title, branch name, or proposed implementation as context rather than approved framing. Keep the claim within the story's acceptance boundary. If the story supports later work, explain that connection and what remains outside scope in the description rather than promising the later benefit in the title.
 
 ### Description
 
@@ -55,7 +55,7 @@ Use this shape by default and omit sections that add no value:
 [Preserve existing attribution when present.]
 ```
 
-Keep **Problem** to one brief paragraph that states the point. Put incident chronology, long examples, and supporting service mechanics in **Details**. Add another sentence when it materially improves understanding, but do not make the reader work through the investigation before reaching the outcome. Keep **Outcome** concise, usually one sentence.
+Use **Problem** and **Outcome** to explain the surrounding workflow, why this change is needed, and what the story delivers. An API's missing fields alone do not explain the need: connect them to what callers or users are trying to do. Distinguish the accepted result from any later integration. Keep the explanation proportional to the story, without forcing context into a fixed sentence or paragraph count. Put incident chronology, long examples, and supporting service mechanics in **Details**.
 
 ### Acceptance criteria
 
@@ -108,8 +108,8 @@ Branch names and ticket worktree folders often embed the story id (e.g. `feat/sc
 
 Before showing or publishing story text, confirm that:
 
-- the title alone explains why the work matters, not just what to implement;
-- the main point and useful result are clear without reading **Details**;
+- the title identifies the concrete change or problem to solve within the acceptance boundary;
+- the surrounding workflow, reason for the change, and intended result are clear without reading **Details**;
 - **Problem** and **Outcome** are concise for the story's complexity;
 - incident chronology and supporting service mechanics are in **Details**, not a second problem report;
 - each acceptance criterion is one scannable clause at the right acceptance surface;

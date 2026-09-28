@@ -283,6 +283,9 @@ testset "contracts" {
     test "registers wording-only framing regressions without mutation authority" {
         let suites = ScenarioSuites();
         let ids = [
+            "commit-pr-item-api-context",
+            "commit-simple-item-api-context",
+            "shortcut-item-api-context",
             "commit-pr-reframe-planning-lock-draft",
             "commit-pr-reframe-quantity-draft",
             "commit-pr-putaway-reader-context",
