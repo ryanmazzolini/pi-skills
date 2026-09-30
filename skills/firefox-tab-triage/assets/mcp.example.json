@@ -5,7 +5,7 @@
       "args": ["dist/server.js"],
       "cwd": "./browser-control-mcp/mcp-server",
       "env": {
-        "EXTENSION_SECRET": "!cat ../../.secrets/browser-control-personal",
+        "EXTENSION_SECRET": "!cat .secrets/browser-control-personal",
         "EXTENSION_PORT": "8089"
       }
     },
@@ -14,7 +14,7 @@
       "args": ["dist/server.js"],
       "cwd": "./browser-control-mcp/mcp-server",
       "env": {
-        "EXTENSION_SECRET": "!cat ../../.secrets/browser-control-secondary",
+        "EXTENSION_SECRET": "!cat .secrets/browser-control-secondary",
         "EXTENSION_PORT": "8090"
       }
     }

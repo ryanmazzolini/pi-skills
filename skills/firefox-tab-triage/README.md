@@ -6,22 +6,18 @@ This skill uses two local [Browser Control MCP](https://github.com/eyalzh/browse
 
 Browser Control MCP can inspect and change real browser state. Tab titles and URLs—and browser history when requested—are sent to the active model and stored in Pi session data. The Firefox extension requires domain permission to read page content and per-tab authorization to capture screenshots. Those permissions do not protect tab titles or URLs.
 
-Invoking this skill by name reduces accidental use; it is not a security boundary. Review the upstream server and extension before installing them. Check the extension's permissions, enabled tools, and audit log. Keep the secret files and your copied `.mcp.json` out of Git; the tracked example configuration contains no secrets. Do not reuse either profile's secret elsewhere.
+Invoking this skill by name reduces accidental use; it is not a security boundary. Review the upstream server and extension before installing them. Check the extension's permissions, enabled tools, and audit log. Keep the secret files and your copied `.pi/mcp.json` out of Git; the tracked example configuration contains no secrets. Do not reuse either profile's secret elsewhere.
 
 Routine triage uses tab titles and URLs only. It does not read page content unless the request requires it.
 
 ## Prerequisites
 
-- Pi with [pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter) installed
+- Pi 0.99.1 or newer with built-in MCP support enabled
 - Node.js 22 or newer
 - Firefox with two profiles
 - The authenticated GitHub CLI for pull request cleanup
 
-Install the MCP adapter and restart Pi:
-
-```bash
-pi install npm:pi-mcp-adapter
-```
+If `pi-mcp-adapter` is installed, remove it and restart Pi so only native Pi connects to these servers. No MCP adapter is needed.
 
 ## Build the local server
 
@@ -31,7 +27,7 @@ Use a dedicated local directory. Add the ignore rules before creating local conf
 mkdir -p firefox-tabs
 cd firefox-tabs
 cat >> .gitignore <<'EOF'
-.mcp.json
+.pi/mcp.json
 .secrets/
 browser-control-mcp/
 EOF
@@ -43,13 +39,14 @@ npm run build
 cd ..
 ```
 
-Copy [the example MCP configuration](assets/mcp.example.json) to `.mcp.json` in this directory. If you cloned `pi-skills`, for example:
+Copy [the example MCP configuration](assets/mcp.example.json) to `.pi/mcp.json` in this directory. If you cloned `pi-skills`, for example:
 
 ```bash
-cp /path/to/pi-skills/skills/firefox-tab-triage/assets/mcp.example.json .mcp.json
+mkdir -p .pi
+cp /path/to/pi-skills/skills/firefox-tab-triage/assets/mcp.example.json .pi/mcp.json
 ```
 
-Launch Pi from this directory so it discovers the project-local `.mcp.json`.
+Launch Pi from this directory and trust the project so it loads `.pi/mcp.json`. The `!cat .secrets/...` commands run from Pi's working directory, not the server's `cwd` or the `.pi` directory. The server itself runs in `browser-control-mcp/mcp-server`.
 
 ## Connect Firefox
 
@@ -68,4 +65,4 @@ Launch Pi from this directory so it discovers the project-local `.mcp.json`.
 5. Run `/reload` in Pi.
 6. Open `/mcp` and verify that `browser-control-personal` and `browser-control-secondary` can connect.
 
-The adapter reads each secret file only when it starts that profile's local server. Keep the Firefox extension settings and secret files aligned if you rotate a secret or change a port.
+Pi reads each secret file when it starts or reconnects that profile's local server. Keep the Firefox extension settings and secret files aligned if you rotate a secret or change a port.
