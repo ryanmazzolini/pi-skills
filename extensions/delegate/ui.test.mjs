@@ -598,7 +598,7 @@ test("every lifecycle state has explicit text and a non-color icon", () => {
 test("pinned status never emits embedded terminal lines from multiline failures", () => {
   const failedRun = run("failed", new Date().toISOString());
   failedRun.children[0].failure = {
-    message: "No API key found for openai-codex.\n\nUse /login to log in.\n  /opt/pi/docs/providers.md",
+    message: "No API key found for openai.\n\nUse /login to log in.\n  /opt/pi/docs/providers.md",
     lastActivity: failedRun.children[0].latestActivity,
     failedAt: new Date().toISOString(),
   };
@@ -610,7 +610,7 @@ test("pinned status never emits embedded terminal lines from multiline failures"
 
   assert.equal(component.animationTimer, undefined);
   assert.equal(lines.every((line) => !/[\r\n]/.test(line)), true);
-  assert.match(lines.join("\n"), /Failed: No API key found for openai-codex\./);
+  assert.match(lines.join("\n"), /Failed: No API key found for openai\./);
   assert.doesNotMatch(lines.join("\n"), /Use \/login/);
   component.dispose();
 });
