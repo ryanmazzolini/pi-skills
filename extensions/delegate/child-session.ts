@@ -472,7 +472,7 @@ async function createChild(
 		agentDir,
 		child.resolved.skills.map((skill) => skill.name),
 		additionalGuidance,
-		await childExtensionPaths(cwd, agentDir, projectTrusted),
+		await childExtensionPaths(resourceCwd, agentDir, projectTrusted),
 		projectTrusted,
 	);
 	const expectedSkills = child.resolved.skills
