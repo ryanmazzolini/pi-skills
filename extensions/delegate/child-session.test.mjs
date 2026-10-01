@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
-import { childExtensionPaths, childOutputGuidance, childProjectTrusted, childSessionModelRuntime, createChildResourceLoader, createRuntimeTools, createActivityEmitter, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
+import { childExtensionPaths, childOutputGuidance, childProjectTrusted, childSessionModelRuntime, createChildResourceLoader, createPiChildSessionAdapter, createRuntimeTools, createActivityEmitter, recoverStructuredResult, resolveChildResources, resolvedSkillIdentity } from "./child-session.ts";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "delegate-resources-test-"));
@@ -195,6 +195,45 @@ test("configured child extension packages load beside the no-extension default",
     /Delegate child extension failed to load: .*throwing.*bridge broke/,
   );
 });
+
+for (const trusted of [true, false]) {
+  test(`scratch launch ${trusted ? "loads trusted" : "rejects untrusted"} source-project extension packages`, async (t) => {
+    const { root, agentDir, project, cwd } = fixture(t);
+    const scratch = path.join(root, "scratch");
+    fs.mkdirSync(scratch);
+    installPackage(path.join(root, "bridge"), "source-bridge",
+      // Stop actual adapter startup after loading the package, before any model or credentials are needed.
+      "export default function () { throw new Error('source bridge reached'); }\n");
+    fs.mkdirSync(path.join(cwd, ".pi"));
+    fs.writeFileSync(path.join(cwd, ".pi", "settings.json"), JSON.stringify({ packages: [path.join(root, "bridge")] }));
+    fs.writeFileSync(path.join(agentDir, "delegate.json"), JSON.stringify({ childExtensions: ["source-bridge"] }));
+    new ProjectTrustStore(agentDir).set(project, trusted);
+    assert.equal(childProjectTrusted(cwd, agentDir), trusted);
+
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    try {
+      await assert.rejects(createPiChildSessionAdapter().start({
+        child: {
+          id: "scratch-child",
+          task: "Investigate without modifying the source",
+          sessionDir: path.join(root, "sessions"),
+          workspace: { kind: "temporary", sourceCwd: cwd, worktreePath: scratch, integration: "working" },
+          resolved: { skills: [], tools: [], output: "text" },
+        },
+        model: {},
+        modelRegistry: {},
+        signal: new AbortController().signal,
+      }, { activity() {} }), trusted
+        ? /Delegate child extension failed to load: .*source bridge reached/
+        : /No installed package with enabled extensions for delegate childExtensions: source-bridge/);
+    } finally {
+      if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    }
+    assert.deepEqual(fs.readdirSync(scratch), []);
+  });
+}
 
 test("untrusted projects can't supply child extensions, settings, or skills", async (t) => {
   const { root, agentDir, project, cwd } = fixture(t);
