@@ -646,9 +646,11 @@ function scratchFixture(t) {
   const sourceCwd = path.join(root, "source");
   fs.mkdirSync(sourceCwd);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const manager = new GitWorkspaceManager(path.join(root, "temporary"));
+  const temporaryRoot = path.join(root, "temporary");
+  const manager = new GitWorkspaceManager(temporaryRoot);
   return {
     manager,
+    temporaryRoot,
     input: {
       sourceCwd,
       runId: "run",
@@ -658,6 +660,81 @@ function scratchFixture(t) {
     },
   };
 }
+
+for (const mode of [0o777, 0o770, 0o702, 0o1777]) {
+  test(`rejects a pre-existing writable temporary root (${mode.toString(8)}) without changing it`, {
+    skip: !process.geteuid,
+  }, async (t) => {
+    const { manager, temporaryRoot, input } = scratchFixture(t);
+    fs.mkdirSync(temporaryRoot);
+    fs.chmodSync(temporaryRoot, mode);
+    fs.writeFileSync(path.join(temporaryRoot, "keep.txt"), "existing data\n");
+
+    await assert.rejects(manager.prepare(input), /temporary root is writable by other users/);
+    assert.equal(fs.statSync(temporaryRoot).mode & 0o7777, mode);
+    assert.deepEqual(fs.readdirSync(temporaryRoot), ["keep.txt"]);
+    assert.equal(fs.readFileSync(path.join(temporaryRoot, "keep.txt"), "utf8"), "existing data\n");
+  });
+}
+
+test("rejects a temporary root owned by another user even with safe permission bits", {
+  skip: !process.geteuid,
+}, async (t) => {
+  const { manager, temporaryRoot, input } = scratchFixture(t);
+  fs.mkdirSync(temporaryRoot, { mode: 0o700 });
+  const lstat = fsPromises.lstat;
+  const mock = t.mock.method(fsPromises, "lstat", async (...args) => {
+    const info = await lstat(...args);
+    if (args[0] === temporaryRoot) info.uid += 1n;
+    return info;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    mock.mock.restore();
+    syncBuiltinESMExports();
+  });
+
+  await assert.rejects(manager.prepare(input), /temporary root is not owned by the current user/);
+  assert.deepEqual(fs.readdirSync(temporaryRoot), []);
+});
+
+for (const mode of [0o700, 0o755]) {
+  test(`reuses an owned temporary root with safe permissions (${mode.toString(8)})`, {
+    skip: !process.geteuid,
+  }, async (t) => {
+    const { manager, temporaryRoot, input } = scratchFixture(t);
+    fs.mkdirSync(temporaryRoot);
+    fs.chmodSync(temporaryRoot, mode);
+    const workspace = await manager.prepare(input);
+
+    assert.equal(fs.statSync(temporaryRoot).mode & 0o777, mode);
+    assert.equal(fs.statSync(workspace.envelope.rootPath).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(workspace.worktreePath).mode & 0o777, 0o700);
+    await manager.cleanup(workspace);
+  });
+}
+
+test("rechecks cached temporary root permissions before preparation and workspace access", {
+  skip: !process.geteuid,
+}, async (t) => {
+  const { manager, temporaryRoot, input } = scratchFixture(t);
+  const workspace = await manager.prepare(input);
+  fs.writeFileSync(path.join(workspace.worktreePath, "evidence.txt"), "preserve me\n");
+  fs.chmodSync(temporaryRoot, 0o777);
+
+  for (const operation of [
+    () => manager.prepare(input),
+    () => manager.inspectScratch(workspace),
+    () => manager.expire(workspace),
+    () => manager.cleanup(workspace),
+  ]) {
+    await assert.rejects(operation(), /temporary root is writable by other users/);
+  }
+  assert.equal(fs.readFileSync(path.join(workspace.worktreePath, "evidence.txt"), "utf8"), "preserve me\n");
+  fs.chmodSync(temporaryRoot, 0o700);
+  await manager.cleanup(workspace);
+  assert.equal(fs.existsSync(workspace.envelope.rootPath), false);
+});
 
 for (const { name, count, suffix, truncated } of [
   { name: "entry limit", count: 256, suffix: "", truncated: true },

@@ -1323,6 +1323,16 @@ export class GitWorkspaceManager implements WorkspaceManager {
 		if (info.isSymbolicLink() || !info.isDirectory()) {
 			throw new WorkspaceConflictError(`${label} was replaced`);
 		}
+		const uid = process.geteuid?.();
+		if (cache === "temporaryRoot" && uid !== undefined) {
+			// mkdir's mode does not secure an existing root; its owner can replace child envelopes.
+			if (info.uid !== BigInt(uid)) {
+				throw new WorkspaceConflictError(`${label} is not owned by the current user`);
+			}
+			if ((info.mode & 0o022n) !== 0n) {
+				throw new WorkspaceConflictError(`${label} is writable by other users`);
+			}
+		}
 		const identity = { dev: info.dev, ino: info.ino };
 		const canonicalPath = await realpath(configuredPath);
 		const current = this[cache];
