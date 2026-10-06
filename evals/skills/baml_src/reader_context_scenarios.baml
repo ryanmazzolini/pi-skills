@@ -1,4 +1,4 @@
-// Three wording-only cases cover both artifacts and the short-output edge.
+// Four wording-only cases cover both artifacts, the short-output edge, and request deviations.
 // Review inspection is supplied evidence: these do not test defect detection.
 function ShelvingFlowEvidence() -> string {
     #"
@@ -71,6 +71,34 @@ function CodeReviewReaderContextScenarios() -> Scenario[] {
                 SemanticCriterion {
                     id: "clean-review",
                     description: "Returns exactly one Approve recommendation with no invented findings or confidence gaps. It does not omit the change explanation merely because approval is clean, or ask to rerun the supplied inspection.",
+                },
+            ],
+        ),
+        FramingScenario(
+            "code-review-reports-request-deviations",
+            "skills/review/code-review/SKILL.md",
+            "Write the final local-diff review from this completed inspection.",
+            #"
+                Story 6101: the hold-fulfillment worklist compares unfilled hold requests with available holdings, and library staff use it to decide what to move to the pickup shelf. Previously the demand side summed hold-request counts as though every line used the title's counting unit, so for a title counted in volumes with six volumes per set, three sets plus two volumes became five units instead of 20 volumes. The story asks that demand and holdings be compared in the same unit, with three acceptance criteria: (1) each SET request line converts to the title's counting unit using the request-unit size captured on the line; (2) when several catalog records carry different conversions, use the record with the lowest UUID so demand and holdings agree; (3) the worklist is compared before and after against the live dashboard for three branches. The story says nothing about logging.
+
+                Story comments: the author proposed reusing the holdings side's existing most-recently-updated-record rule instead of the lowest UUID, because the holdings side already uses it and switching both sides would widen the change; the product owner accepted this. The same thread defers the live-dashboard comparison to follow-up story 6102 after the author's own comparison found identical rows across five branches. The change does not claim to close story 6101.
+
+                Inspected diff: the demand aggregator converts each SET line by its captured request-unit size, divides by the title's counting-unit size, and rounds once after grouping to four decimals to match the holdings side. The conversion lookup previously embedded in the holdings calculator is extracted into one shared lookup used by both sides; its query, parsing, and fallback behavior are unchanged apart from a log prefix. A warning for mixed request units is replaced by a warning for lines lacking a usable conversion, and a new structured log line records the conversion source for each line so operators can trace that warning. Non-SET lines keep their counts. Manual-hold demand is already in counting units and is not converted again. Demand and holdings still query catalog metadata separately, so a concurrent catalog sync can make one refresh inconsistent; the worklist already read separate snapshots before this change. The author's production preflight found no current lines where request and counting units disagree.
+
+                Completed inspection: all five changed files, the acceptance criteria, and existing callers of the extracted lookup were checked. Focused lint and the full test suite passed, and a focused reproduction confirmed the conversion arithmetic. No introduced defects or open questions. Local diff with the story text and comments supplied above; no URLs are available in this fixture.
+            "#,
+            [
+                SemanticCriterion {
+                    id: "request-versus-result",
+                    description: "The summary states what story 6101 asked for and explicitly compares the result with it: the per-line conversion is delivered; the lowest-UUID rule was replaced by the most-recently-updated-record rule, with the stated reason and the product owner's acceptance; the live-dashboard comparison is deferred to story 6102 with its stated reason; and the conversion-source log line is an addition the story did not ask for. A review that describes the change without naming each deviation, or that presents the accepted deferral or accepted rule change as an introduced defect, fails. Accept any order, wording, or heading choice.",
+                },
+                SemanticCriterion {
+                    id: "decisions-and-reviewer-context",
+                    description: "The summary explains the trade-off behind reusing the existing conversion-selection rule rather than the lowest UUID, and tells the reviewer about the implementation details most likely to be misread as defects: the extracted shared lookup preserving the old query and fallback behavior, and the separate non-atomic snapshots that predate the change. Mentioning the replaced warning or the single rounding step is welcome but not required. These appear as context, not as findings or confidence gaps. Fail if the review invents a race, rounding, or logging defect from them.",
+                },
+                SemanticCriterion {
+                    id: "clean-review",
+                    description: "Returns exactly one Approve recommendation with no invented findings or confidence gaps. The accepted deferral, the accepted rule change, and the added log line do not lower the recommendation. It does not ask to rerun the supplied inspection or claim publication.",
                 },
             ],
         ),

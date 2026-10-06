@@ -35,7 +35,7 @@ Before returning the review result, stop processes and remove every clone, workt
 
 ## Inspect the behavior
 
-Trace the requested outcome and each acceptance criterion into the implementation and tests. Confirm that the change produces the promised behavior rather than merely resembling the requested implementation. Respect explicit partial scope; when a pull request claims to close an issue, report a material unmet outcome as an introduced finding.
+Trace the requested outcome and each acceptance criterion into the implementation and tests. Confirm that the change produces the promised behavior rather than merely resembling the requested implementation. Record each point where the result differs from the request: an outcome delivered differently, narrowed, deferred, or added beyond it, with the stated reason when one exists. The summary reports these whether or not they qualify as findings. Respect explicit partial scope; when a pull request claims to close an issue, report a material unmet outcome as an introduced finding.
 
 Inspect removed or narrowed behavior as well as additions, including changes to instructions and documentation. Trace affected existing use cases, callers, safeguards, and fallback paths into the revised behavior. When a procedure or abstraction disappears, check which guarantees it supplied and where any still-required guarantees now live; a replacement name or a passing new-use-case test is not enough.
 
@@ -150,11 +150,18 @@ Then scan every proposed change or test. Rewrite commands, including sentences u
 
 Write for a capable engineer who has not read the issue, diff, or investigation. Give every reviewed pull request, commit, or diff a summary, including clean approvals. Open the summary by explaining who uses the affected workflow, what they are trying to do, and what the previous behavior prevented or made difficult. State that previous behavior and its practical consequence explicitly; saying users can “now” do something does not explain what was wrong before. Then walk through the changed behavior and how it addresses that problem. For a preparatory refactor, explain what it enables and what stays unchanged. Use a concrete example when it makes the behavior easier to understand.
 
-Ground that explanation in the issue or other available intent source and the inspected implementation. Include consequential design choices and scope limits that affect how the reader should interpret the change. When intent is unavailable, name the context used and describe observed behavior without inventing requirements. Link the pull request and available issue; use implementation links for supporting detail, not as substitutes for the explanation.
+Ground that explanation in the issue or other available intent source and the inspected implementation. Beyond the problem and the changed behavior, every summary answers these questions:
+
+- **What was requested.** State what the linked issue asked for, including acceptance criteria and stated exclusions, so the reader can compare the request with the result.
+- **Where the result differs from the request.** State explicitly that the implementation matches the request, or list each deviation recorded during inspection with its stated reason. If a reason is missing, say so. Silence does not answer this question: a reader cannot tell a matching implementation from an unchecked one.
+- **Which decisions and trade-offs shaped it.** Name the consequential design choices, the alternatives the issue or author considered, and what each choice costs or rules out.
+- **What a reviewer should know before reading the diff.** Point out implementation details that are not defects but change how the diff reads, such as extracted or replaced code, changed defaults, preserved fallbacks, ordering or concurrency assumptions, and dependencies on other changes.
+
+Answer them in connected prose. A simple change can cover all four in a few sentences; do not pad an answer that has nothing to say beyond matching the request. When intent is unavailable, name the context used and describe observed behavior without inventing requirements. Link the pull request and available issue; use implementation links for supporting detail, not as substitutes for the explanation.
 
 Acknowledge consequential behavior removals in the summary and give their stated reasons. If a reason is missing, say so; do not present the loss as an agreed simplification.
 
-For related pull requests, first explain the combined outcome and any merge or rollout dependencies needed to understand the parts. Then keep each target's summary, recommendation, and proposed comments together. Use headings and paragraphs where they help navigation rather than forcing a fixed “Original issue / Change / Notable” template. Size the explanation to the change, not a sentence limit.
+For related pull requests, first explain the combined outcome and any merge or rollout dependencies needed to understand the parts. Then keep each target's summary, recommendation, and proposed comments together. Use headings when they help the reader navigate a long or multi-target review; do not turn the questions above into a fixed template. Size the explanation to the change, not a sentence limit.
 
 Give each reviewed pull request, commit, or diff exactly one recommendation:
 
@@ -166,6 +173,8 @@ Explain material limitations and business risks through their practical effects:
 
 Include validation when it changes confidence, explains uncertainty, or tells the reviewer what remains to verify. Routine successful checks can remain implicit; link evidence that materially changes confidence.
 
+Return the complete review in the response. When the caller or a companion workflow saves a report file, the file is a copy for later reference, not a replacement. Do not shorten the summary, recommendation rationale, or comments in the response because a fuller version exists in a file or an earlier message.
+
 Show every proposed inline comment with its changed-line reference followed by a blockquote containing the exact publishable body. In terminal responses, show the reference's full URL on its own line by default; use a labeled Markdown link only when the URL is very long and impairs readability. For local-only reviews, show the plain path instead. Preserve Markdown links inside the publishable body, including drafts shown in chat. Keep the classification and any required AI attribution inside that body. Let the recommendation and comment classifications carry the decision. Reserve wrapper headings, separate classification summaries, and grouping for multiple targets or findings that need them. Separate targets in a stack and assign each finding to the change that introduced it.
 
 Use **Existing issue** as the comment's classification, state that it predates the reviewed change, and link its tracking item when available.
@@ -176,7 +185,7 @@ When another skill supplies an output schema, follow its structure while preserv
 
 After drafting, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review, including the inline comments. Treat investigation notes and unapproved comment drafts as source material, not finished prose to copy. In each summary and comment, explain what a component, field, or background process does before relying on its name. Prefer the action and its result to internal shorthand; retain identifiers where they help locate or distinguish the code.
 
-Read the change summary without the findings or links. Check whether an engineer new to the work can explain the previous workflow, the problem, the changed workflow, and important limits without reconstructing the story from feature bullets. Then check that the review explains why the recommendation fits. If a sentence only names a mechanism, limitation, or risk, explain what it means for the affected person or system. Restore missing context before trimming repetition. Keep simple changes short when that explanation is already complete; concision means removing unnecessary work for the reader, not merely using fewer words.
+Read the change summary without the findings or links. Check whether an engineer new to the work can explain the previous workflow, the problem, what was requested, the changed workflow and where it differs from the request, the decisions behind it, and what to watch for in the diff, without reconstructing the story from feature bullets. Then check that the review explains why the recommendation fits. If a sentence only names a mechanism, limitation, or risk, explain what it means for the affected person or system. Restore missing context before trimming repetition. Keep simple changes short when that explanation is already complete; concision means removing unnecessary work for the reader, not merely using fewer words.
 
 ## PR-level discussion
 
