@@ -176,16 +176,16 @@ function CommitPrScenarios() -> Scenario[] {
             ],
             semanticCriteria: [
                 SemanticCriterion {
-                    id: "pr-title-names-result",
-                    description: "The PR title uses an unambiguous action verb and names the resulting operational behavior—preventing reconciliation waits or connection exhaustion—rather than merely naming row locks, NOWAIT, or an internal refactor. It does not rely on a word that can read as an adjective or result state instead of an action.",
+                    id: "pr-title-names-change",
+                    description: "The PR title uses an unambiguous action verb and concretely identifies the change or problem solved, such as replacing inner advisory locks with row locks or preventing reconciliation waits or connection exhaustion. A concrete mechanism title is valid without a downstream benefit; a vague title such as 'Improve reconciliation locking' is not. It does not rely on a word that can read as an adjective or result state instead of an action.",
                 },
                 SemanticCriterion {
-                    id: "pr-description-leads-with-behavior",
-                    description: "The Description leads with the concrete new reconciliation behavior or operational result, then explains the previous nested-lock failure and why it mattered. It does not lead with implementation mechanics or require the exact phrase 'With this change'.",
+                    id: "pr-description-explains-context",
+                    description: "The Description explains the previous nested-lock failure and why it mattered: workers could wait in open transactions while holding connections, risking pool exhaustion, and lock failures could be mistaken for duplicate jobs. It connects that problem to the new reconciliation behavior. Judge the explanation as a whole, not its opening or sentence order.",
                 },
                 SemanticCriterion {
                     id: "pr-body-explains-review-critical-mechanics",
-                    description: "After establishing the behavior, the body explains canonical receipt, command, and transfer row locking; async NOWAIT contention; retryable error propagation through Coil rollback and Sidekiq retry; blocking repair/backfill behavior; and the deferred active-statement or operational-wait limits. Description and Details may divide this content, but together they must present a complete causal explanation without repeating the same narrative.",
+                    description: "The body explains canonical receipt, command, and transfer row locking; async NOWAIT contention; retryable error propagation through Coil rollback and Sidekiq retry; blocking repair/backfill behavior; and the deferred active-statement or operational-wait limits. Description and Details may divide this content, but together they must present a complete causal explanation without repeating the same narrative.",
                 },
                 SemanticCriterion {
                     id: "pr-testing-and-approval-are-accurate",

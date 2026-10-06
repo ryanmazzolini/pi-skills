@@ -208,16 +208,16 @@ function CommitSimpleScenarios() -> Scenario[] {
             ],
             semanticCriteria: [
                 SemanticCriterion {
-                    id: "commit-subject-names-result",
-                    description: "The Conventional Commit subject names the operational result—preventing reconciliation waits or connection exhaustion—rather than merely naming row locks, NOWAIT, or an internal refactor.",
+                    id: "commit-subject-names-change",
+                    description: "The Conventional Commit subject concretely identifies the change or problem solved, such as replacing inner advisory locks with row locks or preventing reconciliation waits or connection exhaustion. A concrete mechanism subject is valid without a downstream benefit; a vague subject such as 'improve reconciliation locking' is not. Do not require exact wording.",
                 },
                 SemanticCriterion {
-                    id: "commit-body-leads-with-change",
-                    description: "Within the proposed Body, the first paragraph leads with the resulting reconciliation behavior and coordination change. It does not begin with investigation history, the old failure, or low-level implementation mechanics, and it does not need to use the exact phrase 'With this change'.",
+                    id: "commit-body-explains-context",
+                    description: "The Body explains why the change is needed: under the prior nested advisory lock, reconciliation workers could wait in open transactions while holding database connections, risking LDS pool exhaustion, and some inner lock failures were mistaken for duplicate Coil jobs. It connects that problem to the new locking behavior. Judge the explanation across the Body, not its first paragraph or sentence order.",
                 },
                 SemanticCriterion {
                     id: "commit-body-explains-causal-benefit",
-                    description: "The Body connects canonical row locks and async NOWAIT contention to the retryable error, Coil processed-marker rollback, and Sidekiq retry, then explains how this avoids workers waiting in open transactions with database connections. It contrasts the prior nested advisory lock and mistaken duplicate handling after establishing the new behavior.",
+                    description: "The Body connects canonical row locks and async NOWAIT contention to the retryable error, Coil processed-marker rollback, and Sidekiq retry, and explains how this avoids workers waiting in open transactions with database connections.",
                 },
                 SemanticCriterion {
                     id: "commit-body-keeps-material-boundaries",
