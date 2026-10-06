@@ -1,4 +1,4 @@
-// Three wording-only cases cover both artifacts and the short-output edge.
+// Four wording-only cases cover both artifacts, the short-output edge, and request deviations.
 // Review inspection is supplied evidence: these do not test defect detection.
 function PutawayFlowEvidence() -> string {
     #"
@@ -71,6 +71,34 @@ function CodeReviewReaderContextScenarios() -> Scenario[] {
                 SemanticCriterion {
                     id: "clean-review",
                     description: "Returns exactly one Approve recommendation with no invented findings or confidence gaps. It does not omit the change explanation merely because approval is clean, or ask to rerun the supplied inspection.",
+                },
+            ],
+        ),
+        FramingScenario(
+            "code-review-reports-request-deviations",
+            "skills/review/code-review/SKILL.md",
+            "Write the final local-diff review from this completed inspection.",
+            #"
+                Story 4821: the replenishment worklist compares remaining order demand with stock on hand, and planners use it to decide what to move into pick locations. Previously the demand side summed order-line counts as though every line used the item's stock unit, so for an item stocked in eaches with twelve eaches per case, two cases plus six eaches became eight units instead of 30 eaches. The story asks that demand and stock be compared in the same unit, with three acceptance criteria: (1) each CASE order line converts to the item's stock unit using the sale-unit size captured on the line; (2) when several item records carry different conversions, use the record with the lowest UUID so demand and stock agree; (3) the worklist is compared before and after against the live dashboard for two warehouses. The story says nothing about logging.
+
+                Story comments: the author proposed reusing the stock side's existing most-recently-updated-record rule instead of the lowest UUID, because the stock side already uses it and switching both sides would widen the change; the product owner accepted this. The same thread defers the live-dashboard comparison to follow-up story 4836 after the author's own comparison found identical rows across six warehouses. The change does not claim to close story 4821.
+
+                Inspected diff: the demand aggregator converts each CASE line by its captured sale-unit size, divides by the item's stock-unit size, and rounds once after grouping to six decimals to match the stock side. The conversion lookup previously embedded in the stock calculator is extracted into one shared lookup used by both sides; its query, parsing, and fallback behavior are unchanged apart from a log prefix. A warning for mixed sale units is replaced by a warning for lines lacking a usable conversion, and a new structured log line records the conversion source for each line so operators can trace that warning. Non-CASE lines keep their counts. Manual-order demand is already in stock units and is not converted again. Demand and stock still query item metadata separately, so a concurrent item sync can make one refresh inconsistent; the worklist already read separate snapshots before this change. The author's production preflight found no current lines where sale and stock units disagree.
+
+                Completed inspection: all five changed files, the acceptance criteria, and existing callers of the extracted lookup were checked. Focused lint and the full test suite passed, and a focused reproduction confirmed the conversion arithmetic. No introduced defects or open questions. Local diff with the story text and comments supplied above; no URLs are available in this fixture.
+            "#,
+            [
+                SemanticCriterion {
+                    id: "request-versus-result",
+                    description: "The summary states what story 4821 asked for and explicitly compares the result with it: the per-line conversion is delivered; the lowest-UUID rule was replaced by the most-recently-updated-record rule, with the stated reason and the product owner's acceptance; the live-dashboard comparison is deferred to story 4836 with its stated reason; and the conversion-source log line is an addition the story did not ask for. A review that describes the change without naming each deviation, or that presents the accepted deferral or accepted rule change as an introduced defect, fails. Accept any order, wording, or heading choice.",
+                },
+                SemanticCriterion {
+                    id: "decisions-and-reviewer-context",
+                    description: "The summary explains the trade-off behind reusing the existing conversion-selection rule rather than the lowest UUID, and tells the reviewer about the implementation details most likely to be misread as defects: the extracted shared lookup preserving the old query and fallback behavior, and the separate non-atomic snapshots that predate the change. Mentioning the replaced warning or the single rounding step is welcome but not required. These appear as context, not as findings or confidence gaps. Fail if the review invents a race, rounding, or logging defect from them.",
+                },
+                SemanticCriterion {
+                    id: "clean-review",
+                    description: "Returns exactly one Approve recommendation with no invented findings or confidence gaps. The accepted deferral, the accepted rule change, and the added log line do not lower the recommendation. It does not ask to rerun the supplied inspection or claim publication.",
                 },
             ],
         ),

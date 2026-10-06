@@ -291,6 +291,7 @@ testset "contracts" {
             "commit-pr-putaway-reader-context",
             "code-review-putaway-reader-context",
             "code-review-simple-change-stays-short",
+            "code-review-reports-request-deviations",
             "commit-simple-reframe-normalization-draft",
             "commit-simple-frame-preparatory-refactor",
             "shortcut-reframe-quantity-title",
