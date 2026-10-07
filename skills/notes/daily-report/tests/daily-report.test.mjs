@@ -303,7 +303,7 @@ test("missing optional CLIs still writes a partial report and exits successfully
   assert.doesNotMatch(promptEvidence, /reason|warning/i);
 });
 
-test("removed legacy schedule fields fail with shared-scheduler guidance", (t) => {
+test("removed legacy schedule fields fail with scheduler guidance", (t) => {
   const base = temporaryDirectory(t);
   const { configPath } = testConfig(base, false);
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -316,7 +316,7 @@ test("removed legacy schedule fields fail with shared-scheduler guidance", (t) =
     { encoding: "utf8" },
   );
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /schedule is no longer supported; declare cadence with scheduled-jobs/);
+  assert.match(result.stderr, /schedule is no longer supported; schedule `daily-report reconcile` with your scheduler instead\./);
 });
 
 test("legacy scheduler lifecycle commands are unavailable", () => {

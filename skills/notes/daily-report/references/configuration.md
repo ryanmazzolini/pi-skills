@@ -61,4 +61,4 @@ Generation uses an exclusive hidden lock beside each report. An interrupted proc
 
 ## Scheduling
 
-Daily-report does not configure or operate host schedulers. Declare a `scheduled-jobs` job that invokes `daily-report reconcile PROFILE --config <absolute-config-path>`; the shared scheduler owns cadence, platform adapters, lifecycle, and logs. The profile timezone still controls report dates and exact source windows, while the scheduler interprets its five-field schedule in the host timezone. Legacy profile `schedule` fields are rejected.
+Daily-report owns report generation and reconciliation, not host scheduling. Set cadence in whichever scheduler runs `daily-report reconcile PROFILE --config <absolute-config-path>`. The profile timezone controls report dates and exact source windows; the scheduler interprets its own schedule. Legacy profile `schedule` fields are rejected.

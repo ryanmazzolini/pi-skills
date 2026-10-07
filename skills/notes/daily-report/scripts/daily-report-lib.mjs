@@ -286,7 +286,7 @@ export function resolveProfile(config, profileName) {
   };
 
   if (Object.hasOwn(rawProfile, "schedule")) {
-    throw new DailyReportError(`${profileName}.schedule is no longer supported; declare cadence with scheduled-jobs.`);
+    throw new DailyReportError(`${profileName}.schedule is no longer supported; schedule \`daily-report reconcile\` with your scheduler instead.`);
   }
 
   return {
