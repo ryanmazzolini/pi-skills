@@ -7,8 +7,7 @@
     "pi-package"
   ],
   "bin": {
-    "daily-report": "skills/notes/daily-report/scripts/daily-report.mjs",
-    "scheduled-jobs": "bin/scheduled-jobs.mjs"
+    "daily-report": "skills/notes/daily-report/scripts/daily-report.mjs"
   },
   "engines": {
     "node": ">=24"

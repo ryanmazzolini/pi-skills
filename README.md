@@ -94,7 +94,6 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`first-mate`](./skills/first-mate/SKILL.md) | Inspect evidence, resolve blockers, and coordinate connected Pi sessions on request |
 | [`meta-review`](./skills/meta-review/SKILL.md) | Find testable improvements to skills and workflows from recent personal Pi sessions |
 | [`agent-coordination`](./skills/agent-coordination/SKILL.md) | Choose configured models and reasoning levels for delegated work |
-| [`scheduled-jobs`](./skills/scheduled-jobs/SKILL.md) | Inspect and operate reviewed recurring local jobs |
 | [`shortcut`](./skills/shortcut/shortcut/SKILL.md) | Work with Shortcut stories through the `short` CLI |
 | [`agent-browser`](./skills/agent-browser/agent-browser/SKILL.md) | Automate browsers and Electron apps |
 | [`herdr`](./skills/herdr/SKILL.md) | Control Herdr or continue Pi work in a fresh tab or workspace |
@@ -113,7 +112,7 @@ An explicit Intercom `send` starts the recipient turn without awaiting a respons
 
 ## Optional tooling
 
-[pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and Node.js 24 or newer are the package-wide requirements. The `node` executable must be available on `PATH`; it runs package scripts, the `intercom` broker, and installed scheduled-job snapshots. `daily-report` also needs Git, configured repositories, and a writable vault. Everything else is à la carte:
+[pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and Node.js 24 or newer are the package-wide requirements. The `node` executable must be available on `PATH`; it runs package scripts and the `intercom` broker. `daily-report` also needs Git, configured repositories, and a writable vault. Everything else is à la carte:
 
 - [GitHub CLI](https://cli.github.com/) adds GitHub evidence to `daily-report`.
 - [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) powers `shortcut` and can add Shortcut evidence to `daily-report`.
@@ -122,8 +121,6 @@ An explicit Intercom `send` starts the recipient turn without awaiting a respons
 - [agent-browser](https://github.com/vercel-labs/agent-browser) powers browser automation.
 - [Herdr](https://herdr.dev/) is only needed for Herdr-managed sessions.
 - [New BAML](https://new.boundaryml.com/) toolchain `0.15.0` powers the optional, local-only [skill behavior evals](./evals/skills/README.md).
-
-The scheduler uses launchd on macOS, systemd user timers on Linux, or `crontab` as a warned fallback.
 
 ## Also included
 
@@ -134,8 +131,7 @@ Pi gets a few extras that are not skills:
 - `intercom` provides local peer messaging, capability-gated bounded read-only tails, and optional ephemeral role labels for discovery.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
 - `pi-monitors` gives asynchronous monitor adapters one session status and the human-only `/monitors` panel for inspection, refresh, stop, and dismissal of bounded recent outcomes. Completed outcomes remain in the current conversation after their domain notification becomes durable. Trusted extensions can contribute adapters without importing this package by registering synchronously through `pi-monitors:discover-adapters:v1` during session startup. `monitor_github_pr` explicitly monitors an open GitHub pull request, polls comments and reviews with read-only `gh` requests, wakes the agent with bounded untrusted feedback, and reports one durable merged or closed outcome before stopping. Arbitrary `gh` commands do not create monitors.
-- `scheduled-jobs` adds the human-only `/scheduler` dashboard for task health, next runs, bounded run history and output, and reviewed lifecycle operations. Use arrows or `j`/`k` to select, `Tab` to switch Tasks/Runs, `Enter` for details, `a` for actions, `r` to refresh, and `q` or `Esc` to go back or close. Actions use Pi's native selection, confirmation, and loader UI; Run now blocks until the installed snapshot finishes. A compact footer appears whenever the dashboard classifies a task as Needs attention. Scheduler changes publish one count-only file per manifest, so open Pi sessions update through filesystem events without periodic overview scans.
-- `daily-report` and `scheduled-jobs` are also available as command-line tools.
+- `daily-report` is also available as a command-line tool.
 
 ### Advertise a role label
 

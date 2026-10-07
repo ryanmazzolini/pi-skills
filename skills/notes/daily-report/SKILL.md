@@ -23,7 +23,7 @@ node scripts/daily-report.mjs reconcile work --max-days 7 --refresh-partial
 
 ## Scheduling
 
-Daily-report owns report generation and reconciliation, not host scheduling. Use the shared `scheduled-jobs` CLI to declare and operate a job whose argv invokes `daily-report reconcile PROFILE --config <absolute-config-path>`. Keep cadence, adapter lifecycle, and scheduler logs in `scheduled-jobs`.
+Daily-report owns report generation and reconciliation, not host scheduling. Set cadence in whichever scheduler runs `daily-report reconcile PROFILE --config <absolute-config-path>`. The profile timezone controls report dates and source windows; the scheduler interprets its own schedule.
 
 ## Rules
 
