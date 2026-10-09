@@ -5,7 +5,7 @@ description: "Choose models and reasoning levels for delegated agents using conf
 
 # Agent Coordination
 
-Use this only in the parent coordinator. The extension owns execution mechanics; this skill owns model-routing judgment.
+Use this only in the parent coordinator. The `delegate` tool comes from the separate `pi-delegate` package and owns execution mechanics; this skill owns model-routing judgment. If the tool is missing, report that and let the calling skill finish its own cleanup; don't substitute another mechanism.
 
 ## Load Routing Policy
 
