@@ -103,7 +103,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 
 Start First Mate with `/skill:first-mate`, optionally followed by a task. For example, ask why one project stopped: it reads that session's context and relevant work record rather than reviewing every idle session or waking the owner for a summary. Without a narrower task, it looks for the most useful next action across connected sessions.
 
-First Mate uses Intercom's general tools: it lists sessions, reads the relevant ones with `tail`, and summarizes what it reads, along with project files.
+First Mate needs the `intercom` tool from [pi-intercom](https://github.com/ryanmazzolini/pi-intercom). It lists sessions, reads the relevant ones with `tail`, and summarizes what it reads, along with project files.
 
 Within the requested scope, First Mate can authorize the existing very-low-risk actions, such as a prepared feature-branch commit, ordinary feature push, or draft PR, and resume clearly unfinished work that needs no new decision. Inspection-only questions stay read-only. Approval requires current evidence and a sole advertised First Mate; labels and summaries do not grant authority. Human choices are presented with the exact action, target, and material fences. Project sessions retain execution and normal approval gates; First Mate never edits project state, performs cleanup itself, or closes sessions.
 
@@ -113,7 +113,7 @@ An explicit Intercom `send` starts the recipient turn without awaiting a respons
 
 ## Optional tooling
 
-[pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and Node.js 24 or newer are the package-wide requirements. The `node` executable must be available on `PATH`; it runs package scripts and the `intercom` broker. `daily-report` also needs Git, configured repositories, and a writable vault. Everything else is à la carte:
+[pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) and Node.js 24 or newer are the package-wide requirements. The `node` executable must be available on `PATH`; it runs package scripts. `daily-report` also needs Git, configured repositories, and a writable vault. Everything else is à la carte:
 
 - [GitHub CLI](https://cli.github.com/) adds GitHub evidence to `daily-report`.
 - [Shortcut CLI](https://github.com/useshortcut/shortcut-cli) powers `shortcut` and can add Shortcut evidence to `daily-report`.
@@ -128,29 +128,16 @@ An explicit Intercom `send` starts the recipient turn without awaiting a respons
 Pi gets a few extras that are not skills:
 
 - `session-id` keeps the active Pi session ID visible in the footer.
-- `delegate` runs child agents in the background and adds an Agent Desk for inspecting and controlling them. Children load no ambient extensions; to also load the extensions of installed packages a child's model needs (for example `pi-claude-bridge`), list them in `~/.pi/agent/delegate.json` as `{ "childExtensions": ["pi-claude-bridge"] }`.
-- `intercom` provides local peer messaging, capability-gated bounded read-only tails, and optional ephemeral role labels for discovery.
 - `editor-links` turns file paths into links that open in Zed through a local bridge.
 - `pi-monitors` gives asynchronous monitor adapters one session status and the human-only `/monitors` panel for inspection, refresh, stop, and dismissal of bounded recent outcomes. Completed outcomes remain in the current conversation after their domain notification becomes durable. Trusted extensions can contribute adapters without importing this package by registering synchronously through `pi-monitors:discover-adapters:v1` during session startup. `monitor_github_pr` explicitly monitors an open GitHub pull request, polls comments and reviews with read-only `gh` requests, wakes the agent with bounded untrusted feedback, and reports one durable merged or closed outcome before stopping. Arbitrary `gh` commands do not create monitors.
 - `daily-report` is also available as a command-line tool.
 
-### Advertise a role label
+Intercom and Delegate used to live here and are now separate packages: [pi-intercom](https://github.com/ryanmazzolini/pi-intercom) and [pi-delegate](https://github.com/ryanmazzolini/pi-delegate). First Mate and `meta-review` need Intercom; `agent-coordination`, `meta-review`, and Ship's delegation steps need Delegate.
 
-On an explicit user request or as directed by an explicitly invoked skill, publish a label with `intercom({ action: "role", role: "oncall-triage" })`. Use `intercom({ action: "role" })` to clear it. Labels contain 1–64 lowercase letters or digits, with single hyphens separating words. Publishing replaces the session's previous label; new sessions have none.
-
-`list` shows each session's label, and `status` shows your current label. Labels such as `first-mate`, `oncall-triage`, and `project-manager` are self-declared discovery metadata. Multiple sessions may share a label. Intercom grants no authority, reserves no ownership, and does not route messages to labels; resolve an exact session ID before contact. Agents and skills decide what labels mean and retain their normal approval rules.
-
-Labels are ephemeral: tree navigation, compaction, reload, session replacement, and disconnect clear them. Reconnecting does not automatically republish a label. First Mate publishes `first-mate` on explicit skill invocation. Its approval policy remains separate from role discovery.
-
-**Upgrade together:** generic labels use the `session-role-v1` capability and are not compatible with older role-aware clients. Install the update, reload or restart all Pi sessions, and restart the detached Intercom broker before publishing labels. A Pi reload or Herdr restart alone need not replace that broker. There is no mixed-version translation layer.
-
-### Read older session messages
-
-Start with `intercom({ action: "tail", to: "<session-id>", paginate: true })`. It returns a JSON page with original entry IDs and `nextCursor`. Read the next older page with `intercom({ action: "tail", cursor: "<nextCursor>" })`, without `to` or `paginate`. Stop when `nextCursor` is `null`.
-
-Pages stay on the initially inspected branch and can continue after the peer disconnects. They verify the source on each read; they are not immutable transcript copies. Text fragments include UTF-16 `textRange` offsets so long messages remain reconstructable. Thinking, images, tool payloads, and extension-private state remain excluded; completed tool/Bash outcome indicators remain bounded.
-
-`tailProjectionBytes` bounds the complete page text, including metadata and escaped characters (default 48 KiB). Cursors are private to the inspecting session, expire after 30 minutes, and are cleared on reload or session replacement. At most 128 tokens are retained; older tokens may be evicted sooner. An invalid or expired cursor requires a new read from a connected session. Ordinary `tail` calls without `paginate` keep their existing output.
+```bash
+pi install git:github.com/ryanmazzolini/pi-intercom
+pi install git:github.com/ryanmazzolini/pi-delegate
+```
 
 ## Contributing
 
