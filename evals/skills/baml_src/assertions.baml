@@ -35,7 +35,7 @@ function ToolArgumentText(call: ToolCallRecord) -> string {
         call.command ?? "",
         call.content ?? "",
     ]
-    .join("\n")
+        .join("\n")
 }
 
 function CommandHasMatchingSegment(
@@ -46,9 +46,7 @@ function CommandHasMatchingSegment(
     for (let and_group in command.split("&&")) {
         for (let segment in and_group.split(";")) {
             let includes_required = segment.includes(included_text);
-            let includes_excluded
-                = excluded_text.length() > 0
-                && segment.includes(excluded_text);
+            let includes_excluded = excluded_text.length() > 0 && segment.includes(excluded_text);
             if (includes_required && !includes_excluded) {
                 return true;
             };
@@ -103,8 +101,9 @@ function EvaluateToolCount(
         `Observed ${matching.length()} matching ${assertion.tool} call(s) across ${scope}; expected ${expected.join(" and ")}.`,
     ];
     for (let call in matching) {
-        evidence
-            .push(`tool call ${call.index} (turn ${call.turn + 1}): ${baml.json.to_string(call)}`);
+        evidence.push(
+            `tool call ${call.index} (turn ${call.turn + 1}): ${baml.json.to_string(call)}`,
+        );
     }
     ;
     HardAssertionResult { description: assertion.description, passed: passed, evidence: evidence }

@@ -1,5 +1,5 @@
 function CommitPrWorkItem() -> string {
-    #"
+    "
         # SC-10101 — Replace inner advisory locks with row locks
 
         Shortcut: https://app.shortcut.com/acme/story/10101
@@ -9,7 +9,7 @@ function CommitPrWorkItem() -> string {
         The branch removes the inner advisory-lock layer. Sync locks affected return, command, and transfer rows in canonical order. Async jobs use `FOR UPDATE NOWAIT`; a busy row or expanded component raises `RetryableSync`, rolls back Inbox's processed marker, and lets Sidekiq retry. Repair and backfill callers retain blocking row locks.
 
         This bounds async connection wait time. Active statement duration and blocking operational callers remain outside this change.
-    "#
+    "
 }
 
 function CommitPrInspectionOutput() -> string {

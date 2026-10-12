@@ -1,5 +1,5 @@
 function HerdrHelpOutput() -> string {
-    #"
+    "
         herdr — terminal workspace manager for AI coding agents
 
         Common commands:
@@ -7,7 +7,7 @@ function HerdrHelpOutput() -> string {
           herdr tab <subcommand>
           herdr pane <subcommand>
           herdr agent <subcommand>
-    "#
+    "
 }
 
 function HerdrBehaviorCriteria() -> SemanticCriterion[] {
@@ -79,41 +79,41 @@ function HerdrReuseCwdMismatchScenario(already_approved: bool) -> Scenario {
             BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
             BashResponse {
                 includes: "herdr pane current",
-                output: #"
-                    {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-                "#,
+                output: "
+                    {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+                ",
             },
             BashResponse {
                 includes: "herdr workspace list",
-                output: #"
-                    {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"reviews","workspace_id":"w11"}]}}
-                "#,
+                output: "
+                    {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"reviews\",\"workspace_id\":\"w11\"}]}}
+                ",
             },
             BashResponse {
                 includes: "herdr tab list",
-                output: #"
-                    {"result":{"tabs":[{"label":"parser-cleanup","tab_id":"w11:t7","workspace_id":"w11"}]}}
-                "#,
+                output: "
+                    {\"result\":{\"tabs\":[{\"label\":\"parser-cleanup\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}]}}
+                ",
             },
             BashResponse {
                 includes: "herdr tab get",
-                output: #"
-                    {"result":{"tab":{"label":"parser-cleanup","tab_id":"w11:t7","workspace_id":"w11"}}}
-                "#,
+                output: "
+                    {\"result\":{\"tab\":{\"label\":\"parser-cleanup\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}}}
+                ",
             },
             BashResponse {
                 includes: "herdr pane list",
-                output: #"
-                    {"result":{"panes":[{"agent":null,"cwd":"/Users/dev/git/web","pane_id":"w11:p7","tab_id":"w11:t7","workspace_id":"w11"}]}}
+                output: "
+                    {\"result\":{\"panes\":[{\"agent\":null,\"cwd\":\"/Users/dev/git/web\",\"pane_id\":\"w11:p7\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}]}}
                     Shell state for w11:p7: interactive shell prompt; no running command.
-                "#,
+                ",
             },
             BashResponse {
                 includes: "herdr pane get",
-                output: #"
-                    {"result":{"pane":{"agent":null,"cwd":"/Users/dev/git/web","pane_id":"w11:p7","tab_id":"w11:t7","workspace_id":"w11"}}}
+                output: "
+                    {\"result\":{\"pane\":{\"agent\":null,\"cwd\":\"/Users/dev/git/web\",\"pane_id\":\"w11:p7\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}}}
                     Shell state for w11:p7: interactive shell prompt; no running command.
-                "#,
+                ",
             },
             BashResponse {
                 includes: "herdr tab",
@@ -159,21 +159,21 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","focused":true,"pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"focused\":true,\"pane_id\":\"w11:p2\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"reviews","workspace_id":"w11"},{"label":"pi-skills","workspace_id":"wX"},{"label":"oncall-scripts","workspace_id":"w30"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"reviews\",\"workspace_id\":\"w11\"},{\"label\":\"pi-skills\",\"workspace_id\":\"wX\"},{\"label\":\"oncall-scripts\",\"workspace_id\":\"w30\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab list",
-                    output: #"
-                        {"result":{"tabs":[{"label":"1","tab_id":"w11:t2","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tabs\":[{\"label\":\"1\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab",
@@ -214,27 +214,27 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","focused":true,"pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"focused\":true,\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"oncall-scripts","workspace_id":"w30"},{"label":"reviews","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"oncall-scripts\",\"workspace_id\":\"w30\"},{\"label\":\"reviews\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"cwd":"/Users/dev/git/oncall-scripts","pane_id":"w30:p5","tab_id":"w30:t1","workspace_id":"w30"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"cwd\":\"/Users/dev/git/oncall-scripts\",\"pane_id\":\"w30:p5\",\"tab_id\":\"w30:t1\",\"workspace_id\":\"w30\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab list",
-                    output: #"
-                        {"result":{"tabs":[{"label":"1","tab_id":"w30:t1","workspace_id":"w30"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tabs\":[{\"label\":\"1\",\"tab_id\":\"w30:t1\",\"workspace_id\":\"w30\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab",
@@ -283,27 +283,27 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/personal/worktrees/herdr-workspace/pi-skills","focused":true,"pane_id":"w42:p1","tab_id":"w42:t1","workspace_id":"w42"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/personal/worktrees/herdr-workspace/pi-skills\",\"focused\":true,\"pane_id\":\"w42:p1\",\"tab_id\":\"w42:t1\",\"workspace_id\":\"w42\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"sc-70000-unrelated-ticket","workspace_id":"w42"},{"label":"pi-skills","workspace_id":"wX"},{"label":"reviews","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"sc-70000-unrelated-ticket\",\"workspace_id\":\"w42\"},{\"label\":\"pi-skills\",\"workspace_id\":\"wX\"},{\"label\":\"reviews\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"cwd":"/Users/dev/personal/pi-skills","pane_id":"wX:p1","tab_id":"wX:t1","workspace_id":"wX"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"cwd\":\"/Users/dev/personal/pi-skills\",\"pane_id\":\"wX:p1\",\"tab_id\":\"wX:t1\",\"workspace_id\":\"wX\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab list",
-                    output: #"
-                        {"result":{"tabs":[{"label":"1","tab_id":"wX:t1","workspace_id":"wX"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tabs\":[{\"label\":\"1\",\"tab_id\":\"wX:t1\",\"workspace_id\":\"wX\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab",
@@ -360,21 +360,21 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan","focused":true,"pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/ryan\",\"focused\":true,\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"pi-skills","workspace_id":"wX"},{"label":"pi-skills","workspace_id":"wY"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"pi-skills\",\"workspace_id\":\"wX\"},{\"label\":\"pi-skills\",\"workspace_id\":\"wY\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"cwd":"/Users/dev/personal/pi-skills","pane_id":"wX:p1","workspace_id":"wX"},{"cwd":"/Users/dev/personal/pi-skills","pane_id":"wY:p1","workspace_id":"wY"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"cwd\":\"/Users/dev/personal/pi-skills\",\"pane_id\":\"wX:p1\",\"workspace_id\":\"wX\"},{\"cwd\":\"/Users/dev/personal/pi-skills\",\"pane_id\":\"wY:p1\",\"workspace_id\":\"wY\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "git remote",
@@ -411,21 +411,21 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan","focused":true,"pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/ryan\",\"focused\":true,\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"pi-skills","workspace_id":"wX"},{"label":"reviews","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"pi-skills\",\"workspace_id\":\"wX\"},{\"label\":\"reviews\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"cwd":"/Users/dev/personal/pi-skills","pane_id":"wX:p1","workspace_id":"wX"},{"cwd":"/Users/dev/git","pane_id":"w11:p1","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"cwd\":\"/Users/dev/personal/pi-skills\",\"pane_id\":\"wX:p1\",\"workspace_id\":\"wX\"},{\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w11:p1\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "git remote",
@@ -465,27 +465,27 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w11:p2\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"reviews","workspace_id":"w11"},{"label":"api","workspace_id":"w20"},{"label":"web","workspace_id":"w21"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"reviews\",\"workspace_id\":\"w11\"},{\"label\":\"api\",\"workspace_id\":\"w20\"},{\"label\":\"web\",\"workspace_id\":\"w21\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"cwd":"/Users/dev/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"},{"cwd":"/Users/dev/git/api","pane_id":"w20:p1","workspace_id":"w20"},{"cwd":"/Users/dev/git/web","pane_id":"w21:p1","workspace_id":"w21"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w11:p2\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"},{\"cwd\":\"/Users/dev/git/api\",\"pane_id\":\"w20:p1\",\"workspace_id\":\"w20\"},{\"cwd\":\"/Users/dev/git/web\",\"pane_id\":\"w21:p1\",\"workspace_id\":\"w21\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab list",
-                    output: #"
-                        {"result":{"tabs":[{"label":"gh-3496","tab_id":"w11:t2","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tabs\":[{\"label\":\"gh-3496\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab",
@@ -531,27 +531,27 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/personal/pi-skills","pane_id":"wX:p1","tab_id":"wX:t1","workspace_id":"wX"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/personal/pi-skills\",\"pane_id\":\"wX:p1\",\"tab_id\":\"wX:t1\",\"workspace_id\":\"wX\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"pi-skills","workspace_id":"wX"},{"label":"reviews","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"pi-skills\",\"workspace_id\":\"wX\"},{\"label\":\"reviews\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"cwd":"/Users/dev/personal/pi-skills","pane_id":"wX:p1","tab_id":"wX:t1","workspace_id":"wX"},{"cwd":"/Users/dev/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"cwd\":\"/Users/dev/personal/pi-skills\",\"pane_id\":\"wX:p1\",\"tab_id\":\"wX:t1\",\"workspace_id\":\"wX\"},{\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w11:p2\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab list",
-                    output: #"
-                        {"result":{"tabs":[{"label":"gh-3496","tab_id":"w11:t2","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tabs\":[{\"label\":\"gh-3496\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab",
@@ -608,21 +608,21 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"api","workspace_id":"w20"},{"label":"web","workspace_id":"w21"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"api\",\"workspace_id\":\"w20\"},{\"label\":\"web\",\"workspace_id\":\"w21\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"cwd":"/Users/dev/git","pane_id":"w18:p1","workspace_id":"w18"},{"cwd":"/Users/dev/git/api","pane_id":"w20:p1","workspace_id":"w20"},{"cwd":"/Users/dev/git/web","pane_id":"w21:p1","workspace_id":"w21"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w18:p1\",\"workspace_id\":\"w18\"},{\"cwd\":\"/Users/dev/git/api\",\"pane_id\":\"w20:p1\",\"workspace_id\":\"w20\"},{\"cwd\":\"/Users/dev/git/web\",\"pane_id\":\"w21:p1\",\"workspace_id\":\"w21\"}]}}
+                    ",
                 },
                 BashResponse { includes: "test -f", output: "" },
                 BashResponse { includes: "test -d", output: "" },
@@ -664,15 +664,15 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","focused":true,"pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"focused\":true,\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"reviews","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"reviews\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace",
@@ -713,33 +713,33 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/ryan","focused":true,"pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/ryan\",\"focused\":true,\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"pi-skills","workspace_id":"wX"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"pi-skills\",\"workspace_id\":\"wX\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab list",
-                    output: #"
-                        {"result":{"tabs":[{"agent_status":"idle","label":"parser-cleanup","tab_id":"wX:t7","workspace_id":"wX"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tabs\":[{\"agent_status\":\"idle\",\"label\":\"parser-cleanup\",\"tab_id\":\"wX:t7\",\"workspace_id\":\"wX\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab get",
-                    output: #"
-                        {"result":{"tab":{"agent_status":"idle","label":"parser-cleanup","tab_id":"wX:t7","workspace_id":"wX"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tab\":{\"agent_status\":\"idle\",\"label\":\"parser-cleanup\",\"tab_id\":\"wX:t7\",\"workspace_id\":\"wX\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"agent":"pi","agent_status":"idle","cwd":"/Users/dev/personal/pi-skills","pane_id":"wX:p7","tab_id":"wX:t7","workspace_id":"wX"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"agent\":\"pi\",\"agent_status\":\"idle\",\"cwd\":\"/Users/dev/personal/pi-skills\",\"pane_id\":\"wX:p7\",\"tab_id\":\"wX:t7\",\"workspace_id\":\"wX\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab",
@@ -775,33 +775,33 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w11:p2\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"reviews","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"reviews\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab list",
-                    output: #"
-                        {"result":{"tabs":[{"label":"1","tab_id":"w11:t2","workspace_id":"w11"},{"label":"gh-72","tab_id":"w11:t7","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tabs\":[{\"label\":\"1\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"},{\"label\":\"gh-72\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab get",
-                    output: #"
-                        {"result":{"tab":{"label":"gh-72","tab_id":"w11:t7","workspace_id":"w11"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tab\":{\"label\":\"gh-72\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"agent":"pi","agent_status":"idle","cwd":"/Users/dev/git/web","pane_id":"w11:p7","tab_id":"w11:t7","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"agent\":\"pi\",\"agent_status\":\"idle\",\"cwd\":\"/Users/dev/git/web\",\"pane_id\":\"w11:p7\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab",
@@ -845,27 +845,27 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w11:p2\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"reviews","workspace_id":"w11"},{"label":"api","workspace_id":"w20"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"reviews\",\"workspace_id\":\"w11\"},{\"label\":\"api\",\"workspace_id\":\"w20\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"cwd":"/Users/dev/git","pane_id":"w11:p2","tab_id":"w11:t2","workspace_id":"w11"},{"cwd":"/Users/dev/git/api","pane_id":"w20:p1","workspace_id":"w20"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w11:p2\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"},{\"cwd\":\"/Users/dev/git/api\",\"pane_id\":\"w20:p1\",\"workspace_id\":\"w20\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab list",
-                    output: #"
-                        {"result":{"tabs":[{"label":"gh-3496","tab_id":"w11:t2","workspace_id":"w11"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tabs\":[{\"label\":\"gh-3496\",\"tab_id\":\"w11:t2\",\"workspace_id\":\"w11\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab",
@@ -904,21 +904,21 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"api","workspace_id":"w20"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"api\",\"workspace_id\":\"w20\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace create",
-                    output: #"
-                        {"result":{"workspace_id":"w40","tab_id":"w40:t1","pane_id":"w40:p1","label":"incident-response","cwd":"/Users/dev/git/api"}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspace_id\":\"w40\",\"tab_id\":\"w40:t1\",\"pane_id\":\"w40:p1\",\"label\":\"incident-response\",\"cwd\":\"/Users/dev/git/api\"}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace",
@@ -926,15 +926,15 @@ function HerdrScenarios() -> Scenario[] {
                 },
                 BashResponse {
                     includes: "herdr tab rename",
-                    output: #"
-                        {"result":{"tab_id":"w40:t1","workspace_id":"w40","label":"cache-timeouts"}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tab_id\":\"w40:t1\",\"workspace_id\":\"w40\",\"label\":\"cache-timeouts\"}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab get",
-                    output: #"
-                        {"result":{"tab":{"tab_id":"w40:t1","workspace_id":"w40","label":"cache-timeouts"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tab\":{\"tab_id\":\"w40:t1\",\"workspace_id\":\"w40\",\"label\":\"cache-timeouts\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab",
@@ -942,22 +942,22 @@ function HerdrScenarios() -> Scenario[] {
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"cwd":"/Users/dev/git/api","pane_id":"w20:p1","workspace_id":"w20"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"cwd\":\"/Users/dev/git/api\",\"pane_id\":\"w20:p1\",\"workspace_id\":\"w20\"}]}}
+                    ",
                 },
                 BashResponse { includes: "herdr agent get", output: "agent_not_found" },
                 BashResponse {
                     includes: "herdr agent start",
-                    output: #"
-                        {"result":{"agent":"pi","agent_status":"idle","pane_id":"w40:p1"}}
-                    "#,
+                    output: "
+                        {\"result\":{\"agent\":\"pi\",\"agent_status\":\"idle\",\"pane_id\":\"w40:p1\"}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr agent wait",
-                    output: #"
-                        {"result":{"agent_status":"idle","pane_id":"w40:p1"}}
-                    "#,
+                    output: "
+                        {\"result\":{\"agent_status\":\"idle\",\"pane_id\":\"w40:p1\"}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr agent",
@@ -965,15 +965,15 @@ function HerdrScenarios() -> Scenario[] {
                 },
                 BashResponse {
                     includes: "herdr pane get w18:p1",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","pane_id":"w18:p1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w18:p1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane get",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/destination.jsonl"},"agent_status":"idle","cwd":"/Users/dev/git/api","pane_id":"w40:p1","tab_id":"w40:t1","workspace_id":"w40"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/destination.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"/Users/dev/git/api\",\"pane_id\":\"w40:p1\",\"tab_id\":\"w40:t1\",\"workspace_id\":\"w40\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane",
@@ -1025,46 +1025,46 @@ function HerdrScenarios() -> Scenario[] {
                 BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
                 BashResponse {
                     includes: "herdr pane current",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"agent_status":"working","cwd":"/Users/dev/git","focused":true,"pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"agent_status\":\"working\",\"cwd\":\"/Users/dev/git\",\"focused\":true,\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr workspace list",
-                    output: #"
-                        {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"oncall-scripts","workspace_id":"w30"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"oncall-scripts\",\"workspace_id\":\"w30\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane list",
-                    output: #"
-                        {"result":{"panes":[{"agent":"pi","agent_status":"idle","cwd":"/Users/dev/git/oncall-scripts","pane_id":"w30:p5","tab_id":"w30:t1","workspace_id":"w30"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"panes\":[{\"agent\":\"pi\",\"agent_status\":\"idle\",\"cwd\":\"/Users/dev/git/oncall-scripts\",\"pane_id\":\"w30:p5\",\"tab_id\":\"w30:t1\",\"workspace_id\":\"w30\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab list",
-                    output: #"
-                        {"result":{"tabs":[{"label":"1","tab_id":"w30:t1","workspace_id":"w30"}]}}
-                    "#,
+                    output: "
+                        {\"result\":{\"tabs\":[{\"label\":\"1\",\"tab_id\":\"w30:t1\",\"workspace_id\":\"w30\"}]}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr tab create",
-                    output: #"
-                        {"result":{"workspace_id":"w30","tab_id":"w30:t9","pane_id":"w30:p9","label":"10000000001","cwd":"/Users/dev/git/oncall-scripts"}}
-                    "#,
+                    output: "
+                        {\"result\":{\"workspace_id\":\"w30\",\"tab_id\":\"w30:t9\",\"pane_id\":\"w30:p9\",\"label\":\"10000000001\",\"cwd\":\"/Users/dev/git/oncall-scripts\"}}
+                    ",
                 },
                 BashResponse { includes: "herdr agent get", output: "agent_not_found" },
                 BashResponse {
                     includes: "herdr agent start",
-                    output: #"
-                        {"result":{"agent":"pi","agent_status":"idle","pane_id":"w30:p9"}}
-                    "#,
+                    output: "
+                        {\"result\":{\"agent\":\"pi\",\"agent_status\":\"idle\",\"pane_id\":\"w30:p9\"}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr agent wait",
-                    output: #"
-                        {"result":{"agent_status":"idle","pane_id":"w30:p9"}}
-                    "#,
+                    output: "
+                        {\"result\":{\"agent_status\":\"idle\",\"pane_id\":\"w30:p9\"}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr agent",
@@ -1072,15 +1072,15 @@ function HerdrScenarios() -> Scenario[] {
                 },
                 BashResponse {
                     includes: "herdr pane get w18:p1",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","pane_id":"w18:p1","workspace_id":"w18"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w18:p1\",\"workspace_id\":\"w18\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane get",
-                    output: #"
-                        {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/destination.jsonl"},"agent_status":"idle","cwd":"/Users/dev/git/oncall-scripts","pane_id":"w30:p9","tab_id":"w30:t9","workspace_id":"w30"}}}
-                    "#,
+                    output: "
+                        {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/destination.jsonl\"},\"agent_status\":\"idle\",\"cwd\":\"/Users/dev/git/oncall-scripts\",\"pane_id\":\"w30:p9\",\"tab_id\":\"w30:t9\",\"workspace_id\":\"w30\"}}}
+                    ",
                 },
                 BashResponse {
                     includes: "herdr pane",

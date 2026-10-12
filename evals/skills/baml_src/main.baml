@@ -1,5 +1,9 @@
+function NowMs() -> int {
+    baml.time.Instant.now().to_timestamp_milliseconds().to_int()
+}
+
 function EvalModelLabel(route: string) -> string {
-    `openai-responses/gpt-5.6-luna (reasoning: high) via ${route}`
+    `openai-responses/${EvalModel()} (reasoning: ${EvalReasoningEffort()}) via ${route}`
 }
 
 function RunOne(
@@ -8,8 +12,8 @@ function RunOne(
     repetition: int,
     skip_judge: bool,
 ) -> SubjectRun {
-    let started = baml.sys.now_ms();
-    if (baml.env.get("OPENAI_API_KEY") == null) {
+    let started = NowMs();
+    if (!UsesChatGptPlan() && baml.env.get("OPENAI_API_KEY") == null) {
         return SubjectRun {
             scenarioId: scenario.id,
             scenarioTitle: scenario.title,
@@ -22,7 +26,7 @@ function RunOne(
             judge: null,
             judgeError: null,
             runError: "OPENAI_API_KEY is required for live subject and judge calls.",
-            durationMs: baml.sys.now_ms() - started,
+            durationMs: NowMs() - started,
         };
     };
     let partial_state = NewHarnessState();
@@ -31,7 +35,7 @@ function RunOne(
     };
     match (state) {
         null => {
-            let duration = baml.sys.now_ms() - started;
+            let duration = NowMs() - started;
             SubjectRun {
                 scenarioId: scenario.id,
                 scenarioTitle: scenario.title,
@@ -54,18 +58,14 @@ function RunOne(
             if (!skip_judge && value.error == null) {
                 let provider_error: string? = null;
                 let raw: JudgeResult? = JudgeCase(scenario, skill_text, value.transcript, value.toolCalls, hard) catch_all (error) {
-                    let failure: baml.errors.LlmClient => {
-                        provider_error
-                            = "Judge provider error: " + SafeRuntimeError(failure.message);
-                        null
-                    },
-                    let failure: baml.errors.RenderPrompt => {
-                        provider_error = "Judge prompt error: " + SafeRuntimeError(failure.message);
-                        null
-                    },
                     let failure: baml.errors.Timeout => {
                         provider_error
                             = "Judge provider timeout: " + SafeRuntimeError(failure.message);
+                        null
+                    },
+                    let failure: ai.errors.Failure => {
+                        provider_error
+                            = "Judge model error: " + SafeRuntimeError(ModelFailureMessage(failure));
                         null
                     },
                     _ => {
@@ -98,7 +98,7 @@ function RunOne(
                 judge: judge,
                 judgeError: judge_error,
                 runError: value.error,
-                durationMs: baml.sys.now_ms() - started,
+                durationMs: NowMs() - started,
             };
             run
         },
@@ -128,10 +128,10 @@ function BuildEvalReport(
         ;
     }
     ;
-    let model_label = EvalModelLabel(baml.env.get("SKILL_EVAL_ROUTE") ?? "direct");
+    let model_label = EvalModelLabel(EvalRoute());
     EvalReport {
         formatVersion: 2,
-        createdAtMs: baml.sys.now_ms(),
+        createdAtMs: NowMs(),
         gitHead: GitHead(),
         skillPath: skill_path,
         scenarioSkillTarget: scenario_skill_target,
@@ -155,7 +155,7 @@ function RunEvals(
     skip_judge: bool = false,
 ) -> RunSummary[] {
     let destination = if (output_dir == null) {
-        RepoRoot() + "/.skill-eval-results/" + baml.sys.now_ms().to_string()
+        RepoRoot() + "/.skill-eval-results/" + NowMs().to_string()
     } else {
         ResolveRepoPath(output_dir)
     };

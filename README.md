@@ -121,7 +121,7 @@ An explicit Intercom `send` starts the recipient turn without awaiting a respons
 - Notion CLI (`ntn`) powers `notion-cli`.
 - [agent-browser](https://github.com/vercel-labs/agent-browser) powers browser automation.
 - [Herdr](https://herdr.dev/) is only needed for Herdr-managed sessions.
-- [New BAML](https://new.boundaryml.com/) toolchain `0.15.0` powers the optional, local-only [skill behavior evals](./evals/skills/README.md).
+- [New BAML](https://new.boundaryml.com/) toolchain `0.20.1` powers the optional, local-only [skill behavior evals](./evals/skills/README.md).
 
 ## Also included
 

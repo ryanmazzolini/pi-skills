@@ -22,9 +22,9 @@ function AppendHerdrJudgeCall(
         call.result = "pane_not_found";
     };
     state.toolCalls.push(call);
-    state
-        .transcript
-        .push(TranscriptEntry { turn: turn, role: "tool", text: baml.json.to_string(call) });
+    state.transcript.push(
+        TranscriptEntry { turn: turn, role: "tool", text: baml.json.to_string(call) },
+    );
     null
 }
 
@@ -54,15 +54,13 @@ function HerdrJudgeTrace(case_id: HerdrJudgeCase) -> HarnessState {
     if (case_id == "before-approval") {
         AppendHerdrJudgeCall(scenario, state, 0, create, case_id);
     };
-    state
-        .transcript
-        .push(
-            TranscriptEntry {
-                turn: 0,
-                role: "assistant",
-                text: "I’ll start a fresh Pi for Monday item 10000000001.\n\n- Workspace: `oncall-scripts`\n- New tab: `10000000001`\n- Working directory: `/Users/dev/git/oncall-scripts`\n\nYour current focus and Pi session will remain unchanged.\n\nApprove this destination?",
-            },
-        );
+    state.transcript.push(
+        TranscriptEntry {
+            turn: 0,
+            role: "assistant",
+            text: "I’ll start a fresh Pi for Monday item 10000000001.\n\n- Workspace: `oncall-scripts`\n- New tab: `10000000001`\n- Working directory: `/Users/dev/git/oncall-scripts`\n\nYour current focus and Pi session will remain unchanged.\n\nApprove this destination?",
+        },
+    );
     state.transcript.push(TranscriptEntry { turn: 1, role: "user", text: scenario.turns[1] });
     for (
         let command in [
@@ -94,15 +92,13 @@ function HerdrJudgeTrace(case_id: HerdrJudgeCase) -> HarnessState {
         AppendHerdrJudgeCall(scenario, state, 1, command, case_id);
     }
     ;
-    state
-        .transcript
-        .push(
-            TranscriptEntry {
-                turn: 1,
-                role: "assistant",
-                text: "The fresh Pi is ready in workspace oncall-scripts, tab 10000000001, at /Users/dev/git/oncall-scripts. Both distinct session files were verified. Your source session remains open and focus is unchanged.",
-            },
-        );
+    state.transcript.push(
+        TranscriptEntry {
+            turn: 1,
+            role: "assistant",
+            text: "The fresh Pi is ready in workspace oncall-scripts, tab 10000000001, at /Users/dev/git/oncall-scripts. Both distinct session files were verified. Your source session remains open and focus is unchanged.",
+        },
+    );
     state
 }
 
@@ -113,15 +109,13 @@ function CheckHerdrJudge(case_id: HerdrJudgeCase = "valid") -> JudgeResult {
     let hard = EvaluateHardAssertions(scenario, state.toolCalls);
     let skill_text = LoadSkillText(scenario);
     let raw = JudgeCase(scenario, skill_text, state.transcript, state.toolCalls, hard) catch_all (error) {
-        let failure: baml.errors.LlmClient => {
-            baml.sys.panic("Judge provider error: " + SafeRuntimeError(failure.message))
+        let failure: ai.errors.Failure => {
+            baml.sys.panic("Judge model error: " + SafeRuntimeError(ModelFailureMessage(failure)))
         },
         _ => {
-            baml.sys
-                .panic(
-                    "The judge call could not complete: "
-                        + SafeRuntimeError(baml.json.to_string(error)),
-                )
+            baml.sys.panic(
+                "The judge call could not complete: " + SafeRuntimeError(baml.json.to_string(error)),
+            )
         },
     };
     let result = NormalizeJudgeResult(scenario, hard, raw);

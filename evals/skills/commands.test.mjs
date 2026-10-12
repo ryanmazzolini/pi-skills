@@ -27,6 +27,7 @@ require("node:fs").writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
   baseUrl: process.env.SKILL_EVAL_OPENAI_BASE_URL,
   route: process.env.SKILL_EVAL_ROUTE,
   apiKey: process.env.OPENAI_API_KEY,
+  agentSkillCheck: process.env.BAML_AGENT_SKILL_CHECK,
 }));
 process.exit(Number(process.env.FIXTURE_EXIT_CODE));
 `, { mode: 0o755 });
@@ -54,13 +55,14 @@ process.exit(Number(process.env.FIXTURE_EXIT_CODE));
 for (const [script, args, expectedArgs] of [
   ["eval:skills", ["--suite_id", "ticket-workspace"], ["run", "RunEvals", "--", "--suite_id", "ticket-workspace"]],
   ["eval:skills:judge:herdr", ["--json-args", '{"case_id":"valid"}'], ["run", "CheckHerdrJudge", "--", "--json-args", '{"case_id":"valid"}']],
-  ["eval:skills:test", [], ["test", "-i", "skills::*"]],
+  ["eval:skills:test", [], ["test", "-i", "root::skills::*"]],
 ]) {
   test(`${script} keeps direct OpenAI defaults and forwards arguments`, (t) => {
     const invocation = runCommand(t, script, args);
     assert.equal(invocation.baseUrl, "https://api.openai.com/v1");
     assert.equal(invocation.route, "direct");
     assert.equal(invocation.apiKey, "exported-test-key");
+    assert.equal(invocation.agentSkillCheck, "off");
     assert.deepEqual(invocation.args, expectedArgs);
   });
 }
@@ -69,15 +71,14 @@ test("direct evals still load a key from dotenv when none is exported", (t) => {
   assert.equal(runCommand(t, "eval:skills", [], { exportedKey: null }).apiKey, "dotenv-test-key");
 });
 
-test("Codex evals use the local endpoint and dummy key, preserving spaced arguments", (t) => {
+test("ChatGPT plan evals select the plan route, preserving spaced arguments", (t) => {
   const args = ["--suite_id", "ticket-workspace", "--output_dir", "results with spaces"];
-  const invocation = runCommand(t, "eval:skills:codex", args);
-  assert.equal(invocation.baseUrl, "http://127.0.0.1:18080/v1");
-  assert.equal(invocation.route, "codex-local");
-  assert.equal(invocation.apiKey, "dummy-not-a-real-openai-api-key");
+  const invocation = runCommand(t, "eval:skills:chatgpt", args);
+  assert.equal(invocation.route, "chatgpt-plan");
+  assert.equal(invocation.agentSkillCheck, "off");
   assert.deepEqual(invocation.args, ["run", "RunEvals", "--", ...args]);
 });
 
-test("Codex evals propagate a failed BAML exit status", (t) => {
-  runCommand(t, "eval:skills:codex", [], { exitCode: 7 });
+test("ChatGPT plan evals propagate a failed BAML exit status", (t) => {
+  runCommand(t, "eval:skills:chatgpt", [], { exitCode: 7 });
 });

@@ -1,15 +1,3 @@
-client<llm> SubjectClient {
-    provider: openai-responses,
-    options: {
-        model: "gpt-5.6-luna",
-        base_url: env.SKILL_EVAL_OPENAI_BASE_URL,
-        api_key: env.OPENAI_API_KEY,
-        reasoning: {
-            effort: "high",
-        },
-    },
-}
-
 class HarnessState {
     transcript: TranscriptEntry[],
     toolCalls: ToolCallRecord[],
@@ -31,7 +19,8 @@ function DecideNextDecision(
     state: HarnessState,
 ) -> string {
     client: SubjectClient
-    prompt: #"
+    prompt: ``
+        ${role("developer")}
         You are a coding assistant operating in a controlled evaluation harness.
         Follow the explicitly loaded skill below. Work on the user's request by choosing
         one available action at a time. After a tool action, you will receive its fixed
@@ -61,17 +50,17 @@ function DecideNextDecision(
 
         Explicitly loaded skill and declared references:
         <skill>
-        {{ skill_text }}
+        ${skill_text}
         </skill>
 
-        Scenario: {{ scenario.id }} — {{ scenario.title }}
-        Current user turn: {{ current_turn + 1 }}
+        Scenario: ${scenario.id} — ${scenario.title}
+        Current user turn: ${current_turn + 1}
 
         Conversation and tool-result history:
-        {{ state.transcript }}
+        ${baml.json.to_string(state.transcript)}
 
         Numbered tool trace:
-        {{ state.toolCalls }}
+        ${baml.json.to_string(state.toolCalls)}
 
         Select the next action only; do not narrate, execute it, or simulate its result.
         Return exactly one JSON or YAML action object without a Markdown fence. Examples:
@@ -79,7 +68,7 @@ function DecideNextDecision(
         {"action":"respond","message":"Choose date-fns because ..."}
         For `respond`, include a complete, non-empty message for every final answer or
         user-decision request. Never return an empty object or an empty response.
-    "#
+    ``
 }
 
 function DecideNextStep(
@@ -95,15 +84,14 @@ function SafeRuntimeError(message: string) -> string {
     let safe = message;
     let api_key = baml.env.get("OPENAI_API_KEY");
     match (api_key) {
-        null => {
-        },
+        null => {},
         let value: string => {
             if (value.length() > 0) {
                 safe = safe.replace(value, "[REDACTED]");
             };
         },
     };
-    safe.substring(0, 800)
+    safe.slice(0, 800)
 }
 
 function DecisionStep(
@@ -129,6 +117,48 @@ function DecisionStep(
     }
 }
 
+// The first complete top-level JSON object in `text`, or null. Braces inside
+// JSON strings do not count. Returns null when a YAML action precedes it.
+function FirstJsonObject(text: string) -> string? {
+    let chars = text.chars();
+    let depth = 0;
+    let start = 0;
+    let in_string = false;
+    let escaped = false;
+    let index = 0;
+    while (index < chars.length()) {
+        let ch = chars[index];
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == "\\") {
+                escaped = true;
+            } else if (ch == "\"") {
+                in_string = false;
+            };
+        } else if (ch == "\"" && depth > 0) {
+            in_string = true;
+        } else if (ch == "{") {
+            if (depth == 0) {
+                // A YAML action before the first object is the earlier step.
+                if (chars.slice(0, index).join("").includes("action:")) {
+                    return null;
+                };
+                start = index;
+            };
+            depth += 1;
+        } else if (ch == "}" && depth > 0) {
+            depth -= 1;
+            if (depth == 0) {
+                return chars.slice(start, index + 1).join("");
+            };
+        };
+        index += 1;
+    }
+    ;
+    null
+}
+
 function ParseAgentDecision(raw: string) -> AgentStep {
     let normalized = raw.trim();
     if (normalized.length() == 0 || normalized == "{}" || normalized == "[]") {
@@ -136,6 +166,17 @@ function ParseAgentDecision(raw: string) -> AgentStep {
     };
     let parsed: AgentStep? = baml.yaml.deserialize<AgentStep>(normalized) catch_all (_) {
         _ => null,
+    };
+    // A streamed GPT-6 turn can join a commentary message holding the action
+    // with a final answer written as if that action had already run. The first
+    // complete object is the next step, so parse only that one.
+    if (parsed == null) {
+        if let first: string = FirstJsonObject(normalized) {
+            parsed
+                = baml.yaml.deserialize<AgentStep>(first) catch_all (_) {
+                    _ => null,
+                };
+        };
     };
     match (parsed) {
         let decision: AgentStep => NormalizeAgentDecision(decision),
@@ -293,8 +334,13 @@ function TryDecideNextStep(
             error_message = "Subject runtime error: " + SafeRuntimeError(value.message);
             null
         },
-        let value: baml.errors.DevOther => {
-            error_message = "Subject orchestration error: " + SafeRuntimeError(value.message);
+        let value: baml.errors.UnknownError => {
+            error_message
+                = "Subject orchestration error: " + SafeRuntimeError(value.data.to_string());
+            null
+        },
+        let value: ai.errors.Failure => {
+            error_message = "Subject model error: " + SafeRuntimeError(ModelFailureMessage(value));
             null
         },
         let value: baml.panics.SdkPanic => {
@@ -351,9 +397,9 @@ function RunSubjectIntoStateWithDecider(
         if (state.error != null) {
             break;
         };
-        state
-            .transcript
-            .push(TranscriptEntry { turn: turn_index, role: "user", text: user_message });
+        state.transcript.push(
+            TranscriptEntry { turn: turn_index, role: "user", text: user_message },
+        );
         let finished = false;
         let cycles = 0;
         let max_cycles = scenario.maxToolCalls + 4;
@@ -364,71 +410,53 @@ function RunSubjectIntoStateWithDecider(
                 null => {
                     let message = outcome.error ?? "The subject step failed.";
                     if (outcome.retryable) {
-                        state
-                            .transcript
-                            .push(
-                                TranscriptEntry {
-                                    turn: turn_index,
-                                    role: "tool",
-                                    text: "Harness rejected the invalid decision: "
-                                        + message
-                                        + " Return one valid action and continue.",
-                                },
-                            );
+                        state.transcript.push(
+                            TranscriptEntry {
+                                turn: turn_index,
+                                role: "tool",
+                                text: "Harness rejected the invalid decision: "
+                                    + message
+                                    + " Return one valid action and continue.",
+                            },
+                        );
                     } else {
                         state.error = message;
-                        state
-                            .transcript
-                            .push(
-                                TranscriptEntry {
-                                    turn: turn_index,
-                                    role: "assistant",
-                                    text: message,
-                                },
-                            );
+                        state.transcript.push(
+                            TranscriptEntry { turn: turn_index, role: "assistant", text: message },
+                        );
                         finished = true;
                     };
                 },
                 let step: AgentStep => {
                     if (step.action == "respond") {
                         let response = step.message ?? "";
-                        state
-                            .transcript
-                            .push(
-                                TranscriptEntry {
-                                    turn: turn_index,
-                                    role: "assistant",
-                                    text: response,
-                                },
-                            );
+                        state.transcript.push(
+                            TranscriptEntry { turn: turn_index, role: "assistant", text: response },
+                        );
                         finished = true;
                     } else if (state.toolCalls.length() >= scenario.maxToolCalls) {
                         let message = `Subject attempted ${step.action} after reaching the scenario tool-call budget.`;
                         state.error = message;
-                        state
-                            .transcript
-                            .push(
-                                TranscriptEntry {
-                                    turn: turn_index,
-                                    role: "assistant",
-                                    text: message + " Rejected action: " + baml.json.to_string(step),
-                                },
-                            );
+                        state.transcript.push(
+                            TranscriptEntry {
+                                turn: turn_index,
+                                role: "assistant",
+                                text: message + " Rejected action: " + baml.json.to_string(step),
+                            },
+                        );
                         finished = true;
                     } else {
-                        state
-                            .transcript
-                            .push(
-                                TranscriptEntry {
-                                    turn: turn_index,
-                                    role: "assistant",
-                                    text: "Tool call: " + baml.json.to_string(step),
-                                },
-                            );
+                        state.transcript.push(
+                            TranscriptEntry {
+                                turn: turn_index,
+                                role: "assistant",
+                                text: "Tool call: " + baml.json.to_string(step),
+                            },
+                        );
                         let result = ExecuteFixture(scenario, state, turn_index, step);
-                        state
-                            .transcript
-                            .push(TranscriptEntry { turn: turn_index, role: "tool", text: result });
+                        state.transcript.push(
+                            TranscriptEntry { turn: turn_index, role: "tool", text: result },
+                        );
                     };
                 },
             };
@@ -441,9 +469,9 @@ function RunSubjectIntoStateWithDecider(
                 "Stopped after the scenario step limit without a final response."
             };
             state.error = stop_message;
-            state
-                .transcript
-                .push(TranscriptEntry { turn: turn_index, role: "assistant", text: stop_message });
+            state.transcript.push(
+                TranscriptEntry { turn: turn_index, role: "assistant", text: stop_message },
+            );
         };
         turn_index += 1;
     }
@@ -461,23 +489,21 @@ function ExecuteFixture(
         return `Fixture tool budget exhausted after ${scenario.maxToolCalls} calls. Stop and answer from the evidence already gathered.`;
     };
     let result = FixtureResult(scenario, state, step);
-    state
-        .toolCalls
-        .push(
-            ToolCallRecord {
-                index: state.toolCalls.length() + 1,
-                turn: turn,
-                tool: step.action,
-                path: step.path,
-                query: step.query,
-                queries: step.queries,
-                url: step.url,
-                urls: step.urls,
-                command: step.command,
-                content: step.content,
-                result: result,
-            },
-        );
+    state.toolCalls.push(
+        ToolCallRecord {
+            index: state.toolCalls.length() + 1,
+            turn: turn,
+            tool: step.action,
+            path: step.path,
+            query: step.query,
+            queries: step.queries,
+            url: step.url,
+            urls: step.urls,
+            command: step.command,
+            content: step.content,
+            result: result,
+        },
+    );
     result
 }
 
@@ -497,10 +523,10 @@ function FixtureResult(scenario: Scenario, state: HarnessState, step: AgentStep)
 function NormalizeFixturePath(path: string) -> string {
     let normalized = path.trim();
     if (normalized.starts_with("./")) {
-        normalized = normalized.substring(2, normalized.length());
+        normalized = normalized.slice(2, normalized.length());
     };
     if (normalized.starts_with("/fixture/")) {
-        normalized = normalized.substring(9, normalized.length());
+        normalized = normalized.slice(9, normalized.length());
     };
     normalized
 }
@@ -541,16 +567,12 @@ function FixtureFetch(scenario: Scenario, step: AgentStep) -> string {
     };
     let results: string[] = [];
     for (let url in urls) {
-        results
-            .push(
-                "Source: "
-                    + url
-                    + "\n"
-                    + (
-                        scenario.fetchResponses.get(url)
-                            ?? "No fixture content exists for this URL."
-                    ),
-            );
+        results.push(
+            "Source: "
+                + url
+                + "\n"
+                + (scenario.fetchResponses.get(url) ?? "No fixture content exists for this URL."),
+        );
     }
     ;
     results.join("\n\n")
@@ -569,7 +591,7 @@ function HerdrCommandWords(command: string) -> string[] {
                             || (word.starts_with("\"") && word.ends_with("\""))
                     )
             ) {
-                words.push(word.substring(1, word.length() - 1));
+                words.push(word.slice(1, word.length() - 1));
             } else {
                 words.push(word);
             };

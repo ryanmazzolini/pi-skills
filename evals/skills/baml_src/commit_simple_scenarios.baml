@@ -1,5 +1,5 @@
 function CommitSyncWorkItem() -> string {
-    #"
+    "
         # SC-10101 — Replace inner advisory locks with row locks
 
         Existing message draft: refactor(shelving): replace inner advisory locks with row locks. This is not approved wording.
@@ -9,11 +9,11 @@ function CommitSyncWorkItem() -> string {
         The staged change removes the inner advisory-lock layer. Sync now locks the affected return, command, and transfer rows in canonical order. Async jobs request those rows with `FOR UPDATE NOWAIT`. A busy row or a connected component that expands after discovery raises `RetryableSync`; Inbox rolls back its processed marker and Sidekiq retries. Repair and backfill callers retain blocking row locks.
 
         This bounds how long an async contender retains a connection while waiting. It does not bound active statement duration or blocking operational callers.
-    "#
+    "
 }
 
 function CommitSyncDiff() -> string {
-    #"
+    "
         diff --git a/app/jobs/lending/sync_job.rb b/app/jobs/lending/sync_job.rb
         index 2499148..f14b4f1 100644
         --- a/app/jobs/lending/sync_job.rb
@@ -59,7 +59,7 @@ function CommitSyncDiff() -> string {
         +  private
         +
         +  def lock_connected_rows!(wait:)
-        +    lock_clause = wait ? "FOR UPDATE" : "FOR UPDATE NOWAIT"
+        +    lock_clause = wait ? \"FOR UPDATE\" : \"FOR UPDATE NOWAIT\"
         +    returns.order(:id).lock(lock_clause).load
         +    commands.order(:id).lock(lock_clause).load
         +    transfers.order(:id).lock(lock_clause).load
@@ -73,9 +73,9 @@ function CommitSyncDiff() -> string {
         +++ b/spec/services/inbox/process_message_spec.rb
         @@ -1,5 +1,8 @@
          RSpec.describe Inbox::ProcessMessage do
-        -  it "marks a completed message as processed" do
+        -  it \"marks a completed message as processed\" do
         -    expect { subject.call { true } }.to change(processed_messages, :count).by(1)
-        +  it "rolls back the processed marker and exposes the error to Sidekiq" do
+        +  it \"rolls back the processed marker and exposes the error to Sidekiq\" do
         +    expect do
         +      subject.call { raise RetryableSync }
         +    end.to raise_error(RetryableSync)
@@ -88,21 +88,21 @@ function CommitSyncDiff() -> string {
         +++ b/spec/services/lending/sync_group_spec.rb
         @@ -1,5 +1,13 @@
          RSpec.describe SyncGroup do
-        -  it "syncs a connected component" do
+        -  it \"syncs a connected component\" do
         -    expect(subject.call).to be_successful
-        +  it "locks connected rows in canonical order" do
+        +  it \"locks connected rows in canonical order\" do
         +    expect(subject.lock_order).to eq(%i[return command transfer])
         +  end
         +
-        +  it "raises a retryable error instead of waiting for async contention" do
+        +  it \"raises a retryable error instead of waiting for async contention\" do
         +    expect { subject.call(blocking: false) }.to raise_error(RetryableSync)
         +  end
         +
-        +  it "keeps repair sync blocking" do
+        +  it \"keeps repair sync blocking\" do
         +    expect(subject.call(blocking: true)).to be_successful
            end
          end
-    "#
+    "
 }
 
 function CommitSimpleInspectionOutput() -> string {

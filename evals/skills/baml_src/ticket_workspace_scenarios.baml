@@ -4,45 +4,45 @@ function TicketWorkspaceFixtures(epic_workspace_exists: bool) -> BashResponse[] 
         BashResponse { includes: "herdr --help", output: HerdrHelpOutput() },
         BashResponse {
             includes: "herdr pane current",
-            output: #"
-                {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/source.jsonl"},"cwd":"/Users/dev/git","pane_id":"w18:p1","tab_id":"w18:t1","workspace_id":"w18"}}}
-            "#,
+            output: "
+                {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/source.jsonl\"},\"cwd\":\"/Users/dev/git\",\"pane_id\":\"w18:p1\",\"tab_id\":\"w18:t1\",\"workspace_id\":\"w18\"}}}
+            ",
         },
         BashResponse {
             includes: "herdr workspace list",
             output: if (epic_workspace_exists) {
-                #"
-                    {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"reviews","workspace_id":"w11"},{"label":"api","workspace_id":"w20"},{"label":"invoice-matching","workspace_id":"w30"}]}}
-                "#
+                "
+                    {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"reviews\",\"workspace_id\":\"w11\"},{\"label\":\"api\",\"workspace_id\":\"w20\"},{\"label\":\"invoice-matching\",\"workspace_id\":\"w30\"}]}}
+                "
             } else {
-                #"
-                    {"result":{"workspaces":[{"label":"first-mate","workspace_id":"w18"},{"label":"reviews","workspace_id":"w11"},{"label":"api","workspace_id":"w20"}]}}
-                "#
+                "
+                    {\"result\":{\"workspaces\":[{\"label\":\"first-mate\",\"workspace_id\":\"w18\"},{\"label\":\"reviews\",\"workspace_id\":\"w11\"},{\"label\":\"api\",\"workspace_id\":\"w20\"}]}}
+                "
             },
         },
         BashResponse {
             includes: "herdr tab list",
-            output: #"
-                {"result":{"tabs":[{"label":"sc-12500-fix-timeout","tab_id":"w11:t7","workspace_id":"w11"}]}}
-            "#,
+            output: "
+                {\"result\":{\"tabs\":[{\"label\":\"sc-12500-fix-timeout\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}]}}
+            ",
         },
         BashResponse {
             includes: "herdr tab get",
-            output: #"
-                {"result":{"tab":{"label":"sc-12500-fix-timeout","tab_id":"w11:t7","workspace_id":"w11"}}}
-            "#,
+            output: "
+                {\"result\":{\"tab\":{\"label\":\"sc-12500-fix-timeout\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}}}
+            ",
         },
         BashResponse {
             includes: "herdr pane list",
-            output: #"
-                {"result":{"panes":[{"agent":"pi","agent_session":{"value":"/fixture/existing.jsonl"},"shell_state":"running","cwd":"/Users/dev/git/worktrees/sc-12500-fix-timeout","pane_id":"w11:p7","tab_id":"w11:t7","workspace_id":"w11"},{"agent":"pi","cwd":"/Users/dev/git/api","pane_id":"w20:p1","workspace_id":"w20"}]}}
-            "#,
+            output: "
+                {\"result\":{\"panes\":[{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/existing.jsonl\"},\"shell_state\":\"running\",\"cwd\":\"/Users/dev/git/worktrees/sc-12500-fix-timeout\",\"pane_id\":\"w11:p7\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"},{\"agent\":\"pi\",\"cwd\":\"/Users/dev/git/api\",\"pane_id\":\"w20:p1\",\"workspace_id\":\"w20\"}]}}
+            ",
         },
         BashResponse {
             includes: "herdr pane get w11:p7",
-            output: #"
-                {"result":{"pane":{"agent":"pi","agent_session":{"value":"/fixture/existing.jsonl"},"shell_state":"running","cwd":"/Users/dev/git/worktrees/sc-12500-fix-timeout","pane_id":"w11:p7","tab_id":"w11:t7","workspace_id":"w11"}}}
-            "#,
+            output: "
+                {\"result\":{\"pane\":{\"agent\":\"pi\",\"agent_session\":{\"value\":\"/fixture/existing.jsonl\"},\"shell_state\":\"running\",\"cwd\":\"/Users/dev/git/worktrees/sc-12500-fix-timeout\",\"pane_id\":\"w11:p7\",\"tab_id\":\"w11:t7\",\"workspace_id\":\"w11\"}}}
+            ",
         },
         BashResponse {
             includes: "herdr workspace",
@@ -69,7 +69,7 @@ function TicketEpicScenario(new_workspace: bool) -> Scenario {
     let fixtures = TicketWorkspaceFixtures(!new_workspace);
     for (let fixture in fixtures) {
         if (!new_workspace && fixture.includes == "herdr tab list") {
-            fixture.output = #"{"result":{"tabs":[]}}"#;
+            fixture.output = "{\"result\":{\"tabs\":[]}}";
         };
     }
     ;

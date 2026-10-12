@@ -1,15 +1,3 @@
-client<llm> JudgeClient {
-    provider: openai-responses,
-    options: {
-        model: "gpt-5.6-luna",
-        base_url: env.SKILL_EVAL_OPENAI_BASE_URL,
-        api_key: env.OPENAI_API_KEY,
-        reasoning: {
-            effort: "high",
-        },
-    },
-}
-
 function JudgeCase(
     scenario: Scenario,
     skill_text: string,
@@ -18,7 +6,8 @@ function JudgeCase(
     hard_assertions: HardAssertionResult[],
 ) -> JudgeResult {
     client: JudgeClient
-    prompt: #"
+    prompt: `
+        ${role("developer")}
         You are evaluating whether a coding agent followed one explicitly loaded skill.
 
         Judge only the supplied transcript and mock-tool trace. Do not assume actions or
@@ -31,30 +20,30 @@ function JudgeCase(
         ambiguous evidence fails. Keep reasons concise and cite exact assistant text or
         numbered tool calls in the evidence array.
 
-        Scenario: {{ scenario.id }} — {{ scenario.title }}
+        Scenario: ${scenario.id} — ${scenario.title}
 
         User turns:
-        {{ scenario.turns }}
+        ${baml.json.to_string(scenario.turns)}
 
         Skill under test:
         <skill>
-        {{ skill_text }}
+        ${skill_text}
         </skill>
 
         Normalized transcript:
-        {{ transcript }}
+        ${baml.json.to_string(transcript)}
 
         Numbered mock-tool trace:
-        {{ tool_calls }}
+        ${baml.json.to_string(tool_calls)}
 
         Deterministic hard assertions:
-        {{ hard_assertions }}
+        ${baml.json.to_string(hard_assertions)}
 
         Semantic criteria:
-        {{ scenario.semanticCriteria }}
+        ${baml.json.to_string(scenario.semanticCriteria)}
 
-        {{ ctx.output_format }}
-    "#
+        ${ctx.output_format()}
+    `
 }
 
 function CriterionIdsMatch(scenario: Scenario, result: JudgeResult) -> bool {

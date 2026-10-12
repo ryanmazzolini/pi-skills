@@ -27,43 +27,38 @@ function RunFailed(run: SubjectRun) -> bool {
 function RunFailureSummary(run: SubjectRun) -> string {
     let failures: string[] = [];
     match (run.runError) {
-        null => {
-        },
+        null => {},
         let value: string => failures.push("Subject: " + value),
     };
     for (let assertion in run.hardAssertions) {
         if (!assertion.passed) {
-            failures
-                .push(
-                    "Hard assertion: "
-                        + assertion.description
-                        + if (assertion.evidence.length() == 0) {
-                            ""
-                        } else {
-                            " — " + assertion.evidence.join(" | ")
-                        },
-                );
+            failures.push(
+                "Hard assertion: "
+                    + assertion.description
+                    + if (assertion.evidence.length() == 0) {
+                        ""
+                    } else {
+                        " — " + assertion.evidence.join(" | ")
+                    },
+            );
         };
     }
     ;
     match (run.judgeError) {
-        null => {
-        },
+        null => {},
         let value: string => failures.push("Judge: " + value),
     };
     match (run.judge) {
-        null => {
-        },
+        null => {},
         let value: JudgeResult => {
             if (value.verdict == "FAIL") {
                 failures.push("Judge verdict: " + value.summary);
             };
             for (let criterion in value.criteria) {
                 if (criterion.verdict == "FAIL") {
-                    failures
-                        .push(
-                            "Semantic criterion " + criterion.criterion_id + ": " + criterion.reason,
-                        );
+                    failures.push(
+                        "Semantic criterion " + criterion.criterion_id + ": " + criterion.reason,
+                    );
                 };
             }
             ;
@@ -126,10 +121,9 @@ function RenderMarkdown(report: EvalReport) -> string {
         } else {
             "PASS"
         };
-        lines
-            .push(
-                `| ${EscapeMarkdownCell(run.scenarioId)} | ${run.repetition} | ${hard_passed}/${run.hardAssertions.length()} | ${semantic} | ${run.durationMs}ms |`,
-            );
+        lines.push(
+            `| ${EscapeMarkdownCell(run.scenarioId)} | ${run.repetition} | ${hard_passed}/${run.hardAssertions.length()} | ${semantic} | ${run.durationMs}ms |`,
+        );
     }
     ;
     for (let run in report.runs) {
@@ -148,18 +142,17 @@ function RenderMarkdown(report: EvalReport) -> string {
             }
             ;
             if (run.runError != null) {
-                lines.push("- **Subject error:** " + run.runError);
+                lines.push("- **Subject error:** " + (run.runError ?? ""));
             };
             if (run.judgeError != null) {
-                lines.push("- **Judge error:** " + run.judgeError);
+                lines.push("- **Judge error:** " + (run.judgeError ?? ""));
             };
             let criteria: CriterionJudgment[] = run.judge?.criteria ?? [];
             for (let criterion in criteria) {
                 if (criterion.verdict == "FAIL") {
-                    lines
-                        .push(
-                            `- **Semantic failure ${criterion.criterion_id}:** ${criterion.reason}`,
-                        );
+                    lines.push(
+                        `- **Semantic failure ${criterion.criterion_id}:** ${criterion.reason}`,
+                    );
                     for (let evidence in criterion.evidence) {
                         lines.push("  - " + evidence);
                     }

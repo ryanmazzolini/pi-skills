@@ -23,9 +23,9 @@ BAML itself is not a security sandbox. The isolation boundary is the fixture dis
 ## Prerequisites
 
 - New BAML wrapper on `PATH`
-- BAML toolchain `0.15.0`, installed with `baml toolchain install 0.15.0`
+- BAML toolchain `0.20.1`, installed with `baml toolchain install 0.20.1`
 - For direct OpenAI calls, `OPENAI_API_KEY` in the repository root `.env` file or exported in the shell
-- For subscription-backed Codex calls, `openai-api-server-via-codex` listening on `http://127.0.0.1:18080`
+- For calls on your ChatGPT plan, a one-time browser sign-in with `npm run eval:skills:chatgpt:login`
 
 Start from the ignored local template if needed:
 
@@ -35,7 +35,9 @@ cp .env.example .env
 
 The live npm commands use `dotenv-cli` to load the root `.env` before launching BAML. Existing process variables remain available. The deterministic check does not load credentials.
 
-The project pins the exact toolchain in `baml.toml`. Repository scripts enter `evals/skills/` before invoking BAML so the wrapper selects that manifest rather than its global default. Both the subject and semantic judge use `openai-responses/gpt-5.6-luna` with high reasoning, on direct and local runs. Reports identify the model, reasoning level and selected route.
+The project pins the exact toolchain in `baml.toml`. Repository scripts enter `evals/skills/` before invoking BAML so the wrapper selects that manifest rather than its global default. Both the subject and semantic judge use `gpt-6-luna` with high reasoning on both routes. Reports identify the model, reasoning level and selected route.
+
+BAML 0.20 refuses to run under an AI coding agent unless its own agent skill is installed. The npm scripts set `BAML_AGENT_SKILL_CHECK=off` so agents can run the evals without adding BAML's skill files to this skills package.
 
 ## Commands
 
@@ -65,19 +67,16 @@ Run all scenarios and write separate JSON and Markdown reports for each skill:
 npm run eval:skills
 ```
 
-To use the local Codex-backed endpoint instead of direct OpenAI, start the bridge separately, then run the local command:
+To run on your ChatGPT plan instead of an API key, sign in once, then use the plan command:
 
 ```bash
-uvx openai-api-server-via-codex
+npm run eval:skills:chatgpt:login
+npm run eval:skills:chatgpt -- --suite_id ticket-workspace
 ```
 
-In another terminal:
+Sign-in uses OpenAI's [Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source) plan-usage flow for local tools. It opens your browser and asks you to let `pi-skill-evals` use your plan. Credentials stay in `~/.config/pi-skill-evals/chatgpt-plan.json`, readable only by you. The sign-in lasts while it is used at least once every 30 days; review or limit the tool's usage under ChatGPT Settings → Usage.
 
-```bash
-npm run eval:skills:codex -- --suite_id ticket-workspace
-```
-
-The local command targets `http://127.0.0.1:18080/v1`, uses a dummy client key instead of your OpenAI key, and labels reports `codex-local`. It does not start or stop the bridge, edit `.env`, or fall back to the paid API if the bridge is unavailable. Arguments work as they do with `eval:skills`; omit the suite selector to run all suites. The bridge is unofficial and uses the signed-in ChatGPT plan's Codex limits, so treat the route as part of the evidence when comparing results.
+The plan route accepts only streamed requests, so the eval client streams each call and asks `chatgpt-plan.mjs` for a fresh one-hour access token before it. Long runs keep working without another sign-in. Arguments work as they do with `eval:skills`, and reports are labelled `chatgpt-plan`. The command never falls back to your API key. To run the native BAML tests on the plan, set `SKILL_EVAL_ROUTE=chatgpt-plan` before `npm run eval:skills:test`. List the models your plan offers with `node evals/skills/chatgpt-plan.mjs models`.
 
 Run a research scenario:
 

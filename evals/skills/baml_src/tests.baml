@@ -55,7 +55,7 @@ function ContractSmokeReport(output_dir: string) -> RunSummary {
         output_dir,
         EvalReport {
             formatVersion: 2,
-            createdAtMs: baml.sys.now_ms(),
+            createdAtMs: NowMs(),
             gitHead: GitHead(),
             skillPath: ResolveRepoPath(scenario.skillPath),
             scenarioSkillTarget: scenario.skillPath,
@@ -212,11 +212,11 @@ testset "contracts" {
         let scenarios = HciScenarios();
         let scenario = SelectScenarios(scenarios, "hci-quantity-preview-without-disclaimer")[0];
         assert.equal(ValidateScenarioSkillTarget(scenarios), "skills/ux-accessibility/hci/SKILL.md");
-        assert
-            .is_true(
-                LoadSkillText(scenario)
-                    .includes("First distinguish an empty surface from one missing value"),
-            );
+        assert.is_true(
+            LoadSkillText(scenario).includes(
+                "First distinguish an empty surface from one missing value",
+            ),
+        );
         let assertions = EvaluateHardAssertions(scenario, [TestCall(1, "bash", 0)]);
         let rejected_shell = false;
         for (let assertion in assertions) {
@@ -234,11 +234,10 @@ testset "contracts" {
         let data_structure = SelectScenarios(scenarios, "architecture-compounding-data-representation")[0];
         let other_engine = SelectScenarios(scenarios, "architecture-non-postgresql-concurrency")[0];
         let postgresql = SelectScenarios(scenarios, "architecture-postgresql-lock-convoy")[0];
-        assert
-            .equal(
-                ValidateScenarioSkillTarget(scenarios),
-                "skills/architecture/architecture/SKILL.md",
-            );
+        assert.equal(
+            ValidateScenarioSkillTarget(scenarios),
+            "skills/architecture/architecture/SKILL.md",
+        );
         assert.is_true(LoadSkillText(data_structure).includes("Green feature tests prove behavior"));
         assert.is_true(!LoadSkillText(other_engine).includes("PostgreSQL"));
         assert.is_true(LoadSkillText(postgresql).includes("PostgreSQL Concurrency Sources"));
@@ -334,12 +333,9 @@ testset "contracts" {
         for (let scenario in suites[0].scenarios) {
             assert.equal(scenario.skillPath, "skills/ticket-workspace/ticket-workspace/SKILL.md");
             assert.is_true(scenario.skillReferences.includes("skills/herdr/SKILL.md"));
-            assert
-                .is_true(
-                    scenario
-                        .skillReferences
-                        .includes("skills/herdr/references/pi-session-transfer.md"),
-                );
+            assert.is_true(
+                scenario.skillReferences.includes("skills/herdr/references/pi-session-transfer.md"),
+            );
         }
         ;
     }
@@ -348,11 +344,11 @@ testset "contracts" {
         for (let scenario in TicketWorkspaceScenarios()) {
             for (let group in ["workspace", "tab", "pane", "agent"]) {
                 for (let suffix in ["", " --help"]) {
-                    assert
-                        .is_true(
-                            FixtureBash(scenario, `herdr ${group}${suffix}`)
-                                .starts_with(`Usage: herdr ${group}`),
-                        );
+                    assert.is_true(
+                        FixtureBash(scenario, `herdr ${group}${suffix}`).starts_with(
+                            `Usage: herdr ${group}`,
+                        ),
+                    );
                 }
                 ;
             }
@@ -361,26 +357,23 @@ testset "contracts" {
                 assert.equal(FixtureBash(scenario, fixture.includes), fixture.output);
             }
             ;
-            assert
-                .equal(
-                    FixtureBash(scenario, "herdr pane get 'w11:p7'"),
-                    FixtureBash(scenario, "herdr pane get w11:p7"),
-                );
+            assert.equal(
+                FixtureBash(scenario, "herdr pane get 'w11:p7'"),
+                FixtureBash(scenario, "herdr pane get w11:p7"),
+            );
         }
         ;
     }
 
     test "epic tab fixtures do not return unrelated review tabs" {
-        assert
-            .equal(
-                FixtureBash(TicketEpicScenario(false), "herdr tab list --workspace w30"),
-                #"{"result":{"tabs":[]}}"#,
-            );
-        assert
-            .is_true(
-                FixtureBash(TicketContinuationScenario("existing-pi"), "herdr tab list --workspace w11")
-                    .includes("w11:t7"),
-            );
+        assert.equal(
+            FixtureBash(TicketEpicScenario(false), "herdr tab list --workspace w30"),
+            "{\"result\":{\"tabs\":[]}}",
+        );
+        assert.is_true(
+            FixtureBash(TicketContinuationScenario("existing-pi"), "herdr tab list --workspace w11")
+                .includes("w11:t7"),
+        );
     }
 
     test "Herdr hard assertions check structured tool scope rather than shell text" {
@@ -390,10 +383,9 @@ testset "contracts" {
             assert.is_true(AllHardAssertionsPass(EvaluateHardAssertions(scenario, calls)));
             assert.equal(scenario.hardAssertions.length(), 3);
             for (let tool in ["edit", "write", "public_action"]) {
-                assert
-                    .is_true(
-                        !AllHardAssertionsPass(EvaluateHardAssertions(scenario, [TestCall(0, tool, 0)])),
-                    );
+                assert.is_true(
+                    !AllHardAssertionsPass(EvaluateHardAssertions(scenario, [TestCall(0, tool, 0)])),
+                );
             }
             ;
         }
@@ -568,11 +560,10 @@ testset "contracts" {
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureLocalEvidenceDecider);
         assert.equal(state.toolCalls.length(), 2);
         assert.equal(state.error, null);
-        assert
-            .equal(
-                state.transcript[state.transcript.length() - 1].text,
-                "Use SQLite because the approved architecture is embedded and offline-first.",
-            );
+        assert.equal(
+            state.transcript[state.transcript.length() - 1].text,
+            "Use SQLite because the approved architecture is embedded and offline-first.",
+        );
     }
 
     test "tool budget rejects extra tools and records an incomplete run" {
@@ -734,6 +725,33 @@ testset "contracts" {
         assert.equal(step.message, "Choose date-fns.");
     }
 
+    test "subject parser takes the commentary action from a joined GPT-6 turn" {
+        let step = ParseAgentDecision(
+            "{\"action\":\"read\",\"path\":\"README.md\"}{\"action\":\"respond\",\"message\":\"I read the README.\"}",
+        );
+        assert.equal(step.action, "read");
+        assert.equal(step.path, "README.md");
+        let push = ParseAgentDecision(
+            "Checking first.{\"action\":\"bash\",\"command\":\"echo \\\"{\\\" && git push\"}{\"action\":\"respond\",\"message\":\"Pushed.\",\"path\":null}",
+        );
+        assert.equal(push.action, "bash");
+        assert.equal(push.command, "echo \"{\" && git push");
+    }
+
+    test "subject parser does not skip an invalid first action for a later valid one" {
+        let parsed: AgentStep? = ParseAgentDecision("{\"action\":\"deploy\"}{\"action\":\"respond\",\"message\":\"Done.\"}") catch_all (error) {
+            baml.errors.InvalidArgument => null,
+        };
+        assert.equal(parsed, null);
+    }
+
+    test "subject parser does not skip an earlier YAML action for later JSON" {
+        let parsed: AgentStep? = ParseAgentDecision("action: bash\ncommand: git push\n\n{\"action\":\"respond\",\"message\":\"Pushed.\"}") catch_all (error) {
+            baml.errors.InvalidArgument => null,
+        };
+        assert.equal(parsed, null);
+    }
+
     test "subject parser rejects narration mixed with partial action JSON" {
         let parsed: AgentStep? = ParseAgentDecision("I'll read the README.{\"path\":\"README.md\"}{\"error\":\"tool failed\"}") catch_all (error) {
             baml.errors.InvalidArgument => null,
@@ -783,17 +801,28 @@ testset "contracts" {
         assert.equal(normalized.verdict, "PASS");
     }
 
+    test "model failures keep the provider status and response body" {
+        let message = ModelFailureMessage(
+            ai.errors.InvalidRequest {
+                provider: "openai",
+                status_code: 400,
+                detail: "bad request",
+                raw_body: "{\"error\":{\"code\":\"subscription_sharing_unsupported_capability\"}}",
+            },
+        );
+        assert.is_true(message.includes("HTTP 400"));
+        assert.is_true(message.includes("subscription_sharing_unsupported_capability"));
+    }
+
     test "model labels identify Luna reasoning and the selected route" {
-        assert
-            .equal(
-                EvalModelLabel("direct"),
-                "openai-responses/gpt-5.6-luna (reasoning: high) via direct",
-            );
-        assert
-            .equal(
-                EvalModelLabel("codex-local"),
-                "openai-responses/gpt-5.6-luna (reasoning: high) via codex-local",
-            );
+        assert.equal(
+            EvalModelLabel("direct"),
+            "openai-responses/gpt-6-luna (reasoning: high) via direct",
+        );
+        assert.equal(
+            EvalModelLabel("chatgpt-plan"),
+            "openai-responses/gpt-6-luna (reasoning: high) via chatgpt-plan",
+        );
     }
 
     test "report renders bounded review paths" {
@@ -876,8 +905,71 @@ function LiveProgressColor(code: string, text: string) -> string throws never {
     `${escape}[${code}m${text}${escape}[0m`
 }
 
-function LiveProgressError(name: string) -> testing.NamedChildReport {
-    testing.NamedChildReport {
+class LiveNamedChildReport {
+    name: string,
+    report: testing.ChildReport,
+}
+
+// Keep the former public testing.aggregate_reports behavior for this custom runner.
+function AggregateLiveReports(named_results: LiveNamedChildReport[]) -> testing.TestSetReport {
+    let passed = 0;
+    let failed = 0;
+    let has_error = false;
+    let failed_names: string[] = [];
+    let results: testing.ChildReport[] = [];
+    let result_names: string[] = [];
+    for (let named_result in named_results) {
+        let result = named_result.report;
+        results.push(result);
+        result_names.push(named_result.name);
+        let outcome = match (result) {
+            let report: testing.TestReport => report.outcome,
+            let report: testing.TestSetReport => report.outcome,
+        };
+        if (outcome == "pass") {
+            passed += 1;
+        } else {
+            failed += 1;
+            let child_failed_names = match (result) {
+                let report: testing.TestReport => [named_result.name],
+                let report: testing.TestSetReport => {
+                    if (report.failed_names.length() > 0) {
+                        report.failed_names
+                    } else {
+                        [named_result.name]
+                    }
+                },
+            };
+            for (let name in child_failed_names) {
+                failed_names.push(name);
+            }
+            ;
+            if (outcome == "error") {
+                has_error = true;
+            };
+        };
+    }
+    ;
+    let outcome: testing.Outcome = if (has_error) {
+        "error"
+    } else if (failed == 0) {
+        "pass"
+    } else {
+        "fail"
+    };
+    testing.TestSetReport {
+        outcome: outcome,
+        passed: passed,
+        failed: failed,
+        total: results.length(),
+        failed_names: failed_names,
+        results: results,
+        result_names: result_names,
+    }
+}
+
+function LiveProgressError(name: string) -> LiveNamedChildReport {
+    LiveNamedChildReport {
         name: name,
         report: testing.TestReport {
             outcome: "error",
@@ -912,15 +1004,10 @@ function PrintLiveProgressResult(name: string, report: testing.ChildReport) -> n
 
 function LiveProgress(children: testing.TestSetChild[]) -> testing.TestSetReport throws never {
     let interactive = LiveProgressInteractive();
-    let futures: baml.future.Future<testing.NamedChildReport, null>[] = [];
-    let results: testing.NamedChildReport?[] = [];
+    let futures: baml.future.Future<LiveNamedChildReport, never>[] = [];
+    let results: LiveNamedChildReport?[] = [];
     for (let child in children) {
-        futures
-            .push(
-                spawn {
-            testing.NamedChildReport { name: child.name, report: child.run() }
-        },
-            );
+        futures.push(spawn { LiveNamedChildReport { name: child.name, report: child.run() } });
         results.push(null);
         if (!interactive) {
             baml.io.eprintln(`[RUN] ${child.name}`);
@@ -940,7 +1027,7 @@ function LiveProgress(children: testing.TestSetChild[]) -> testing.TestSetReport
         let index = 0;
         while (index < futures.length()) {
             if (results[index] == null && futures[index].is_settled()) {
-                let result: testing.NamedChildReport = (await futures[index]) catch_all (_) {
+                let result: LiveNamedChildReport = (await futures[index]) catch_all (_) {
                     _ => LiveProgressError(children[index].name),
                 };
                 results[index] = result;
@@ -948,8 +1035,9 @@ function LiveProgress(children: testing.TestSetChild[]) -> testing.TestSetReport
                 if (interactive) {
                     PrintLiveProgressResult(children[index].name, result.report);
                 } else {
-                    baml.io
-                        .eprintln(`[${LiveProgressStatus(result.report)}] ${children[index].name}`);
+                    baml.io.eprintln(
+                        `[${LiveProgressStatus(result.report)}] ${children[index].name}`,
+                    );
                 };
             };
             if (results[index] == null) {
@@ -974,18 +1062,17 @@ function LiveProgress(children: testing.TestSetChild[]) -> testing.TestSetReport
         baml.io.eprint(`\r${escape}[2K${escape}[?25h`);
     };
 
-    let named_results: testing.NamedChildReport[] = [];
+    let named_results: LiveNamedChildReport[] = [];
     for (let index in results) {
         match (index) {
-            null => {
-            },
-            let result: testing.NamedChildReport => {
+            null => {},
+            let result: LiveNamedChildReport => {
                 named_results.push(result);
             },
         };
     }
     ;
-    testing.aggregate_reports(named_results)
+    AggregateLiveReports(named_results)
 }
 
 testset "skills" with LiveProgress {
@@ -994,10 +1081,9 @@ testset "skills" with LiveProgress {
             test scenario.id {
                 let run = RunOne(scenario, LoadSkillText(scenario), 1, false);
                 if (RunFailed(run)) {
-                    baml.sys
-                        .panic(
-                            "Live eval failed for " + scenario.id + ":\n" + RunFailureSummary(run),
-                        );
+                    baml.sys.panic(
+                        "Live eval failed for " + scenario.id + ":\n" + RunFailureSummary(run),
+                    );
                 };
             }
         }

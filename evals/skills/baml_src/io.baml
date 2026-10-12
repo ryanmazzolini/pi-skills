@@ -1,11 +1,9 @@
 function RepoRoot() -> string {
-    let output = baml
-        .sys
-        .exec(
-            "git",
-            ["rev-parse", "--show-toplevel"],
-            baml.sys.ProcessOptions { cwd: null, env: null, timeout_ms: 10000, stdin: null },
-        );
+    let output = baml.sys.exec(
+        "git",
+        ["rev-parse", "--show-toplevel"],
+        baml.sys.ProcessOptions { cwd: null, env: null, timeout_ms: 10000, stdin: null },
+    );
     if (!output.ok()) {
         baml.sys.panic("Unable to resolve the repository root: " + output.stderr.to_string());
     };
@@ -16,40 +14,35 @@ function ResolveRepoPath(path: string) -> string {
     if (path.starts_with("/")) {
         path
     } else if (path.starts_with("./")) {
-        RepoRoot() + "/" + path.substring(2, path.length())
+        RepoRoot() + "/" + path.slice(2, path.length())
     } else {
         RepoRoot() + "/" + path
     }
 }
 
 function LoadSkillText(scenario: Scenario) -> string {
-    let sections = [
-        baml.fs.read(ResolveRepoPath(ValidateSkillTargetPath(scenario.skillPath))),
-    ];
+    let sections = [baml.fs.read(ResolveRepoPath(ValidateSkillTargetPath(scenario.skillPath)))];
     for (let reference_path in scenario.skillReferences) {
         let validated = ValidateSkillReferencePath(reference_path);
-        sections
-            .push(
-                `<skill-reference path="${validated}">\n${baml.fs.read(ResolveRepoPath(validated))}\n</skill-reference>`,
-            );
+        sections.push(
+            `<skill-reference path="${validated}">\n${baml.fs.read(ResolveRepoPath(validated))}\n</skill-reference>`,
+        );
     }
     ;
     sections.join("\n\n")
 }
 
 function BamlVersion() -> string {
-    let output = baml
-        .sys
-        .exec(
-            "baml",
-            ["--version"],
-            baml.sys.ProcessOptions {
-                cwd: RepoRoot() + "/evals/skills",
-                env: null,
-                timeout_ms: 10000,
-                stdin: null,
-            },
-        );
+    let output = baml.sys.exec(
+        "baml",
+        ["--version"],
+        baml.sys.ProcessOptions {
+            cwd: RepoRoot() + "/evals/skills",
+            env: null,
+            timeout_ms: 10000,
+            stdin: null,
+        },
+    );
     if (!output.ok()) {
         baml.sys.panic("Unable to read the pinned BAML version: " + output.stderr.to_string());
     };
@@ -61,13 +54,11 @@ function BamlVersion() -> string {
 }
 
 function GitHead() -> string {
-    let output = baml
-        .sys
-        .exec(
-            "git",
-            ["rev-parse", "HEAD"],
-            baml.sys.ProcessOptions { cwd: RepoRoot(), env: null, timeout_ms: 10000, stdin: null },
-        );
+    let output = baml.sys.exec(
+        "git",
+        ["rev-parse", "HEAD"],
+        baml.sys.ProcessOptions { cwd: RepoRoot(), env: null, timeout_ms: 10000, stdin: null },
+    );
     if (!output.ok()) {
         baml.sys.panic("Unable to read Git HEAD: " + output.stderr.to_string());
     };
@@ -81,11 +72,10 @@ function ValidateSkillTargetPath(path: string) -> string {
             || path.includes("..")
             || path.starts_with("/")
     ) {
-        baml.sys
-            .panic(
-                "Scenario skill targets must be repository-relative skills/<namespace>/<skill>/SKILL.md paths: "
-                    + path,
-            );
+        baml.sys.panic(
+            "Scenario skill targets must be repository-relative skills/<namespace>/<skill>/SKILL.md paths: "
+                + path,
+        );
     };
     path
 }
@@ -97,11 +87,9 @@ function ValidateSkillReferencePath(path: string) -> string {
             || path.includes("..")
             || path.starts_with("/")
     ) {
-        baml.sys
-            .panic(
-                "Scenario skill references must be repository-relative skills/**/*.md paths: "
-                    + path,
-            );
+        baml.sys.panic(
+            "Scenario skill references must be repository-relative skills/**/*.md paths: " + path,
+        );
     };
     path
 }
@@ -113,13 +101,12 @@ function ValidateScenarioSkillTarget(scenarios: Scenario[]) -> string {
     let target = scenarios[0].skillPath;
     for (let scenario in scenarios) {
         if (scenario.skillPath != target) {
-            baml.sys
-                .panic(
-                    "Selected scenarios target multiple skills: "
-                        + target
-                        + " and "
-                        + scenario.skillPath,
-                );
+            baml.sys.panic(
+                "Selected scenarios target multiple skills: "
+                    + target
+                    + " and "
+                    + scenario.skillPath,
+            );
         };
     }
     ;
