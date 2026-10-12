@@ -13,8 +13,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "npm run validate:skills && npm run typecheck:extensions && node --test",
-    "typecheck:extensions": "tsc --noEmit -p tsconfig.extensions.json",
+    "test": "npm run validate:skills && node --test",
     "validate:skills": "node scripts/validate-skills.mjs",
     "eval:skills": "dotenv -e .env -- sh -c 'export SKILL_EVAL_OPENAI_BASE_URL=\"${SKILL_EVAL_OPENAI_BASE_URL:-https://api.openai.com/v1}\"; export SKILL_EVAL_ROUTE=\"${SKILL_EVAL_ROUTE:-direct}\"; cd evals/skills && exec baml run RunEvals -- \"$@\"' sh",
     "eval:skills:codex": "OPENAI_API_KEY=dummy-not-a-real-openai-api-key SKILL_EVAL_OPENAI_BASE_URL=http://127.0.0.1:18080/v1 SKILL_EVAL_ROUTE=codex-local npm run eval:skills --",
@@ -49,9 +48,6 @@
   "pi": {
     "skills": [
       "./skills"
-    ],
-    "extensions": [
-      "./extensions"
     ]
   }
 }

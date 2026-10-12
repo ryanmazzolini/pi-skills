@@ -6,9 +6,9 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 
 - Canonical skills live under `skills/`; grouped skills use `skills/<namespace>/<skill-name>/SKILL.md`
 - Pi-only helpers may remain as `skills/<skill-name>/SKILL.md`
-- Extensions live in `extensions/*.ts`
+- This package ships no Pi extensions. Each extension lives in its own repository, such as `ryanmazzolini/pi-monitors`
 - Skills follow the [Agent Skills standard](https://agentskills.io/specification)
-- The `package.json` declares `pi.skills` pointing to `./skills` and `pi.extensions` pointing to `./extensions`
+- The `package.json` declares `pi.skills` pointing to `./skills`
 - `.claude-plugin/marketplace.json` exposes Claude Code plugin namespaces by pointing directly at grouped `skills/<namespace>` directories
 - Do not add `plugins/` symlink wrappers for pure-skill plugins; only create a plugin directory if it needs Claude-specific assets such as hooks, agents, settings, or executables
 
@@ -28,9 +28,3 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 3. If Claude should expose it, add the skill path to the matching plugin entry in `.claude-plugin/marketplace.json`
 4. Add a new marketplace plugin entry only when introducing a new Claude namespace
 5. Run `npm run validate:skills`
-
-## Adding an Extension
-
-1. Create `extensions/<name>.ts`
-2. Keep credentials out of the repo; prefer env vars or files under `~/.pi/agent/extensions/`
-3. Add an entry to the extensions section in `README.md`

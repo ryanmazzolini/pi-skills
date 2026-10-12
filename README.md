@@ -125,18 +125,22 @@ An explicit Intercom `send` starts the recipient turn without awaiting a respons
 
 ## Also included
 
-Pi gets a few extras that are not skills:
+`daily-report` is also available as a command-line tool.
 
-- `session-id` keeps the active Pi session ID visible in the footer.
-- `editor-links` turns file paths into links that open in Zed through a local bridge.
-- `pi-monitors` gives asynchronous monitor adapters one session status and the human-only `/monitors` panel for inspection, refresh, stop, and dismissal of bounded recent outcomes. Completed outcomes remain in the current conversation after their domain notification becomes durable. Trusted extensions can contribute adapters without importing this package by registering synchronously through `pi-monitors:discover-adapters:v1` during session startup. `monitor_github_pr` explicitly monitors an open GitHub pull request, polls comments and reviews with read-only `gh` requests, wakes the agent with bounded untrusted feedback, and reports one durable merged or closed outcome before stopping. Arbitrary `gh` commands do not create monitors.
-- `daily-report` is also available as a command-line tool.
+The Pi extensions that used to live here are now separate packages. Install the ones you use:
 
-Intercom and Delegate used to live here and are now separate packages: [pi-intercom](https://github.com/ryanmazzolini/pi-intercom) and [pi-delegate](https://github.com/ryanmazzolini/pi-delegate). First Mate and `meta-review` need Intercom; `agent-coordination`, `meta-review`, and Ship's delegation steps need Delegate.
+- [pi-intercom](https://github.com/ryanmazzolini/pi-intercom) sends messages between local Pi sessions. First Mate and `meta-review` need it.
+- [pi-delegate](https://github.com/ryanmazzolini/pi-delegate) runs child agents in the background. `agent-coordination`, `meta-review`, and Ship's delegation steps need it.
+- [pi-monitors](https://github.com/ryanmazzolini/pi-monitors) watches GitHub pull requests and Concourse deployments in the background. `commit-pr` and `code-review` call `monitor_github_pr` when it is available.
+- [pi-editor-links](https://github.com/ryanmazzolini/pi-editor-links) turns file paths into links that open in Zed.
+- [pi-session-id](https://github.com/ryanmazzolini/pi-session-id) keeps the active Pi session ID visible in the footer.
 
 ```bash
 pi install git:github.com/ryanmazzolini/pi-intercom
 pi install git:github.com/ryanmazzolini/pi-delegate
+pi install git:github.com/ryanmazzolini/pi-monitors
+pi install git:github.com/ryanmazzolini/pi-editor-links
+pi install git:github.com/ryanmazzolini/pi-session-id
 ```
 
 ## Contributing
