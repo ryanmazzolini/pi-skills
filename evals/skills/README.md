@@ -16,6 +16,7 @@ This tests portable skill behavior rather than Pi-specific skill loading or prov
 - Mock tools never access the real filesystem, network, shell, GitHub, or Git remotes.
 - Mutation and public-action mocks record the attempt but never execute it.
 - Host-only BAML code reads the selected skill and validated repository-relative skill references, then writes reports. Those capabilities are never exposed as subject actions.
+- A scenario may list `readableReferences`. The host preloads those repository skill files as typed fixture data before the run, so the subject can read them on demand through the same dispatcher. Scenario fixtures with the same path win.
 - Reports contain skill text, transcripts, and tool traces. They stay under the ignored `.skill-eval-results/` directory unless `--output_dir` selects another local path.
 
 BAML itself is not a security sandbox. The isolation boundary is the fixture dispatcher: agent-visible actions must never call `baml.fs`, `baml.http`, or `baml.sys`.

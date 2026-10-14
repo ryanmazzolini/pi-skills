@@ -32,6 +32,23 @@ function LoadSkillText(scenario: Scenario) -> string {
     sections.join("\n\n")
 }
 
+// Host-side preload so on-demand skill reads stay inside typed fixture data.
+// Scenario fixtures win over repository files with the same path.
+function WithReadableReferences(scenario: Scenario) -> Scenario {
+    let readable: string[] = scenario.readableReferences ?? [];
+    let loaded: ReadableFile[] = [];
+    for (let reference_path in readable) {
+        let validated = ValidateSkillReferencePath(reference_path);
+        loaded
+            .push(
+                ReadableFile { path: validated, content: baml.fs.read(ResolveRepoPath(validated)) },
+            );
+    }
+    ;
+    scenario.readableFiles = loaded;
+    scenario
+}
+
 function BamlVersion() -> string {
     let output = baml.sys.exec(
         "baml",
