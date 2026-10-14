@@ -5,21 +5,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DailyReportError,
-  acquireReportLock,
+  SKILL_DIRECTORY,
   assertNotFutureDate,
-  atomicWriteReport,
   collectSources,
   dateWindow,
   ensureReportPath,
   expandHome,
-  generateReportBody,
   initializeConfig,
   inspectEnvironment,
   loadConfig,
+  publishReport,
   reconcileDates,
-  renderReport,
+  reportContentHash,
+  reportEvidence,
   reportGenerationStatus,
   resolveProfile,
+  shouldSkipReport,
   todayInTimeZone,
 } from "./daily-report-lib.mjs";
 
@@ -31,10 +32,15 @@ function usage() {
   daily-report remove-cli [--bin-dir PATH]
   daily-report init-config [--config PATH] [--force]
   daily-report doctor PROFILE [--config PATH]
-  daily-report run PROFILE [YYYY-MM-DD] [--config PATH] [--force]
   daily-report reconcile PROFILE [--config PATH] [--max-days N] [--refresh-partial] [--force]
+  daily-report collect PROFILE [YYYY-MM-DD] [--config PATH] [--refresh-partial] [--force]
+  daily-report publish PROFILE --evidence PATH --body PATH [--config PATH] [--refresh-partial] [--force]
 
-Required: pi, git, a writable vault, and configured Git roots.
+reconcile lists dates needing reports as JSON; collect emits one date's JSON evidence.
+Synthesize a Markdown body using only that evidence, then publish with the unchanged evidence file.
+publish adds frontmatter and source coverage and rechecks existing-report protection.
+No command calls an LLM. Report body rules: ${path.join(SKILL_DIRECTORY, "references", "report-system-prompt.md")}
+Required: git for collection, a writable vault, and configured Git roots.
 Optional enabled sources degrade to a partial report when gh or short is unavailable.`;
 }
 
@@ -51,12 +57,14 @@ function parseArguments(argv) {
     if (argument === "--force") options.force = true;
     else if (argument === "--refresh-partial") options.refreshPartial = true;
     else if (argument === "--help" || argument === "-h") options.help = true;
-    else if (argument === "--config" || argument === "--max-days" || argument === "--bin-dir") {
+    else if (["--config", "--max-days", "--bin-dir", "--evidence", "--body"].includes(argument)) {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new DailyReportError(`${argument} requires a value.`);
       index += 1;
       if (argument === "--config") options.config = value;
       else if (argument === "--bin-dir") options.binDir = value;
+      else if (argument === "--evidence") options.evidence = value;
+      else if (argument === "--body") options.body = value;
       else {
         const parsed = Number(value);
         if (!Number.isInteger(parsed) || parsed < 1 || parsed > 366) {
@@ -84,39 +92,6 @@ function sourceDiagnostic(source) {
   return `${source.name}: ${source.status}, ${count} item${count === 1 ? "" : "s"}${detail}`;
 }
 
-function runOneDate({ profile, date, force = false, environment, now = new Date() }) {
-  assertNotFutureDate(date, profile, now);
-  const reportPath = ensureReportPath(profile, date);
-  if (fs.existsSync(reportPath) && !force) {
-    console.log(`Skipped existing report: ${reportPath}`);
-    return { action: "skipped", reportPath, status: reportGenerationStatus(reportPath) };
-  }
-  const releaseLock = acquireReportLock(reportPath);
-  try {
-    if (fs.existsSync(reportPath) && !force) {
-      console.log(`Skipped existing report: ${reportPath}`);
-      return { action: "skipped", reportPath, status: reportGenerationStatus(reportPath) };
-    }
-
-    const window = dateWindow(date, profile.timezone);
-    const sources = collectSources(profile, environment, window);
-    for (const source of Object.values(sources)) {
-      console.error(sourceDiagnostic(source));
-      for (const warning of source.warnings || []) console.error(`  warning: ${warning}`);
-    }
-
-    const body = generateReportBody(profile, environment.tools, date, window, sources);
-    const timestamp = new Date().toISOString();
-    const report = renderReport({ profile, date, timestamp, sources, body });
-    atomicWriteReport(reportPath, report);
-    const status = reportGenerationStatus(reportPath);
-    console.log(`Wrote ${status} report: ${reportPath}`);
-    return { action: "written", reportPath, status };
-  } finally {
-    releaseLock();
-  }
-}
-
 function doctor(profile, configPath, environment) {
   console.log(`Settings: ${configPath}`);
   console.log(`Profile: ${profile.name}`);
@@ -124,7 +99,6 @@ function doctor(profile, configPath, environment) {
   console.log(`Vault: ${profile.vault}`);
   console.log(`Reports: ${profile.reportBase}`);
   for (const root of profile.gitRoots) console.log(`Git root: ${root}`);
-  console.log(`pi: ${environment.tools.pi}`);
   console.log(`git: ${environment.tools.git}`);
   console.log(
     `GitHub: ${environment.optional.github}${environment.tools.gh ? ` (${environment.tools.gh})` : ""}`,
@@ -204,48 +178,65 @@ function commandDoctor(positionals, options) {
   doctor(profile, configPath, environment);
 }
 
-function commandRun(positionals, options) {
+function printJson(value) {
+  console.log(JSON.stringify(value, null, 2));
+}
+
+function commandCollect(positionals, options) {
   if (positionals.length < 1 || positionals.length > 2) {
-    throw new DailyReportError("run requires PROFILE and an optional YYYY-MM-DD.");
+    throw new DailyReportError("collect requires PROFILE and an optional YYYY-MM-DD.");
   }
   const { profile } = loadProfile(positionals[0], options.config);
-  const environment = inspectEnvironment(profile);
   const date = positionals[1] || todayInTimeZone(profile.timezone);
-  runOneDate({ profile, date, force: options.force, environment });
+  const window = dateWindow(date, profile.timezone);
+  assertNotFutureDate(date, profile);
+  const reportPath = ensureReportPath(profile, date);
+  const previousReportHash = reportContentHash(reportPath);
+  if (shouldSkipReport(reportPath, options)) {
+    printJson({ action: "skipped", reportPath, status: reportGenerationStatus(reportPath) });
+    return;
+  }
+
+  const environment = inspectEnvironment(profile);
+  const sources = collectSources(profile, environment, window);
+  for (const source of Object.values(sources)) {
+    console.error(sourceDiagnostic(source));
+    for (const warning of source.warnings || []) console.error(`  warning: ${warning}`);
+  }
+  printJson(reportEvidence(profile, date, window, sources, previousReportHash));
 }
 
 function commandReconcile(positionals, options) {
   if (positionals.length !== 1) throw new DailyReportError("reconcile requires one PROFILE.");
   const { profile } = loadProfile(positionals[0], options.config);
-  const environment = inspectEnvironment(profile);
   const today = todayInTimeZone(profile.timezone);
-  const dates = reconcileDates(profile, today, options.maxDays ?? profile.maxReconcileDays);
-  const results = [];
+  const dates = reconcileDates(profile, today, options.maxDays ?? profile.maxReconcileDays)
+    .filter((date) => !shouldSkipReport(ensureReportPath(profile, date), options));
+  printJson({ profile: profile.name, today, dates });
+}
 
-  for (const date of dates) {
-    const reportPath = ensureReportPath(profile, date);
-    const existingStatus = reportGenerationStatus(reportPath);
-    const refreshPartial = options.refreshPartial && existingStatus === "partial";
-    if (existingStatus && !options.force && !refreshPartial) {
-      console.log(`Skipped existing ${existingStatus} report: ${reportPath}`);
-      results.push({ action: "skipped", reportPath, status: existingStatus });
-      continue;
-    }
-    results.push(
-      runOneDate({
-        profile,
-        date,
-        force: options.force || refreshPartial,
-        environment,
-      }),
-    );
+function readInputFile(filePath, label) {
+  try {
+    return fs.readFileSync(path.resolve(expandHome(filePath)), "utf8");
+  } catch (error) {
+    throw new DailyReportError(`Could not read ${label} file ${filePath}: ${error.message}`, { cause: error });
   }
+}
 
-  const written = results.filter((result) => result.action === "written");
-  const partial = written.filter((result) => result.status === "partial");
-  console.log(
-    `Reconciled ${dates.length} eligible date${dates.length === 1 ? "" : "s"}: ${written.length} written, ${results.length - written.length} skipped, ${partial.length} partial.`,
-  );
+function commandPublish(positionals, options) {
+  if (positionals.length !== 1 || !options.evidence || !options.body) {
+    throw new DailyReportError("publish requires PROFILE, --evidence PATH, and --body PATH.");
+  }
+  const { profile } = loadProfile(positionals[0], options.config);
+  let evidence;
+  try {
+    evidence = JSON.parse(readInputFile(options.evidence, "evidence"));
+  } catch (error) {
+    if (error instanceof DailyReportError) throw error;
+    throw new DailyReportError(`Invalid evidence JSON: ${error.message}`, { cause: error });
+  }
+  const body = readInputFile(options.body, "body");
+  printJson(publishReport(profile, evidence, body, options));
 }
 
 export function main(argv = process.argv.slice(2)) {
@@ -272,11 +263,14 @@ export function main(argv = process.argv.slice(2)) {
     case "doctor":
       commandDoctor(positionals, options);
       break;
-    case "run":
-      commandRun(positionals, options);
-      break;
     case "reconcile":
       commandReconcile(positionals, options);
+      break;
+    case "collect":
+      commandCollect(positionals, options);
+      break;
+    case "publish":
+      commandPublish(positionals, options);
       break;
     default:
       throw new DailyReportError(`Unknown command: ${command}\n\n${usage()}`);

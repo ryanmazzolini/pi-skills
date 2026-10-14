@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const DAY_NAMES = new Map([
@@ -34,7 +34,6 @@ const MAX_BUFFER = 16 * 1024 * 1024;
 const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 export const SKILL_DIRECTORY = path.resolve(SCRIPT_DIRECTORY, "..");
 export const EXAMPLE_CONFIG_PATH = path.join(SKILL_DIRECTORY, "assets", "config.example.json");
-export const REPORT_PROMPT_PATH = path.join(SKILL_DIRECTORY, "references", "report-system-prompt.md");
 
 export class DailyReportError extends Error {
   constructor(message, options = {}) {
@@ -238,7 +237,6 @@ export function resolveProfile(config, profileName) {
 
   const rawGithub = isPlainObject(rawProfile.github) ? rawProfile.github : {};
   const rawShortcut = isPlainObject(rawProfile.shortcut) ? rawProfile.shortcut : {};
-  const rawPi = isPlainObject(rawProfile.pi) ? rawProfile.pi : {};
 
   const github = {
     enabled: optionalBoolean(rawGithub.enabled, false, `${profileName}.github.enabled`),
@@ -271,24 +269,6 @@ export function resolveProfile(config, profileName) {
     ),
   };
 
-  const piConfig = {
-    model: rawPi.model === undefined ? undefined : requireString(rawPi.model, `${profileName}.pi.model`),
-    thinking:
-      rawPi.thinking === undefined
-        ? undefined
-        : requireString(rawPi.thinking, `${profileName}.pi.thinking`),
-    timeoutSeconds: optionalPositiveInteger(
-      rawPi.timeoutSeconds,
-      600,
-      `${profileName}.pi.timeoutSeconds`,
-      3600,
-    ),
-  };
-
-  if (Object.hasOwn(rawProfile, "schedule")) {
-    throw new DailyReportError(`${profileName}.schedule is no longer supported; schedule \`daily-report reconcile\` with your scheduler instead.`);
-  }
-
   return {
     name: profileName,
     vault: vaultRealPath,
@@ -302,7 +282,6 @@ export function resolveProfile(config, profileName) {
     maxReconcileDays,
     github,
     shortcut,
-    pi: piConfig,
   };
 }
 
@@ -521,12 +500,10 @@ export function runCommand(
 
 export function inspectEnvironment(profile, env = process.env) {
   const tools = {
-    pi: resolveExecutable("pi", env),
     git: resolveExecutable("git", env),
     gh: resolveExecutable("gh", env),
     short: resolveExecutable("short", env),
   };
-  if (!tools.pi) throw new DailyReportError("Required command not found on PATH: pi");
   if (!tools.git) throw new DailyReportError("Required command not found on PATH: git");
 
   return {
@@ -1135,7 +1112,7 @@ function stripAnsi(value) {
   return value.replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, "");
 }
 
-export function normalizeGeneratedBody(value) {
+export function normalizeReportBody(value) {
   let body = stripAnsi(String(value || "")).trim();
   if (body.startsWith("```markdown") && body.endsWith("```")) {
     body = body.slice("```markdown".length, -3).trim();
@@ -1147,62 +1124,103 @@ export function normalizeGeneratedBody(value) {
     if (closing >= 0) body = body.slice(closing + 5).trim();
   }
   if (body.length < 20 || !body.startsWith("#")) {
-    throw new DailyReportError("Pi returned an invalid or empty Markdown report body.");
+    throw new DailyReportError("Invalid or empty Markdown report body.");
   }
   return body;
 }
 
-export function generateReportBody(profile, tools, date, window, sources, env = process.env) {
-  let systemPrompt;
-  try {
-    systemPrompt = fs.readFileSync(REPORT_PROMPT_PATH, "utf8").trim();
-  } catch (error) {
-    throw new DailyReportError(`Could not read report prompt: ${REPORT_PROMPT_PATH}`, { cause: error });
+export function reportEvidence(profile, date, window, sources, previousReportHash) {
+  return {
+    report: { date, profile: profile.name, window, previousReportHash },
+    sources: Object.fromEntries(
+      Object.entries(sources).map(([name, source]) => [
+        name,
+        { status: source.status, items: source.items || [] },
+      ]),
+    ),
+  };
+}
+
+export function validateReportEvidence(evidence, profile, now = new Date()) {
+  if (!isPlainObject(evidence) || !isPlainObject(evidence.report)) {
+    throw new DailyReportError("Evidence must contain a report object.");
+  }
+  const { date, window, previousReportHash } = evidence.report;
+  parseDateString(date);
+  assertNotFutureDate(date, profile, now);
+  if (evidence.report.profile !== profile.name) {
+    throw new DailyReportError(`Evidence profile does not match ${profile.name}.`);
+  }
+  const expectedWindow = dateWindow(date, profile.timezone);
+  if (!isPlainObject(window) || Object.keys(expectedWindow).some((key) => window[key] !== expectedWindow[key])) {
+    throw new DailyReportError("Evidence window does not match the report date and profile timezone.");
   }
 
-  const promptSources = Object.fromEntries(
-    Object.entries(sources).map(([name, source]) => [
-      name,
-      { status: source.status, items: source.items || [] },
-    ]),
-  );
-  const evidence = JSON.stringify(
-    {
-      report: { date, profile: profile.name, window },
-      sources: promptSources,
-    },
-    null,
-    2,
-  );
-  const args = [
-    "--no-session",
-    "--no-tools",
-    "--no-extensions",
-    "--no-skills",
-    "--no-prompt-templates",
-    "--no-context-files",
-    "--system-prompt",
-    systemPrompt,
-  ];
-  if (profile.pi.model) args.push("--model", profile.pi.model);
-  if (profile.pi.thinking) args.push("--thinking", profile.pi.thinking);
-  args.push(
-    "--print",
-    `Write the ${profile.name} daily report for ${date} using the JSON evidence supplied on stdin.`,
-  );
+  const { sources } = evidence;
+  if (!isPlainObject(sources) || Object.keys(sources).sort().join(",") !== "git,github,shortcut") {
+    throw new DailyReportError("Evidence must contain git, github, and shortcut sources.");
+  }
+  for (const [name, source] of Object.entries(sources)) {
+    const enabled = name === "git" || profile[name].enabled;
+    const allowed = name === "git" ? ["ok", "degraded"] : ["ok", "degraded", "unavailable"];
+    if (!isPlainObject(source) || !Array.isArray(source.items) ||
+        !(enabled ? allowed : ["skipped"]).includes(source.status)) {
+      throw new DailyReportError(`Invalid evidence source: ${name}.`);
+    }
+  }
+  if (previousReportHash !== null &&
+      (typeof previousReportHash !== "string" || !/^[a-f0-9]{64}$/.test(previousReportHash))) {
+    throw new DailyReportError("Evidence must record the previous report hash or null for an absent report.");
+  }
+  return { date, sources, previousReportHash };
+}
 
-  const piEnv = {
-    ...env,
-    NO_COLOR: "1",
-    PI_SKIP_VERSION_CHECK: "1",
-  };
-  const output = runCommand(tools.pi, args, {
-    cwd: profile.vault,
-    input: evidence,
-    env: piEnv,
-    timeout: profile.pi.timeoutSeconds * 1000,
-  }).stdout;
-  return normalizeGeneratedBody(output);
+function reportFileStats(reportPath) {
+  try {
+    return fs.lstatSync(reportPath);
+  } catch (error) {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+export function reportContentHash(reportPath) {
+  const stats = reportFileStats(reportPath);
+  if (!stats) return null;
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    throw new DailyReportError(`Report destination must be a regular file: ${reportPath}`);
+  }
+  return createHash("sha256").update(fs.readFileSync(reportPath)).digest("hex");
+}
+
+export function shouldSkipReport(reportPath, { force = false, refreshPartial = false } = {}) {
+  const stats = reportFileStats(reportPath);
+  if (!stats) return false;
+  if (stats.isSymbolicLink() || !stats.isFile()) return true;
+  return !force && !(refreshPartial && reportGenerationStatus(reportPath) === "partial");
+}
+
+export function publishReport(profile, evidence, body, options = {}) {
+  const { date, sources, previousReportHash } = validateReportEvidence(evidence, profile);
+  const normalizedBody = normalizeReportBody(body);
+  const reportPath = ensureReportPath(profile, date);
+  const releaseLock = acquireReportLock(reportPath);
+  try {
+    const currentReportHash = reportContentHash(reportPath);
+    if (shouldSkipReport(reportPath, options)) {
+      return { action: "skipped", reportPath, status: reportGenerationStatus(reportPath) };
+    }
+    // The lock cannot cover agent synthesis. Refuse stale refreshes instead.
+    if (!options.force && currentReportHash !== previousReportHash) {
+      throw new DailyReportError(`Report changed after evidence collection: ${reportPath}. Collect fresh evidence before publishing.`);
+    }
+    const timestamp = new Date().toISOString();
+    const report = renderReport({ profile, date, timestamp, sources, body: normalizedBody });
+    atomicWriteReport(reportPath, report);
+    return { action: "written", reportPath, status: generationStatus(sources) };
+  } finally {
+    releaseLock();
+  }
 }
 
 export function renderReport({ profile, date, timestamp, sources, body }) {
@@ -1223,7 +1241,8 @@ export function atomicWriteReport(filePath, content) {
 }
 
 export function reportGenerationStatus(filePath) {
-  if (!fs.existsSync(filePath)) return undefined;
+  const stats = reportFileStats(filePath);
+  if (!stats || stats.isSymbolicLink() || !stats.isFile()) return undefined;
   const beginning = fs.readFileSync(filePath, "utf8").slice(0, 8_192);
   if (!beginning.startsWith("---\n")) return undefined;
   const closing = beginning.indexOf("\n---", 4);
