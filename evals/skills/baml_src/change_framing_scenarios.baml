@@ -87,7 +87,7 @@ function ItemApiContextScenario(id: string, skill_path: string, request: string)
         [
             SemanticCriterion {
                 id: "concrete-title",
-                description: "The title or subject identifies search and item/shelf details in the shelving API, rather than only promising to prepare item cards. Accept equivalent wording and normal artifact conventions; no exact phrase or ordering is required. Do not claim the frontend workflow ships in this change.",
+                description: "The title or subject names a concrete change that this backend work delivers, such as adding search or shared item details to shelving item groups. Any concrete wording passes; it need not mention shelf setup, the API, or every added field. It fails if it only promises to prepare or support item cards, or claims the frontend workflow ships in this change.",
             },
             SemanticCriterion {
                 id: "context-and-contribution",
