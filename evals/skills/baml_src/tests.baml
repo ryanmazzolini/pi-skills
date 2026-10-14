@@ -320,6 +320,61 @@ testset "contracts" {
         ;
     }
 
+    test "defines and registers the design-doc scenarios in BAML" {
+        let suites = SelectScenarioSuites(ScenarioSuites(), "design-doc", null);
+        assert.equal(suites[0].id, "design-doc");
+        let scenarios = suites[0].scenarios;
+        assert.equal(scenarios.length(), 4);
+        assert.equal(ValidateScenarioSkillTarget(scenarios), "skills/ship/design-doc/SKILL.md");
+        let selection = SelectScenarios(scenarios, "design-doc-loads-only-applicable-shape-guides")[0];
+        assert.equal(selection.skillReferences.length(), 0);
+        let readable: string[] = selection.readableReferences ?? [];
+        assert.equal(readable.length(), 6);
+        assert
+            .is_true(
+                FixtureRead(
+                    WithReadableReferences(selection),
+                    "skills/ship/design-doc/references/build-rollout.md",
+                )
+                .starts_with("# Build and Rollout"),
+            );
+        let scenario = SelectScenarios(scenarios, "design-doc-backend-preserves-decision-shape")[0];
+        assert.is_true(scenario.skillReferences.includes("skills/ship/design-doc/design-format.md"));
+        assert
+            .is_true(
+                scenario
+                    .skillReferences
+                    .includes("skills/ship/design-doc/references/technical-shapes.md"),
+            );
+        assert
+            .is_true(
+                scenario
+                    .skillReferences
+                    .includes("skills/ship/design-doc/references/boundary-contracts.md"),
+            );
+        assert
+            .is_true(
+                scenario
+                    .skillReferences
+                    .includes("skills/ship/design-doc/references/build-rollout.md"),
+            );
+        let experience = SelectScenarios(scenarios, "design-doc-user-surface-preserves-experience-shape")[0];
+        assert
+            .is_true(
+                experience
+                    .skillReferences
+                    .includes("skills/ship/design-doc/references/experience-shapes.md"),
+            );
+        assert
+            .is_true(
+                experience
+                    .skillReferences
+                    .includes("skills/ship/design-doc/references/ownership-state.md"),
+            );
+        let cheap = SelectScenarios(scenarios, "design-doc-skips-cheap-repository-native-choice")[0];
+        assert.equal(cheap.skillReferences.length(), 0);
+    }
+
     test "selects a suite or one globally unique scenario" {
         let suites = ScenarioSuites();
         let hci = SelectScenarioSuites(suites, "hci", null);

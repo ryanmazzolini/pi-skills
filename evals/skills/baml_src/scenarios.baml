@@ -23,6 +23,7 @@ function ScenarioSuites() -> ScenarioSuite[] {
         ScenarioSuite { id: "shortcut", scenarios: ShortcutFramingScenarios() },
         ScenarioSuite { id: "herdr", scenarios: HerdrScenarios() },
         ScenarioSuite { id: "ticket-workspace", scenarios: TicketWorkspaceScenarios() },
+        ScenarioSuite { id: "design-doc", scenarios: DesignDocScenarios() },
     ]
 }
 
