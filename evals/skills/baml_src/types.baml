@@ -100,11 +100,20 @@ class BashResponse {
     output: string,
 }
 
+class ReadableFile {
+    path: string,
+    content: string,
+}
+
 class Scenario {
     id: string,
     title: string,
     skillPath: string,
     skillReferences: string[],
+    // Repository skill files the subject may read on demand. The host preloads them into
+    // `readableFiles` before the run so the fixture dispatcher never touches the real filesystem.
+    readableReferences: string[]?,
+    readableFiles: ReadableFile[]?,
     turns: string[],
     files: map<string, string>,
     searchResponses: string[],

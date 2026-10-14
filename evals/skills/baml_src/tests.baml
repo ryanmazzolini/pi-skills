@@ -519,6 +519,44 @@ testset "contracts" {
         assert.equal(state.toolCalls[0].tool, "read");
     }
 
+    test "readable references preload as typed fixtures and record on-demand reads" {
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
+        let path = "skills/ship/ship/references/durable-context.md";
+        scenario.readableReferences = [path];
+        let loaded = WithReadableReferences(scenario);
+        let state = NewHarnessState();
+        let step = TestStep("read");
+        step.path = path;
+        let result = ExecuteFixture(loaded, state, 0, step);
+        assert.equal(result, baml.fs.read(ResolveRepoPath(path)));
+        assert.equal(state.toolCalls.length(), 1);
+        assert.equal(state.toolCalls[0].path, path);
+        assert.equal(state.toolCalls[0].result, result);
+    }
+
+    test "readable references never override scenario fixtures" {
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
+        let path = "skills/ship/research/SKILL.md";
+        scenario.files = { "skills/ship/research/SKILL.md": "fixture wins" };
+        scenario.readableReferences = [path];
+        assert.equal(FixtureRead(WithReadableReferences(scenario), path), "fixture wins");
+    }
+
+    test "fixture read stays map-only for undeclared repository paths" {
+        let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
+        for (
+            let path in [
+                "skills/ship/research/SKILL.md",
+                "skills/does-not-exist.md",
+                "../skills/ship/research/SKILL.md",
+                "package.json",
+            ]
+        ) {
+            assert.is_true(FixtureRead(scenario, path).starts_with("Fixture file not found:"));
+        }
+        ;
+    }
+
     test "complete mock coding loop follows local evidence contract" {
         let scenario = SelectScenarios(ResearchScenarios(), "research-local-evidence-sufficient")[0];
         let state = RunSubjectWithDecider(scenario, "fixture research skill", FixtureLocalEvidenceDecider);
@@ -757,6 +795,51 @@ testset "contracts" {
             baml.errors.InvalidArgument => null,
         };
         assert.equal(parsed, null);
+    }
+
+    test "subject parser accepts plain final responses containing JSON and YAML contracts" {
+        let responses = [
+            "Return `{ error: { code: \"active_reservation_exists\" } }` for a conflict.",
+            "Request: {\"id\":\"req_19\"}\nResponse: {\"error\":{\"code\":\"active_reservation_exists\"}}",
+            "Return this conflict response:\n```yaml\nerror:\n  code: active_reservation_exists\n```",
+        ];
+        for (let response in responses) {
+            let step = ParseAgentDecision(response);
+            assert.equal(step.action, "respond");
+            assert.equal(step.message, response);
+        }
+        ;
+    }
+
+    test "subject parser rejects narration mixed with YAML tool actions" {
+        for (
+            let action in [
+                "read",
+                "web_search",
+                "fetch_content",
+                "bash",
+                "edit",
+                "write",
+                "public_action",
+            ]
+        ) {
+            for (let value in [action, `"${action}"`, `'${action}'`]) {
+                let parsed: AgentStep? = ParseAgentDecision(`I will inspect the file.\naction: ${value}\npath: "README.md"`) catch_all (error) {
+                    let value: baml.errors.InvalidArgument => {
+                        assert
+                            .is_true(
+                                value
+                                    .message
+                                    .starts_with("The subject returned a malformed action object."),
+                            );
+                        null
+                    },
+                };
+                assert.equal(parsed, null);
+            }
+            ;
+        }
+        ;
     }
 
     test "judge criterion ids must match exactly" {

@@ -28,7 +28,8 @@ function DecideNextDecision(
         the user or need their decision.
 
         Available actions and fields:
-        - read: path
+        - read: path. The loaded skill file is `${scenario.skillPath}`; files it links
+          are readable by the repository-relative path resolved against that directory.
         - web_search: queries
         - fetch_content: url or urls
         - bash: command. Use exactly `gh issue view <number>` for fixture-backed GitHub
@@ -52,6 +53,8 @@ function DecideNextDecision(
         <skill>
         ${skill_text}
         </skill>
+        Files shown inside <skill-reference> tags above are already loaded; do not read
+        them again.
 
         Scenario: ${scenario.id} — ${scenario.title}
         Current user turn: ${current_turn + 1}
@@ -67,7 +70,13 @@ function DecideNextDecision(
         {"action":"read","path":"README.md"}
         {"action":"respond","message":"Choose date-fns because ..."}
         For `respond`, include a complete, non-empty message for every final answer or
-        user-decision request. Never return an empty object or an empty response.
+        user-decision request. When the message is long or contains Markdown, quotes,
+        braces, or code blocks, return YAML with a block scalar instead of JSON:
+        action: respond
+        message: |
+          # Heading
+          Body ...
+        Never return an empty object or an empty response.
     ``
 }
 
@@ -181,8 +190,72 @@ function ParseAgentDecision(raw: string) -> AgentStep {
     match (parsed) {
         let decision: AgentStep => NormalizeAgentDecision(decision),
         null => {
-            if (normalized.includes("{") || normalized.includes("}") || normalized.includes("action:")) {
-                throw baml.errors.InvalidArgument { message: "The subject returned a malformed action object." };
+            let without_whitespace = normalized
+                .replace_all(" ", "")
+                .replace_all("\t", "")
+                .replace_all("\r", "")
+                .replace_all("\n", "");
+            let has_action_fragment = false;
+            // A complete object carrying action or tool-argument keys is a broken
+            // tool call, not a contract example quoted in prose.
+            if let first: string = FirstJsonObject(normalized) {
+                let first_compact = first
+                    .replace_all(" ", "")
+                    .replace_all("\t", "")
+                    .replace_all("\r", "")
+                    .replace_all("\n", "");
+                for (
+                    let key in [
+                        "\"action\":",
+                        "\"path\":",
+                        "\"command\":",
+                        "\"queries\":",
+                        "\"url\":",
+                        "\"urls\":",
+                        "\"content\":",
+                    ]
+                ) {
+                    if (first_compact.includes(key)) {
+                        has_action_fragment = true;
+                    };
+                }
+                ;
+            };
+            for (
+                let action in [
+                    "read",
+                    "web_search",
+                    "fetch_content",
+                    "bash",
+                    "edit",
+                    "write",
+                    "public_action",
+                    "respond",
+                ]
+            ) {
+                if (without_whitespace.includes(`"action":"${action}"`)) {
+                    has_action_fragment = true;
+                };
+                if (action != "respond") {
+                    for (let line in normalized.lines()) {
+                        let trimmed = line.trim();
+                        if (trimmed.starts_with("action:")) {
+                            let value = trimmed.slice(7, trimmed.length()).trim();
+                            if (value == action || value == `"${action}"` || value == `'${action}'`) {
+                                has_action_fragment = true;
+                            };
+                        };
+                    }
+                    ;
+                };
+            }
+            ;
+            if (has_action_fragment) {
+                let excerpt_end = if (normalized.length() < 240) { normalized.length() } else { 240 };
+                throw baml.errors.InvalidArgument {
+                    message: "The subject returned a malformed action object. Output started: "
+                        + normalized.slice(0, excerpt_end),
+                };
             };
             DecisionStep("respond", null, null, null, null, null, null, normalized)
         },
@@ -534,10 +607,18 @@ function NormalizeFixturePath(path: string) -> string {
 function FixtureRead(scenario: Scenario, path: string) -> string {
     let normalized = NormalizeFixturePath(path);
     if (scenario.files.has(normalized)) {
-        scenario.files.get(normalized) ?? ""
-    } else {
-        "Fixture file not found: " + path + ". Available: " + scenario.files.keys().join(", ")
+        return scenario.files.get(normalized) ?? "";
+    };
+    let readable: ReadableFile[] = scenario.readableFiles ?? [];
+    let available = scenario.files.keys();
+    for (let file in readable) {
+        if (file.path == normalized) {
+            return file.content;
+        };
+        available.push(file.path);
     }
+    ;
+    "Fixture file not found: " + path + ". Available: " + available.join(", ")
 }
 
 function CountTool(calls: ToolCallRecord[], tool: string) -> int {

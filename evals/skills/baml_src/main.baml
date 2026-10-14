@@ -118,7 +118,8 @@ function BuildEvalReport(
     let scenario_skill_target = ValidateScenarioSkillTarget(selected_scenarios);
     let skill_path = ResolveRepoPath(scenario_skill_target);
     let runs: SubjectRun[] = [];
-    for (let scenario in selected_scenarios) {
+    for (let selected in selected_scenarios) {
+        let scenario = WithReadableReferences(selected);
         let skill_text = LoadSkillText(scenario);
         let repetition = 1;
         while (repetition <= repetitions) {
