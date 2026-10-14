@@ -20,11 +20,11 @@ A legacy workflow may use `question.md` instead of `alignment.md`. Keep that fil
 
 ## Resolve a profile for new work or migration
 
-For a new workflow, or after the human asks to consider migrating a relevant repository `.plans/` workflow, read [workflow-profiles.md](workflow-profiles.md) and run its workspace resolver against the approved ticket-workspace folder. When the session is inside one of that workspace's repository worktrees, use the enclosing `/worktrees/<work-item-slug>/` folder; without a ticket workspace, use the canonical repository root. Repository location does not imply a profile.
+For a new workflow, or after the human asks to consider migrating a relevant repository `.plans/` workflow, follow [workflow-profiles.md](workflow-profiles.md) to read the host routing config and select the vault for the approved ticket-workspace folder. When the session is inside one of that workspace's repository worktrees, use the enclosing `/worktrees/<work-item-slug>/` folder; without a ticket workspace, use the canonical repository root. Repository location alone does not select a profile.
 
-Proceed automatically only when one profile matches. When configuration is missing, invalid, or incomplete, follow the direct creation or edit flow in [workflow-profiles.md](workflow-profiles.md): preserve existing profiles, write the complete version 1 JSON with ordinary file tools, run doctor with the current workspace, and rerun workspace resolution. Ask the human when the intended profile or paths are unclear. When several profiles match, ask the human to select one, then rerun with the explicit profile; explicit selection must still pass Git-root containment. Carry that selected profile through later workspace and target resolution.
+Proceed automatically only when one profile matches. If configuration needs correction and the intended routing is established, edit it with ordinary file tools, preserve unrelated profiles, and verify the workspace against the result. Ask when the intended profile or paths are unclear. If several profiles match, ask the human to select one; that profile must still contain the workspace within a usable Git root. Carry the selected profile and canonical vault through later target checks.
 
-Follow the selected vault's `AGENTS.md`, `CONTEXT.md`, and `README.md` instructions when present before reading or creating project material. Resolve each instruction file through the helper in [workflow-profiles.md](workflow-profiles.md); do not follow a symlinked instruction file.
+Follow the selected vault's `AGENTS.md`, `CONTEXT.md`, and `README.md` instructions when present before reading or creating project material. Apply the vault-target checks in [workflow-profiles.md](workflow-profiles.md) to each instruction file; do not follow a symlinked instruction file.
 
 ## Find or create the work item
 
@@ -36,9 +36,9 @@ New Ship workflows and approved migrations live at:
 
 Use one established vault project directory name. Derive the work-item slug from the approved ticket-workspace folder when one exists. For approved ticketless work, use its stable human-recognizable workspace slug; do not invent a date prefix. Project and work-item names must be single safe path segments, with a lowercase hyphenated work-item slug. Ask when either is ambiguous.
 
-Resolve each vault-native read, creation, or update target through the helper described in [workflow-profiles.md](workflow-profiles.md). Scope work-item files with `--within projects/<project>/work/<work-item-slug>` so generated paths cannot traverse outside the work item or follow symlink escapes. Resolve the target again after a relevant filesystem or routing change.
+Apply the vault-target checks in [workflow-profiles.md](workflow-profiles.md) before reading, creating or updating vault material. Keep work-item targets inside `projects/<project>/work/<work-item-slug>` without traversal or symlinks below the canonical vault. Recheck after a relevant filesystem or routing change.
 
-Read the resolved `projects/<project>/index.md` first when it exists. Then search only that project's work-item indexes by the current ticket or approved work-item slug, resolving each candidate through the helper and requiring its recorded workspace to match. Never reuse an item from workspace equality alone: several sequential ticketless items may share one repository root. Reuse one identity-and-workspace match and fail rather than guessing when several match. When no ticket or approved slug is known, ask which work item is current.
+Read the verified `projects/<project>/index.md` first when it exists. Then search only that project's work-item indexes by the current ticket or approved work-item slug, checking each candidate path and requiring its recorded workspace to match. Never reuse an item from workspace equality alone: several sequential ticketless items may share one repository root. Reuse one identity-and-workspace match and fail rather than guessing when several match. When no ticket or approved slug is known, ask which work item is current.
 
 Create files lazily. A new work item starts with `index.md`; add a continuation handoff, `alignment.md`, `plan.md`, `roadmap.md`, `review-evidence.md`, or other `working/` material only when the chosen route needs it.
 
@@ -54,7 +54,7 @@ Use this compact index shape:
 - Current: [Continuation](working/YYYY-MM-DD-handoff-subject.md)
 ```
 
-`Current` points to the document a fresh session should read after the index. It may identify a direct handoff, alignment, delivery plan, roadmap, review result, or the index itself for a minimal roadmap milestone. It must be a canonical relative path inside the work item. Resolve its target with the work item as `--within` before reading it. Update the pointer when a more useful continuation supersedes it. This pointer is orientation, not a stage flag.
+`Current` points to the document a fresh session should read after the index. It may identify a direct handoff, alignment, delivery plan, roadmap, review result, or the index itself for a minimal roadmap milestone. It must be a canonical relative path inside the work item. Check its target against the work-item directory before reading it. Update the pointer when a more useful continuation supersedes it. This pointer is orientation, not a stage flag.
 
 A direct change needs no work item while it remains safely session-local. If it must survive a fresh session or context reset, create only the index and focused handoff described by the `handoff` skill; do not invent alignment or a plan. A roadmap follows [roadmaps.md](roadmaps.md) and creates minimal linked milestone indexes only after the human approves the graph.
 

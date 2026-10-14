@@ -2,7 +2,7 @@
 
 Graduate when the approved benefit is complete or the user explicitly closes it. A direct change without durable workflow files needs only a normal result report; do not create a work item solely to graduate it.
 
-For a vault-native work item, close the existing item rather than copying a reduced summary elsewhere. Resolve `index.md` through [workflow-profiles.md](workflow-profiles.md), then record what a future session needs:
+For a vault-native work item, close the existing item rather than copying a reduced summary elsewhere. Apply the vault-target checks in [workflow-profiles.md](workflow-profiles.md) before updating `index.md` with ordinary file tools, then record what a future session needs:
 
 ```md
 ## Result

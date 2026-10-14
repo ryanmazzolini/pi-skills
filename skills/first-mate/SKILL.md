@@ -12,7 +12,7 @@ For example, when asked why one project stopped, read that session's recent cont
 
 ## Start or recover
 
-Start only on explicit `/skill:first-mate` invocation, with or without a task. Take a coherent `intercom` `status` and `list`: require the same current Pi session ID and a complete inventory with that ID present exactly once. If another `first-mate` label is present, follow [takeover](references/takeover.md) before proceeding. When role support is available, publish `first-mate` with `action: "role"` unless this session already advertises it. No workflow-profile lookup is needed to start.
+Start only on explicit `/skill:first-mate` invocation, with or without a task. Take a coherent `intercom` `status` and `list`: require the same current Pi session ID and a complete inventory with that ID present exactly once. If another `first-mate` label is present, follow [takeover](references/takeover.md) before proceeding. When role support is available, publish `first-mate` with `action: "role"` unless this session already advertises it. No vault lookup is needed to start.
 
 The label makes this coordinator discoverable; it grants no authority. The policy below permits authorization only while this session is the sole advertised First Mate. Without role support, inspection and human-requested factual contact remain available, but automatic contact and approval relay do not. Without tail support, use `pending` to surface relevant unresolved asks alongside the inspection limitation; do not authorize work. If Intercom, identity, or inventory verification fails, explain what could not be done and offer one recovery rather than retrying automatically.
 

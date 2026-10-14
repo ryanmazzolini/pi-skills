@@ -17,7 +17,7 @@ The **target outcome** is the smallest coherent human or caller benefit being al
 
 Use a caller-supplied workflow directory only after [`durable-context.md`](../ship/references/durable-context.md) classifies it as a relevant legacy workflow or this workspace profile's canonical work item. Otherwise follow that reference to locate or create the workflow. Do not independently create a repository `.plans` workflow.
 
-Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. For vault-native work, resolve the alignment and `index.md` targets through the workflow-profile helper before writing them, then set `Current` to the alignment.
+Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. For vault-native work, apply the [vault-target checks](../ship/references/workflow-profiles.md) to the alignment and `index.md` before writing them with ordinary file tools, then set `Current` to the alignment.
 
 Before asking, compare the request with how the system works today. Read relevant docs, code, tests, history, conversation, and workflow files. Use project language and relevant `CONTEXT-MAP.md`, `CONTEXT.md`, and architecture decisions. Clarify important differences and terms that hide more than one concept.
 

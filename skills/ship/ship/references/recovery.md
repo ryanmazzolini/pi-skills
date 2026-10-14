@@ -10,7 +10,7 @@ Treat a supplied workflow directory as a locator. Classify it with [durable-cont
 2. When no relevant legacy workflow exists, follow [durable-context.md](durable-context.md) to resolve the workspace profile.
 3. Read vault instructions and the project index, then find the one work-item index whose ticket or approved slug identifies the work and whose workspace also matches. Never recover by workspace equality alone.
 
-For vault-native work, resolve each target through [workflow-profiles.md](workflow-profiles.md). Read the work-item index first and then its canonical `Current` target. Read alignment, delivery plan, roadmap, review evidence, or files under `working/` only when the index or current document points to them.
+For vault-native work, apply the vault-target checks in [workflow-profiles.md](workflow-profiles.md) to each file before reading it with ordinary file tools. Read the work-item index first and then its canonical `Current` target. Read alignment, delivery plan, roadmap, review evidence, or files under `working/` only when the index or current document points to them.
 
 A direct change may have no workflow files. In that case, reconcile the explicit user request and conversation with the live repository, branch, worktree, diff, tests, external delivery state, and any approved implementation route. If that evidence establishes one clear continuation, resume it through Ship. Ask rather than inventing scope when it does not.
 

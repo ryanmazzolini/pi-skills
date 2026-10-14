@@ -322,6 +322,91 @@ test("uses session headers when profile roots share one encoded directory", (t) 
   assert.equal(result.manifest.diagnostics.wrongProfile, 1);
 });
 
+test("rejects an unusable selected vault before session discovery or output writes", async (t) => {
+  for (const [name, value] of [
+    ["missing value", () => undefined],
+    ["empty path", () => ""],
+    ["unavailable directory", (f) => path.join(f.base, "missing-vault")],
+    ["regular file", (f) => f.configPath],
+    ["unsupported home syntax", () => "~another-user/vault"],
+  ]) {
+    await t.test(name, () => {
+      const f = fixture(t);
+      const config = JSON.parse(fs.readFileSync(f.configPath, "utf8"));
+      config.profiles.personal.vault = value(f);
+      fs.writeFileSync(f.configPath, JSON.stringify(config));
+      const options = f.options({ sessionDir: path.join(f.base, "missing-sessions") });
+      assert.throws(() => prepareSessions(options), /personal\.vault/);
+      assert.deepEqual(fs.readdirSync(options.outputDir), []);
+    });
+  }
+});
+
+test("requires a readable selected vault but not write access", (t) => {
+  const f = fixture(t);
+  try {
+    fs.chmodSync(f.personalVault, 0o500);
+    try {
+      fs.accessSync(f.personalVault, fs.constants.W_OK);
+      t.skip("host permissions do not expose a non-writable fixture");
+      return;
+    } catch {
+      // Read-only vaults are valid because preparation writes to a separate output directory.
+    }
+    assert.equal(prepareSessions(f.options()).manifest.profile, "personal");
+
+    fs.chmodSync(f.personalVault, 0o000);
+    const options = f.options({ sessionDir: path.join(f.base, "missing-sessions") });
+    assert.throws(() => prepareSessions(options), /personal\.vault/);
+    assert.deepEqual(fs.readdirSync(options.outputDir), []);
+  } finally {
+    fs.chmodSync(f.personalVault, 0o700);
+  }
+});
+
+test("accepts vault aliases and well-formed unavailable sibling paths", (t) => {
+  const f = fixture(t);
+  const alias = path.join(f.base, "vault-alias");
+  fs.symlinkSync(f.personalVault, alias, "dir");
+  const config = JSON.parse(fs.readFileSync(f.configPath, "utf8"));
+  config.profiles.personal.vault = alias;
+  config.profiles.personal.gitRoots.push(path.join(f.base, "optional-missing-root"));
+  config.profiles.work = {
+    vault: path.join(f.base, "missing-work-vault"),
+    gitRoots: [path.join(f.base, "missing-work-root")],
+  };
+  fs.writeFileSync(f.configPath, JSON.stringify(config));
+  assert.equal(prepareSessions(f.options()).manifest.profile, "personal");
+
+  const insideVault = path.join(alias, "output");
+  fs.mkdirSync(insideVault);
+  assert.throws(
+    () => prepareSessions(f.options({ outputDir: insideVault })),
+    /outside workflow roots, vaults, and Pi session storage/,
+  );
+});
+
+test("rejects malformed sibling profiles rather than dropping their output exclusions", async (t) => {
+  for (const [name, update] of [
+    ["non-object profile", (config) => { config.profiles.work = null; }],
+    ["missing vault", (config) => { delete config.profiles.work.vault; }],
+    ["non-array Git roots", (config) => { config.profiles.work.gitRoots = "~/work"; }],
+    ["invalid Git root", (config) => { config.profiles.work.gitRoots = [42]; }],
+    ["oversized vault path", (config) => { config.profiles.work.vault = "x".repeat(4097); }],
+    ["invalid profile name", (config) => { config.profiles["bad name"] = config.profiles.work; }],
+  ]) {
+    await t.test(name, () => {
+      const f = fixture(t);
+      const config = JSON.parse(fs.readFileSync(f.configPath, "utf8"));
+      update(config);
+      fs.writeFileSync(f.configPath, JSON.stringify(config));
+      const options = f.options({ sessionDir: path.join(f.base, "missing-sessions") });
+      assert.throws(() => prepareSessions(options), /profile|vault|gitRoots/i);
+      assert.deepEqual(fs.readdirSync(options.outputDir), []);
+    });
+  }
+});
+
 test("rejects overlapping workflow profile roots", (t) => {
   const f = fixture(t);
   const config = JSON.parse(fs.readFileSync(f.configPath, "utf8"));
@@ -351,13 +436,14 @@ test("rejects report output inside profile roots or session storage", (t) => {
     /outside workflow roots, vaults, and Pi session storage/,
   );
 
-  for (const crossProfileOutput of [
+  for (const profileOutput of [
+    f.personalVault,
     f.workVault,
     path.join(f.workRoot, "report-output"),
   ]) {
-    fs.mkdirSync(crossProfileOutput, { recursive: true });
+    fs.mkdirSync(profileOutput, { recursive: true });
     assert.throws(
-      () => prepareSessions(f.options({ outputDir: crossProfileOutput })),
+      () => prepareSessions(f.options({ outputDir: profileOutput })),
       /outside workflow roots, vaults, and Pi session storage/,
     );
   }

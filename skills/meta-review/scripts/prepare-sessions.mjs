@@ -4,10 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveNamedProfile } from "../../ship/ship/scripts/workflow-profile.mjs";
 
 const SUPPORTED_PROFILE = "personal";
 const MAX_CONFIG_BYTES = 64 * 1024;
+const MAX_PATH_BYTES = 4096;
+const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MAX_HEADER_BYTES = 16 * 1024;
 const DEFAULTS = Object.freeze({
   lookbackDays: 30,
@@ -42,6 +43,13 @@ function expandHome(value, home) {
   return value;
 }
 
+function requirePath(value, label) {
+  if (typeof value !== "string" || value.length === 0 || Buffer.byteLength(value, "utf8") > MAX_PATH_BYTES || value.includes("\0")) {
+    throw new PrepareSessionsError(`${label} must be a non-empty path of at most ${MAX_PATH_BYTES} UTF-8 bytes.`);
+  }
+  return value;
+}
+
 function resolveConfigPath(configPath, env, home) {
   const configured = configPath ?? env.PI_SKILLS_WORKFLOW_CONFIG;
   if (configured) return path.resolve(expandHome(configured, home));
@@ -62,6 +70,8 @@ function configuredPath(value, home) {
 }
 
 function loadProfilePaths({ profileName, configPath, home }) {
+  requirePath(home, "Home directory");
+  requirePath(configPath, "Configuration path");
   let stat;
   try {
     stat = fs.statSync(configPath);
@@ -79,16 +89,39 @@ function loadProfilePaths({ profileName, configPath, home }) {
     throw new PrepareSessionsError("Workflow profile configuration is not valid JSON.", { cause: error });
   }
   const profiles = config?.version === 1 && isPlainObject(config.profiles) ? config.profiles : undefined;
-  const raw = profiles?.[profileName];
-  if (!isPlainObject(raw) || !Array.isArray(raw.gitRoots) || raw.gitRoots.length < 1 || raw.gitRoots.length > 32) {
-    throw new PrepareSessionsError(`${profileName}.gitRoots must contain 1-32 paths.`);
+  const entries = profiles ? Object.entries(profiles) : [];
+  if (entries.length < 1 || entries.length > 32) {
+    throw new PrepareSessionsError("Workflow profile configuration must contain version 1 and 1-32 profiles.");
+  }
+  for (const [name, profile] of entries) {
+    if (!PROFILE_NAME.test(name) || !isPlainObject(profile)) {
+      throw new PrepareSessionsError("Workflow configuration contains an invalid profile.");
+    }
+    requirePath(profile.vault, `${name}.vault`);
+    if (!Array.isArray(profile.gitRoots) || profile.gitRoots.length < 1 || profile.gitRoots.length > 32) {
+      throw new PrepareSessionsError(`${name}.gitRoots must contain 1-32 paths.`);
+    }
+    profile.gitRoots.forEach((root, index) => requirePath(root, `${name}.gitRoots[${index}]`));
+  }
+  if (!Object.hasOwn(profiles, profileName)) {
+    throw new PrepareSessionsError(`Unknown workflow profile: ${JSON.stringify(profileName)}`);
+  }
+
+  const raw = profiles[profileName];
+  if (raw.vault.startsWith("~") && raw.vault !== "~" && !raw.vault.startsWith("~/")) {
+    throw new PrepareSessionsError(`${profileName}.vault uses unsupported home-relative syntax.`);
+  }
+  let vault;
+  try {
+    vault = fs.realpathSync(path.resolve(expandHome(raw.vault, home)));
+    if (!fs.statSync(vault).isDirectory()) throw new Error("not a directory");
+    fs.accessSync(vault, fs.constants.R_OK | fs.constants.X_OK);
+  } catch (error) {
+    throw new PrepareSessionsError(`${profileName}.vault is unavailable.`, { cause: error });
   }
 
   const roots = [];
   for (const configuredRoot of raw.gitRoots) {
-    if (typeof configuredRoot !== "string" || configuredRoot.length === 0 || configuredRoot.includes("\0")) {
-      throw new PrepareSessionsError(`${profileName}.gitRoots contains an invalid path.`);
-    }
     try {
       const root = fs.realpathSync(path.resolve(expandHome(configuredRoot, home)));
       const rootStat = fs.statSync(root);
@@ -105,13 +138,10 @@ function loadProfilePaths({ profileName, configPath, home }) {
 
   const forbiddenProfilePaths = [];
   const otherProfileRoots = [];
-  for (const [name, profile] of Object.entries(profiles)) {
-    if (!isPlainObject(profile)) continue;
-    const configuredVault = configuredPath(profile.vault, home);
-    if (configuredVault) forbiddenProfilePaths.push(configuredVault);
-    for (const candidate of Array.isArray(profile.gitRoots) ? profile.gitRoots : []) {
+  for (const [name, profile] of entries) {
+    forbiddenProfilePaths.push(name === profileName ? vault : configuredPath(profile.vault, home));
+    for (const candidate of profile.gitRoots) {
       const configured = configuredPath(candidate, home);
-      if (!configured) continue;
       forbiddenProfilePaths.push(configured);
       if (name !== profileName) otherProfileRoots.push(configured);
     }
@@ -540,12 +570,10 @@ export function prepareSessions(options = {}) {
     throw new PrepareSessionsError(`This first release supports only the ${SUPPORTED_PROFILE} profile.`);
   }
   const configPath = resolveConfigPath(options.configPath, env, home);
-  const namedProfile = resolveNamedProfile({ profileName, configPath, env, home }).profile;
   const { roots, forbiddenProfilePaths } = loadProfilePaths({ profileName, configPath, home });
   const sessionStorage = resolveSessionStorage(options, env, home);
   const outputDir = ensureOutputDirectory(options.outputDir, [
     sessionStorage.directory,
-    namedProfile.vault,
     ...forbiddenProfilePaths,
   ]);
   const bounds = normalizeBounds(options);

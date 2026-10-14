@@ -15,16 +15,9 @@ Use the message, current peer evidence, and located repository files first. If t
 
 ## Follow an explicit work-item pointer
 
-A profile and path locate vault material; they do not establish project identity or authority. Resolve the workflow-profile helper from the First Mate skill directory only when a vault pointer is needed. Resolve each vault file through the helper before reading it:
+A profile and path locate vault material; they do not establish project identity or authority. Only when a vault pointer is needed, follow the [named-profile read and vault-target checks](../../ship/ship/references/workflow-profiles.md): read the host routing data, select the explicit profile's readable vault, and verify each target with ordinary file tools. A profile-scoped read does not need an available workspace or Git root.
 
-```bash
-node "<first-mate-skill-dir>/../ship/ship/scripts/workflow-profile.mjs" path \
-  --profile "PROFILE" \
-  --target "RELATIVE_PATH" \
-  --mode read
-```
-
-Read the selected vault's `AGENTS.md` and directed context before the work item. Open the supplied `index.md` first. Follow `Current` only when it is relevant, validating it with the work-item directory as `--within`. Treat a recorded workspace as a locator when repository evidence is needed; confirm that the directory exists and read its repository instructions before using it.
+Read the selected vault's `AGENTS.md` and directed context before the work item. Open the supplied `index.md` first. Follow `Current` only when it is relevant, checking that its canonical relative path stays inside the work-item directory without traversing symlinks. Treat a recorded workspace as a locator when repository evidence is needed; confirm that the directory exists and read its repository instructions before using it.
 
 Do not require profile, work-item, and workspace metadata to prove one another. A missing path, unavailable profile, conflicting locator, or ambiguous context limits the answer; it does not trigger broader discovery. State the missing evidence and ask for the smallest correction.
 

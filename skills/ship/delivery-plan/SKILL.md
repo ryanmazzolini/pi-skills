@@ -106,7 +106,7 @@ Use project language for outcomes and implementation names only in tasks. Point 
 
 ## Review and hand off
 
-Rerun the outcome and graph checks. For vault-native work, resolve `plan.md` and `index.md` through the workflow-profile helper before writing, then set `Current` to the plan. Preserve a verified legacy workflow in place.
+Rerun the outcome and graph checks. For vault-native work, apply the [vault-target checks](../ship/references/workflow-profiles.md) to `plan.md` and `index.md` before writing with ordinary file tools, then set `Current` to the plan. Preserve a verified legacy workflow in place.
 
 Use selective early review from `../ship/references/review-gate.md` only for a named scope, dependency, or high-risk uncertainty. Lead with the result and the first change you recommend. Explain only the deferred behavior, ordering constraint, or risk that could affect approval. Do not reproduce the `plan.md` schema, headings, labels, or graph checks in the conversation; when the sequence matters, use a short numbered list of concrete project changes. End with one short question: **Can we use this plan to start the first change?**
 
