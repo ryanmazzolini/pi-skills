@@ -33,10 +33,11 @@
     {
       "name": "review",
       "source": "./skills/review",
-      "description": "High-signal code review with plain-language findings",
+      "description": "High-signal code review with plain-language findings and an HTML change walkthrough",
       "strict": false,
       "skills": [
-        "./code-review"
+        "./code-review",
+        "./change-walkthrough"
       ]
     },
     {

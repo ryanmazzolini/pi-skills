@@ -1,0 +1,199 @@
+{
+  "title": "Harden the Pi feedback watch",
+  "intent": "Pi no longer runs Diffect binaries found inside the reviewed repo. A loopback daemon refuses requests from web pages. Status labels got shorter.",
+  "systems": {
+    "Pi extension": [
+      "integrations/pi/"
+    ],
+    "Daemon": [
+      "packages/core/src/"
+    ],
+    "Tests": [
+      "packages/core/test/"
+    ]
+  },
+  "steps": [
+    {
+      "id": "s1",
+      "title": "Only run Diffect binaries from outside the reviewed repo",
+      "risk": "high",
+      "why": "`localFile` searched upward from the extension folder and from `process.cwd()`, which is the reviewed repo. `findLocalFile` only walks up from the extension's real path. `pathCommand` runs `command -v` from your home directory and drops any result inside the workspace.",
+      "watch": [
+        {
+          "change": "c1",
+          "text": "**`existsSync` is still called but no longer imported.** `/diffect <path>`, `/diffect-review <path>` and `DIFFECT_APP_PATH` throw a ReferenceError at `diffect.ts:523`, `616` and `1025`. No tsconfig covers `integrations/pi`, so nothing caught it."
+        },
+        {
+          "change": "c16",
+          "text": "**A deleted cwd throws instead of returning null.** `realpathSync(workspaceDirectory)` sits outside the try."
+        },
+        {
+          "change": "c15",
+          "text": "**Ancestors of the extension are still trusted.** That includes a Diffect checkout under review."
+        },
+        {
+          "change": "c10",
+          "text": "**`command -v` still runs in a login shell**, so profile scripts run as before."
+        }
+      ],
+      "map": [
+        {
+          "from": "Pi extension",
+          "to": "Diffect CLI",
+          "via": "spawn cli.js"
+        },
+        {
+          "from": "Reviewed repo",
+          "to": "Pi extension",
+          "via": "cwd as search root",
+          "mark": "-"
+        },
+        {
+          "from": "Shell",
+          "to": "Pi extension",
+          "via": "command -v, from $HOME",
+          "mark": "+"
+        }
+      ],
+      "changes": [
+        "c8",
+        "c15",
+        "c11",
+        "c17",
+        "c13",
+        "c12",
+        "c10",
+        "c16",
+        "c9",
+        "c14",
+        "c1"
+      ]
+    },
+    {
+      "id": "s2",
+      "title": "Refuse rebound and cross-origin requests on a loopback daemon",
+      "risk": "high",
+      "why": "Any web page can reach 127.0.0.1:7421. When the daemon is bound to loopback, `handle` now answers 403 unless Host is a loopback address and Origin, if present, is a loopback origin. The CLI and Pi send no Origin, so they still pass.",
+      "watch": [
+        {
+          "change": "c22",
+          "text": "**`isLoopback` accepts more than before:** brackets, a trailing dot and any case. Five routes outside this change call it too (`daemon.ts:298`, `743`, `883`, `932`, `1011`)."
+        },
+        {
+          "change": "c24",
+          "text": "**Odd Hosts pass after URL normalisation.** `localhost/a/..` and `localhost?` are accepted. Intended?"
+        },
+        {
+          "change": "c21",
+          "text": "**A network-bound daemon is unchanged.** The check only runs when the daemon itself is on loopback."
+        }
+      ],
+      "map": [
+        {
+          "from": "Browser page",
+          "to": "Daemon",
+          "via": "HTTP with foreign Host or Origin",
+          "mark": "-"
+        },
+        {
+          "from": "CLI, Pi, web app",
+          "to": "Daemon",
+          "via": "HTTP, no Origin"
+        }
+      ],
+      "changes": [
+        "c21",
+        "c23",
+        "c24",
+        "c25",
+        "c22"
+      ]
+    },
+    {
+      "id": "s3",
+      "title": "Require application/json on request bodies",
+      "risk": "medium",
+      "why": "`readJsonBody` throws unless the content type is `application/json`, and `createServer` turns that into 415. A browser can't send that type cross-origin without a preflight, which closes the forged-form POST path.",
+      "watch": [
+        {
+          "change": "c27",
+          "text": "**Every JSON POST and PUT is affected.** Nine routes call it as `readJsonBody<T>(req)`; they are the unchanged callers on this card. A client that omits the header now gets 415 on all of them."
+        },
+        {
+          "change": "c27",
+          "text": "**Clients checked:** the web app and the Pi extension send `content-type: application/json`. Nothing else was checked."
+        }
+      ],
+      "map": [
+        {
+          "from": "Browser page",
+          "to": "Daemon",
+          "via": "POST without application/json",
+          "mark": "-"
+        },
+        {
+          "from": "CLI, Pi, web app",
+          "to": "Daemon",
+          "via": "JSON body"
+        }
+      ],
+      "changes": [
+        "c27",
+        "c26",
+        "c20"
+      ]
+    },
+    {
+      "id": "s4",
+      "title": "Shorter Pi status labels",
+      "risk": "low",
+      "why": "One `watchStatusLabel` gives `Diffect ●`, `↻`, `◌` or `!`. It replaces the inline helper and four hard-coded strings.",
+      "watch": [],
+      "map": [],
+      "changes": [
+        "c19",
+        "c18",
+        "c5",
+        "c4",
+        "c3",
+        "c2"
+      ]
+    },
+    {
+      "id": "s5",
+      "title": "Tests for each boundary",
+      "risk": "low",
+      "why": "Pi watch tests cover lookup through a symlinked extension, rejecting commands inside the workspace, and the labels. Round-trip tests add `rawPost`, raw HTTP that can forge Host, Origin and content type, and check the 415 and the 403s.",
+      "watch": [
+        {
+          "change": "c34",
+          "text": "**The rebound-Host case proves only the Origin check.** Node's `fetch` replaces a custom Host header. A `rawPost` case with a foreign Host is missing."
+        }
+      ],
+      "map": [
+        {
+          "from": "Tests",
+          "to": "Pi extension",
+          "via": "symlinked extension dir",
+          "mark": "+"
+        },
+        {
+          "from": "Tests",
+          "to": "Daemon",
+          "via": "rawPost, raw HTTP",
+          "mark": "+"
+        }
+      ],
+      "changes": [
+        "c31",
+        "c30",
+        "c29",
+        "c28",
+        "c36",
+        "c34",
+        "c33",
+        "c32"
+      ]
+    }
+  ]
+}

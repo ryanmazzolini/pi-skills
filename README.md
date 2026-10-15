@@ -62,6 +62,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | Skill | What it helps with |
 |---|---|
 | [`code-review`](./skills/review/code-review/SKILL.md) | Find concrete defects in code changes and explain them in plain language |
+| [`change-walkthrough`](./skills/review/change-walkthrough/SKILL.md) | Build an offline HTML walkthrough of a commit or pull request: change map, risk-ordered steps, shaded diffs |
 | [`diagnosing-bugs`](./skills/debugging/diagnosing-bugs/SKILL.md) | Diagnose hard, flaky, environment-specific, or performance bugs |
 | [`security-review`](./skills/security/security-review/SKILL.md) | Find proven, exploitable security problems in code and delivery paths |
 | [`explain-code`](./skills/ai-authoring/explain-code/SKILL.md) | Explain code from a high-level model through targeted visual traces |
@@ -120,6 +121,7 @@ An explicit Intercom `send` starts the recipient turn without awaiting a respons
 - [Obsidian CLI](https://obsidian.md/help/cli) powers vault-aware note workflows and must be enabled in Obsidian desktop.
 - Notion CLI (`ntn`) powers `notion-cli`.
 - [agent-browser](https://github.com/vercel-labs/agent-browser) powers browser automation.
+- [sem](https://github.com/Ataraxy-Labs/sem) (`brew install sem-cli`) extracts the entities and call graph for `change-walkthrough`.
 - [Herdr](https://herdr.dev/) is only needed for Herdr-managed sessions.
 - [New BAML](https://new.boundaryml.com/) toolchain `0.20.1` powers the optional, local-only [skill behavior evals](./evals/skills/README.md).
 

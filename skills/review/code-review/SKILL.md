@@ -25,6 +25,10 @@ Before returning a review of an open GitHub pull request, call `monitor_github_p
 
 Reviews are read-only by default. Do not change the reviewed code or publish comments unless the user explicitly asks and the active workflow permits it.
 
+## Companion walkthrough
+
+For a pull request, commit, or commit range, also build the walkthrough page with [`change-walkthrough`](../change-walkthrough/SKILL.md) while inspecting the change. Writing its guide checks that you understand the change, and its notes often become findings. Link the page in the review result. It lives outside the reviewed repository and stays after the review; it is not review infrastructure to remove. Skip it, and say so, when the renderer cannot run or the change has no supported code entities.
+
 ## Review setup
 
 Temporary review infrastructure is allowed when it helps inspect or validate the change without modifying it. Prefer OS temporary directories. Track every clone, worktree, ref, dependency install, process, and generated artifact you create.

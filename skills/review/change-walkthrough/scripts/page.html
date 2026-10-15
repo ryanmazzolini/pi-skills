@@ -1,0 +1,628 @@
+<!doctype html>
+<!-- Change walkthrough: facts from the sem CLI plus an agent-written guide, rendered by walkthrough.mjs. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Walkthrough</title>
+<style>
+  :root { --bg:#0f1115; --panel:#161922; --line:#262b36; --fg:#d7dae0; --src:#bcc2cc; --dim:#aab1bd; --faint:#8a929f;
+          --add:#16351f; --addfg:#7ee08f; --del:#3a1a1d; --delfg:#f08a8f; --warn:#e8b45a; --acc:#7aa2f7; --accbg:#1a2238;
+          --blk-add:#1d4a2b; --blk-new:#2a6b3d; --blk-del:#52252a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 -apple-system, system-ui, sans-serif; height:100vh; display:grid; grid-template-rows:auto 1fr; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size:12.5px; }
+  a { color:var(--acc); text-decoration:none; } a:hover { text-decoration:underline; }
+  button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; padding:0; }
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  header { padding:9px 16px; border-bottom:1px solid var(--line); display:flex; gap:14px; align-items:baseline; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  header .meta { color:var(--dim); font-size:12px; }
+  header .keys { margin-left:auto; color:var(--faint); font-size:11.5px; white-space:nowrap; }
+  header .keys b { color:var(--dim); font-weight:500; font-family:ui-monospace, Menlo, monospace; }
+  .wrap { display:grid; grid-template-columns:270px 1fr 14px; min-height:0; }
+  nav { border-right:1px solid var(--line); overflow:auto; padding:10px 0; display:flex; flex-direction:column; }
+  nav .intent { padding:0 14px 12px; color:var(--dim); font-size:12.5px; border-bottom:1px solid var(--line); margin-bottom:6px; }
+  nav .step { display:flex; gap:9px; width:100%; text-align:left; padding:7px 14px 7px 12px; align-items:baseline; }
+  nav .step:hover { background:#1b1f2a; }
+  nav .step.on { background:var(--accbg); box-shadow: inset 2px 0 0 var(--acc); }
+  nav .step .n { color:var(--faint); font-size:11.5px; margin-left:auto; padding-left:8px; }
+  nav .foot { margin-top:auto; padding:12px 14px 0; color:var(--faint); font-size:11.5px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex:none; position:relative; top:-1px; }
+  .dot.high { background:#ff6b74; } .dot.medium { background:#f3c66b; } .dot.low { background:#6fcf85; } .dot.none { background:#3c4352; }
+  /* No padding on main itself: sticky card heads stick to the scrollport's content edge. */
+  main { overflow:auto; scroll-behavior:smooth; }
+  section { padding:16px 26px 50vh; }
+  section[hidden] { display:none; }
+  main h2 { margin:0 0 8px; font-size:17px; display:flex; gap:10px; align-items:center; }
+  .why { max-width:78ch; margin:0 0 12px; color:var(--fg); }
+  .watch { list-style:none; margin:0 0 16px; padding:0; max-width:78ch; }
+  .watch li { margin:0 0 6px; padding:3px 10px 3px 26px; border-left:2px solid var(--warn); position:relative; }
+  .watch li::before { content:"!"; position:absolute; left:10px; top:3px; color:var(--warn); font-weight:700; }
+  .watch a.at { color:var(--dim); font-family:ui-monospace, Menlo, monospace; font-size:12px; white-space:nowrap; }
+  .watch a.at::before { content:"→ "; color:var(--faint); }
+  .lbl { color:var(--faint); text-transform:uppercase; font-size:10.5px; letter-spacing:.07em; margin:16px 0 6px; }
+  .lbl .t-add, .lbl .t-del { text-transform:none; letter-spacing:0; margin-left:8px; font-size:11px; }
+  /* Map: the whole change as systems > files > entities. A block's width is its lines changed and its
+     fill is its diffstat: green share added, red share removed. Arcs are boundary crossings from the guide. */
+  #map { position:relative; padding:14px 26px 0; }
+  #map svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
+  #map path.arc { fill:none; pointer-events:stroke; cursor:pointer; }
+  #map text { font:11px -apple-system, system-ui, sans-serif; paint-order:stroke; stroke:var(--bg); stroke-width:4px; }
+  /* Columns share a minimum width (from their longest label) between the actor row and the system row
+     so they stay aligned; when the columns cannot fit, both rows wrap at the same point. */
+  .actors, .systems { display:flex; gap:20px; flex-wrap:wrap; }
+  .actors { margin-bottom:62px; row-gap:6px; }
+  .cell { display:flex; flex-wrap:wrap; gap:4px 8px; justify-content:space-evenly; min-width:var(--minw, 0); flex:1 1 0; }
+  /* Actors take the hue of the system they sit above, lighter than the box so they read as outside it. */
+  .actor { border:1px solid color-mix(in srgb, var(--sys) 60%, var(--line)); border-radius:14px; padding:2px 10px; color:var(--sys); font-size:12px; font-weight:500; white-space:nowrap; background:color-mix(in srgb, var(--sys) 8%, transparent); }
+  /* Each system has a hue (--sys). It colours the box, its name, and the head of every card in that system. */
+  .sys { border:1px solid color-mix(in srgb, var(--sys) 40%, var(--line)); border-top:2px solid var(--sys); border-radius:8px; padding:7px 10px 9px; background:#12151c; flex:1 1 0; min-width:var(--minw, 0); }
+  .b .more { color:#c9d0da; opacity:.75; font-weight:400; font-size:11px; }
+  .sys > .name { font-size:12px; font-weight:600; margin-bottom:2px; color:var(--sys); }
+  .file { margin-top:5px; }
+  .file .fn { color:var(--dim); font-size:11px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .blocks { display:flex; flex-wrap:wrap; gap:3px; }
+  /* Long names wrap to two lines instead of truncating; the full name is in the tooltip and on the card. */
+  .b { flex:none; border-radius:4px; min-height:21px; padding:1px 7px; display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:500; min-width:min(var(--w), 100%); max-width:100%;
+       border:1px solid rgba(255,255,255,.08); color:#eef1f5; background:linear-gradient(90deg, var(--blk-add) 0 var(--p), var(--blk-del) var(--p) 100%); text-align:left; }
+  .b .g { color:inherit; width:auto; }
+  .b .txt { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.2; }
+  .b.added { background:#25603a; color:#f1fbf3; }
+  .b.deleted { color:#f6b8bc; } .b.deleted .txt { text-decoration:line-through; }
+  .b.cur { border-color:var(--acc); box-shadow:inset 0 0 0 1px var(--acc); }
+  .b:hover { filter:brightness(1.2); }
+  .b.rel { filter:brightness(1.35); } .b.rel .txt { text-decoration:underline; }
+  #map .key { color:var(--dim); font-size:11px; text-align:right; margin-top:6px; }
+  .tree { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:8px 12px; white-space:pre; overflow:auto; line-height:1.5; }
+  .tree a { color:var(--fg); } .tree a:hover { color:var(--acc); }
+  .t-add { color:var(--addfg); } .t-del { color:var(--delfg); } .t-dim { color:var(--faint); } .nm { color:var(--faint); }
+  .g { display:inline-block; width:14px; text-align:center; font-family:ui-monospace, Menlo, monospace; font-weight:600; }
+  .g.added { color:var(--addfg); } .g.deleted { color:var(--delfg); } .g.modified { color:#9db8ff; } .g.moved { color:var(--dim); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:6px; margin:10px 0; }
+  .card.cur { border-color:#3a4a74; }
+  .card > .head { position:sticky; top:0; z-index:1; width:100%; text-align:left; background:var(--panel); border-radius:6px 6px 0 0; padding:7px 12px; display:flex; gap:10px; align-items:baseline; box-shadow:inset 3px 0 0 var(--sys, transparent); }
+  .card:not(.closed) > .head { border-bottom:1px solid var(--line); }
+  .head .g { font-size:13px; }
+  .head b { font-weight:600; }
+  .head .type { color:var(--faint); font-size:12px; }
+  .head .tog { display:inline-flex; gap:10px; align-items:baseline; }
+  .head .file { color:var(--dim); font-size:12px; } .head a.file:hover { color:var(--acc); text-decoration:none; }
+  a.src code { color:var(--acc); }
+  .head .calls { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; font-size:12px; color:var(--dim); }
+  .chip { display:inline-block; padding:0 6px; border-radius:3px; max-width:28ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; font-family:ui-monospace, Menlo, monospace; font-size:11.5px; }
+  .chip.add { background:var(--add); color:var(--addfg); } .chip.del { background:var(--del); color:var(--delfg); } .chip.out { background:#2a2f3a; color:var(--src); }
+  .chip.nm { opacity:.7; }
+  .card.closed > .diffwrap, .card.closed > .note { display:none; }
+  /* Long lines scroll inside the card, so the page itself never grows sideways. */
+  .diffwrap { overflow-x:auto; }
+  .card .note { padding:6px 12px; color:var(--dim); font-size:12.5px; }
+  table.diff { border-collapse:collapse; width:100%; }
+  table.diff td { padding:0 8px; white-space:pre; vertical-align:top; }
+  table.diff td.ln { color:var(--faint); text-align:right; width:1%; user-select:none; }
+  td.src { color:var(--src); transition:background .25s; }
+  tr:not(.add):not(.del) td.src { opacity:.72; }
+  tr.add td.src, tr.del td.src { color:var(--fg); }
+  /* Syntax colours: muted so they read on the green and red row backgrounds. */
+  .tk-comment { color:#7a8290; font-style:italic; }
+  .tk-string, .tk-template-string, .tk-char, .tk-regex { color:#cdb98f; }
+  .tk-keyword { color:#bd9df0; }
+  .tk-boolean, .tk-number, .tk-constant { color:#e6ad70; }
+  .tk-function, .tk-function-variable { color:#8fbaf9; }
+  .tk-class-name, .tk-builtin { color:#84d4ca; }
+  .tk-operator, .tk-punctuation { color:#9aa1ae; }
+  /* Shade = where to concentrate. --imp is the line's importance band. The gutter stays at full strength
+     so a faint row still reads as added or removed. */
+  tr.add td.src { background:color-mix(in srgb, #1f5230 var(--imp, 100%), var(--panel)); }
+  tr.del td.src { background:color-mix(in srgb, #5a2a2f var(--imp, 100%), var(--panel)); }
+  tr.add td.ln { background:#12291a; } tr.del td.ln { background:#2c1517; }
+  tr.cur td.src { box-shadow: inset 3px 0 0 var(--acc); filter:brightness(1.2); }
+  .lbl .hint { text-transform:none; letter-spacing:0; margin-left:8px; font-size:11px; }
+  tr.gap td { color:var(--faint); background:#12141a; }
+  tr.gap button { color:var(--faint); } tr.gap button:hover { color:var(--acc); }
+  tr.ctx[hidden] { display:none; }
+  canvas#mini { width:14px; height:100%; display:block; cursor:pointer; }
+  footer { color:var(--faint); font-size:11.5px; margin-top:30px; max-width:78ch; }
+</style>
+</head>
+<body>
+<script id="facts" type="application/json">__FACTS__</script>
+<script id="guide" type="application/json">__GUIDE__</script>
+<header id="hdr"></header>
+<div class="wrap"><nav id="nav"></nav><main id="main"></main><canvas id="mini" aria-hidden="true"></canvas></div>
+<script>__D3__</script>
+<script>window.Prism = { manual: true };</script>
+<script>__PRISM__</script>
+<script>
+const F = JSON.parse(document.getElementById('facts').textContent);
+const G = JSON.parse(document.getElementById('guide').textContent);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// `path/to/file.ts:123` in walkthrough text always links to that line at the head commit; a bare
+// `file.ts:123` links when the basename is unique among the changed and called files.
+const md = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+  .replace(/<code>([\w.\/-]+\.\w+):(\d+)(?:-(\d+))?<\/code>/g, (m, f, a, b) => {
+    const p = f.includes('/') ? f : pathOfBase[f];
+    return p && web ? `<a class="src" href="${web}/blob/${F.range.head}/${p}#L${a}${b ? `-L${b}` : ''}" target="_blank" rel="noopener"><code>${f}:${a}${b ? `-${b}` : ''}</code></a>` : m;
+  });
+const web = F.range.web;
+const blob = (file, sha, a, b) => `${web}/blob/${sha}/${file}#L${a}${b && b !== a ? `-L${b}` : ''}`;
+const pathOfBase = {};
+for (const p of [...(F.files ?? []).map(f => f.path), ...Object.values(F.entities).map(e => e.file)]) { const b = p.split('/').pop(); pathOfBase[b] = pathOfBase[b] === undefined || pathOfBase[b] === p ? p : null; }
+const byId = Object.fromEntries(F.changes.map(c => [c.id, c]));
+const byKey = {}; for (const c of F.changes) for (const k of [c.headId, c.baseId]) if (k) byKey[k] = c;
+const nameOf = id => byKey[id]?.name ?? F.entities[id]?.name ?? id.split('::').pop();
+const fileOf = id => byKey[id]?.file ?? F.entities[id]?.file ?? '';
+const base = p => p.split('/').pop();
+const short = p => p.split('/').slice(-2).join('/');
+const live = e => !e.external;   // a name match that really imports a builtin or package is wrong
+// The system whose longest path prefix matches the file.
+const sysOf = file => {
+  let best = null, len = -1;
+  for (const [name, prefixes] of Object.entries(G.systems ?? {})) for (const p of prefixes) if (file.startsWith(p) && p.length > len) { best = name; len = p.length; }
+  return best;
+};
+const glyph = k => ({ added: '+', deleted: '−', modified: '±', moved: '↕' }[k] ?? '·');
+
+// --- Nesting: a change whose lines sit inside another change in the same file is its child.
+// A child with changed lines shows its hunks once, on its own card; the parent keeps a pointer row.
+// Runs before validation so the uncovered list can skip empty containers.
+const rNew = c => c.kind === 'deleted' ? null : c.lines;
+const rOld = c => c.oldLines ?? (c.kind === 'deleted' ? c.lines : null);
+const inside = (a, b) => !!(a && b && a[0] >= b[0] && a[1] <= b[1] && !(a[0] === b[0] && a[1] === b[1]));
+const within = (k, p) => k !== p && k.file === p.file && (inside(rNew(k), rNew(p)) || inside(rOld(k), rOld(p)));
+const changed = c => c.diff.some(o => o[0] !== ' ');
+for (const c of F.changes) {
+  const all = F.changes.filter(o => within(o, c));
+  c.kids = all.filter(k => !all.some(o => within(k, o)));
+  const own = c.kids.filter(changed);
+  const hit = (side, n) => own.find(k => { const r = side === 'new' ? rNew(k) : rOld(k); return r && n >= r[0] && n <= r[1]; });
+  c.own = []; let last = null;
+  for (const o of c.diff) {
+    const k = o[0] === '+' ? hit('new', o[2]) : o[0] === '-' ? hit('old', o[1]) : (hit('old', o[1]) ?? hit('new', o[2]));
+    if (!k) { c.own.push(o); last = null; continue; }
+    if (k !== last) c.own.push(['ref', k.id]);
+    last = k;
+  }
+  // A line of punctuation alone, such as the `;` fragments tree-sitter leaves between test blocks, is not content.
+  c.hasOwn = c.own.some(o => (o[0] === '+' || o[0] === '-') && /[A-Za-z0-9_]/.test(o[3]));
+  c.pointerOnly = own.length > 0 && !c.hasOwn;
+  c.plus = c.own.filter(o => o[0] === '+' && o[3].trim()).length;
+  c.minus = c.own.filter(o => o[0] === '-' && o[3].trim()).length;
+  c.n = c.plus + c.minus;
+}
+for (const c of F.changes) for (const k of c.kids) k.parent = c;
+// Members of a changed type or object fold into the parent's map block: one block with a +N count
+// instead of a row of one-line property blocks.
+const foldedInto = c => c.type === 'property' && c.parent ? c.parent : null;
+for (const c of F.changes) { const p = foldedInto(c); if (p) { (p.folded ??= []).push(c); } }
+
+// --- Validation: keep only references that exist in the facts.
+const invalid = [], covered = new Set();
+const steps = (G.steps ?? []).map(s => ({ ...s, changes: (s.changes ?? []).filter(id => {
+  if (byId[id]) { covered.add(id); return true; } invalid.push(`${s.id} → ${id}`); return false; }) }));
+// Uncovered changes are listed only when they have lines of their own. A container whose hunks all
+// belong to member cards, or a fragment with no changed lines, has nothing to show.
+const hiddenEmpty = [];
+const uncovered = F.changes.filter(c => !covered.has(c.id)).filter(c => { if (c.pointerOnly || !c.hasOwn) { hiddenEmpty.push(c); return false; } return true; }).map(c => c.id);
+if (uncovered.length) steps.push({ id: 'rest', title: 'Not in the walkthrough', risk: 'none', watch: [], map: [],
+  why: 'Changes no step mentions. Either noise from the analysis or something the author skipped.', changes: uncovered });
+const stepOf = {}; steps.forEach((s, i) => s.changes.forEach(id => { stepOf[id] = i; }));
+
+// Boundary crossings from the guide. One end must be a system; a crossing between two actors has
+// nowhere to anchor, so it is reported instead of drawn.
+const systems = Object.keys(G.systems ?? {});
+const isSys = n => systems.includes(n);
+const crossings = []; steps.forEach((s, i) => (s.map ?? []).forEach(e => crossings.push({ ...e, step: i, bad: !(isSys(e.from) || isSys(e.to)) })));
+const drawn = crossings.filter(e => !e.bad), badX = crossings.filter(e => e.bad);
+
+// --- Header and nav
+const r = F.range, st = F.stats;
+const sha = web ? `<a href="${web}/commit/${r.head}" target="_blank" rel="noopener">${r.head.slice(0,7)}</a>` : r.head.slice(0,7);
+const pr = G.pr ? ` · <a href="${esc(G.pr)}" target="_blank" rel="noopener">#${esc(G.pr.split('/').pop())}</a>` : '';
+document.getElementById('hdr').innerHTML = `<h1>${esc(G.title)}</h1>
+  <span class="meta mono">${sha}${pr} · ${st.filesChanged} files · <span class="t-add">+${st.linesAdded}</span> <span class="t-del">−${st.linesRemoved}</span></span>
+  <span class="keys"><b>j k</b> edit &nbsp; <b>J K</b> step &nbsp; <b>o</b> fold</span>`;
+document.getElementById('nav').innerHTML = `<div class="intent">${md(G.intent)}</div>` + steps.map((s, i) =>
+  `<button class="step" data-i="${i}"><span class="dot ${s.risk}"></span><span class="sr">${s.risk} risk: </span><span>${md(s.title)}</span><span class="n">${s.changes.length}</span></button>`).join('')
+  + `<div class="foot">${invalid.length ? `${invalid.length} reference${invalid.length > 1 ? 's' : ''} not in the facts: ${esc(invalid.join(', '))}` : 'Every reference checks out.'}${hiddenEmpty.length ? ` <span title="${esc(hiddenEmpty.map(c => `${c.name} (${base(c.file)}:${c.lines[0]})`).join(', '))}">${hiddenEmpty.length} change${hiddenEmpty.length > 1 ? 's' : ''} with no lines of ${hiddenEmpty.length > 1 ? 'their' : 'its'} own not listed.</span>` : ''}${badX.length ? ` ${badX.length} crossing${badX.length > 1 ? 's' : ''} not drawn, no system at either end: ${esc(badX.map(e => `${e.from} → ${e.to}`).join(', '))}.` : ''}</div>`;
+const navBtns = [...document.querySelectorAll('nav .step')];
+navBtns.forEach(b => b.onclick = () => go(+b.dataset.i));
+
+// --- Map: every changed entity grouped system > file, with the guide's boundary crossings as arcs.
+// Actors outside the repo sit above the first system they touch. Blocks link to cards, arcs to steps.
+const HUES = ['#4fb3bf', '#d9a441', '#a98bf0', '#e07aa8', '#9ccc65', '#f28c5a'];
+const hueOf = name => isSys(name) ? HUES[systems.indexOf(name) % HUES.length] : null;
+const blockName = c => c.type === 'orphan' ? (c.lines[0] === 1 ? 'module' : `module:${c.lines[0]}`) : c.name;
+function mapHtml() {
+  if (!systems.length) return '';
+  const bySys = {};
+  for (const c of F.changes) {
+    const n = c.n + (c.folded ?? []).reduce((a, k) => a + k.n, 0);
+    if (!n || foldedInto(c)) continue;
+    const s = sysOf(c.file); if (s) ((bySys[s] ??= {})[c.file] ??= []).push(c);
+  }
+  // Column weight: how much label the column has to hold, plus room for its actor pills.
+  const count = s => Object.values(bySys[s] ?? {}).flat().reduce((a, c) => a + Math.min(28, blockName(c).length) / 8, 0);
+  // Column floor: wide enough for its longest label (or actor pill) up to a cap, so names stay readable.
+  const longest = (s, i) => Math.max(...Object.values(bySys[s] ?? {}).flat().map(c => Math.min(26, blockName(c).length) * 7 + 40), ...cellActors[i].map(a => a.length * 7 + 28), 90);
+  const cellActors = systems.map(() => []), placed = new Set();
+  for (const e of drawn) for (const [a, s] of [[e.from, e.to], [e.to, e.from]]) {
+    if (isSys(a) || !isSys(s) || placed.has(a)) continue; placed.add(a); cellActors[systems.indexOf(s)].push(a);
+  }
+  const block = c => {
+    const folded = c.folded ?? [];
+    const plus = c.plus + folded.reduce((a, k) => a + k.plus, 0), minus = c.minus + folded.reduce((a, k) => a + k.minus, 0), n = plus + minus;
+    const more = folded.length ? `<span class="more">+${folded.length}</span>` : '';
+    const title = `${c.name} · +${plus} −${minus}${folded.length ? ` · ${plural(folded.length, 'member')}: ${folded.map(k => k.name).join(', ')}` : ''}`;
+    return `<button class="b ${c.kind}" data-id="${c.id}" data-step="${stepOf[c.id]}" style="--w:${Math.min(240, 7 * n)}px;--p:${Math.round(100 * plus / n)}%" title="${esc(title)}"><span class="g">${glyph(c.kind)}</span><span class="txt">${esc(blockName(c))}</span>${more}</button>`;
+  };
+  // Column width follows the blocks and the actor pills the column has to hold.
+  const grow = (s, i) => Math.max(1, Math.ceil(count(s) + 3 * cellActors[i].length));
+  const col = (s, i) => `flex-grow:${grow(s, i)};--minw:${Math.min(300, longest(s, i))}px;--sys:${hueOf(s)}`;
+  return `<div id="map"><svg></svg>
+    <div class="actors">${systems.map((s, i) => `<div class="cell" style="${col(s, i)}">${cellActors[i].map(a => `<span class="actor" data-node="${esc(a)}">${esc(a)}</span>`).join('')}</div>`).join('')}</div>
+    <div class="systems">${systems.map((s, i) => `<div class="sys" data-node="${esc(s)}" style="${col(s, i)}"><div class="name">${esc(s)}</div>${Object.entries(bySys[s] ?? {}).map(([f, cs]) =>
+      `<div class="file"><div class="fn mono">${esc(base(f))}</div><div class="blocks">${cs.map(block).join('')}</div></div>`).join('')}</div>`).join('')}</div>
+    <div class="key">width = lines changed · <span class="t-add">green added</span> · <span class="t-del">red removed</span> · ring = this step · <span class="t-add">● new path</span> · <span class="t-del">✕ closed</span></div></div>`;
+}
+// Draw or redraw the arcs for one step. Rings and labels follow the step; other arcs stay faint.
+function drawMap(step, animate = true) {
+  const map = document.getElementById('map'); if (!map) return;
+  map.querySelectorAll('.b').forEach(b => b.classList.toggle('cur', +b.dataset.step === step));
+  const st = map.getBoundingClientRect();
+  const rect = name => { const el = map.querySelector(`[data-node="${CSS.escape(name)}"]`); if (!el) return null; const b = el.getBoundingClientRect(); return { left: b.left - st.left, right: b.right - st.left, top: b.top - st.top, bottom: b.bottom - st.top, cx: (b.left + b.right) / 2 - st.left }; };
+  // System-side ends fan out along the box top, ordered by where the far end sits.
+  const slots = {};
+  drawn.forEach((e, i) => { for (const end of ['from', 'to']) if (isSys(e[end])) (slots[e[end]] ??= []).push({ i, end, far: rect(e[end === 'from' ? 'to' : 'from'])?.cx ?? 0 }); });
+  const pt = {};
+  for (const [s, list] of Object.entries(slots)) {
+    const r = rect(s); list.sort((a, b) => a.far - b.far);
+    const L = r.left + 28, R = r.right - 28;
+    list.forEach((sl, k) => { pt[`${sl.i}:${sl.end}`] = { x: list.length === 1 ? r.cx : L + (R - L) * k / (list.length - 1), y: r.top }; });
+  }
+  const vertical = d3.linkVertical().x(d => d.x).y(d => d.y);
+  // Arcs between the same two systems rise in 16px steps so their labels sit on separate lines.
+  const pairSeen = {};
+  const data = drawn.map((e, i) => {
+    const P = end => pt[`${i}:${end}`] ?? (r => r ? { x: r.cx, y: r.bottom, actor: true } : null)(rect(e[end]));
+    const a = P('from'), b = P('to');
+    if (!a || !b) return null;
+    const actor = a.actor ? a : b.actor ? b : null;
+    const pair = [e.from, e.to].sort().join('\u0000'), n = pairSeen[pair] = (pairSeen[pair] ?? -1) + 1;
+    const [l, r] = a.x <= b.x ? [a, b] : [b, a], h = 40 + n * 16;
+    const d = actor ? vertical({ source: actor, target: actor === a ? b : a }) : `M${l.x},${l.y} C${l.x},${l.y - h} ${r.x},${r.y - h} ${r.x},${r.y}`;
+    // A system-to-system label sits as straight text at the arc's apex (0.75h above the ends for this curve).
+    return { ...e, i, d, b, actor, on: e.step === step, mx: (l.x + r.x) / 2, apex: l.y - h * 0.75 };
+  }).filter(Boolean);
+  const color = d => d.mark === '+' ? '#9fe6ad' : d.mark === '-' ? '#f4a3a7' : '#8a91a0';
+  const svg = d3.select(map.querySelector('svg'));
+  const t = animate ? d3.transition().duration(220) : null;
+  const fade = sel => (t ? sel.transition(t) : sel);
+  const arcs = svg.selectAll('path.arc').data(data, d => d.i).join('path').attr('class', 'arc').attr('id', d => `arc${d.i}`)
+    .attr('d', d => d.d).attr('stroke', color).attr('stroke-dasharray', d => d.mark === '-' ? '4 3' : null).on('click', (ev, d) => go(d.step));
+  fade(arcs).attr('stroke-width', d => d.on ? 1.6 : 1).attr('opacity', d => d.on ? .95 : .35);
+  const ends = svg.selectAll('g.end').data(data, d => d.i).join(enter => enter.append('g').attr('class', 'end').each(function (d) {
+    const g = d3.select(this);
+    if (d.mark === '-') g.append('text').attr('text-anchor', 'middle').attr('font-weight', 700).attr('y', 4).text('✕'); else g.append('circle').attr('r', 2.5);
+  }));
+  ends.attr('transform', d => `translate(${d.b.x},${d.b.y})`).attr('fill', color);
+  fade(ends).attr('opacity', d => d.on ? .95 : .4);
+  // Labels only on this step's arcs. Actor labels hang under their pill, alternating rows so neighbours clear.
+  const lit = data.filter(d => d.on);
+  lit.filter(d => d.actor).sort((p, q) => p.actor.x - q.actor.x).forEach((d, k) => { d.lx = d.actor.x; d.ly = d.actor.y + 15 + (k % 2) * 13; });
+  const labels = svg.selectAll('text.via').data(lit, d => d.i).join(
+    enter => enter.append('text').attr('class', 'via').attr('opacity', 0).call(s => fade(s).attr('opacity', 1)),
+    update => update, exit => fade(exit).attr('opacity', 0).remove());
+  labels.attr('fill', color).each(function (d) {
+    const el = d3.select(this).text(null).attr('text-anchor', 'middle');
+    if (d.actor) el.attr('x', d.lx).attr('y', d.ly).text(d.via);
+    else el.attr('x', d.mx).attr('y', d.apex - 4).text(d.via);
+  });
+}
+
+// --- Calls: roots are step changes no other step change calls. Wrong edges are hidden,
+// name-only matches get a ?.
+function treeOf(s, si) {
+  const inStep = s.changes.map(id => byId[id]).filter(c => c.code && c.type !== 'orphan' && !c.pointerOnly);
+  if (!inStep.length) return '';
+  const keys = new Set(inStep.map(c => c.headId || c.baseId));
+  const edges = c => [...c.callees.added.map(e => ['+', e]), ...c.callees.removed.map(e => ['-', e]), ...c.callees.kept.map(e => [' ', e])].filter(([, e]) => live(e));
+  const called = new Set();
+  for (const c of inStep) for (const [, e] of edges(c)) if (keys.has(e.id) && e.id !== (c.headId || c.baseId)) called.add(e.id);
+  const roots = inStep.filter(c => !called.has(c.headId || c.baseId));
+  const lines = [], seen = new Set();
+  // Changes in other steps show as leaves with the step number, not expanded here.
+  const label = c => `<a href="#${c.id}">${esc(c.name)}</a> <span class="t-dim">${c.kind}${stepOf[c.id] !== si ? ` · step ${stepOf[c.id] + 1}` : ''}</span>`;
+  function walk(c, prefix, depth) {
+    seen.add(c.id);
+    const kids = edges(c).filter(([m, e]) => m !== ' ' || byKey[e.id]);
+    kids.forEach(([m, e], i) => {
+      const last = i === kids.length - 1;
+      const sub = byKey[e.id];
+      const text = sub ? label(sub) : `${esc(nameOf(e.id))} <span class="t-dim">${esc(short(fileOf(e.id)))}</span>`;
+      lines.push(`<span class="${m === '+' ? 't-add' : m === '-' ? 't-del' : 't-dim'}">${m} ${prefix}${last ? '└─ ' : '├─ '}</span>${text}${e.checked ? '' : ' <span class="nm">?</span>'}`);
+      if (sub && stepOf[sub.id] === si && !seen.has(sub.id) && depth < 6) walk(sub, prefix + (last ? '   ' : '│  '), depth + 1);
+    });
+  }
+  for (const c of roots) { lines.push(`  ${label(c)}`); walk(c, '', 0); }
+  if (lines.length === roots.length) return '';
+  return `<div class="lbl">Calls <span class="t-add">+ new</span> <span class="t-del">− removed</span><span class="nm" style="margin-left:8px">? matched by name only</span></div><div class="tree mono">${lines.join('\n')}</div>`;
+}
+
+// --- Cards
+let gapSeq = 0;
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const row = (o, cls = '', attrs = '') => `<tr class="${o[0] === '+' ? 'add' : o[0] === '-' ? 'del' : ''} ${cls}"${attrs}${o[5] ? ` style="--imp:${o[5].pct}%"` : ''}><td class="ln mono">${o[1] ?? ''}</td><td class="ln mono">${o[2] ?? ''}</td><td class="src mono"${o[5] ? ` title="${esc(o[5].why)}"` : ''}>${o[0] === ' ' ? ' ' : o[0]} ${o[4] ?? esc(o[3])}</td></tr>`;
+
+// --- Importance: how much a changed line decides, read from its tokens. Control flow and calls score
+// highest, declarations lower, punctuation lowest. Two boosts come from the diff's own context: the
+// line names an entity this change adds or removes, or a note on this card mentions something on it.
+const FLOW = new Set(['if', 'else', 'switch', 'case', 'return', 'throw', 'try', 'catch', 'finally', 'for', 'while', 'do', 'yield', 'break', 'continue', 'await', 'match', 'loop', 'elif', 'except', 'raise', 'defer', 'select', 'panic',
+  'unless', 'until', 'when', 'rescue', 'ensure', 'next', 'retry']);
+const IO = new Set(['spawn', 'spawnSync', 'exec', 'execSync', 'fetch', 'request', 'readFile', 'readFileSync', 'writeFile', 'writeFileSync', 'existsSync', 'realpathSync', 'statSync', 'readdir', 'stat', 'listen', 'writeHead', 'sendJson', 'send', 'end', 'open', 'connect']);
+const DECL = new Set(['const', 'let', 'var', 'function', 'class', 'interface', 'type', 'enum', 'struct', 'impl', 'fn', 'def', 'func', 'module', 'attr_accessor', 'attr_reader']);
+const changedNames = new Set(F.changes.filter(c => (c.kind === 'added' || c.kind === 'deleted') && !['orphan', 'test', 'test_suite'].includes(c.type)).map(c => c.name));
+const noteWords = {};
+for (const s of steps) for (const w of s.watch ?? []) if (w.change) for (const code of (w.text ?? '').match(/`([^`]+)`/g) ?? [])
+  for (const word of code.match(/[A-Za-z_$][\w$]*/g) ?? []) if (word.length >= 6 || /[A-Z]/.test(word)) (noteWords[w.change] ??= new Set()).add(word);
+const BANDS = [[.85, 100], [.55, 78], [.28, 58], [0, 38]];
+function importance(toks, text, cardId) {
+  if (!text.trim()) return null;
+  const sig = toks.filter(([, s]) => s.trim());
+  const has = (ty, set) => sig.some(([x, s]) => x === ty && (!set || set.has(s)));
+  const only = (...tys) => sig.every(([ty]) => tys.includes(ty));
+  let score, why;
+  if (only('comment')) [score, why] = [.1, 'comment'];
+  else if (has('keyword', FLOW)) [score, why] = [1, 'branch or exit'];
+  else if (has('function', IO)) [score, why] = [.9, 'I/O or process'];
+  else if (has('function')) [score, why] = [.7, 'call'];
+  else if (has('keyword', DECL) || has('operator', new Set(['=']))) [score, why] = [.5, 'declaration'];
+  else if (has('keyword') || has('builtin') || has('class-name')) [score, why] = [.3, 'import, export or type'];
+  else if (only('punctuation', 'operator')) [score, why] = [.05, 'punctuation'];
+  else if (only('string', 'number', 'boolean', 'punctuation', 'operator')) [score, why] = [.2, 'literal'];
+  else [score, why] = [.2, 'name'];
+  const ids = new Set(text.match(/[A-Za-z_$][\w$]*/g) ?? []);
+  if (score < 1 && [...changedNames].some(n => ids.has(n))) { score = Math.min(1, score + .2); why += ' · names a changed entity'; }
+  if (noteWords[cardId] && [...noteWords[cardId]].some(w => ids.has(w))) { score = 1; why += ' · mentioned in a note'; }
+  return { pct: BANDS.find(([min]) => score >= min)[1], why };
+}
+
+// Syntax colours come from Prism over each whole side of a card, so strings and comments that span
+// lines still tokenise right. Each row then takes its line's tokens from the side it belongs to.
+const langOf = f => ({ ts: 'typescript', mts: 'typescript', cts: 'typescript', tsx: 'tsx', js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', rs: 'rust', py: 'python', go: 'go', rb: 'ruby', rake: 'ruby', java: 'java', sh: 'bash', bash: 'bash', sql: 'sql', yaml: 'yaml', yml: 'yaml', json: 'json', css: 'css', graphql: 'graphql', gql: 'graphql', html: 'markup', vue: 'markup', erb: 'markup' })[f.split('.').pop()];
+function highlightSide(lines, grammar) {
+  const out = [{ html: '', toks: [] }];
+  const walk = (tok, type) => {
+    if (typeof tok === 'string') {
+      tok.split('\n').forEach((p, i) => {
+        if (i) out.push({ html: '', toks: [] });
+        if (!p) return;
+        const line = out[out.length - 1];
+        line.html += type ? `<span class="tk-${type}">${esc(p)}</span>` : esc(p);
+        line.toks.push([type, p]);
+      });
+      return;
+    }
+    const t = tok.alias ? (Array.isArray(tok.alias) ? tok.alias[0] : tok.alias) : tok.type;
+    if (Array.isArray(tok.content)) tok.content.forEach(c => walk(c, t)); else walk(tok.content, t);
+  };
+  Prism.tokenize(lines.join('\n'), grammar).forEach(t => walk(t, null));
+  return out;
+}
+function highlightOps(ops, file, cardId) {
+  const grammar = window.Prism?.languages?.[langOf(file)]; if (!grammar) return;
+  for (const skip of ['+', '-']) {                       // old side first, so context rows keep the new side's tokens
+    const side = ops.filter(o => (o[0] === ' ' || o[0] === '+' || o[0] === '-') && o[0] !== skip);
+    const lines = highlightSide(side.map(o => o[3]), grammar);
+    side.forEach((o, i) => { const l = lines[i]; if (!l) return; o[4] = l.html; if (o[0] !== ' ') o[5] = importance(l.toks, o[3], cardId); });
+  }
+}
+function diffRows(ops) {
+  const rows = [];
+  for (let i = 0; i < ops.length; i++) {
+    if (ops[i][0] === ' ') {
+      let j = i; while (j < ops.length && ops[j][0] === ' ') j++;
+      const run = j - i, near = 3;
+      if (run > near * 2 + 2) {
+        for (let k = i; k < i + near; k++) rows.push(ops[k]);
+        rows.push(['gap', ops.slice(i + near, j - near)]);
+        for (let k = j - near; k < j; k++) rows.push(ops[k]);
+        i = j - 1; continue;
+      }
+    }
+    rows.push(ops[i]);
+  }
+  return rows.map(o => {
+    if (o[0] === 'gap') {
+      const id = `gap${++gapSeq}`, n = o[1].length;
+      return `<tr class="gap"><td class="ln"></td><td class="ln"></td><td><button class="gapbtn" aria-expanded="false" data-gap="${id}" data-n="${n}">⋯ ${plural(n, 'line')}</button></td></tr>`
+        + o[1].map(c => row(c, 'ctx', ` data-gap="${id}" hidden`)).join('');
+    }
+    if (o[0] === 'ref') return `<tr class="gap"><td class="ln"></td><td class="ln"></td><td>⋯ <a href="#${o[1]}">${esc(byId[o[1]].name)}</a>, own card</td></tr>`;
+    return row(o);
+  }).join('');
+}
+const chip = (cls, e) => `<span class="chip ${cls}${e.checked ? '' : ' nm'}" title="${esc(nameOf(e.id))} · ${esc(fileOf(e.id))}${e.checked ? '' : ' · matched by name only'}">${cls === 'add' ? '+' : cls === 'del' ? '−' : ''}${esc(nameOf(e.id))}${e.checked ? '' : '?'}</span>`;
+function card(c) {
+  const calls = [...c.callees.added.filter(live).map(e => chip('add', e)), ...c.callees.removed.filter(live).map(e => chip('del', e))];
+  const callers = c.callersOutsideChange.filter(live);
+  const callerChips = callers.slice(0, 3).map(e => chip('out', e));
+  if (callers.length > 3) callerChips.push(`<span class="chip out" title="${esc(callers.slice(3).map(e => nameOf(e.id)).join(', '))}">+${callers.length - 3}</span>`);
+  const side = (calls.length ? `<span title="calls">→</span>${calls.join('')}` : '') + (callerChips.length ? `<span title="unchanged callers">←</span>${callerChips.join('')}` : '');
+  const newR = rNew(c), oldR = rOld(c);
+  const lines = c.kind === 'added' ? `${newR[0]}–${newR[1]}` : c.kind === 'deleted' ? `${oldR[0]}–${oldR[1]}`
+    : oldR && oldR[0] !== newR[0] ? `${oldR[0]} → ${newR[0]}` : `${newR[0]}–${newR[1]}`;
+  const title = c.type === 'orphan' ? 'module-level' : c.oldName && c.oldName !== c.name ? `${c.oldName} → ${c.name}` : c.name;
+  const kids = c.kids.length ? `<div class="note">Contains ${c.kids.map(k => `<a href="#${k.id}">${esc(k.name)}</a>`).join(', ')}</div>` : '';
+  if (changed(c)) highlightOps(c.own, c.file, c.id);
+  const body = c.pointerOnly ? kids : !changed(c) ? `<div class="note">No changed lines${c.kind === 'moved' ? `, moved from line ${oldR[0]} to ${newR[0]}` : ''}.</div>`
+    : `<div class="diffwrap"><table class="diff">${diffRows(c.own)}</table></div>${kids}`;
+  const open = !c.pointerOnly && changed(c) && !c.cosmetic;
+  const at = c.kind === 'deleted' ? [F.range.base, oldR] : [F.range.head, newR];
+  const file = web ? `<a class="file mono" href="${blob(c.file, at[0], at[1][0], at[1][1])}" target="_blank" rel="noopener" title="${esc(c.file)} on GitHub">${esc(base(c.file))}:${lines}</a>` : `<span class="file mono">${esc(base(c.file))}:${lines}</span>`;
+  const hue = hueOf(sysOf(c.file));
+  return `<div class="card${open ? '' : ' closed'}" id="${c.id}" data-id="${c.id}">
+    <div class="head"${hue ? ` style="--sys:${hue}"` : ''}><button class="tog" aria-expanded="${open}"><span class="g ${c.kind}">${glyph(c.kind)}</span><b class="mono">${esc(title)}</b><span class="type">${esc(c.type.replace('_', ' '))}</span></button>
+      ${file}${c.cosmetic ? '<span class="type">cosmetic</span>' : ''}<span class="calls">${side}</span></div>${body}</div>`;
+}
+
+function section(s, i) {
+  const notes = s.watch?.length ? `<ul class="watch">${s.watch.map(w => `<li>${md(w.text ?? '')}${w.change && byId[w.change] ? ` <a class="at" href="#${w.change}">${esc(byId[w.change].name === 'module-level' ? base(byId[w.change].file) : byId[w.change].name)}</a>` : ''}</li>`).join('')}</ul>` : '';
+  return `<section id="step-${i}" hidden><h2><span class="dot ${s.risk}"></span><span class="sr">${s.risk} risk: </span>${md(s.title)}</h2>
+    <div class="why">${md(s.why)}</div>${notes}${treeOf(s, i)}
+    <div class="lbl">Changes <span class="hint">shade = where to concentrate</span></div>${s.changes.map(id => card(byId[id])).join('')}
+    ${i === steps.length - 1 ? `<footer>Facts from sem in ${F.timingsMs.total} ms; the walkthrough text, risk order and boundaries are agent-written. A call is checked when the caller's file imports the callee's; a ? marks a name-only match. Line shade comes from the line's tokens: branches, exits and calls full, declarations and types lighter, punctuation faint. A line that names an entity this change adds or removes goes up a band; a line a note mentions goes full. Hover a line for its reason.</footer>` : ''}</section>`;
+}
+const main = document.getElementById('main');
+main.innerHTML = mapHtml() + steps.map(section).join('');
+const sections = [...main.querySelectorAll('section')];
+const mapEl = document.getElementById('map');
+
+// --- Hunks: runs of changed rows, the unit j/k moves by.
+const hunks = sections.map((sec, si) => {
+  const list = []; let run = null;
+  for (const card of sec.querySelectorAll('.card')) {
+    run = null;
+    for (const tr of card.querySelectorAll('tr')) {
+      if (tr.classList.contains('add') || tr.classList.contains('del')) {
+        if (!run) { run = { card, rows: [] }; list.push(run); }
+        run.rows.push(tr); tr.dataset.h = list.length - 1;
+      } else run = null;
+    }
+  }
+  return list;
+});
+
+// --- Position: a step and a hunk (-1 = the step's top). Each step remembers where you were.
+const cur = { step: 0, h: -1 };
+const mem = {};
+function mark(on) {
+  const h = hunks[cur.step][cur.h];
+  if (!h) return;
+  h.rows.forEach(tr => tr.classList.toggle('cur', on));
+  h.card.classList.toggle('cur', on);
+}
+function setOpen(card, open) { card.classList.toggle('closed', !open); card.querySelector('.head .tog').setAttribute('aria-expanded', open); }
+function go(step, h, { scroll = true, center = true } = {}) {
+  step = Math.max(0, Math.min(steps.length - 1, step));
+  if (h === undefined && step === cur.step) h = -1;
+  mark(false);
+  if (step !== cur.step) {
+    mem[cur.step] = { h: cur.h, scroll: main.scrollTop };
+    sections[cur.step].hidden = true; sections[step].hidden = false;
+    navBtns[cur.step].classList.remove('on'); navBtns[step].classList.add('on');
+    if (h === undefined) ({ h = -1 } = mem[step] ?? {});
+    drawMap(step);
+  }
+  cur.step = step; cur.h = Math.max(-1, Math.min(hunks[step].length - 1, h));
+  mark(true);
+  const hk = hunks[step][cur.h];
+  if (hk) setOpen(hk.card, true);
+  if (scroll) {
+    if (!hk) main.scrollTo({ top: mem[step] && h === undefined ? mem[step].scroll : 0 });
+    else hk.rows[0].scrollIntoView({ block: center ? 'center' : 'start' });
+  }
+  layout();
+}
+function move(d) {
+  const n = cur.h + d;
+  if (n >= -1 && n < hunks[cur.step].length) go(cur.step, n);
+  else if (d > 0 && cur.step < steps.length - 1) go(cur.step + 1, -1);
+  else if (d < 0 && cur.step > 0) go(cur.step - 1, hunks[cur.step - 1].length - 1);
+}
+function goCard(id, { scroll = true } = {}) {
+  const step = stepOf[id]; if (step === undefined) return;
+  const i = hunks[step].findIndex(h => h.card.dataset.id === id);
+  go(step, i, { scroll: false });
+  const card = document.getElementById(id);
+  if (i < 0) setOpen(card, true);
+  if (scroll) card.scrollIntoView({ block: 'start' });
+}
+function toggleGap(btn) {
+  const open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', open);
+  btn.textContent = `⋯ ${open ? 'hide' : ''} ${plural(+btn.dataset.n, 'line')}`;
+  btn.closest('table').querySelectorAll(`tr[data-gap="${btn.dataset.gap}"]`).forEach(tr => { tr.hidden = !open; });
+  layout();
+}
+
+// Links use #cN so the browser's own Back works. j/k replace the hash instead of pushing it.
+window.addEventListener('hashchange', () => { const id = location.hash.slice(1); if (byId[id]) goCard(id); });
+main.addEventListener('click', e => {
+  if (e.target.closest('a[href^="http"]')) return;
+  const blk = e.target.closest('.b[data-id]'); if (blk) { goCard(blk.dataset.id); return; }
+  const head = e.target.closest('.head');
+  if (head) { const card = head.parentElement; setOpen(card, card.classList.contains('closed')); layout(); return; }
+  const gap = e.target.closest('.gapbtn'); if (gap) { toggleGap(gap); return; }
+  const tr = e.target.closest('tr[data-h]'); if (tr) go(cur.step, +tr.dataset.h, { scroll: false });
+});
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target.tagName; if (t === 'INPUT' || t === 'TEXTAREA') return;
+  if (e.key === 'j') move(1); else if (e.key === 'k') move(-1);
+  else if (e.key === 'J') go(cur.step + 1); else if (e.key === 'K') go(cur.step - 1);
+  else if (e.key >= '1' && e.key <= '9' && +e.key <= steps.length) go(+e.key - 1);
+  else if (e.key === 'o') { const hk = hunks[cur.step][cur.h]; if (hk) { setOpen(hk.card, hk.card.classList.contains('closed')); layout(); } }
+  else return;
+  e.preventDefault();
+  if (location.hash) history.replaceState(null, '', location.pathname);
+});
+
+// Hovering a block lights what it calls and what calls it. Hovering a step in the nav previews its ring.
+if (mapEl) {
+  mapEl.addEventListener('mouseover', e => {
+    const b = e.target.closest('.b'); if (!b) return;
+    const c = byId[b.dataset.id];
+    const rel = new Set([...c.callees.added, ...c.callees.removed, ...c.callees.kept, ...c.callersOutsideChange].filter(x => x.checked && !x.external).map(x => byKey[x.id]?.id).filter(Boolean));
+    mapEl.querySelectorAll('.b').forEach(x => x.classList.toggle('rel', rel.has(x.dataset.id) && x !== b));
+  });
+  mapEl.addEventListener('mouseout', e => { if (e.target.closest('.b')) mapEl.querySelectorAll('.b.rel').forEach(x => x.classList.remove('rel')); });
+  navBtns.forEach(b => { b.onmouseenter = () => drawMap(+b.dataset.i); b.onmouseleave = () => drawMap(cur.step); });
+}
+
+// --- Minimap: every changed row of the step as a tick, the viewport as a window.
+const mini = document.getElementById('mini'), ctx = mini.getContext('2d');
+let ticks = [];
+function layout() {
+  const top = main.getBoundingClientRect().top - main.scrollTop;
+  ticks = [];
+  for (const card of sections[cur.step].querySelectorAll('.card')) {
+    const head = card.querySelector('.head').getBoundingClientRect();
+    ticks.push({ y: head.top - top, kind: 'head' });
+    if (card.classList.contains('closed')) continue;
+    for (const tr of card.querySelectorAll('tr.add:not([hidden]), tr.del:not([hidden])')) {
+      const b = tr.getBoundingClientRect();
+      ticks.push({ y: b.top - top, h: b.height, kind: tr.classList.contains('add') ? 'add' : 'del', cur: tr.classList.contains('cur'), a: (parseFloat(tr.style.getPropertyValue('--imp')) || 100) / 100 });
+    }
+  }
+  draw();
+}
+function draw() {
+  const dpr = devicePixelRatio || 1, W = 14, H = main.clientHeight, SH = main.scrollHeight;
+  if (mini.width !== W * dpr || mini.height !== H * dpr) { mini.width = W * dpr; mini.height = H * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const k = H / SH;
+  for (const t of ticks) {
+    if (t.kind === 'head') { ctx.fillStyle = '#3a4150'; ctx.fillRect(0, t.y * k, W, 1); continue; }
+    ctx.fillStyle = t.cur ? '#7aa2f7' : t.kind === 'add' ? '#3f8f52' : '#9c4a50';
+    ctx.globalAlpha = t.cur ? 1 : t.a;
+    ctx.fillRect(t.cur ? 0 : 3, t.y * k, t.cur ? W : W - 6, Math.max(1, t.h * k));
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fillRect(0, main.scrollTop * k, W, H * k);
+  ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.strokeRect(.5, main.scrollTop * k + .5, W - 1, H * k - 1);
+}
+mini.addEventListener('pointerdown', e => {
+  mini.setPointerCapture(e.pointerId);
+  const to = ev => { main.scrollTo({ top: ev.offsetY / main.clientHeight * main.scrollHeight - main.clientHeight / 2, behavior: 'instant' }); };
+  to(e); mini.onpointermove = to; mini.onpointerup = () => { mini.onpointermove = null; };
+});
+main.addEventListener('scroll', () => requestAnimationFrame(draw), { passive: true });
+window.addEventListener('resize', () => { layout(); drawMap(cur.step, false); });
+
+sections[0].hidden = false; navBtns[0].classList.add('on');
+drawMap(0, false);
+if (byId[location.hash.slice(1)]) goCard(location.hash.slice(1)); else layout();
+</script>
+</body>
+</html>
