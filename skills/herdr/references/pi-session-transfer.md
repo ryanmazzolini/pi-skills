@@ -2,6 +2,8 @@
 
 Use this workflow to continue active work in a fresh Pi session. Put the destination in a named tab inside an existing Herdr workspace when the work belongs to that workspace. Create a workspace only when the user chooses a new Herdr workspace. The source stays open and human focus does not change.
 
+For a standalone review launched by `code-review`, use [Start the assigned review](#start-the-assigned-review) after startup verification when the caller requests immediate review execution. Other transfers keep the readiness-only handoff: the destination reports ready and waits for the user.
+
 A Herdr tab contains one or more panes. Use the work item's human-recognizable name as the tab label; do not describe this as naming a pane.
 
 Shell-escape every path and label passed to a shell command, including creation, renaming and file checks, so whitespace and shell metacharacters remain literal rather than splitting arguments or being interpreted as shell syntax.
@@ -99,6 +101,8 @@ Use bullets rather than a table so long paths remain readable in narrow terminal
    - the source pane ID only to identify it if the human later makes a separate topology request.
 
    Include this direct startup boundary: “In your startup turn, do not mutate project work or Herdr topology.” Then direct the destination to verify its own identity and live state without changing focus, report that it is ready, and wait for the user. Prefer pointers to canonical durable records over copying long context.
+
+   For an assigned review, identify the destination as the review owner and tell it not to launch another session or use subagents. Explain that the source will submit the already authorized review task after verifying startup; waiting for that task does not require another human approval.
 6. Derive the destination agent name as `pi_` plus the first 28 lowercase hexadecimal characters of the destination pane ID's SHA-256 hash. For example, `w10:p1` becomes `pi_d152398ef54bbb3aa1ac11ed8f95`. Use the same complete name for both `herdr agent get` and `herdr agent start`; do not change its content or length between commands. Treat the exact `agent_not_found` result from `herdr agent get <agent-name>` as available. If it returns a live agent, leave the destination workspace, tab, and panes open, do not start Pi, and stop with their IDs. Stop and report any other lookup error.
 7. Collapse the initial message's whitespace to one line because `herdr agent start` rejects multiline agent arguments, then shell-escape the Pi session label and message. Start Pi without inherited session flags:
 
@@ -124,7 +128,17 @@ Use bullets rather than a table so long paths remain readable in narrow terminal
 
 Do not call a focus command during creation or verification. If the human changes focus while this runs, leave it where they put it. For `blocked`, timeout, or any failed check, inspect `herdr agent get` and `herdr agent read` when available, report that the destination is not ready, and leave both panes unchanged.
 
-Stop after reporting the verified destination and that the source remains open. The background handoff is complete.
+For a readiness-only handoff, stop after reporting the verified destination and that the source remains open. For an assigned review, continue below only after startup verification succeeds.
+
+## Start the assigned review
+
+Use this branch only when `code-review` requests immediate execution of an already authorized standalone review. It does not authorize other project work or change the default readiness-only handoff.
+
+1. After completing the startup and session-file checks above, submit the caller's review task to the exact destination. Identify it as the review owner and include the targets, scope and durable context supplied by `code-review`. Direct it to complete the review in its own session without subagents or another handoff, then stop at the review's human decision point.
+2. Use `herdr agent prompt <destination-pane> <review-task> --wait --until working --timeout 20000`, shell-escaping the task and target. This wait verifies task submission reaches a working state; it is not a wait for review completion. Do not submit with a completion wait or follow it with another wait for the review result.
+3. Report the review targets, owning tab and verified dispatch, then stop. Do not poll the owner, aggregate its review into the source conversation, change focus or close either session. The owner handles the complete review, its monitors and follow-ups.
+
+If task submission fails or times out, report that stage accurately and leave both sessions open. Do not retry an uncertain submission, launch a duplicate owner, or substitute a subagent or an in-place review.
 
 ## Handle later topology requests
 
