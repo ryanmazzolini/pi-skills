@@ -55,7 +55,10 @@ test("Herdr remains a conditional implementation hint with resolving references"
 test("assigned reviews dispatch only after startup checks and never wait for completion", () => {
   assert.match(assignedReview, /only when `code-review` requests immediate execution of an already authorized standalone review/);
   assert.match(assignedReview, /After completing the startup and session-file checks above/);
-  assert.match(assignedReview, /--wait --until working --timeout 20000/);
+  assert.match(assignedReview, /using the core manual's messaging procedure/);
+  assert.match(assignedReview, /Send without a completion wait/);
+  assert.match(assignedReview, /Check the documented dispatch result and terminal evidence/);
+  assert.doesNotMatch(assignedReview, /herdr agent prompt|--until working/);
   assert.match(assignedReview, /not a wait for review completion/);
   assert.match(assignedReview, /Do not poll the owner, aggregate its review/);
   assert.match(assignedReview, /If task submission fails or times out/);

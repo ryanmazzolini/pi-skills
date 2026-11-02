@@ -1,150 +1,64 @@
 # Fresh Pi Destination
 
-Use this workflow to continue active work in a fresh Pi session. Put the destination in a named tab inside an existing Herdr workspace when the work belongs to that workspace. Create a workspace only when the user chooses a new Herdr workspace. The source stays open and human focus does not change.
+Use this reference when continuing active work in a fresh Pi session. Read the parent [Herdr skill](../SKILL.md) and the installed core and app manuals before acting. Follow [Start sessions without changing focus](../SKILL.md#start-sessions-without-changing-focus) for every launch, its separate show approval and its post-launch tab naming. This reference adds the handoff contract.
 
 For a standalone review launched by `code-review`, use [Start the assigned review](#start-the-assigned-review) after startup verification when the caller requests immediate review execution. Other transfers keep the readiness-only handoff: the destination reports ready and waits for the user.
 
-A Herdr tab contains one or more panes. Use the work item's human-recognizable name as the tab label; do not describe this as naming a pane.
+## Choose and confirm the destination
 
-Shell-escape every path and label passed to a shell command, including creation, renaming and file checks, so whitespace and shell metacharacters remain literal rather than splitting arguments or being interpreted as shell syntax.
+Inspect live terminals and visible spaces, tabs and panes without changing focus. Verify the source using its explicit core address, not the human's current selection. Verify that its foreground agent is Pi and establish its existing session-file path from the current Pi runtime, such as its own `PI_SESSION_FILE`, or explicit foreground process arguments. Core metadata need not expose that path. Verify the file rather than guessing the latest session in a shared cwd; a title alone is not proof.
 
-## Infer the destination
+Choose the destination's visible location, name, machine and cwd independently:
 
-Infer the Herdr workspace, tab label, and cwd independently. A Herdr workspace groups workstreams; each tab represents one workstream. Its cwd may be a shared checkout, an individual worktree, or a ticket folder containing several worktrees. A ticket folder does not require its own Herdr workspace. A ticket, branch, worktree, and ticket folder are optional inputs, not prerequisites.
+- Honor the user's explicit choices. A repository, ticket folder or worktree does not require a separate space, and preparing a worktree does not authorize launching another Pi.
+- When the user says to continue in this space, identify it from the source terminal's live app mapping. Otherwise infer an existing space only when exactly one matches the work. Inspect candidates and ask when the destination is ambiguous. A request for a new space blocks this handoff: explain that it requires an existing space and ask the user to choose one before continuing.
+- Use the clearest work identity as the tab/session name: an explicit label, ticket ID, tracking issue or work-item slug. Do not require a ticket or invent one just to name a destination. Keep a supplied cwd even when it contains several repositories.
+- Check name collisions against both the app and core. Inspect a matching tab's actual terminals before deciding whether it already owns the work. Do not replace a live Pi, duplicate its ownership or send it the work without approval. An existing conversation is not a fresh destination; choose a distinct name or ask how the user wants to continue.
 
-Before inferring or proposing a destination, verify `HERDR_ENV=1`, run `herdr --help`, then read the relevant command-group help. Read the source with `herdr pane current --current`. Verify that it is a Pi pane with an existing session path, and retain its pane and workspace IDs. List the live workspaces before proposing any destination, including an explicitly requested new workspace. This detects a conflicting label and records the topology that approval applies to.
-
-Prefer evidence in this order:
-
-1. Honor the user's explicit choice of a new or existing Herdr workspace. A calling skill may pass along that choice, but preparing a ticket folder or worktree is not a request for a new Herdr workspace. Keep the supplied label and cwd independently of that choice.
-2. When the user places the work in the calling Herdr workspace, such as “continue this review here,” use the workspace returned by `herdr pane current --current`. A reference to the current repository alone does not select the calling workspace.
-3. Otherwise match the work's project or activity to live workspace labels and pane evidence. A workspace such as `reviews` may group work across repositories. Use the user's work context rather than assuming every workspace represents one repository.
-4. When repository identity helps resolve the destination, compare its canonical name and path with workspace labels and the repository identities of panes returned by `herdr pane list`. For a linked Git worktree, use its shared repository or remote name rather than the worktree folder name. A ticket folder containing several worktrees need not itself be a repository. Do not select an arbitrary child repository to decide its Herdr workspace or replace the requested cwd with that child. If the work context and live topology do not identify one destination, ask rather than assuming the calling workspace or creating one.
-5. Infer the tab label from the clearest work identity already present. Prefer an explicit tab or work-item name, `gh-<number>` for the main GitHub issue in a review, the Monday item ID for an AI workflow task, or another stable work-item ID. For a GitHub review with a supplied main issue number, do not require its repository, title, or an issue lookup only to name the tab. Without an explicit tab or work label, use `<work-item>` for a ticket folder at `<root>/worktrees/<work-item>` or a worktree inside it, not the repository name. When that work-item slug starts with `sc-<number>-`, keep the full slug as the default label and describe the work in the confirmation as Shortcut story `SC-<number>`. A project name alone does not identify the work. Otherwise derive a short recognizable label from the user's request.
-6. Use the requested project or worktree directory as cwd. When continuing work already represented by the calling pane, default to that pane's cwd. The cwd need not be a Git repository.
-
-Use an inferred existing workspace only when exactly one candidate matches. Prefer an exact workspace-label match over path or repository-name matches.
-
-If no workspace matches and the calling skill supplies a workspace recommendation, propose creating that workspace with the supplied tab label and cwd through the normal destination confirmation. This lets a ticket skill recommend a new epic workspace with its initial ticket tab. The recommendation is not approval to create anything, and explicit user choices still take precedence.
-
-For other unmatched destinations, retain the explicit work label when one was supplied; otherwise retain the inferred work label. Keep the requested or inferred cwd while asking the user to choose between a named existing workspace and creating a new workspace. Use the work label as the proposed tab label for an existing workspace or the proposed workspace label for a new one; do not replace it with the repository name or present new-workspace creation as the only proposal.
-
-If several workspaces match, inspect the panes for every candidate before responding. Use existing pane-list evidence when it covers every candidate; otherwise run `herdr pane list --workspace <workspace-id>` for each one. Show each candidate’s ID, label, and relevant pane cwd values, then ask which exact workspace to use. Do not silently choose or create one.
-
-When a requested new workspace label already exists, report its ID and stop. Ask whether to use that existing workspace through the tab flow or choose a distinct workspace label.
-
-Before proposing a new tab, list the destination workspace's tabs. When an inferred `gh-<number>` label is taken, append a short work description from the context already supplied, such as `gh-72-retry-fix`. Check that this label is unused in the destination workspace, then propose it through the normal destination confirmation. Leave the existing tab untouched; do not require a repository or issue lookup just to name the new tab. If the context does not suggest a recognizable suffix or the suffixed label is also taken, ask the user for another label. Do not apply this fallback to an explicitly supplied tab or work label.
-
-For other label collisions, always run `herdr tab get <tab-id>` and `herdr pane list --workspace <workspace-id>`, then correlate panes by tab ID. Do not infer pane or agent state only from the tab summary, and do not ask the user how to proceed until this correlation is complete. Report the matching tab ID and each correlated pane's ID, agent, shell state, and cwd. Do not create a duplicate or replace a running agent. Offer reuse only when an exact pane is at an interactive shell prompt and its cwd matches the requested destination; an existing Pi session is not a fresh destination. If no pane qualifies, ask for another tab label instead of offering reuse. Reuse requires approval.
+A calling skill's recommendation to create a space does not bypass this restriction. Preserve the supplied work name and cwd when explaining the blocked request; do not create a space or silently choose a different destination.
 
 ## Confirm the topology
 
-Lead with one sentence that identifies the work in terms the user recognizes. For a GitHub review with a supplied tracking issue, say: “I’ll start a fresh Pi for the review tracked by GitHub issue #<number>.” For a review without a tracking issue, use the recognizable-work fallback below; do not invent an issue or require one. For Shortcut work, say: “I’ll start a fresh Pi for Shortcut story `SC-<number>`.” For a change named by its worktree folder, say: “I’ll start a fresh Pi for the `<work-item>` change.” Otherwise say: “I’ll start a fresh Pi for <work the user recognizes>.” Do not substitute the project or workspace name for a more specific work-item identity.
+Lead with the work the user recognizes. For a visible destination, show the applicable fields:
 
-For a new tab in an existing workspace, follow with exactly these bullets:
+- Space: the approved existing space name.
+- New tab: the approved or proposed work-item name.
+- Working directory: the explicit cwd.
+- Machine: include it when remote.
 
-- Workspace: `<label>`
-- New tab: `<label>`
-- Working directory: `<cwd>`
+For a background-only destination, use its terminal name instead of space/tab fields. Apply the parent skill's launch and visibility policy to either destination type.
 
-For a new workspace, follow with these bullets:
+Obtain missing approval with **Approve this destination?** before creation; do not repeat an already authorized launch.
 
-- New workspace: `<label>`
-- Working directory: `<cwd>`
+Recheck the approved destination and source immediately before launch. Stop if their identity, cwd, processes or surrounding topology changed. Shell-escape paths, labels and messages; supply explicit targets rather than relying on the focused resource.
 
-If the user or calling skill supplied a tab label for the new workspace, insert a `New tab` bullet between them with that label as its value. A calling skill may supply a default, such as the ticket slug inside an epic workspace; an explicit user label takes precedence. This approves naming the workspace's initial tab, not creating another tab. Otherwise leave its default label unchanged.
+## Launch and verify startup
 
-Do not add other bullets. Keep each bullet label as plain text and format only its value as inline code. The cwd may instead be a clickable Markdown link whose label is inline code. Keep Herdr IDs, source details, continuation-brief details, and background-operation details out of a concrete destination proposal. State focus only with the exact sentence below. Include IDs only when the user must distinguish ambiguous candidates or diagnose a failure.
+1. Choose the parent skill's hc launch route for both visible and background-only destinations. Plan an interactive Pi launch without inherited session/resume flags. Ensure this independent continuation can outlive the source: core children normally end with their parent. Use `--outlive-parent`; only add the `herdr.space` label for an approved new tab. Perform the parent skill's pre-launch focus check.
+2. Put a concise startup brief in the launch using its documented initial-task mechanism. Identify the destination as a fresh Pi, not the source or another launcher. Include the expected name, machine/cwd, approved visible location, user outcome, scope, consequential decisions, live branch/worktree state, canonical evidence paths, unresolved decisions and the source address for identification only.
+3. Include this boundary: **In your startup turn, do not mutate project work or Herdr topology.** Ask the destination to verify its identity and live state, report its session-file path, report that it is ready, and wait for the user. For an assigned review, explain that the source will send the already authorized task after verifying startup; that task needs no new human approval. Tell the review owner not to launch another session or use subagents.
+4. Launch with that brief through `hc`, then perform the parent skill's post-launch focus check and name any approved visible tab using its matched terminal address as described there. Check the result and startup evidence with the installed manual's readiness mechanisms. A created terminal or tab is not proof that Pi started or received the brief. When the result exposes `first_message.sent`, require it to be true before claiming delivery. If delivery is false or uncertain, inspect the exact terminal before deciding whether to send; do not blindly resend or launch a duplicate. Use documented waits, not sleeps or polling loops. Do not bypass a blocked permission dialog.
+5. Re-read source and destination after startup. Verify the destination is the intended fresh Pi on the approved machine and in the approved cwd, its app mapping and tab name match any approved visible destination, and the source still exists. Verify the terminal's `parent` and `die_with_parent` through core metadata. If it would end with the source and no supported, approved launch path preserves it, stop and explain the limitation. Verify both actual session files exist and differ; do not infer that from nonempty paths. For local files, the combined check is `test -f <destination-session-path> && test -f <source-session-path>`; use the core manual's remote file tools when either path is on another machine.
 
-Immediately after the final bullet, put this exact sentence in its own paragraph: “Your current focus and Pi session will remain unchanged.” Do not insert other text between the bullets and this sentence.
+On failure, timeout, a blocked state or missing evidence, report which startup check is unverified and keep both sessions open. Apply the parent skill's focus rule even on failure; do not report the destination ready from an expected outcome.
 
-Then ask exactly: “Approve this destination?” A concrete destination proposal contains only the lead sentence, the specified bullets, the focus/session sentence, and this question.
-
-Use bullets rather than a table so long paths remain readable in narrow terminal panes. Treat a general “yes” as approval only for the stated creation. Focusing the destination and closing the source are separate future actions.
-
-## Create the destination
-
-1. Verify the destination directory exists.
-2. Read the source pane and Pi session with `herdr pane current --current`. Verify the agent is `pi` and its session path exists. The source is not implicitly focused.
-3. Re-read `herdr workspace list` and the relevant tabs and panes. Stop if the approved destination no longer matches the live topology.
-4. Create or reuse the approved shell pane without focus:
-
-   - For an existing workspace, create a tab and read its tab and root pane IDs:
-
-     ```bash
-     herdr tab create --workspace <workspace-id> --cwd <cwd> --label <tab-label> --no-focus
-     ```
-
-   - For a new workspace, create it and read its workspace, tab, and root pane IDs:
-
-     ```bash
-     herdr workspace create --cwd <cwd> --label <workspace-label> --no-focus
-     ```
-
-     If the approved proposal includes a tab label, name the returned initial tab before starting Pi:
-
-     ```bash
-     herdr tab rename <tab-id> <tab-label>
-     herdr tab get <tab-id>
-     ```
-
-     Verify that this tab belongs to the new workspace and has the approved label. Do not create an extra tab. If naming or verification fails, stop before starting Pi, report the created IDs, and leave both the source and destination open without changing focus.
-
-   - For approved reuse, keep the verified workspace, tab, and shell-pane IDs instead of creating anything. Immediately before `herdr agent start`, re-read `herdr pane get <destination-pane>` and verify that it still belongs to the approved workspace and tab, is at an interactive shell prompt, and has the approved cwd. If any check fails, stop without starting Pi or changing the shell's directory. Report the mismatch and ask for another destination; leave both panes and focus unchanged.
-5. Build one concise initial user message for the destination. Begin with: “You are a fresh destination Pi session in Herdr, not the source session. The destination already exists; do not recreate it or repeat the handoff.” Include:
-   - expected destination workspace, tab, pane, and cwd;
-   - the user's current outcome and most recent request;
-   - approved scope and consequential decisions;
-   - completed work and live branch or worktree state when they exist;
-   - canonical work-item or evidence paths to read when they exist;
-   - the next approved action and unresolved human decisions; and
-   - the source pane ID only to identify it if the human later makes a separate topology request.
-
-   Include this direct startup boundary: “In your startup turn, do not mutate project work or Herdr topology.” Then direct the destination to verify its own identity and live state without changing focus, report that it is ready, and wait for the user. Prefer pointers to canonical durable records over copying long context.
-
-   For an assigned review, identify the destination as the review owner and tell it not to launch another session or use subagents. Explain that the source will submit the already authorized review task after verifying startup; waiting for that task does not require another human approval.
-6. Derive the destination agent name as `pi_` plus the first 28 lowercase hexadecimal characters of the destination pane ID's SHA-256 hash. For example, `w10:p1` becomes `pi_d152398ef54bbb3aa1ac11ed8f95`. Use the same complete name for both `herdr agent get` and `herdr agent start`; do not change its content or length between commands. Treat the exact `agent_not_found` result from `herdr agent get <agent-name>` as available. If it returns a live agent, leave the destination workspace, tab, and panes open, do not start Pi, and stop with their IDs. Stop and report any other lookup error.
-7. Collapse the initial message's whitespace to one line because `herdr agent start` rejects multiline agent arguments, then shell-escape the Pi session label and message. Start Pi without inherited session flags:
-
-   ```bash
-   herdr agent start <agent-name> --kind pi --pane <destination-pane> -- \
-     --name <label> <initial-message>
-   herdr agent wait <destination-pane> --timeout 120000
-   ```
-
-   Always run `herdr agent wait` after `agent start`, even when `agent start` already reports `idle`. Continue only when `agent wait` returns `idle` or `done`.
-8. After `herdr agent wait` returns `idle` or `done`, re-read both `herdr pane get <destination-pane>` and `herdr pane get <source-pane>`. Reads taken before `herdr agent start` do not satisfy this verification. Then run this exact combined file check as a separate command:
-
-   ```bash
-   test -f <destination-session-path> && test -f <source-session-path>
-   ```
-
-   A nonempty session path in pane JSON does not prove the file exists. Do not report the destination ready unless the combined file check succeeds. Verify that:
-   - the destination agent is `pi`;
-   - the destination pane belongs to the approved workspace and tab;
-   - destination cwd matches the approved directory;
-   - its session path exists and differs from the source; and
-   - the source pane and its session path still exist after destination startup.
-
-Do not call a focus command during creation or verification. If the human changes focus while this runs, leave it where they put it. For `blocked`, timeout, or any failed check, inspect `herdr agent get` and `herdr agent read` when available, report that the destination is not ready, and leave both panes unchanged.
-
-For a readiness-only handoff, stop after reporting the verified destination and that the source remains open. For an assigned review, continue below only after startup verification succeeds.
+For a readiness-only handoff, stop after reporting the verified destination and source survival. Do not begin project work or submit another task. For an assigned review, continue below only after all startup checks succeed.
 
 ## Start the assigned review
 
 Use this branch only when `code-review` requests immediate execution of an already authorized standalone review. It does not authorize other project work or change the default readiness-only handoff.
 
-1. After completing the startup and session-file checks above, submit the caller's review task to the exact destination. Identify it as the review owner and include the targets, scope and durable context supplied by `code-review`. Direct it to complete the review in its own session without subagents or another handoff, then stop at the review's human decision point.
-2. Use `herdr agent prompt <destination-pane> <review-task> --wait --until working --timeout 20000`, shell-escaping the task and target. This wait verifies task submission reaches a working state; it is not a wait for review completion. Do not submit with a completion wait or follow it with another wait for the review result.
-3. Report the review targets, owning tab and verified dispatch, then stop. Do not poll the owner, aggregate its review into the source conversation, change focus or close either session. The owner handles the complete review, its monitors and follow-ups.
+1. After completing the startup and session-file checks above, submit the caller's exact review task to the verified destination using the core manual's messaging procedure. Identify it as the review owner and include its targets, scope, checkout paths and durable context. Direct it to complete the review in its own session without subagents or another handoff, then stop at the review's human decision point.
+2. Send without a completion wait. Check the documented dispatch result and terminal evidence before reporting that the owner received its task; this is not a wait for review completion. Do not use an unsupported wait flag or treat a message queued to a booting agent as verified delivery.
+3. Report the review targets, owning destination and verified dispatch, then stop. Do not poll the owner, aggregate its review into the source conversation, change focus or close either session. The owner handles its review, reports, monitors and follow-ups.
 
 If task submission fails or times out, report that stage accurately and leave both sessions open. Do not retry an uncertain submission, launch a duplicate owner, or substitute a subagent or an in-place review.
 
-## Handle later topology requests
+## Handle later focus and closure requests
 
-A verified handoff grants no permission to focus or close anything. Handle either action only as a fresh, explicit human request:
+A verified handoff grants no permission to focus or close anything. Treat either as a fresh, explicit request:
 
-- **Focus destination:** Confirm it still exists, focus it once, and keep the source open.
-- **Close source:** If the request reaches the verified destination Pi, it rechecks both panes and closes only the named source pane. It does not change focus unless the human separately asks. If the request reaches the source Pi, stop and tell the human to close that pane manually; never relay closure or cleanup through `herdr agent prompt` or another Pi session.
+- **Focus destination:** verify it still exists, focus it once through the app and keep the source open.
+- **Close source:** never close the terminal running the current Pi. If the request reaches that source, ask the user to close it manually; do not relay closure through another session. From another session, recheck the exact approved source, its processes, children and app mapping, then perform only the authorized termination or visible closure. Hiding, parking, closing a container and ending a process have different effects; follow the installed manuals and the user's exact scope.
 
-Do not bundle either action into the initial handoff confirmation or pre-authorize it in the destination's startup message.
+Do not bundle source closure or a later focus change into launch approval.
