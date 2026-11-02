@@ -1,0 +1,254 @@
+<!doctype html>
+<!--
+  Starter for a visual explainer. Replace TITLE, the numbers, the DATA block and the
+  diff cards. Delete any section that doesn't help answer the question.
+  Colours: give each concept one key in COLORS and reuse it in every view.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TITLE</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171b21; --line: #2b313a; --text: #e8eaed; --dim: #8d96a0;
+    --add: #5cc8a8; --del: #e86a7e;
+    --add-bg: rgba(92,200,168,.10); --del-bg: rgba(232,106,126,.10);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; padding: 32px 32px 96px; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, sans-serif; max-width: 1080px; }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -.01em; }
+  .sub { color: var(--dim); margin: 4px 0 28px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim);
+       margin: 48px 0 12px; font-weight: 600; }
+  h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13px; }
+  svg text { font-family: system-ui, sans-serif; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  .note { color: var(--dim); font-size: 13px; margin-top: 8px; }
+
+  .numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .numbers .card b { display: block; font-size: 30px; font-weight: 650; letter-spacing: -.02em; }
+  .numbers .card span { color: var(--dim); font-size: 13px; }
+
+  .track { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .chip { font: 600 12px ui-monospace, monospace; padding: 4px 8px; border-radius: 4px; color: var(--bg); }
+  .chip.done { background: transparent; color: var(--dim); border: 1px solid var(--line); }
+  .chip.done::before { content: "✓ "; }
+  .track .sep { width: 10px; }
+
+  details { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--panel); overflow: hidden; }
+  summary { cursor: pointer; padding: 10px 14px; display: flex; gap: 12px; align-items: center; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  summary .name { font: 600 14px ui-monospace, monospace; }
+  summary .meta { color: var(--dim); font-size: 13px; margin-left: auto; }
+  summary .delta { font: 12px ui-monospace, monospace; }
+  .plus { color: var(--add); } .minus { color: var(--del); }
+  pre { white-space: normal; margin: 0; padding: 6px 0 10px; font: 13px/1.65 ui-monospace, monospace; border-top: 1px solid var(--line); }
+  pre div { white-space: pre-wrap; padding: 0 14px 0 34px; position: relative; }
+  pre div::before { position: absolute; left: 14px; }
+  .a { background: var(--add-bg); } .a::before { content: "+"; color: var(--add); }
+  .d { background: var(--del-bg); } .d::before { content: "−"; color: var(--del); }
+  .c { color: var(--dim); } .c::before { content: " "; }
+  .to { float: right; font-size: 12px; padding-left: 16px; }
+</style>
+</head>
+<body>
+
+<h1>TITLE</h1>
+<p class="sub">One sentence: what changes for the reader, and what stays the same.</p>
+
+<!-- 1. Answer first: two to four measured numbers. -->
+<div class="numbers">
+  <div class="card"><b>3,000 → ~900</b><span>lines in big_file.gd</span></div>
+  <div class="card"><b>37 → 0</b><span>calls from Worker back into Big</span></div>
+</div>
+
+<!-- 2. Where things go: width = a measured quantity. -->
+<h2>Where the code goes</h2>
+<div class="card">
+  <svg id="flow" viewBox="0 0 1000 440" width="100%" role="img" aria-label="DESCRIBE THE FLOW"></svg>
+  <p class="note">Bar width = lines of code. Say how you measured it, and whether it's an estimate.</p>
+</div>
+
+<!-- 3. Who depends on whom: same layout before and after. -->
+<h2>Who calls whom</h2>
+<div class="card">
+  <svg id="deps" viewBox="0 0 1000 340" width="100%" role="img" aria-label="DESCRIBE BEFORE AND AFTER"></svg>
+</div>
+
+<!-- 4. Order or progress, when the reader needs it. -->
+<h2>Order of work</h2>
+<div class="card"><div class="track" id="track"></div></div>
+
+<!-- 5. Detail on demand: git-style diffs per entity. Open only the most important one. -->
+<h2>Entity diff <small>· click to expand</small></h2>
+
+<details open>
+  <summary><span class="dot" style="background:#59616b"></span><span class="name">Big</span>
+    <span class="meta">keeps lifecycle and input</span><span class="delta minus">−2,000</span></summary>
+  <pre>
+<div class="c">unchanged responsibility</div>
+<div class="d">state that leaves<span class="to" style="color:#6c9eff">→ Orders</span></div>
+  </pre>
+</details>
+
+<details>
+  <summary><span class="dot" style="background:#6c9eff"></span><span class="name">Orders</span>
+    <span class="meta">new</span><span class="delta plus">+~1,000</span></summary>
+  <pre>
+<div class="a">state that arrives</div>
+  </pre>
+</details>
+
+<script>
+/* ---------------- DATA: replace this block ---------------- */
+const COLORS = { stay: '#59616b', stay2: '#6b737d', a: '#f2a541', b: '#5cc8a8', c: '#6c9eff', d: '#e86a7e' };
+
+const FLOW = {
+  title: 'big_file.gd today · 3,000 lines',
+  // Top bar segments. `to` names a destination; `short` is used when the segment is narrow.
+  src: [
+    { label: 'lifecycle', lines: 600,  color: COLORS.stay, to: 'big' },
+    { label: 'input',     lines: 300,  color: COLORS.stay2, to: 'big' },
+    { label: 'orders',    lines: 1000, color: COLORS.c,    to: 'orders' },
+    { label: 'AI',        lines: 1100, color: COLORS.d,    to: 'ai' },
+  ],
+  // Bottom boxes. `existing` = lines the destination already has (drawn dashed).
+  dst: [
+    { id: 'big',    name: 'Big',    color: COLORS.stay, existing: 0,   sub: '~900 lines · stays' },
+    { id: 'orders', name: 'Orders', color: COLORS.c,    existing: 0,   sub: '~1,000 lines · new' },
+    { id: 'ai',     name: 'AI',     color: COLORS.d,    existing: 200, sub: '~1,300 lines · dashed = exists today' },
+  ],
+  dropLabels: [],  // ids whose labels collide with a neighbour; they drop to a second row
+};
+
+const DEPS = {
+  before: {
+    nodes: { big: [250, 80, 240, 'Big · owns everything', COLORS.stay, true],
+             ai: [120, 250, 110, 'AI', COLORS.d], view: [380, 250, 110, 'View', COLORS.stay] },
+    // [from, to, options]. bad = reaches back the wrong way; w = stroke width (scale by count).
+    edges: [['big', 'ai', { dx1: -60, dx2: 25 }], ['big', 'view', { dx1: 60, dx2: -25 }],
+            ['ai', 'big', { bad: true, w: 4, dx1: -25, dx2: -100, label: '37 reach-ins', lx: 50, ly: 4 }]],
+  },
+  after: {
+    nodes: { big: [750, 60, 220, 'Big · coordinator', COLORS.stay, true],
+             orders: [650, 170, 110, 'Orders', COLORS.c], ai: [850, 170, 110, 'AI', COLORS.d],
+             view: [750, 290, 200, 'View · read-only', COLORS.stay] },
+    edges: [['big', 'orders', { dx1: -40 }], ['big', 'ai', { dx1: 40 }],
+            ['orders', 'view', { dash: true, dx2: -40 }], ['ai', 'view', { dash: true, dx2: 40 }]],
+  },
+  legend: 'solid = owns and ticks · dashed = reads or calls',
+};
+
+const TRACK = [
+  { name: 'done',   ids: ['A', 'B'] },
+  { name: 'Orders', ids: ['C1', 'C2'], color: COLORS.c },
+  { name: 'AI',     ids: ['D1', 'D2'], color: COLORS.d },
+];
+/* ---------------- end DATA ---------------- */
+
+const NS = 'http://www.w3.org/2000/svg';
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const TEXT = css('--text'), DIM = css('--dim'), LINE = css('--line'), PANEL = css('--panel'), BG = css('--bg'), BAD = css('--del');
+
+function el(parent, tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  parent.appendChild(e);
+  return e;
+}
+
+function sankey(svg, { title, src, dst, dropLabels = [] }) {
+  const X0 = 20, W = 960, topY = 56, barH = 30, botY = 300, gap = 22;
+  const total = src.reduce((s, d) => s + d.lines, 0);
+  const dstTotal = total + dst.reduce((s, d) => s + d.existing, 0);
+  const kTop = W / total, kBot = (W - gap * (dst.length - 1)) / dstTotal;
+  el(svg, 'text', { x: X0, y: topY - 14, fill: DIM, 'font-size': 13 }, title);
+
+  let x = X0;
+  src.forEach(s => { s.x = x; s.w = s.lines * kTop; x += s.w; });
+  x = X0;
+  dst.forEach(d => {
+    const inbound = src.filter(s => s.to === d.id).reduce((a, s) => a + s.lines, 0);
+    Object.assign(d, { x, inW: inbound * kBot, exW: d.existing * kBot, cursor: x });
+    d.w = d.inW + d.exW;
+    x += d.w + gap;
+  });
+
+  src.forEach(s => {
+    const d = dst.find(d => d.id === s.to), w = s.lines * kBot;
+    const x1 = s.x, x2 = s.x + s.w, y1 = topY + barH, x3 = d.cursor, x4 = d.cursor + w, y2 = botY, my = (y1 + y2) / 2;
+    d.cursor += w;
+    el(svg, 'path', { d: `M${x1},${y1} C${x1},${my} ${x3},${my} ${x3},${y2} L${x4},${y2} C${x4},${my} ${x2},${my} ${x2},${y1} Z`,
+                      fill: s.color, opacity: 0.32 });
+  });
+
+  src.forEach(s => {
+    el(svg, 'rect', { x: s.x, y: topY, width: s.w - 1, height: barH, fill: s.color, rx: 2 });
+    const label = s.w > s.label.length * 7 + 12 ? s.label : (s.short || '');
+    el(svg, 'text', { x: s.x + 6, y: topY + 20, fill: BG, 'font-size': 12, 'font-weight': 600 }, label);
+  });
+
+  dst.forEach(d => {
+    if (d.exW) el(svg, 'rect', { x: d.x + d.inW, y: botY, width: d.exW, height: barH, fill: 'none', stroke: d.color, 'stroke-dasharray': '3 3' });
+    el(svg, 'rect', { x: d.x, y: botY, width: d.inW, height: barH, fill: d.color, rx: 2 });
+    const cx = d.x + d.w / 2, drop = dropLabels.includes(d.id) ? 40 : 0;
+    if (drop) el(svg, 'line', { x1: cx, y1: botY + barH + 2, x2: cx, y2: botY + 38 + drop, stroke: DIM });
+    el(svg, 'text', { x: cx, y: botY + 52 + drop, fill: TEXT, 'font-size': 13, 'font-weight': 600, 'text-anchor': 'middle' }, d.name);
+    el(svg, 'text', { x: cx, y: botY + 70 + drop, fill: DIM, 'font-size': 12, 'text-anchor': 'middle' }, d.sub || '');
+  });
+}
+
+function graph(svg, { before, after, legend }) {
+  const defs = el(svg, 'defs', {});
+  [['ok', DIM], ['bad', BAD]].forEach(([id, col]) => {
+    const m = el(defs, 'marker', { id: 'arr-' + id, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 9, markerHeight: 9,
+                                   markerUnits: 'userSpaceOnUse', orient: 'auto-start-reverse' });
+    el(m, 'path', { d: 'M0,0 L10,5 L0,10 z', fill: col });
+  });
+  el(svg, 'line', { x1: 500, y1: 10, x2: 500, y2: 330, stroke: LINE });
+  el(svg, 'text', { x: 250, y: 24, fill: DIM, 'font-size': 13, 'text-anchor': 'middle' }, 'BEFORE');
+  el(svg, 'text', { x: 750, y: 24, fill: DIM, 'font-size': 13, 'text-anchor': 'middle' }, 'AFTER');
+
+  [before, after].forEach(({ nodes, edges }) => {
+    const pos = {};
+    for (const id in nodes) {
+      const [x, y, w, label, color, bold] = nodes[id];
+      pos[id] = { x, y };
+      el(svg, 'rect', { x: x - w / 2, y: y - 17, width: w, height: 34, rx: 6, fill: PANEL, stroke: color, 'stroke-width': bold ? 2 : 1.25 });
+      el(svg, 'text', { x, y: y + 5, fill: TEXT, 'font-size': 13, 'text-anchor': 'middle', 'font-weight': bold ? 600 : 400 }, label);
+    }
+    edges.forEach(([from, to, o = {}]) => {
+      const a = pos[from], b = pos[to], col = o.bad ? BAD : DIM;
+      const ax = a.x + (o.dx1 || 0), ay = a.y + (b.y > a.y ? 17 : -17);
+      const bx = b.x + (o.dx2 || 0), by = b.y + (b.y > a.y ? -17 : 17), my = (ay + by) / 2;
+      el(svg, 'path', { d: `M${ax},${ay} C${ax},${my} ${bx},${my} ${bx},${by}`, fill: 'none', stroke: col,
+                        'stroke-width': o.w || 1.25, 'stroke-dasharray': o.dash ? '4 4' : 'none',
+                        'marker-end': `url(#arr-${o.bad ? 'bad' : 'ok'})` });
+      if (o.label) el(svg, 'text', { x: (ax + bx) / 2 + (o.lx || 0), y: my + (o.ly || 0), fill: col, 'font-size': 12,
+                                     'text-anchor': 'middle', 'font-weight': 600 }, o.label);
+    });
+  });
+  if (legend) el(svg, 'text', { x: 1000, y: 330, fill: DIM, 'font-size': 11, 'text-anchor': 'end' }, legend);
+}
+
+function track(div, groups) {
+  groups.forEach(({ name, ids, color }, gi) => {
+    if (gi) div.appendChild(Object.assign(document.createElement('span'), { className: 'sep' }));
+    ids.forEach(id => {
+      const c = Object.assign(document.createElement('span'), { className: 'chip' + (color ? '' : ' done'), textContent: id, title: name });
+      if (color) c.style.background = color;
+      div.appendChild(c);
+    });
+  });
+}
+
+const $ = id => document.getElementById(id);
+if ($('flow')) sankey($('flow'), FLOW);
+if ($('deps')) graph($('deps'), DEPS);
+if ($('track')) track($('track'), TRACK);
+</script>
+</body>
+</html>
