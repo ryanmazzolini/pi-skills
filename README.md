@@ -65,7 +65,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`change-walkthrough`](./skills/review/change-walkthrough/SKILL.md) | Build an offline HTML walkthrough of a commit or pull request: change map, risk-ordered steps, shaded diffs |
 | [`diagnosing-bugs`](./skills/debugging/diagnosing-bugs/SKILL.md) | Diagnose hard, flaky, environment-specific, or performance bugs |
 | [`security-review`](./skills/security/security-review/SKILL.md) | Find proven, exploitable security problems in code and delivery paths |
-| [`explain-code`](./skills/ai-authoring/explain-code/SKILL.md) | Explain code from a high-level model through targeted visual traces |
+| [`explain-code`](./skills/ai-authoring/explain-code/SKILL.md) | Explain code with a small map and verified traces; add interactive HTML when it helps |
 | [`typescript`](./skills/typescript-nextjs/typescript/SKILL.md) | Apply strict TypeScript patterns and conventions |
 | [`nextjs-app-router`](./skills/typescript-nextjs/nextjs-app-router/SKILL.md) | Work with modern Next.js App Router patterns |
 | [`frontend-react`](./skills/typescript-nextjs/frontend-react/SKILL.md) | Implement and review accessible React and Next.js interfaces |
