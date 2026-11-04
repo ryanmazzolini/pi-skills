@@ -41,6 +41,15 @@
       ]
     },
     {
+      "name": "loops",
+      "source": "./skills/loops",
+      "description": "Iterate on work in scored rounds until a model council reaches the target",
+      "strict": false,
+      "skills": [
+        "./council-loop"
+      ]
+    },
+    {
       "name": "productivity",
       "source": "./skills/productivity",
       "description": "Durable learning and concise re-explanation workflows",
