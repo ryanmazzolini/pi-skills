@@ -1,6 +1,6 @@
 ---
 name: "ship"
-description: Settle what a code change should do and how to deliver it before editing. Use before the first edit of any change beyond a trivial, exactly specified fix, when work grows beyond what was approved, when resuming work after a context reset or from existing workflow files, and before presenting finished code for approval.
+description: "Settle what a change should do and how to deliver it before editing. Use when asked to plan or split work across several PRs or milestones. For any change beyond a trivial, exactly specified fix, also use before the first edit, when the work grows beyond what was approved, when resuming after a context reset or from existing workflow files, and before presenting, pushing, or releasing the finished code."
 ---
 
 # Ship
