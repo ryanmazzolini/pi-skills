@@ -1,6 +1,6 @@
 ---
 name: "ship"
-description: Route coding work through the lightest useful path. Use for direct implementation, consequential alignment, upfront design review, dependency-aware delivery planning, milestone roadmaps, recovery, review, or delivery.
+description: Settle what a code change should do and how to deliver it before editing. Use before the first edit of any change beyond a trivial, exactly specified fix, when work grows beyond what was approved, when resuming work after a context reset or from existing workflow files, and before presenting finished code for approval.
 ---
 
 # Ship
