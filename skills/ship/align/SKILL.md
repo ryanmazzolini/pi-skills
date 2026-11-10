@@ -7,7 +7,7 @@ description: Settle consequential human choices for one target outcome. Use when
 
 **Be relentless about decisions that can materially change the target outcome or how it will be delivered.** Investigate first. Settle one focused decision per turn. Stop when no such decision remains.
 
-Keep the method internal. In user-facing messages, state the concrete choice, why it affects the result, and the recommended answer. Do not make the user decode Align, target-outcome, ranking, or workflow language unless an exact artifact name helps them continue.
+Keep the method internal. In user-facing messages, state the concrete choice, why it affects the result, the recommended answer, and what would make that answer wrong. Do not make the user decode Align, target-outcome, ranking, or workflow language unless an exact artifact name helps them continue.
 
 Alignment is optional. Do not use it when the requested benefit, completion signal, and important boundaries are already clear. An approved alignment returns to Ship to decide whether design review is warranted, then choose and confirm the implementation route.
 
@@ -60,9 +60,17 @@ When fact-finding or prerequisite work returns, record the result as fact, assum
 
 Rank remaining human decisions by **impact × uncertainty**. Impact measures how much plausible answers change the benefit, walkthrough, important constraint, observable behavior, or solution direction, including reversal cost. Uncertainty measures how evenly plausible answers fit the evidence. Ask the highest-ranked unblocked decision only the user can settle.
 
-Settle exactly one blocking decision in plain language. Give only the setup needed, then ask one short question and include:
+Settle exactly one blocking decision in plain language. Give only the setup needed, then include:
 
 > **My recommended answer:** [answer and short reason]
+
+Follow it with the condition that would make a different answer right, and which answer that is. Choose the condition the decision depends on most. Prefer a fact, priority, or constraint the user knows and the repository cannot show. If inspection can settle the condition, settle it instead of asking.
+
+Then ask one short question about that condition, not whether the user agrees. For example:
+
+> **My recommended answer:** default the toggle to on, because most users want it. If any existing users depend on it staying off, default it to off and let people opt in. Does anyone depend on it staying off today, or do we not know?
+
+If no realistic condition would change the answer, the choice is not a blocking decision. Record it as an assumption.
 
 When useful, append up to three new low-risk proposals under **Assuming unless you disagree:**. If the user answers without correcting them, record them as accepted assumptions. Keep consequential uncertain trade-offs as questions.
 
