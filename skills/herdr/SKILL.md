@@ -44,8 +44,10 @@ Starting a session or worker must never change the person's focus. Launch it wit
 For an independent continuation in an approved existing space, use this launch shape with verified IDs and shell-escaped values:
 
 ```sh
-hc run --bg --outlive-parent --name <name> --cwd <cwd> --label herdr.space=<space-id> pi "<brief>"
+hc run --bg --outlive-parent --name <name> --cwd <cwd> --label herdr.space=<space-id> pi-tab "<brief>"
 ```
+
+The `pi-tab` template starts Pi in the user's login shell, so Pi gets their PATH, and the tab stays open at a shell prompt when Pi exits. `--keep` does not do this: it only replaces a program lost to a core restart. As a template launch, `hc` sends the brief once Pi is ready and reports `first_message.sent`. If `hc templates` does not list `pi-tab` (for a remote launch, check with `hc exec --on <machine> 'hc templates'`), stop and tell the user; the template lives in `pi-config` at `herdr-core/templates/pi-tab.md`.
 
 The space label opts the terminal into the window; omitting `herdr.tab` creates a new tab in that space. Add only `herdr.space` for an approved new tab. `--outlive-parent` is for independent continuations, not ordinary task-bound workers. Keep ordinary workers unlabeled and omit `--outlive-parent` so they end with their parent.
 
