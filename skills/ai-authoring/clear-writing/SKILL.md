@@ -1,15 +1,17 @@
 ---
 name: "clear-writing"
-description: "Rewrite human-facing text so it is direct, concrete, and easy to read without changing its meaning. Use when rewording documentation, skills, pull request descriptions, commit messages, review comments, user-facing responses, or other prose. Pair with writing-for-agents when the text instructs an AI agent."
+description: "Write or rewrite human-facing text so it is direct, concrete, and easy to read. Use when drafting or rewording pull request descriptions, tickets, commit messages, review comments, documentation, or skills, and when the user asks to make text clearer. Pair with writing-for-agents when the text instructs an AI agent."
 ---
 
 # Clear Writing
 
-Rewrite prose for a capable reader who needs the relevant context without unnecessary effort.
+Write or rewrite prose for a capable reader who needs the relevant context without unnecessary effort.
 
 ## Preserve the meaning
 
 Before rewriting, identify the main point, intended reader, and useful result. Preserve facts, requirements, safeguards, conditions, uncertainty, and any technical term whose exact wording carries meaning. Preserve precise meaning, not terminology for its own sake. Follow any format or content rules for the artifact.
+
+When drafting new text, the source is the work itself: the diff, ticket, notes, or conversation. State only what it supports.
 
 Decide whether the reader needs clearer sentences or a fuller explanation. A draft can be accurate and grammatical while assuming the reader already knows the workflow, why it matters, or what a limitation prevents. When supporting sources are supplied, read the relevant parts before deciding the draft contains enough context. Use them to establish the missing facts, not to restart the investigation.
 
@@ -61,7 +63,7 @@ For pull requests, commit messages, and review comments, write about the project
 
 For agent instructions, use `writing-for-agents` to make the behavior contract reliable, then apply this skill to make it clear.
 
-## Check the rewrite
+## Check the text
 
 Confirm that:
 
@@ -77,4 +79,4 @@ Confirm that:
 - the reader can understand and act without decoding unfamiliar terms or reconstructing the conclusion from supporting evidence;
 - the result is concise without hiding necessary context.
 
-Return the rewritten text first. Add commentary only for a material ambiguity, trade-off, or intentional change the reader needs to know about.
+Return the text first. Add commentary only for a material ambiguity, trade-off, or intentional change the reader needs to know about.
