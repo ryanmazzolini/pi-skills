@@ -18,7 +18,7 @@ Use a thin router when several branches share one model-facing trigger but need 
 
 ## Revise from evidence
 
-For an existing skill, inspect recent fixes and map each section to the behavior it protects. Fix the smallest instruction that explains an observed failure, then rerun realistic work. Remove duplicate, stale, irrelevant, and no-op guidance instead of layering on exceptions.
+Fix the smallest instruction that explains an observed failure, then rerun realistic work. Remove duplicate, stale, irrelevant, and no-op guidance instead of layering on exceptions.
 
 Before finishing, confirm:
 

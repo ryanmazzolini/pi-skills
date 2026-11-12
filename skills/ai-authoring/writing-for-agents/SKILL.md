@@ -8,7 +8,7 @@ license: "MIT; adapted from mattpocock/skills"
 
 Treat agent-facing writing as a behavior contract. Make the intended process predictable without prescribing work the agent can discover or decide safely.
 
-Before revising an existing document, inspect the live environment and recent history. Identify the existing use cases and behavior its instructions protect, especially approval boundaries, stopping points, optional branches, and handoffs. Check that a rewrite for a new use case does not silently narrow them. When removing a procedure, trace the safeguards and fallback behavior it supplied; removing the procedure does not by itself authorize removing those behaviors.
+Before removing or rewriting instructions in an existing document, read the recent commits that changed them and the files, commands, and skills they refer to. Identify the use cases and behavior those instructions protect, especially approval boundaries, stopping points, optional branches, and handoffs. Check that a rewrite for a new use case does not silently narrow them. For an addition that leaves existing instructions unchanged, check only that it does not contradict them. When removing a procedure, trace the safeguards and fallback behavior it supplied; removing the procedure does not by itself authorize removing those behaviors.
 
 Within the approved scope, remove instructions that no longer serve the intended outcome rather than retaining obsolete paths or deprecation notices. For intentional behavior removals or narrowing, state what stops being supported and why in the change explanation, not as permanent notices in the instructions. Distinguish behavior removed from behavior preserved elsewhere, and verify the replacement covers the same conditions. Ask before changing behavior outside the approved scope.
 
@@ -16,7 +16,7 @@ After the behavior contract is correct, apply [`clear-writing`](../clear-writing
 
 ## Define the contract
 
-State the outcome, relevant context, hard constraints, success criteria, and stopping conditions. Use concrete decision criteria instead of vague caution. Reserve `must`, `always`, and `never` for invariants. Say what the agent may do autonomously and what requires approval. Distinguish the broader goal from the currently authorized action, and state what must remain unchanged.
+State the outcome, relevant context, hard constraints, success criteria, and stopping conditions. Use concrete decision criteria instead of vague caution. Reserve `must`, `always`, and `never` for invariants. Name the exact actions that require approval and the routine steps the agent may take without asking. A broad category such as "sending messages" also holds back routine work. When an action is allowed once approved, write "ask before deleting files", not "never delete files". Distinguish the broader goal from the currently authorized action, and state what must remain unchanged.
 
 Prescribe a procedure when the procedure itself matters, such as tool routing, validation, safety, or a human checkpoint. Otherwise describe the destination and let the agent choose an efficient path.
 
