@@ -1,6 +1,6 @@
 ---
 name: "ship"
-description: "Settle what a change should do and how to deliver it before editing. Use when asked to plan or split work across several PRs or milestones. For any change beyond a trivial, exactly specified fix, also use before the first edit, when the work grows beyond what was approved, when resuming after a context reset or from existing workflow files, and before presenting, pushing, or releasing the finished code."
+description: "Use before building, changing, or fixing anything beyond a trivial, exactly specified edit, including when the user floats an idea and asks for thoughts. Works out which choices belong to the user and how to deliver the change. Also use when asked to plan or split work across several PRs or milestones, when the work grows beyond what was approved, when resuming after a context reset or from existing workflow files, and before presenting, pushing, or releasing the finished code."
 ---
 
 # Ship
@@ -21,7 +21,7 @@ Reuse settled decisions and exact bounded requests. Do not ask the user to resta
 
 Use the live system, code, tests, automation, and documentation to establish facts. Use [`research`](../research/SKILL.md) when material uncertainty prevents a trustworthy decision; routine inspection is usually enough otherwise. Distinguish current behavior from requested behavior and from your proposed changes.
 
-Pause solution selection or implementation when sources of intent conflict or completing the expected behavior would require inventing a consequential choice. A choice is consequential when plausible answers could change the goal, priority, value, experience, scope, risk, or high-level solution direction. Use [`align`](../align/SKILL.md) to settle choices that need human judgment, not questions inspection or research can answer.
+Pause solution selection or implementation when sources of intent conflict or completing the expected behavior would require inventing a consequential choice. A choice is consequential when plausible answers could change the goal, priority, value, experience, scope, risk, or high-level solution direction. Bring each choice that needs human judgment to the user in the form that settles it fastest: a focused question with a recommendation ([`align`](../align/SKILL.md)), a proposed design to react to, a before/after sketch of the shape, or a throwaway [`prototype`](../prototype/SKILL.md). Mix them when different choices suit different forms. Do not ask the user what inspection or research can answer.
 
 For example, a small preference toggle can change existing users' behavior. If its default is unspecified and plausible defaults have different effects, settle that choice before implementation. If its behavior and preservation boundaries are already authoritative, reuse those decisions and proceed within the existing approval.
 
@@ -92,7 +92,7 @@ Do not create workflow files merely because a direct delivery lasts longer than 
 
 Alignment helps settle a human choice that evidence cannot. Approval does not force design review or a delivery plan. Return here, decide whether design review is warranted, and then choose the delivery shape. Stay direct when one coherent change can deliver the result. Reach for `delivery-plan` when dependency or delivery boundaries make slicing useful.
 
-For an experiential question that words cannot settle, Align may temporarily use [`prototype`](../prototype/SKILL.md). A prototype supplies evidence and returns to alignment. It does not authorize production implementation.
+A [`prototype`](../prototype/SKILL.md) can settle a choice at any point, with or without alignment. Its verdict settles that choice only. It does not authorize production implementation.
 
 ## Execute a delivery plan
 
@@ -113,7 +113,7 @@ The live project and canonical work-item files decide current state. Conversatio
 - A final code-bearing delivery lacks required independent review: apply [references/review-gate.md](references/review-gate.md).
 - Completed work has passed its required review gate and awaits approval: when the request is exact and may be routine enough for a discoverable First Mate, use [references/first-mate-escalation.md](references/first-mate-escalation.md); otherwise present the checkpoint and wait.
 - A decision-linked investigation remains: use `research`, then resume the checkpoint its result informs.
-- A consequential human decision remains: use `align`.
+- A consequential human decision remains: settle it with a question (`align`), a proposed design, or a `prototype`, whichever lets the user decide fastest.
 - Settled intent still has costly implicit solution choices: use `design-doc`.
 - Production implementation is ready but its used and skipped steps lack current route approval: present the implementation route and wait.
 - An approved outcome has a useful delivery plan: recommend a ready delivery change.

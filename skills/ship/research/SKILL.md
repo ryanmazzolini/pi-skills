@@ -1,6 +1,6 @@
 ---
 name: "research"
-description: "Investigate uncertainty before a technical decision. Use when the user asks for research, a comparison, or a technical spike, or when Ship needs evidence to test material framing, assumptions, or possible approaches."
+description: "Investigate uncertainty before a technical decision. Use when the user asks for research, a comparison, or a technical spike, or when a decision depends on facts that routine inspection cannot settle: the framing, an assumption, or which approaches exist."
 ---
 
 # Research

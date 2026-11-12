@@ -1,6 +1,6 @@
 ---
 name: "align"
-description: Settle consequential human choices for one target outcome. Use when a goal, priority, scope, experience, or trade-off that evidence cannot settle could change delivery, or when the user asks to be grilled.
+description: "Ask focused questions, each with a recommendation, to settle choices only the user can make. Use when a goal, priority, scope, experience, or trade-off that evidence cannot settle could change what gets built or how it is delivered, and a question would settle it faster than a proposed design or mock. Also use when the user asks to be grilled."
 ---
 
 # Align
@@ -37,9 +37,9 @@ Describe the walkthrough in user or caller language with ordinary values, not pr
 
 When solution shaping is needed, use the shape-a-change branch of [`architecture`](../../architecture/architecture/SKILL.md). Stop at what implementation needs. Leave local interfaces, structure, TODOs, and code to later work. Reopen only the parts changed by later answers.
 
-## Prototype what words cannot settle
+## Prototype when seeing is faster
 
-When one consequential experiential decision cannot be judged through inspection, conversation, or a sketch, pause alignment and use [`prototype`](../prototype/SKILL.md). Before prototyping, name the single question, minimum fidelity, and observation that will settle it. Ask for approval unless the user already requested the prototype.
+When the user would settle a decision faster by seeing or trying something than by answering more questions, pause alignment and use [`prototype`](../prototype/SKILL.md). Before prototyping, name the single question, minimum fidelity, and observation that will settle it. Follow that skill's rule for when to build without asking.
 
 Afterward, keep the verdict and its effect on alignment, discard the prototype by default, and resume the interrupted decision. A prototype supplies evidence; it does not complete alignment or authorize production implementation.
 
