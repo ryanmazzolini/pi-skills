@@ -177,6 +177,15 @@
       ]
     },
     {
+      "name": "testing",
+      "source": "./skills/testing",
+      "description": "Test design: what to test, at which level, and how to cover it with fewer tests",
+      "strict": false,
+      "skills": [
+        "./test-design"
+      ]
+    },
+    {
       "name": "handoff",
       "source": "./skills",
       "description": "Compact the conversation into a handoff document for another session.",

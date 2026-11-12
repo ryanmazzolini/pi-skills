@@ -21,6 +21,13 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 - Descriptions should be specific about what the skill does and when to use it
 - Use relative paths to reference scripts or assets within a skill directory
 
+## Keep in agreement
+
+Some skills ship in separate plugins and state the same guidance in their own words. They cannot link to each other, so when you edit one, check the other still agrees.
+
+- Testing through the caller's interface and when to substitute a dependency: `skills/testing/test-design/SKILL.md` and `skills/architecture/architecture/references/seams-tests-and-notes.md`
+- A bug-fix test must fail before the fix: `skills/testing/test-design/SKILL.md` and `skills/debugging/diagnosing-bugs/SKILL.md`
+
 ## Adding a Skill
 
 1. Create `skills/<namespace>/<skill-name>/SKILL.md` with frontmatter and instructions, or `skills/<skill-name>/SKILL.md` for a pi-only helper

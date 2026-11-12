@@ -65,6 +65,7 @@ _Note: I've adapted most of these skills from other people's skills to suit my n
 | [`change-walkthrough`](./skills/review/change-walkthrough/SKILL.md) | Build an offline HTML walkthrough of a commit or pull request: change map, risk-ordered steps, shaded diffs |
 | [`council-loop`](./skills/loops/council-loop/SKILL.md) | Improve work in rounds until a council of model scorers reaches a target score against a rubric and baseline |
 | [`diagnosing-bugs`](./skills/debugging/diagnosing-bugs/SKILL.md) | Diagnose hard, flaky, environment-specific, or performance bugs |
+| [`test-design`](./skills/testing/test-design/SKILL.md) | Decide what to test, at which level, and how to cover it with fewer tests |
 | [`security-review`](./skills/security/security-review/SKILL.md) | Find proven, exploitable security problems in code and delivery paths |
 | [`explain-code`](./skills/ai-authoring/explain-code/SKILL.md) | Explain code with a small map and verified traces; add interactive HTML when it helps |
 | [`typescript`](./skills/typescript-nextjs/typescript/SKILL.md) | Apply strict TypeScript patterns and conventions |
