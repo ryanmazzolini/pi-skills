@@ -1,6 +1,6 @@
 ---
 name: "test-design"
-description: "Use when writing or changing tests, deciding how to validate a change, or trimming a slow or repetitive test suite. Covers what to test, at which level, and how to cover it with fewer tests."
+description: "Use when writing or changing tests, deciding which automated tests a change needs, or trimming a slow or repetitive test suite. Covers what to test, at which level, and how to cover it with fewer tests."
 ---
 
 # Test Design
@@ -13,12 +13,12 @@ Use the repository's existing test framework, helpers, and layout.
 
 List the behaviors the change adds or alters, as a caller observes them. Rank them by what a failure costs and how likely the code is to be wrong. Spend most of the effort on the top of that list: money, data loss, permissions, irreversible actions, dense branching, and code with a history of bugs.
 
-For each behavior worth testing, cover:
+For each behavior worth testing, cover these, unless an existing test already catches the same failure:
 
 - the main path, once;
 - the boundaries where behavior changes, such as empty, one, many, and each limit;
 - the failure paths callers rely on;
-- every bug being fixed, with a test that fails before the fix.
+- every bug being fixed, with a test that fails before the fix. If no test can reach the bug, keep the reproducer and say so in the result.
 
 Leave out code with no logic of its own: accessors, pass-through wrappers, constants, and framework or library behavior. Leave out what the type checker already guarantees.
 
@@ -36,23 +36,23 @@ Test through the interface callers use, and assert results and durable outputs r
 
 ## Compress
 
-- **Group equivalent inputs.** Inputs the code treats the same need one representative, plus the boundaries between groups.
+- **Group equivalent inputs.** Inputs the requirement treats the same need one representative, plus the boundaries between groups.
 - **Use a table** when cases share setup and assertion shape. Name each row by what it proves.
 - **Independent parameters:** vary one at a time from a baseline.
-- **Interacting parameters:** use pairwise coverage when three or more parameters, each with a few values, pass through shared logic. Cover every pair of values at least once, then add any specific combination known to be risky. Generate the set with a tool when it is too large to check by hand.
-- **Test every combination** only when the full set is about a dozen cases or fewer, or when the requirement gives each combination its own answer, as a permission matrix does.
+- **Interacting parameters:** use pairwise coverage when the effect of one parameter depends on another, and there are three or more parameters with a few values each. Cover every pair of values at least once, then add any specific combination known to be risky. Generate the set with a tool when it is too large to check by hand.
+- **Test every combination** only when the requirement gives each combination its own answer, as a permission matrix does, or a known risk justifies it. A small set is not a reason on its own.
 - **Use a property-based test** when a rule holds for all inputs, such as a round trip or an invariant, and the repository already has a library for it.
 - **Merge tests** that repeat one setup to assert facets of the same behavior. Keep separate behaviors in separate tests so a failure names what broke.
 
 Stop compressing when a failure would no longer point to its cause. Keep the inputs that matter visible in the test body, not hidden in a shared helper.
 
-Write each expected value as a literal worked out from the requirement. A test that computes its expected value with the same logic as the code passes when both are wrong.
+For fixed examples, write each expected value as a literal: worked out from the requirement, or observed from the current code when pinning it. For generated inputs, assert the property directly. A test that computes its expected value with the same logic as the code passes when both are wrong.
 
 ## Check each test can fail
 
-A test earns its place only if it would fail when the behavior breaks. When that is obvious from the assertion, reasoning is enough. Run the test against broken code when it is in doubt: the assertion goes through a substitute, the test is asynchronous, or it passed on the first run when it was expected to need work.
+A test earns its place only if it would fail when the behavior breaks. When the assertion makes that obvious, reasoning is enough. If you can't tell, for example because the assertion goes through a substitute, run it against broken code.
 
-A test for a bug fix must be seen to fail before the fix. A test that pins current behavior passes by design, so this check does not apply to it.
+A test for a bug fix must be seen to fail on the reported symptom before the fix, and pass after it. A failure from a typo or broken setup doesn't count. A test that pins current behavior passes by design, so this check does not apply to it.
 
 ## Existing tests
 
