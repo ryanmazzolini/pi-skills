@@ -16,10 +16,14 @@ import {
   initializeConfig,
   inspectEnvironment,
   loadConfig,
+  publishReport,
   reconcileDates,
   renderReport,
+  reportEvidence,
   reportGenerationStatus,
+  reportPathExists,
   resolveProfile,
+  resolveReportPath,
   todayInTimeZone,
 } from "./daily-report-lib.mjs";
 
@@ -33,8 +37,13 @@ function usage() {
   daily-report doctor PROFILE [--config PATH]
   daily-report run PROFILE [YYYY-MM-DD] [--config PATH] [--force]
   daily-report reconcile PROFILE [--config PATH] [--max-days N] [--refresh-partial] [--force]
+  daily-report plan PROFILE [--config PATH] [--max-days N]
+  daily-report collect PROFILE [YYYY-MM-DD] [--config PATH]
+  daily-report publish PROFILE --evidence PATH --body PATH [--config PATH]
 
-Required: pi, git, a writable vault, and configured Git roots.
+Use plan, collect, and publish to write reports in the current agent session.
+These commands do not launch Pi or replace existing reports.
+run and reconcile still use Pi. Collection requires Git and configured Git roots.
 Optional enabled sources degrade to a partial report when gh or short is unavailable.`;
 }
 
@@ -51,12 +60,14 @@ function parseArguments(argv) {
     if (argument === "--force") options.force = true;
     else if (argument === "--refresh-partial") options.refreshPartial = true;
     else if (argument === "--help" || argument === "-h") options.help = true;
-    else if (argument === "--config" || argument === "--max-days" || argument === "--bin-dir") {
+    else if (["--config", "--max-days", "--bin-dir", "--evidence", "--body"].includes(argument)) {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new DailyReportError(`${argument} requires a value.`);
       index += 1;
       if (argument === "--config") options.config = value;
       else if (argument === "--bin-dir") options.binDir = value;
+      else if (argument === "--evidence") options.evidence = value;
+      else if (argument === "--body") options.body = value;
       else {
         const parsed = Number(value);
         if (!Number.isInteger(parsed) || parsed < 1 || parsed > 366) {
@@ -84,6 +95,13 @@ function sourceDiagnostic(source) {
   return `${source.name}: ${source.status}, ${count} item${count === 1 ? "" : "s"}${detail}`;
 }
 
+function logSourceDiagnostics(sources) {
+  for (const source of Object.values(sources)) {
+    console.error(sourceDiagnostic(source));
+    for (const warning of source.warnings || []) console.error(`  warning: ${warning}`);
+  }
+}
+
 function runOneDate({ profile, date, force = false, environment, now = new Date() }) {
   assertNotFutureDate(date, profile, now);
   const reportPath = ensureReportPath(profile, date);
@@ -100,10 +118,7 @@ function runOneDate({ profile, date, force = false, environment, now = new Date(
 
     const window = dateWindow(date, profile.timezone);
     const sources = collectSources(profile, environment, window);
-    for (const source of Object.values(sources)) {
-      console.error(sourceDiagnostic(source));
-      for (const warning of source.warnings || []) console.error(`  warning: ${warning}`);
-    }
+    logSourceDiagnostics(sources);
 
     const body = generateReportBody(profile, environment.tools, date, window, sources);
     const timestamp = new Date().toISOString();
@@ -248,12 +263,65 @@ function commandReconcile(positionals, options) {
   );
 }
 
+function printJson(value) {
+  console.log(JSON.stringify(value, null, 2));
+}
+
+function commandPlan(positionals, options) {
+  if (positionals.length !== 1) throw new DailyReportError("plan requires one PROFILE.");
+  const { profile } = loadProfile(positionals[0], options.config);
+  const today = todayInTimeZone(profile.timezone);
+  const dates = reconcileDates(profile, today, options.maxDays)
+    .filter((date) => !reportPathExists(resolveReportPath(profile, date)));
+  printJson({ profile: profile.name, today, dates });
+}
+
+function commandCollect(positionals, options) {
+  if (positionals.length < 1 || positionals.length > 2) {
+    throw new DailyReportError("collect requires PROFILE and an optional YYYY-MM-DD.");
+  }
+  const { profile } = loadProfile(positionals[0], options.config);
+  const date = positionals[1] ?? todayInTimeZone(profile.timezone);
+  const window = dateWindow(date, profile.timezone);
+  assertNotFutureDate(date, profile);
+  const reportPath = resolveReportPath(profile, date);
+  if (reportPathExists(reportPath)) {
+    printJson({ action: "skipped", reportPath });
+    return;
+  }
+
+  const environment = inspectEnvironment(profile, process.env, { requirePi: false });
+  const sources = collectSources(profile, environment, window);
+  logSourceDiagnostics(sources);
+  printJson(reportEvidence(profile, date, window, sources, reportPath));
+}
+
+function commandPublish(positionals, options) {
+  if (positionals.length !== 1 || !options.evidence || !options.body) {
+    throw new DailyReportError("publish requires PROFILE, --evidence PATH, and --body PATH.");
+  }
+  const { profile } = loadProfile(positionals[0], options.config);
+  const evidenceText = fs.readFileSync(expandHome(options.evidence), "utf8");
+  let evidence;
+  try {
+    evidence = JSON.parse(evidenceText);
+  } catch {
+    throw new DailyReportError("Evidence must be valid JSON.");
+  }
+  const body = fs.readFileSync(expandHome(options.body), "utf8");
+  printJson(publishReport(profile, evidence, body));
+}
+
 export function main(argv = process.argv.slice(2)) {
   const { options, positionals } = parseArguments(argv);
   const command = positionals.shift();
   if (options.help || !command) {
     console.log(usage());
     return 0;
+  }
+
+  if (["plan", "collect", "publish"].includes(command) && (options.force || options.refreshPartial)) {
+    throw new DailyReportError(`${command} cannot replace existing reports.`);
   }
 
   switch (command) {
@@ -277,6 +345,15 @@ export function main(argv = process.argv.slice(2)) {
       break;
     case "reconcile":
       commandReconcile(positionals, options);
+      break;
+    case "plan":
+      commandPlan(positionals, options);
+      break;
+    case "collect":
+      commandCollect(positionals, options);
+      break;
+    case "publish":
+      commandPublish(positionals, options);
       break;
     default:
       throw new DailyReportError(`Unknown command: ${command}\n\n${usage()}`);

@@ -380,6 +380,78 @@ mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 6, 9, 12) });
   assert.equal(fs.existsSync(path.join(vault, "daily-reports", "2026", "2026-07-09.md")), false);
 });
 
+test("the agent can plan, collect, and publish a monthly report without Pi", (t) => {
+  const { base, env } = fakeCommandEnvironment(t, { includePi: false });
+  const { configPath, vault } = testConfig(base);
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  config.profiles.work.monthFolders = true;
+  fs.writeFileSync(configPath, JSON.stringify(config));
+  const clock = path.join(base, "clock.mjs");
+  fs.writeFileSync(clock, `import { mock } from 'node:test';
+mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 6, 9, 12) });
+`);
+  const runWithConfig = (settings, ...args) => spawnSync(process.execPath,
+    ["--import", clock, CLI_PATH, ...args, "--config", settings], { env, encoding: "utf8" });
+  const run = (...args) => runWithConfig(configPath, ...args);
+  const json = (...args) => {
+    const result = run(...args);
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  const date = "2026-07-09";
+  const reportDirectory = path.join(vault, "daily-reports", "2026", "07");
+  const reportPath = path.join(reportDirectory, `${date}.md`);
+  const existingPath = path.join(reportDirectory, "2026-07-08.md");
+  assert.deepEqual(json("plan", "work", "--max-days", "1").dates, [date]);
+  assert.equal(fs.existsSync(path.join(vault, "daily-reports")), false);
+  fs.mkdirSync(reportDirectory, { recursive: true });
+  fs.writeFileSync(existingPath, "# Handwritten report\n");
+
+  assert.deepEqual(json("plan", "work", "--max-days", "2"), { profile: "work", today: date, dates: [date] });
+  assert.equal(json("collect", "work", "2026-07-08").action, "skipped");
+  const evidence = json("collect", "work", date);
+  assert.equal(evidence.report.date, date);
+  assert.equal(evidence.sources.github.status, "unavailable");
+  assert.equal(fs.existsSync(reportPath), false);
+
+  const evidencePath = path.join(base, "evidence.json");
+  const bodyPath = path.join(base, "body.md");
+  fs.writeFileSync(evidencePath, JSON.stringify(evidence));
+  const publish = ["publish", "work", "--evidence", evidencePath, "--body", bodyPath];
+  fs.writeFileSync(bodyPath, "# work report — 2026-07-08\n\n## Summary\nNo activity.\n");
+  const wrongDate = run(...publish);
+  assert.equal(wrongDate.status, 1, wrongDate.stderr);
+  assert.match(wrongDate.stderr, /heading/);
+  assert.equal(fs.existsSync(reportPath), false);
+
+  fs.writeFileSync(bodyPath, "# work report — 2026-07-09\n\n## Summary\nNo activity.\n");
+  const otherVault = path.join(base, "other-vault");
+  const otherConfigPath = path.join(base, "other-config.json");
+  fs.mkdirSync(otherVault);
+  config.profiles.work.vault = otherVault;
+  fs.writeFileSync(otherConfigPath, JSON.stringify(config));
+  const wrongVault = runWithConfig(otherConfigPath, ...publish);
+  assert.equal(wrongVault.status, 1, wrongVault.stderr);
+  assert.match(wrongVault.stderr, /destination/);
+  assert.deepEqual(fs.readdirSync(otherVault), []);
+
+  assert.equal(json(...publish).action, "written");
+  assert.equal(reportGenerationStatus(reportPath), "partial");
+  assert.match(fs.readFileSync(reportPath, "utf8"), /## Summary\nNo activity\./);
+  assert.deepEqual(json("plan", "work", "--max-days", "2").dates, []);
+
+  // A writer can publish after evidence collection and still hold the report lock.
+  const releaseLock = acquireReportLock(reportPath);
+  try {
+    fs.writeFileSync(reportPath, "# Another writer's report\n");
+    assert.equal(json(...publish).action, "skipped");
+    assert.equal(fs.readFileSync(reportPath, "utf8"), "# Another writer's report\n");
+  } finally {
+    releaseLock();
+  }
+  assert.equal(fs.readFileSync(existingPath, "utf8"), "# Handwritten report\n");
+});
+
 test("missing Pi is fatal and leaves the report date absent", (t) => {
   const { base, env } = fakeCommandEnvironment(t, { includePi: false });
   const { configPath, vault } = testConfig(base, false);

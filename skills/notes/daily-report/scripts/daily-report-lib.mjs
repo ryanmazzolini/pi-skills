@@ -307,20 +307,22 @@ export function resolveProfile(config, profileName) {
   };
 }
 
-function ensureSafeDirectoryTree(root, target, label) {
+function ensureSafeDirectoryTree(root, target, label, { createDirectories = true } = {}) {
   const relative = path.relative(root, target);
   if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`)) {
     throw new DailyReportError(`${label} must be a child directory of the vault.`);
   }
 
   let current = root;
-  for (const segment of relative.split(path.sep)) {
+  const segments = relative.split(path.sep);
+  for (const [index, segment] of segments.entries()) {
     current = path.join(current, segment);
     let stats;
     try {
       stats = fs.lstatSync(current);
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
+      if (!createDirectories) return path.join(current, ...segments.slice(index + 1));
       fs.mkdirSync(current);
       stats = fs.lstatSync(current);
     }
@@ -334,12 +336,13 @@ function ensureSafeDirectoryTree(root, target, label) {
     if (!pathIsInside(root, canonical) || canonical === root) {
       throw new DailyReportError(`${label} resolves outside the vault: ${current}`);
     }
+    current = canonical;
   }
-  return fs.realpathSync(target);
+  return current;
 }
 
-export function ensureReportBase(profile) {
-  return ensureSafeDirectoryTree(profile.vault, profile.reportBase, "Report directory");
+export function ensureReportBase(profile, options) {
+  return ensureSafeDirectoryTree(profile.vault, profile.reportBase, "Report directory", options);
 }
 
 export function parseDateString(value) {
@@ -426,13 +429,18 @@ export function dateWindow(dateString, timeZone) {
 }
 
 export function ensureReportPath(profile, dateString) {
-  const reportBase = ensureReportBase(profile);
+  return resolveReportPath(profile, dateString, { createDirectories: true });
+}
+
+export function resolveReportPath(profile, dateString, { createDirectories = false } = {}) {
+  const options = { createDirectories };
+  const reportBase = ensureReportBase(profile, options);
   const { year, month } = parseDateString(dateString);
   const yearDirectory = path.join(reportBase, String(year));
   const targetDirectory = profile.monthFolders
     ? path.join(yearDirectory, String(month).padStart(2, "0"))
     : yearDirectory;
-  const reportDirectory = ensureSafeDirectoryTree(profile.vault, targetDirectory, "Report date directory");
+  const reportDirectory = ensureSafeDirectoryTree(profile.vault, targetDirectory, "Report date directory", options);
   return path.join(reportDirectory, `${dateString}.md`);
 }
 
@@ -524,14 +532,14 @@ export function runCommand(
   return { ok: true, stdout: result.stdout || "", stderr: result.stderr || "", result };
 }
 
-export function inspectEnvironment(profile, env = process.env) {
+export function inspectEnvironment(profile, env = process.env, { requirePi = true } = {}) {
   const tools = {
-    pi: resolveExecutable("pi", env),
+    pi: requirePi ? resolveExecutable("pi", env) : undefined,
     git: resolveExecutable("git", env),
     gh: resolveExecutable("gh", env),
     short: resolveExecutable("short", env),
   };
-  if (!tools.pi) throw new DailyReportError("Required command not found on PATH: pi");
+  if (requirePi && !tools.pi) throw new DailyReportError("Required command not found on PATH: pi");
   if (!tools.git) throw new DailyReportError("Required command not found on PATH: git");
 
   return {
@@ -1165,20 +1173,7 @@ export function generateReportBody(profile, tools, date, window, sources, env = 
     throw new DailyReportError(`Could not read report prompt: ${REPORT_PROMPT_PATH}`, { cause: error });
   }
 
-  const promptSources = Object.fromEntries(
-    Object.entries(sources).map(([name, source]) => [
-      name,
-      { status: source.status, items: source.items || [] },
-    ]),
-  );
-  const evidence = JSON.stringify(
-    {
-      report: { date, profile: profile.name, window },
-      sources: promptSources,
-    },
-    null,
-    2,
-  );
+  const evidence = JSON.stringify(reportEvidence(profile, date, window, sources), null, 2);
   const args = [
     "--no-session",
     "--no-tools",
@@ -1210,18 +1205,106 @@ export function generateReportBody(profile, tools, date, window, sources, env = 
   return normalizeGeneratedBody(output);
 }
 
+export function reportEvidence(profile, date, window, sources, reportPath) {
+  return {
+    report: { date, profile: profile.name, window, reportPath },
+    sources: Object.fromEntries(
+      Object.entries(sources).map(([name, source]) => [
+        name,
+        { status: source.status, items: source.items || [] },
+      ]),
+    ),
+  };
+}
+
+function validateReportEvidence(evidence, profile) {
+  if (!isPlainObject(evidence) || !isPlainObject(evidence.report) || evidence.report.profile !== profile.name) {
+    throw new DailyReportError(`Evidence must be for profile ${profile.name}.`);
+  }
+  const { date, window } = evidence.report;
+  const expectedWindow = dateWindow(date, profile.timezone);
+  assertNotFutureDate(date, profile);
+  if (!isPlainObject(window) || Object.keys(expectedWindow).some((key) => window[key] !== expectedWindow[key])) {
+    throw new DailyReportError("Evidence window does not match the report date and profile timezone.");
+  }
+
+  const { sources } = evidence;
+  if (!isPlainObject(sources) || Object.keys(sources).sort().join(",") !== "git,github,shortcut") {
+    throw new DailyReportError("Evidence must contain git, github, and shortcut sources.");
+  }
+  for (const [name, source] of Object.entries(sources)) {
+    const allowed = name === "git" ? ["ok", "degraded"]
+      : profile[name].enabled ? ["ok", "degraded", "unavailable"] : ["skipped"];
+    if (!isPlainObject(source) || !Array.isArray(source.items) || !allowed.includes(source.status)) {
+      throw new DailyReportError(`Invalid evidence source: ${name}.`);
+    }
+  }
+  return { date, sources };
+}
+
+export function reportPathExists(reportPath) {
+  return fs.lstatSync(reportPath, { throwIfNoEntry: false }) !== undefined;
+}
+
+export function publishReport(profile, evidence, body) {
+  const { date, sources } = validateReportEvidence(evidence, profile);
+  const reportPath = resolveReportPath(profile, date);
+  if (evidence.report.reportPath !== reportPath) {
+    throw new DailyReportError("Evidence destination does not match the configured report path.");
+  }
+  const heading = `# ${profile.name} report — ${date}`;
+  const markdown = body.trim();
+  if (markdown.split(/\r?\n/, 1)[0] !== heading) {
+    throw new DailyReportError(`Report heading must be: ${heading}`);
+  }
+  if (markdown === heading) throw new DailyReportError("Report body must contain more than its heading.");
+
+  if (ensureReportPath(profile, date) !== reportPath) {
+    throw new DailyReportError("Report destination changed before publication.");
+  }
+  const skipped = { action: "skipped", reportPath };
+  if (reportPathExists(reportPath)) return skipped;
+
+  let releaseLock;
+  try {
+    releaseLock = acquireReportLock(reportPath);
+  } catch (error) {
+    if (reportPathExists(reportPath)) return skipped;
+    throw error;
+  }
+  try {
+    if (reportPathExists(reportPath)) return skipped;
+    const timestamp = new Date().toISOString();
+    const report = renderReport({ profile, date, timestamp, sources, body: markdown });
+    if (!atomicWriteReport(reportPath, report, { createOnly: true })) return skipped;
+    return { action: "written", reportPath, status: generationStatus(sources) };
+  } finally {
+    releaseLock();
+  }
+}
+
 export function renderReport({ profile, date, timestamp, sources, body }) {
   return `${renderFrontmatter({ profile, date, timestamp, sources })}\n\n${renderCoverage(sources)}\n\n${body.trim()}\n`;
 }
 
-export function atomicWriteReport(filePath, content) {
+export function atomicWriteReport(filePath, content, { createOnly = false } = {}) {
   const temporaryPath = path.join(
     path.dirname(filePath),
     `.${path.basename(filePath)}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`,
   );
   try {
     fs.writeFileSync(temporaryPath, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporaryPath, filePath);
+    if (createOnly) {
+      try {
+        fs.linkSync(temporaryPath, filePath);
+      } catch (error) {
+        if (error.code === "EEXIST") return false;
+        throw error;
+      }
+    } else {
+      fs.renameSync(temporaryPath, filePath);
+    }
+    return true;
   } finally {
     if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true });
   }

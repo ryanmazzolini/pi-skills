@@ -40,6 +40,16 @@ Optional profile fields:
 
 Paths support a leading `~`. Keep tokens and credentials in each CLI's normal authentication storage rather than this file.
 
+## Commands for a coordinating agent
+
+Use the same profile and config for each command. Only `collect` runs source collectors; none of these commands launches Pi.
+
+- `plan PROFILE [--max-days N]` returns JSON with `profile`, profile-local `today`, and `dates` in oldest-first order. It uses the same date window as `reconcile` but selects only dates without an existing destination. It does not create directories or reports.
+- `collect PROFILE [YYYY-MM-DD]` returns JSON evidence with `report` (date, profile, timezone window, and resolved report path) and `sources` (Git, GitHub, and Shortcut statuses and items). Diagnostics go to stderr. If the path already exists, stdout contains `action: "skipped"` and `reportPath` instead.
+- `publish PROFILE --evidence PATH --body PATH` checks the evidence profile, date, window, destination, and source statuses, then validates the Markdown heading. It adds frontmatter and coverage and publishes under the same lock as standalone commands. The JSON result gives `action` (`written` or `skipped`), `reportPath`, and `status` if written.
+
+These commands never replace reports, including handwritten files or partial reports. `--force` and `--refresh-partial` still apply to the existing standalone commands. The agent is responsible for checking that the body accurately summarizes the evidence.
+
 ## Output and failures
 
 Reports are written atomically to `<reportDirectory>/YYYY/YYYY-MM-DD.md` by default. With `monthFolders: true`, they are written to `<reportDirectory>/YYYY/MM/YYYY-MM-DD.md`.
@@ -50,7 +60,7 @@ Frontmatter follows the Open Knowledge Format v0.1 compatible subset. Operationa
 
 - `complete`: every enabled source succeeded.
 - `partial`: an enabled optional source was unavailable or a collector only partially succeeded.
-- Fatal: Pi or Git is missing, the vault or a configured Git root is inaccessible, Git collection fails for every discovered valid repository, or Pi generation fails. No report is written.
+- Fatal: A required command or directory is missing, Git collection fails for every discovered valid repository, generation fails, or the publish operation rejects invalid input. No report is written for that date.
 
 An isolated repository failure marks Git as degraded so useful evidence from other repositories can still produce a partial report. Invalid `.git` markers are ignored and logged.
 
@@ -60,4 +70,4 @@ Generation uses an exclusive hidden lock beside each report. An interrupted proc
 
 ## Scheduling
 
-Daily-report owns report generation and reconciliation, not host scheduling. Set cadence in whichever scheduler runs `daily-report reconcile PROFILE --config <absolute-config-path>`. The profile timezone controls report dates and exact source windows; the scheduler interprets its own schedule. Legacy profile `schedule` fields are rejected.
+Schedule a coordinating agent to follow the skill’s in-session flow, or keep using `daily-report reconcile PROFILE --config <absolute-config-path>` for standalone runs. The profile timezone controls report dates and exact source windows; the scheduler interprets its own schedule. Legacy profile `schedule` fields are rejected.
