@@ -12,6 +12,6 @@ When an authoritative product artifact already defines the surface, link it and 
 
 When the design must match how an existing or reference UI behaves and that behavior is unclear from words, ask for a short screen recording first, following the recording guidance in [`hci`](../../../ux-accessibility/hci/SKILL.md).
 
-A static HTML mockup may communicate a proposed contract when seeing the surface makes review easier. Put it under the work item's `working/mockups/`, keep it self-contained with representative data and no backend, and visually check it before presenting it. Create variants only when comparing them is itself the decision.
+A static HTML mockup may communicate a proposed contract when seeing the surface makes review easier. Put it under the work item's `working/mockups/`, keep it self-contained with representative data and no backend, and visually check it before presenting it. Show it in the chat when the session can render HTML; read [`visuals`](../../../ai-authoring/visuals/SKILL.md) for the design and checking rules. Create variants only when comparing them is itself the decision.
 
 Use [`prototype`](../../prototype/SKILL.md) instead when interaction or human observation is needed to settle an experiential uncertainty. A design artifact communicates a proposed contract; a prototype runs an experiment.

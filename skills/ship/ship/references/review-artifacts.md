@@ -15,7 +15,7 @@ First name the review question and what approval would cover. Then choose the sm
 - mostly prose: a short brief or annotated `plan.md`
 - several distinct questions: a few linked views; use slides only when each view stands alone
 
-Do not default to slides, dashboards, tables, or diagrams. If plain Markdown is clear enough, create nothing else.
+Do not default to slides or dashboards. Add a table or diagram when the answer has a shape that prose would leave the reviewer to assemble. If plain Markdown is clear enough, create nothing else.
 
 ## Make the decision easy to judge
 
@@ -27,7 +27,7 @@ Do not default to slides, dashboards, tables, or diagrams. If plain Markdown is 
 
 Make the artifact drillable instead of dense. The first view should stand alone; link from it to named sections for evidence, alternatives, source paths, risks, rollout, or other details the reviewer may need.
 
-Use plain Markdown for a table, before/after view, or tiny linear flow. Prefer Mermaid for multi-node sequence, state, branch, or relationship diagrams when the output surface renders it. When Mermaid is unavailable, preserve the same view as a compact text sketch. For spatial detail Mermaid cannot express legibly, prefer one self-contained HTML file with inline CSS and SVG so it opens without a build, external asset, or CDN. Use tldraw, Excalidraw, or another spatial canvas only when the reviewer needs to rearrange elements, explore placement, or collaborate spatially and the tool is available. Preserve a portable export or text explanation. Use a project-native prototype only when the project toolchain is needed for fidelity.
+Read [`visuals`](../../../ai-authoring/visuals/SKILL.md) to choose between a table, a Mermaid diagram and inline HTML, and to design and check the result. Use a project-native prototype only when the project toolchain is needed for fidelity.
 
 Before presenting it, check that:
 

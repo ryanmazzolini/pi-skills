@@ -20,7 +20,7 @@ Use literal language and one stable term per concept. Define necessary jargon ra
 
 ## Choose the presentation
 
-Keep short explanations in chat. Use the smallest visual that answers the question:
+Keep short explanations in chat. Read [`visuals`](../visuals/SKILL.md) before adding a visual, then use the smallest one that answers the question:
 
 - a component map for responsibilities and boundaries;
 - a pipeline for sequential work or data movement;
@@ -28,18 +28,14 @@ Keep short explanations in chat. Use the smallest visual that answers the questi
 - a branch diagram for decisions, retries, or failures;
 - example rows for a query or data shape.
 
-Keep one reading direction, label arrows with actions or data, and omit unrelated elements. Follow every visual with a prose interpretation that preserves its meaning without the spatial layout. Keep tiny linear traces inline as text. Use Mermaid for multi-node diagrams when the output surface renders it; otherwise use a compact text sketch.
+Keep one reading direction, label arrows with actions or data, and omit unrelated elements. Keep tiny linear traces inline as text.
 
-Create a self-contained HTML explanation when the reader requests it, when the spatial detail cannot stay legible inline, or when navigating paths, stepping through state, or comparing scenarios materially helps answer the question. Complexity alone is not a reason to generate a page. Use tldraw only when the reader needs to rearrange or explore the space.
+Build a larger interactive explanation when the reader requests it, or when navigating paths, stepping through state, or comparing scenarios materially helps answer the question. Complexity alone is not a reason to build one.
 
-### When creating HTML
+### When building an interactive explanation
 
 - For a commit, commit range, or PR walkthrough, use [`change-walkthrough`](../../review/change-walkthrough/SKILL.md). It owns extraction, rendering, validation, and risk-ordered review steps. Do not duplicate its renderer or force a system explanation into a diff. If its requirements cannot be met, explain the limitation and give the useful chat explanation; do not create commits just to make a page possible.
-- For a system or execution trace, start from [`assets/explainer.html`](assets/explainer.html). Replace its data block, numbers, labels, and diff cards; delete sections that do not help answer the question. Keep one offline file with inline CSS, JavaScript, and SVG. Lead with the purpose, example, and small map; reveal steps and supporting code on demand. Add only controls that help answer the question, such as stepping a failed job through its retries or switching between two verified scenarios. Mark illustrative inputs and assumptions so the page does not imply it executes the real system.
-  - Order the page as the answer, then the picture, then the detail: two to four headline numbers when they help, one or two diagrams, then collapsible detail with only the most important card open.
-  - When size represents a quantity, derive widths and stroke weights from measured lines, call counts, or rows. State how you measured and whether a figure is an estimate.
-  - Give each concept one colour and reuse it in every view. Use words as labels; move lists into the collapsible detail.
-  - Reuse familiar notation: `+` and `−` diff lines for what arrives and leaves, and the same layout for before and after so only the differences stand out.
-- Apply [`hci`](../../ux-accessibility/hci/SKILL.md) to the page. Keep controls keyboard-accessible and labels explicit; preserve the prose interpretation of each visual.
-- Keep the page outside the explained repository, in the caller's work-item directory when supplied or a local artifact directory otherwise. Keep it as a deliverable and report its path with a short orientation. Explaining code does not authorize source edits, commits, publishing, or renderer changes.
-- Check every number, claim, displayed state, and source reference against the code or supplied evidence. Render and visually inspect the page with the `agent-browser` skill when available, or a headless screenshot otherwise. Use a new screenshot filename after each edit to avoid cached images. Fix overlapping or clipped labels, broken spacing, and wrong values, then render again. Exercise controls and navigation and check for console errors when browser interaction is available. If rendering or interaction checks are unavailable, say what remains unchecked.
+- For a system or execution trace, design the page for the question, following [`visuals`](../visuals/SKILL.md) for design and checking. Lead with the purpose, example, and small map; reveal steps and supporting code on demand. Order the page as the answer, then the picture, then the detail: two to four headline numbers when they help, one or two diagrams, then collapsible detail with only the most important card open. Use words as labels and move lists into the collapsible detail.
+- Check every claim and source reference against the code or supplied evidence, as well as the numbers and displayed states.
+- Apply [`hci`](../../ux-accessibility/hci/SKILL.md) to the page.
+- Keep a saved page outside the explained repository, in the caller's work-item directory when supplied or a local artifact directory otherwise. Explaining code does not authorize source edits, commits, publishing, or renderer changes.
