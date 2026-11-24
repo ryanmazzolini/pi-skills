@@ -297,6 +297,7 @@ export function resolveProfile(config, profileName) {
     gitMaxDepth,
     reportBase,
     reportDirectory,
+    monthFolders: optionalBoolean(rawProfile.monthFolders, false, `${profileName}.monthFolders`),
     reportDays: validateReportDays(rawProfile.reportDays),
     timezone,
     maxReconcileDays,
@@ -426,9 +427,13 @@ export function dateWindow(dateString, timeZone) {
 
 export function ensureReportPath(profile, dateString) {
   const reportBase = ensureReportBase(profile);
-  const { year } = parseDateString(dateString);
-  const yearDirectory = ensureSafeDirectoryTree(profile.vault, path.join(reportBase, String(year)), "Report year directory");
-  return path.join(yearDirectory, `${dateString}.md`);
+  const { year, month } = parseDateString(dateString);
+  const yearDirectory = path.join(reportBase, String(year));
+  const targetDirectory = profile.monthFolders
+    ? path.join(yearDirectory, String(month).padStart(2, "0"))
+    : yearDirectory;
+  const reportDirectory = ensureSafeDirectoryTree(profile.vault, targetDirectory, "Report date directory");
+  return path.join(reportDirectory, `${dateString}.md`);
 }
 
 export function acquireReportLock(reportPath) {

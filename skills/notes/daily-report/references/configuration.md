@@ -23,6 +23,7 @@ Required profile fields:
 Optional profile fields:
 
 - `reportDirectory`: vault-relative destination; defaults to `daily-reports` and may not escape the vault.
+- `monthFolders`: write reports under a zero-padded month folder within each year. Defaults to `false`.
 - `timezone`: IANA timezone used for report dates and source windows; falls back to `defaults.timezone` and then the host timezone.
 - `reportDays`: any of `sun`, `mon`, `tue`, `wed`, `thu`, `fri`, `sat`; defaults to every day.
 - `gitAuthors`: author names or email addresses. When omitted, each repository's configured `user.email` and `user.name` are used.
@@ -41,11 +42,9 @@ Paths support a leading `~`. Keep tokens and credentials in each CLI's normal au
 
 ## Output and failures
 
-Reports are written atomically to:
+Reports are written atomically to `<reportDirectory>/YYYY/YYYY-MM-DD.md` by default. With `monthFolders: true`, they are written to `<reportDirectory>/YYYY/MM/YYYY-MM-DD.md`.
 
-```text
-<reportDirectory>/YYYY/YYYY-MM-DD.md
-```
+Before enabling month folders for an existing profile, stop scheduled runs and move its reports into their month folders. Reconcile checks only the configured layout, so it won't skip an existing report left at the old path.
 
 Frontmatter follows the Open Knowledge Format v0.1 compatible subset. Operational source fields are producer extensions.
 

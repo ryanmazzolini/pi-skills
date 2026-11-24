@@ -102,7 +102,7 @@ test("resolveProfile rejects a report directory outside the vault", (t) => {
   );
 });
 
-test("report destination rejects symlinked base and year directories", (t) => {
+test("report destination rejects symlinked base, year, and month directories", (t) => {
   const base = temporaryDirectory(t);
   const vault = path.join(base, "vault");
   const repos = path.join(base, "repos");
@@ -122,7 +122,15 @@ test("report destination rejects symlinked base and year directories", (t) => {
 
   fs.unlinkSync(path.join(vault, "daily-reports"));
   fs.mkdirSync(path.join(vault, "daily-reports"));
-  fs.symlinkSync(outside, path.join(vault, "daily-reports", "2026"));
+  const yearDirectory = path.join(vault, "daily-reports", "2026");
+  fs.symlinkSync(outside, yearDirectory);
+  profile = resolveProfile(config, "work");
+  assert.throws(() => ensureReportPath(profile, "2026-07-09"), /symbolic link/);
+
+  fs.unlinkSync(yearDirectory);
+  fs.mkdirSync(yearDirectory);
+  fs.symlinkSync(outside, path.join(yearDirectory, "07"));
+  config.profiles.work.monthFolders = true;
   profile = resolveProfile(config, "work");
   assert.throws(() => ensureReportPath(profile, "2026-07-09"), /symbolic link/);
 });
@@ -339,6 +347,37 @@ test("disabled optional sources produce a complete report", (t) => {
   const reportPath = path.join(vault, "daily-reports", "2026", "2026-07-09.md");
   assert.equal(reportGenerationStatus(reportPath), "complete");
   assert.match(fs.readFileSync(reportPath, "utf8"), /sources_skipped:/);
+});
+
+test("reconcile writes to month folders and skips an existing report there", (t) => {
+  const { base, env } = fakeCommandEnvironment(t);
+  const { configPath, vault } = testConfig(base, false);
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  config.profiles.work.monthFolders = true;
+  fs.writeFileSync(configPath, JSON.stringify(config));
+
+  const clock = path.join(base, "clock.mjs");
+  fs.writeFileSync(clock, `import { mock } from 'node:test';
+mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 6, 9, 12) });
+`);
+  const reconcile = () => spawnSync(
+    process.execPath,
+    ["--import", clock, CLI_PATH, "reconcile", "work", "--max-days", "1", "--config", configPath],
+    { env, encoding: "utf8" },
+  );
+  const first = reconcile();
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /1 written, 0 skipped/);
+  const reportPath = path.join(vault, "daily-reports", "2026", "07", "2026-07-09.md");
+  assert.equal(reportGenerationStatus(reportPath), "complete");
+  const existing = fs.readFileSync(reportPath, "utf8") + "\nExisting report content.\n";
+  fs.writeFileSync(reportPath, existing);
+
+  const second = reconcile();
+  assert.equal(second.status, 0, second.stderr);
+  assert.match(second.stdout, /0 written, 1 skipped/);
+  assert.equal(fs.readFileSync(reportPath, "utf8"), existing);
+  assert.equal(fs.existsSync(path.join(vault, "daily-reports", "2026", "2026-07-09.md")), false);
 });
 
 test("missing Pi is fatal and leaves the report date absent", (t) => {
