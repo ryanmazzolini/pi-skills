@@ -29,11 +29,20 @@ Name the concrete change or problem solved at the level this commit delivers. An
 
 ### Body
 
-Give every non-trivial commit a human-readable body that lets a reviewer understand the result without reopening the diff. Keep it proportional to the change. A trivial commit may omit the body.
+Give every non-trivial commit a body. A trivial commit may omit it. Write for someone who finds this commit later in the log or through blame, with the diff in front of them. Tell them what the diff cannot.
 
-Explain the surrounding workflow, why this change is needed, and what it delivers. Connect the previous behavior or missing capability to the concrete change; a list of added fields or helpers alone is not enough. For a preparatory commit, explain how it supports the next change and what remains undelivered. Order the explanation for understanding rather than requiring the first sentence to carry both context and result. When correctness depends on a failure, rollback, or retry path, name enough of that path to make the causal chain clear. Include relevant trade-offs, compatibility, risks, or verification. Do not describe the conversation, prompting, agent workflow, or how the change was produced.
+Say what was wrong or missing and what this commit changes. Connect the previous behavior or missing capability to the concrete change; a list of added fields or helpers alone is not enough. Most bodies are one short paragraph.
 
-Before presenting the message, check that the subject identifies the concrete change or problem solved and the body independently explains its context, purpose, and scope. Neither should claim benefits outside this commit.
+Add a second paragraph only for something the diff does not show and a later reader needs:
+
+- a trade-off, compatibility constraint, or risk
+- a failure, rollback, or retry path that correctness depends on, with enough steps to make the causal chain clear
+- a measurement that justifies the change
+- for a preparatory commit, how it supports the next change and what remains undelivered
+
+Leave out how the code works, file-by-file summaries, and checks that passed. Do not describe the conversation, prompting, agent workflow, or how the change was produced.
+
+Before presenting the message, check that the subject identifies the concrete change or problem solved, and that the body says why the change was needed without the reader opening the ticket. Cut every sentence a reader would not miss while reading the diff. Neither subject nor body should claim benefits outside this commit.
 
 Record the body with multiple `-m` flags or an editor.
 

@@ -27,6 +27,7 @@ Some skills ship in separate plugins and state the same guidance in their own wo
 
 - Testing through the caller's interface and when to substitute a dependency: `skills/testing/test-design/SKILL.md` and `skills/architecture/architecture/references/seams-tests-and-notes.md`
 - A bug fix needs a test that fails before the fix, or a kept reproducer when no test can reach the bug: `skills/testing/test-design/SKILL.md` and `skills/debugging/diagnosing-bugs/SKILL.md`
+- When a diagram or a table earns its place: `skills/ai-authoring/visuals/SKILL.md` and `skills/commit/commit-pr/SKILL.md`
 
 ## Adding a Skill
 

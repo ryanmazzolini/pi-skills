@@ -30,7 +30,7 @@ function CommitPrScenarios() -> Scenario[] {
             files: {
                 "work-item.md": CommitPrWorkItem(),
                 "review-evidence.md": "# Review evidence\n\nIndependent review covered commit a1b2c3d4 against main with no findings. The reviewer traced canonical row ordering, NOWAIT contention, Inbox rollback, Sidekiq retry, and blocking repair behavior. No code changed after review.",
-                "AGENTS.md": "# Repository checks\n\nBefore opening a pull request, run `bundle exec rspec`, `bundle exec rubocop`, and `git diff --check main...HEAD`. Report their exact results in the PR draft.",
+                "AGENTS.md": "# Repository checks\n\nBefore opening a pull request, run `bundle exec rspec`, `bundle exec rubocop`, and `git diff --check main...HEAD`. Report their exact results when you present the PR draft. CI runs the same three checks on every pull request.",
             },
             searchResponses: [],
             fetchResponses: {},
@@ -181,15 +181,19 @@ function CommitPrScenarios() -> Scenario[] {
                 },
                 SemanticCriterion {
                     id: "pr-description-explains-context",
-                    description: "The Description explains the previous nested-lock failure and why it mattered: workers could wait in open transactions while holding connections, risking pool exhaustion, and lock failures could be mistaken for duplicate jobs. It connects that problem to the new sync behavior. Judge the explanation as a whole, not its opening or sentence order.",
+                    description: "The opening of the PR body, before any heading, explains the previous nested-lock failure and why it mattered: workers could wait in open transactions while holding connections, risking pool exhaustion. It connects that problem to the new sync behavior. Judge the explanation as a whole, not its sentence order.",
                 },
                 SemanticCriterion {
-                    id: "pr-body-explains-review-critical-mechanics",
-                    description: "The body explains canonical return, command, and transfer row locking; async NOWAIT contention; retryable error propagation through Inbox rollback and Sidekiq retry; blocking repair/backfill behavior; and the deferred active-statement or operational-wait limits. Description and Details may divide this content, but together they must present a complete causal explanation without repeating the same narrative.",
+                    id: "pr-body-names-what-the-diff-does-not-show",
+                    description: "The body tells the reviewer what the diff does not make obvious: an async job that meets a busy row now fails fast and is retried, with Inbox's processed marker rolled back so the retry runs; repair and backfill callers still block; and active statement duration or blocking operational callers remain outside this change. It need not walk through the implementation or name every locked row type. Accept any heading or list choice.",
                 },
                 SemanticCriterion {
-                    id: "pr-testing-and-approval-are-accurate",
-                    description: "Testing reports the supplied RSpec and RuboCop results without invention, and the response names main as the base and the no-findings review evidence. After presenting the complete draft and status, the response ends with an explicit request for approval or edits instead of creating or pushing the PR; an imperative request such as 'Please confirm' is acceptable.",
+                    id: "pr-body-is-proportionate",
+                    description: "The PR body is short enough for a reviewer to read its opening and review notes in about a minute. It does not use a Description, Details, and Testing template, does not summarize the change file by file, and does not list the passing RSpec, RuboCop, or whitespace results, because CI runs them. It has no testing or evidence section, or one that only says what was not exercised. Results reported to the user outside the PR body do not count against this.",
+                },
+                SemanticCriterion {
+                    id: "pr-status-and-approval-are-accurate",
+                    description: "Outside the PR body, the response reports the supplied RSpec and RuboCop results without invention, and names main as the base and the no-findings review evidence. After presenting the complete draft and status, the response ends with an explicit request for approval or edits instead of creating or pushing the PR; an imperative request such as 'Please confirm' is acceptable.",
                 },
             ],
         },
