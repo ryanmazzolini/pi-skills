@@ -1,18 +1,20 @@
 ---
 name: "explain-code"
-description: "Explain unfamiliar code, systems, queries, or PR behavior with a small map and a verified concrete trace. Reveal detail progressively in chat; create interactive HTML when exploration helps or the reader requests it."
+description: "Explain how code, a system, or a query behaves, or how a change affects that behavior. Use when asked how it works or what a change does, or when an earlier explanation of it did not land. For a requested page explaining the changes in a commit, commit range, or PR, use change-walkthrough."
 ---
 
 # Explain Code
 
-Help the reader reason about what the code does, how the relevant pieces fit, and where to look next. Start with a small model, then reveal one useful layer at a time. Order the explanation for understanding, not by file order or review risk.
+Help the reader reason about what the code does, how the relevant pieces fit, and where to look next. Order the explanation for understanding, not by file order or review risk.
+
+Explaining code does not authorize source edits, commits, publishing, or renderer changes.
 
 ## Build the explanation
 
-1. **Verify the behavior.** Read the relevant entry point, callers, implementation, and tests until you can follow the path the question asks about. Reuse supplied, inspected evidence when it already establishes that path. For a change, check both versions and keep references tied to the version being explained. Distinguish observed behavior from inference; a call graph is a navigation aid, not proof of runtime order.
+1. **Verify the behavior.** Read the relevant entry point, callers, implementation, and tests until you can follow the path the question asks about. Reuse supplied, inspected evidence when it already establishes that path. For a change, check both versions and keep references tied to the version being explained. Distinguish observed behavior from inference; a call graph is a navigation aid, not proof of runtime order. When evidence the answer needs is unavailable, such as a revision or configuration, explain what you can establish.
 2. **Orient the reader.** For a broad question, lead with what the code accomplishes, one small realistic input, and its result. Map only the components, responsibilities, and boundaries needed to connect them. A sentence can be the whole map. Define the few terms needed for this layer. For a narrow question, answer the requested layer directly; add broader context only when it helps.
-3. **Trace the requested layer.** Follow the same input from entry point to result, showing the decisions, data movement, and state changes that explain the behavior. Include failures and retries when they affect the answer. Connect each important step to the component responsible and explain why the connection matters. Give source paths and symbols or line references where they help the reader verify or continue, rather than cataloguing every function.
-4. **Stop at a useful boundary.** For a broad first answer, keep the trace at the component level; do not expand all the implementation layers you investigated. Offer two to four concrete drill-downs when useful detail remains, such as retry scheduling or transaction boundaries. When the reader chooses one, trace only that layer and reconnect it to the model. Stop when they can reason about the requested behavior without needing the adjacent mechanics.
+3. **Trace the requested layer.** Follow one concrete input through that layer, showing the decisions, data movement, and state changes that explain the behavior. For a broad question, follow the input from step 2 from entry point to result. For a narrow question, trace an input only as far as the answer needs. For a drill-down, continue the earlier example when it reaches that layer. Include failures and retries when they affect the answer. Connect each important step to the component responsible and explain why the connection matters. Give source paths and symbols or line references where they help the reader verify or continue, rather than cataloguing every function. Tell the reader which steps you inferred and which conclusions depend on evidence you could not check.
+4. **Stop at a useful boundary.** For a broad first answer, keep the trace at the component level; do not expand all the implementation layers you investigated. Offer two to four concrete drill-downs when useful detail remains, such as retry scheduling or transaction boundaries. When the reader chooses one, trace only that layer and reconnect it to the map. Stop when they can reason about the requested behavior without needing the adjacent mechanics.
 
 For a change, explain what happened before, what happens now, and why the difference matters. For alternatives, run the same input through each and state what changes and what stays the same. For numeric comparisons, show current and proposed counts in parallel, then say which workload changes in practice.
 
@@ -20,7 +22,7 @@ Use literal language and one stable term per concept. Define necessary jargon ra
 
 ## Choose the presentation
 
-Keep short explanations in chat. Read [`visuals`](../visuals/SKILL.md) before adding a visual, then use the smallest one that answers the question:
+Answer in chat by default. Read [`visuals`](../visuals/SKILL.md) before adding a visual, then use the smallest one that answers the question:
 
 - a component map for responsibilities and boundaries;
 - a pipeline for sequential work or data movement;
@@ -30,12 +32,12 @@ Keep short explanations in chat. Read [`visuals`](../visuals/SKILL.md) before ad
 
 Keep one reading direction, label arrows with actions or data, and omit unrelated elements. Keep tiny linear traces inline as text.
 
-Build a larger interactive explanation when the reader requests it, or when navigating paths, stepping through state, or comparing scenarios materially helps answer the question. Complexity alone is not a reason to build one.
+A page is a standalone HTML file. An inline visual with controls is still a chat answer. Build a page only when the reader asks for one. When navigating paths, stepping through state, or comparing scenarios would help and the chat cannot show it inline, answer in chat and offer a page as one of the drill-downs.
 
-### When building an interactive explanation
+For a page or a visual with controls, check every claim and source reference against the code or supplied evidence, and apply the `hci` skill.
 
-- For a commit, commit range, or PR walkthrough, use the `change-walkthrough` skill. It owns extraction, rendering, validation, and risk-ordered review steps. Do not duplicate its renderer or force a system explanation into a diff. If its requirements cannot be met, explain the limitation and give the useful chat explanation; do not create commits just to make a page possible.
-- For a system or execution trace, design the page for the question, following [`visuals`](../visuals/SKILL.md) for design and checking. Lead with the purpose, example, and small map; reveal steps and supporting code on demand. Order the page as the answer, then the picture, then the detail: two to four headline numbers when they help, one or two diagrams, then collapsible detail with only the most important card open. Use words as labels and move lists into the collapsible detail.
-- Check every claim and source reference against the code or supplied evidence, as well as the numbers and displayed states.
-- Apply the `hci` skill to the page.
-- Keep a saved page outside the explained repository, in the caller's work-item directory when supplied or a local artifact directory otherwise. Explaining code does not authorize source edits, commits, publishing, or renderer changes.
+### When building a page
+
+- When the page explains the changes a commit, commit range, or PR introduces, use the `change-walkthrough` skill. It owns extraction, rendering, validation, and risk-ordered review steps. Do not duplicate its renderer or force a system explanation into a diff. If its requirements cannot be met, explain the limitation and give the useful chat explanation; do not create commits just to make a page possible.
+- For a system or execution trace, design the page for the question, following [`visuals`](../visuals/SKILL.md) for design, checking and saving. Lead with the answer for the example input. Show the map or trace next. Let the reader open individual steps and supporting code for detail. Use words as labels.
+- Save the page outside the explained repository.
