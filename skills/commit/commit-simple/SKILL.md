@@ -13,7 +13,7 @@ Inspect the current branch, repository default branch, expected base, working tr
 
 Choose the branch where the planned commits belong. On the default branch, propose a feature branch. Commit to the default branch only with explicit user approval.
 
-Use `ticket-workspace` when the work needs a lasting work item or workspace, or when the current workspace is shared or dirty.
+Use `ticket-workspace` when the work needs a lasting work item or workspace, or when the current workspace is shared or holds changes that belong to other work.
 
 Name a new branch `{type}/sc-{number}/{slug}`, `{type}/gh-{number}/{slug}`, `{type}/{number}/{slug}`, or `{type}/{slug}`. In a ticket worktree, keep its ticket ID in the branch name.
 
@@ -21,7 +21,7 @@ Name a new branch `{type}/sc-{number}/{slug}`, `{type}/gh-{number}/{slug}`, `{ty
 
 Decide whether the changes belong in one commit or several. Draft a Conventional Commit message for each commit.
 
-Before drafting, identify what this commit delivers, the surrounding workflow, and why the change is needed. For a preparatory commit, distinguish its contribution from the later change it supports; do not claim the later benefit is already delivered.
+Before drafting, identify what this commit delivers and why the change is needed. For a preparatory commit, distinguish its contribution from the later change it supports; do not claim the later benefit is already delivered.
 
 ### Subject
 
@@ -44,17 +44,15 @@ Leave out how the code works, file-by-file summaries, and checks that passed. Do
 
 Before presenting the message, check that the subject identifies the concrete change or problem solved, and that the body says why the change was needed without the reader opening the ticket. Cut every sentence a reader would not miss while reading the diff. Neither subject nor body should claim benefits outside this commit.
 
-Record the body with multiple `-m` flags or an editor.
-
 ## 4. Present the plan
 
-Show the destination branch, commit split, and validation status. For each commit, show its `Subject:` and `Body:`. State when a trivial commit has no body.
+Show the destination branch, the commit split, and the checks you know ran on these changes with their results. Say so when you know of none. For each commit, show its `Subject:` and `Body:`. State when a trivial commit has no body.
 
 When the changes belong in separate commits, ask the user to confirm the split. When a decision has mutually exclusive choices, present each choice as a named option. Clarify any reply that does not select one.
 
 ## 5. Commit
 
-Ask for explicit approval before each commit. After approval, create the agreed branch if needed and commit only the agreed changes with the approved message.
+Ask for explicit approval before each commit. After approval, create the agreed branch if needed and commit only the agreed changes with the approved message. Pass the subject as the first `-m` flag and each body paragraph as a further `-m` flag.
 
 Commit approval does not include approval to push.
 
