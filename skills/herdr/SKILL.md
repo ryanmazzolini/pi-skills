@@ -1,6 +1,6 @@
 ---
 name: "herdr"
-description: "Use when the user asks to control Herdr terminals, agents, spaces, tabs or panes, continue Pi work in a fresh session, or keep the calling session safe during ticket cleanup."
+description: "Use when the user asks to control Herdr terminals, agents, spaces, tabs or panes."
 ---
 
 # Herdr
@@ -68,9 +68,3 @@ Read `herdr-app status` before and after each real launch to compare focus. If f
 ## Continue Pi work
 
 For a fresh-session handoff or an assigned standalone review, read [references/pi-session-transfer.md](references/pi-session-transfer.md).
-
-## Retire ticket work
-
-When `ticket-workspace-cleanup` is invoked, perform that cleanup in the calling terminal. Protect its shell, Pi process and current cleanup command chain, even if filesystem cleanup removes its cwd.
-
-Do not create a handoff destination, prompt another agent, relay closure through another session, change focus or close the calling terminal. Report that it is ready for manual closure after the approved cleanup and verification, then stop without running more commands from a removed cwd.
