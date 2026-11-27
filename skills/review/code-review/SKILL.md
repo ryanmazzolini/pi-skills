@@ -58,7 +58,7 @@ Before returning the review result, stop processes and remove every clone, workt
 
 ## Inspect the behavior
 
-Trace the requested outcome and each acceptance criterion into the implementation and tests. Confirm that the change produces the promised behavior rather than merely resembling the requested implementation. Record each point where the result differs from the request: an outcome delivered differently, narrowed, deferred, or added beyond it, with the stated reason when one exists. The summary reports these whether or not they qualify as findings. Respect explicit partial scope; when a pull request claims to close an issue, report a material unmet outcome as an introduced finding.
+Trace the requested outcome and each acceptance criterion into the implementation and tests. Confirm that the change produces the promised behavior rather than merely resembling the requested implementation. Record each point where the result differs from the request: an outcome delivered differently, narrowed, deferred, or added beyond it, with the stated reason when one exists. Report material deviations whether or not they qualify as findings. Respect explicit partial scope; when a pull request claims to close an issue, report a material unmet outcome as an introduced finding.
 
 Inspect removed or narrowed behavior as well as additions, including changes to instructions and documentation. Trace affected existing use cases, callers, safeguards, and fallback paths into the revised behavior. When a procedure or abstraction disappears, check which guarantees it supplied and where any still-required guarantees now live; a replacement name or a passing new-use-case test is not enough.
 
@@ -130,23 +130,30 @@ Provide a deep-link URL for the file and line reference when the review host sup
 
 Order comments by action—**Blocks approval**, **Blocks merge**, **Non-blocking**, then **Existing issue**—and then by impact. Use group headings when they make several comments easier to navigate.
 
-Each comment should:
+The author reads each comment beside the anchored code, so the comment adds only what that code does not show: what goes wrong, when, and why it matters. Write it the way an experienced reviewer writes in a pull request thread. Start with the classification, then the effect. A short comment the author can absorb at a glance serves better than a complete account of the investigation; the evidence stays in the review, and the author can ask.
 
-1. Lead with a direct statement of the problem.
-2. Explain what the code does, when it happens, and the concrete consequence.
-3. Start a new paragraph, then offer the smallest useful change as a suggestion. Suggest a test when it proves the corrected behavior or prevents a likely regression.
+Hints that keep comments short:
 
-Offer one correction path when the evidence supports a clear default. Give alternatives only when the repository leaves a real design or contract choice unresolved, and say what decides it. Keep the recommendation rationale, risk explanation, and reviewer workflow guidance out of the publishable comment. Keep the required finding classification at the top of the comment.
+- Lead with the consequence the author cares about, such as “console capture stays dead until the server restarts”, rather than the chain of calls that produces it.
+- Name the one or two identifiers that locate the cause. The anchored code shows the rest of the mechanism.
+- Leave out a correction the problem already implies. When it is not obvious, offer it as an option (“X could…”), not a command, and offer one path unless a real design or contract choice remains open; say what decides it.
+- When the failure depends on ordering, state, or another file the anchor does not show, a short trace or input/output example usually explains it faster than prose. Use it instead of prose, not as well as.
+- Say each thing once; a second phrasing of the effect adds nothing.
+- Keep how you verified the finding, recommendation rationale, and reviewer workflow guidance out of the comment. Reproduction steps belong in the review's validation.
 
-State the defect and consequence directly. Phrase the remediation as an option rather than a command. Use forms such as “X could…”, “One option is…”, or “This could be avoided by…”. Do not use imperative remediation such as “Render…”, “Include…”, or “Add…”.
+A dense comment that walks through every step:
 
-Prefer this remediation sentence:
+> **Blocks merge** — After a successfully initialized connection receives a TCP reset, `fail()` clears `this.socket` before the close handler runs, suppressing `close` and leaving `index.ts`'s `isDAPConnected` true; subsequent `get_console_output` calls return stale output without reconnecting until the MCP process restarts. Failed-attempt cleanup could be separated from established-connection loss so the latter still emits `close`.
 
-> A loading or unavailable state could ensure availability is shown only after a successful response.
+The same finding, written for the author:
 
-Avoid this remediation sentence:
+> **Blocks merge** — After a TCP reset, `fail()` clears the socket before the close handler runs, so `close` never fires and console capture stays dead until the server restarts. Failed-attempt cleanup could stay separate from losing an established connection.
 
-> Render a loading or unavailable state and only show availability after a successful response.
+A finding where a trace earns its place, because the failure is in an interaction the code does not show:
+
+> **Blocks approval** — Timeout retries use a new idempotency key, so a payment the gateway accepted can be charged twice.
+>
+> Gateway accepts key A → response times out → retry sends key B.
 
 Match each claim to the available evidence:
 
@@ -157,13 +164,7 @@ Match each claim to the available evidence:
 
 Before stating that something is uncertain, try to resolve it from the available implementation, types, tests, configuration, documentation, and history. Only leave it uncertain when those sources do not establish the answer. Residual uncertainty may qualify a finding's scope or remediation, but it cannot substitute for evidence that the defect exists. If an unresolved premise determines whether there is a defect at all, do not report it as a finding. Do not classify a finding as **Blocks approval** while it depends on an unresolved material assumption.
 
-For example, when the defect is verified but the intended remediation is not:
-
-> This returns `success: true` after a reservation fails, so callers treat a partial reservation as complete. The repository does not establish whether partial failures should roll back or return item-level errors. Either approach could preserve the response contract; confirming the intended recovery behavior would determine which one fits.
-
-Keep one idea in each comment. Use code identifiers when they make the explanation more precise. Each comment must stand on its own without a top-level summary.
-
-When prose cannot make the triggering path clear, add a small state or sequence trace and follow it with a text explanation.
+Keep one idea in each comment. Each comment must stand on its own without a top-level summary.
 
 Before returning the review, check each comment for unresolved evidence. If missing evidence affects the finding's scope or remediation, the comment must name the missing contract or fact and explain which decision it affects. Listing alternatives alone is not enough.
 
@@ -171,20 +172,15 @@ Then scan every proposed change or test. Rewrite commands, including sentences u
 
 ## Return the result
 
-Write for a capable engineer who has not read the issue, diff, or investigation. Give every reviewed pull request, commit, or diff a summary, including clean approvals. Open the summary by explaining who uses the affected workflow, what they are trying to do, and what the previous behavior prevented or made difficult. State that previous behavior and its practical consequence explicitly; saying users can “now” do something does not explain what was wrong before. Then walk through the changed behavior and how it addresses that problem. For a preparatory refactor, explain what it enables and what stays unchanged. Use a concrete example when it makes the behavior easier to understand.
+Write for a capable engineer who has not read the issue, diff, or investigation. Give every reviewed pull request, commit, or diff a summary, including clean approvals. Open with the recommendation and its decisive reason, stating the consequence: “Wait before approving: a timeout retry can charge twice.”
 
-Ground that explanation in the issue or other available intent source and the inspected implementation. Beyond the problem and the changed behavior, every summary answers these questions:
+Then explain what was wrong before: who hit the problem and what it cost them. “Users lost everything printed before the first console tool call, and runtime exceptions never reached the console” orients the reviewer; “Startup capture addresses issue #77” does not. Follow with what changed and whether it matches the request. Report material deviations with their stated reasons, or say the reason is missing. When a deviation is a finding, keep its detail in the comment rather than repeating it. Add design context or a reading pointer only when it changes how the reviewer reads the diff. A confirmed match needs only a brief mention, not a requirements table. A clean approval can be the recommendation plus one sentence.
 
-- **What was requested.** State what the linked issue asked for, including acceptance criteria and stated exclusions, so the reader can compare the request with the result.
-- **Where the result differs from the request.** State explicitly that the implementation matches the request, or list each deviation recorded during inspection with its stated reason. If a reason is missing, say so. Silence does not answer this question: a reader cannot tell a matching implementation from an unchecked one.
-- **Which decisions and trade-offs shaped it.** Name the consequential design choices, the alternatives the issue or author considered, and what each choice costs or rules out.
-- **What a reviewer should know before reading the diff.** Point out implementation details that are not defects but change how the diff reads, such as extracted or replaced code, changed defaults, preserved fallbacks, ordering or concurrency assumptions, and dependencies on other changes.
-
-Answer them in connected prose. A simple change can cover all four in a few sentences; do not pad an answer that has nothing to say beyond matching the request. When intent is unavailable, name the context used and describe observed behavior without inventing requirements. Link the pull request and available issue; use implementation links for supporting detail, not as substitutes for the explanation.
+Ground the summary in the available intent source and inspected implementation. When intent is unavailable, name the context used and describe observed behavior without inventing requirements. Link the pull request and available issue; use implementation links for supporting detail, not as substitutes for the explanation.
 
 Acknowledge consequential behavior removals in the summary and give their stated reasons. If a reason is missing, say so; do not present the loss as an agreed simplification.
 
-For related pull requests, first explain the combined outcome and any merge or rollout dependencies needed to understand the parts. Then keep each target's summary, recommendation, and proposed comments together. Use headings when they help the reader navigate a long or multi-target review; do not turn the questions above into a fixed template. Size the explanation to the change, not a sentence limit.
+For related pull requests, keep each target's summary, recommendation, and proposed comments together. In the opening orientation, explain the combined outcome and any merge or rollout dependencies needed to understand the parts. Use headings when they help the reader navigate a long or multi-target review.
 
 Give each reviewed pull request, commit, or diff exactly one recommendation:
 
@@ -192,13 +188,13 @@ Give each reviewed pull request, commit, or diff exactly one recommendation:
 - **Approve with comments** when **Blocks merge**, **Non-blocking**, or **Discussion** items remain without a **Blocks approval** finding or material confidence gap.
 - **Wait before approving** when a **Blocks approval** finding or material confidence gap remains.
 
-Explain material limitations and business risks through their practical effects: what remains unavailable, whose work or data can be affected, and what detection or recovery involves where the evidence establishes it. Connect those consequences to the recommendation. Summarize the overall consequence when needed, while leaving each finding's triggering path and correction in its comment. A classification alone does not explain why the recommendation fits. Avoid speculative harms and routine risk paragraphs that add no useful context.
+Explain material limitations through their practical effect on the recommendation; avoid speculative harms and routine risk paragraphs. Apart from the decisive consequence in the opening, keep each finding's explanation in its comment, not a summary or separate index.
 
-Include validation when it changes confidence, explains uncertainty, or tells the reviewer what remains to verify. Routine successful checks can remain implicit; link evidence that materially changes confidence.
+Include CI or validation only when failed, pending, unavailable, or decision-changing. Name unresolved checks and their effect on the recommendation; link evidence that materially changes confidence.
 
 Return the complete review in the response. When the caller or a companion workflow saves a report file, the file is a copy for later reference, not a replacement. Do not shorten the summary, recommendation rationale, or comments in the response because a fuller version exists in a file or an earlier message.
 
-Show every proposed inline comment with its changed-line reference followed by a blockquote containing the exact publishable body. In terminal responses, show the reference's full URL on its own line by default; use a labeled Markdown link only when the URL is very long and impairs readability. For local-only reviews, show the plain path instead. Preserve Markdown links inside the publishable body, including drafts shown in chat. Keep the classification and any required AI attribution inside that body. Let the recommendation and comment classifications carry the decision. Reserve wrapper headings, separate classification summaries, and grouping for multiple targets or findings that need them. Separate targets in a stack and assign each finding to the change that introduced it.
+Show each proposed inline comment once: its changed-line reference followed by the exact publishable body. Link the reference; use a labeled `path:line` link when the full URL impairs readability, or a plain path for local-only reviews. Preserve Markdown links inside the body, including drafts shown in chat, and keep the classification and any required AI attribution inside it. Separate targets in a stack and assign each finding to the change that introduced it.
 
 Use **Existing issue** as the comment's classification, state that it predates the reviewed change, and link its tracking item when available.
 
@@ -206,9 +202,9 @@ The recommendation advises the human reviewer. Publishing, approving, and reques
 
 When another skill supplies an output schema, follow its structure while preserving the change summary, issue validation, per-target separation, recommendation, finding, and publication requirements above.
 
-After drafting, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review, including the inline comments. Treat investigation notes and unapproved comment drafts as source material, not finished prose to copy. In each summary and comment, explain what a component, field, or background process does before relying on its name. Prefer the action and its result to internal shorthand; retain identifiers where they help locate or distinguish the code.
+After drafting, read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the complete review, including the inline comments. Treat investigation notes and unapproved comment drafts as source material, not finished prose to copy. Explain unfamiliar domain terms only when needed to understand the point; do not paraphrase what the anchored code shows. Retain identifiers where they help locate or distinguish the code.
 
-Read the change summary without the findings or links. Check whether an engineer new to the work can explain the previous workflow, the problem, what was requested, the changed workflow and where it differs from the request, the decisions behind it, and what to watch for in the diff, without reconstructing the story from feature bullets. Then check that the review explains why the recommendation fits. If a sentence only names a mechanism, limitation, or risk, explain what it means for the affected person or system. Restore missing context before trimming repetition. Keep simple changes short when that explanation is already complete; concision means removing unnecessary work for the reader, not merely using fewer words.
+Read the review without opening links. Check that the recommendation and decisive reason are clear, the orientation explains the intended outcome, changed behavior, and fit to the request, and material deviations, missing reasons, and unresolved checks are accounted for. Remove repeated findings, obvious code paraphrases, and detail that does not help the reviewer decide or the author act.
 
 ## PR-level discussion
 
