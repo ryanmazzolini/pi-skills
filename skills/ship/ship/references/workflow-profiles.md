@@ -37,7 +37,7 @@ Keep the selected profile and canonical vault with the work-item context. Rechec
 
 ## Read an explicitly named profile
 
-A read-only caller with an explicit profile and vault-relative pointer may resolve that profile's vault without a workspace or available Git roots. This supports optional evidence lookup such as a First Mate escalation. Require a known profile and a readable vault; do not broaden the search when either is unavailable. Profile-only lookup does not authorize writes.
+A read-only caller with an explicit profile and vault-relative pointer may resolve that profile's vault without a workspace or available Git roots. Require a known profile and a readable vault; do not broaden the search when either is unavailable. Profile-only lookup does not authorize writes.
 
 ## Check a vault target
 

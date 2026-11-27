@@ -16,6 +16,8 @@ Relevance requires evidence such as the current ticket, work-item slug, explicit
 
 When a relevant legacy repository `.plans/` workflow is found, offer migration while continuing to treat it as the authority in place. If the human wants to consider migration, resolve a workspace profile as described below, determine the canonical vault project destination, and show it before asking for confirmation. Migrate only after the human confirms the destination and disposition of the old copy. If routing is unavailable or migration is declined, keep reusing the legacy workflow in place. Validate the destination before moving it, update references, and retire the old location so one workflow remains authoritative.
 
+When migrating an older plan, preserve its files and content. Use the evidence to propose how work should continue and which changes depend on others. Ask about unclear progress or dependencies before writing the migration. Migrate only the confirmed workflow, never several old workflows in bulk.
+
 A legacy workflow may use `question.md` instead of `alignment.md`. Keep that filename.
 
 ## Resolve a profile for new work or migration

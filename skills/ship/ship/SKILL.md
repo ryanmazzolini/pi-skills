@@ -5,128 +5,124 @@ description: "Use before building, changing, or fixing anything beyond a trivial
 
 # Ship
 
-Establish the expected experience or behavior and the boundaries of the current work before choosing a solution or delivery approach. This applies to every change, large or small. Use the broader goal to understand the request, not to expand its scope. Move work to its next useful human checkpoint with the least process that keeps the outcome clear and the work recoverable.
+For every change, establish what it should do and what it should leave alone before choosing a solution. A small, precisely specified change may need only a quick check. Use the broader goal to understand the request, not to grow it. Take the work to its next useful human checkpoint with the least process that keeps the outcome clear and recoverable.
 
-Research, alignment, design review, and delivery planning answer different questions. None is a required stage, but the human explicitly approves the route before production implementation when any are skipped.
+Research, alignment, design review and delivery planning answer different questions. Each is optional. Before production edits, check whether the user has explicitly approved the current implementation route. Ask only if that approval is missing.
+
+After every context compaction, read [references/recovery.md](references/recovery.md) first. Also read it when workflow files or an interruption leave the state unclear.
 
 ## Settle expectations and scope
 
-Inspect the current request, live repository, authoritative project evidence, and any existing workflow. Before recommending a solution structure or delivery chunks, establish:
+Inspect the request, the live repository, project evidence and any existing workflow. Before proposing a solution or delivery chunks, establish:
 
-- **Expected result:** who the work helps, what they should be able to do or understand, and what counts as complete for this request.
-- **Expected behavior:** for interface changes, establish current and intended user or caller walkthroughs, including relevant feedback, completion, failure, and recovery states. Otherwise, establish one concrete path to the result or state which behavior must remain unchanged. Reuse existing walkthroughs where they already settle the expected behavior.
-- **Scope:** what this change includes, what it excludes or defers, and which existing behavior, interfaces, and UI it must preserve.
+- **Result:** who the work helps, what they can then do or understand, and what counts as done.
+- **Behavior:** for an interface change, the current and intended user or caller walkthroughs, including feedback, completion, failure and recovery states. Otherwise, one concrete path to the result, or the behavior that must not change. Reuse walkthroughs that already settle this.
+- **Scope:** what the change includes, what it excludes or defers, and which behavior, interfaces and UI it must preserve.
 
-Reuse settled decisions and exact bounded requests. Do not ask the user to restate the rationale, repeat approval, or create an alignment document when those expectations and boundaries are already clear. Size changes the depth of this check, not whether it happens.
+Reuse settled decisions and exact, bounded requests. When these are already clear, don't ask the user to restate the rationale, approve again or write an alignment document.
 
-Use the live system, code, tests, automation, and documentation to establish facts. Use [`research`](../research/SKILL.md) when material uncertainty prevents a trustworthy decision; routine inspection is usually enough otherwise. Distinguish current behavior from requested behavior and from your proposed changes.
+Establish facts from the live system, code, tests, automation and docs. Use [`research`](../research/SKILL.md) only when real uncertainty blocks a trustworthy decision. Keep current behavior, requested behavior and your proposal distinct.
 
-Pause solution selection or implementation when sources of intent conflict or completing the expected behavior would require inventing a consequential choice. A choice is consequential when plausible answers could change the goal, priority, value, experience, scope, risk, or high-level solution direction. Bring each choice that needs human judgment to the user in the form that settles it fastest: a focused question with a recommendation ([`align`](../align/SKILL.md)), a proposed design to react to, a before/after sketch of the shape, or a throwaway [`prototype`](../prototype/SKILL.md). Mix them when different choices suit different forms. Do not ask the user what inspection or research can answer.
+Stop before choosing a solution or implementing when sources of intent conflict, or when finishing would mean inventing a consequential choice: one where plausible answers change the goal, priority, value, experience, scope, risk or overall direction. Bring each such choice to the user in the form that settles it fastest, and mix forms when choices differ:
 
-For example, a small preference toggle can change existing users' behavior. If its default is unspecified and plausible defaults have different effects, settle that choice before implementation. If its behavior and preservation boundaries are already authoritative, reuse those decisions and proceed within the existing approval.
+- a focused question with a recommendation ([`align`](../align/SKILL.md))
+- a proposed design to react to
+- a before/after sketch of the shape
+- a throwaway [`prototype`](../prototype/SKILL.md)
 
-Finish this check when the expected result, behavior, and scope are clear without inventing a consequential choice. Keep routine accounting internal. If the result requires changing something the user asked to preserve, explain the conflict and ask before proceeding. Suggest related improvements separately; they are not part of the approved work.
+Don't ask what inspection or research can answer.
+
+For example, a small preference toggle can change existing users' behavior. If its default is unspecified and the plausible defaults differ in effect, settle it first. If its behavior and what it must preserve are already decided, reuse those decisions, and any approval that covers the change, without asking again.
+
+The check is done when result, behavior and scope are clear without inventing a consequential choice. Don't walk the user through it; bring only the choices it leaves open. If the result would change something the user asked to preserve, explain the conflict and ask. Suggest related improvements separately; they are not approved work.
 
 ## Decide whether to review the design
 
-Before choosing a delivery shape or implementing, use [`design-doc`](../design-doc/SKILL.md) only when implementation would otherwise make an implicit choice about the intended experience, system fit, program shape, or build order and discovering a wrong choice after coding would cause expensive rework. Skip it when the relevant choices are already authoritative, obvious, trivial, or cheaply reversible.
+Use [`design-doc`](../design-doc/SKILL.md) before choosing a delivery shape only when implementation would otherwise make an implicit choice about the experience, system fit, program shape or build order, and finding it wrong after coding would mean expensive rework. Skip it when those choices are already decided, obvious, trivial or cheap to reverse.
 
-Design review makes a proposed solution legible; it does not settle conflicting intent or replace dependency-aware delivery planning. After approval, return here to choose direct or planned delivery.
+A design review makes a solution legible. It does not settle conflicting intent or replace delivery planning. After approval, come back here to choose the delivery shape.
 
 ## Choose the delivery shape
 
-After intent is settled, choose how to deliver it:
+- **Direct:** one settled outcome or exact, bounded request that needs one coherent change, with no useful dependency graph.
+- **Planned:** one settled outcome that needs several changes, when explicit boundaries would help execution or recovery. Use `delivery-plan`. Signs include one change depending on another, PRs or releases that must land separately, a migration or rollout that needs sequencing, and parallel work worth doing.
+- **Roadmap:** several independently useful outcomes that need durable coordination or recovery. See [references/roadmaps.md](references/roadmaps.md).
 
-- **Direct delivery fits** one settled outcome or exact bounded request that needs one coherent change. No useful dependency graph exists.
-- **Planned delivery helps** when one settled outcome needs several delivery changes. Reach for `delivery-plan` when explicit boundaries would improve execution or recovery. Signals include:
-  - one delivery change depends on another
-  - PRs or releases must land separately
-  - a migration or rollout needs sequencing
-  - parallel work is worthwhile
-- **A roadmap helps** when several independently useful outcomes need durable coordination or recovery. See [references/roadmaps.md](references/roadmaps.md).
-
-Choose the lightest delivery shape that preserves the settled intent and useful boundaries. Treat an MVP as a destination, not one delivery scope. Keep related work direct only when every part is required for the same narrow observable outcome. When another independently reviewable outcome or justified enabling change exists, use planned delivery or defer it. Size, elapsed time, a branch, a worktree, a pull request, or a session count does not decide the boundary by itself.
-
-When existing workflow files, interruption, or context compaction make the state unclear, read [references/recovery.md](references/recovery.md) before choosing.
+Pick the lightest shape that keeps the settled intent and useful boundaries. An MVP is a destination, not one delivery. Keep work direct only when every part is needed for the same narrow, observable outcome; plan or defer any other independently reviewable outcome or enabling change. Size, time, branches, worktrees, PRs and session count don't decide the boundary on their own.
 
 ## Confirm the implementation route
 
-Ship may start Research, Align, Design Doc, or Delivery Plan automatically when its trigger is met. Ask for route approval only after intent is settled. Do not combine an unresolved product, safety, scope, or experience decision with route approval.
+Ship may start Research, Align, Design Doc or Delivery Plan on its own when their triggers are met. Ask for route approval only once intent is settled, and never bundle it with an open product, safety, scope or experience decision.
 
-Before production implementation, account for each of Research, Align, Design Doc, and Delivery Plan exactly once as needed or not needed, with a reason. Keep this accounting internal while the work is safely session-local; record it in the canonical `Current` document when the work needs durable continuation. List Prototype only when an experiential uncertainty makes it plausible, and Roadmap only when several independently useful outcomes make it plausible. Do not manufacture a reason to mention either one on ordinary work.
+Before production implementation, decide once for each of Research, Align, Design Doc and Delivery Plan whether it is needed, with a reason. Keep this to yourself while the work is session-local. Consider Prototype only when an experiential uncertainty makes it plausible, and Roadmap only when several independently useful outcomes do. Don't invent reasons to mention them on ordinary work.
 
-Ask for explicit approval in ordinary project language. Lead with the concrete change and how you will deliver it. Mention investigation, a decision, upfront design, or sequencing only when it will actually happen before implementation. Do not list routine activities you will omit. When an omission materially changes approval, say what will not be done and state the concrete project boundary or risk instead of naming the skipped process. Do not show a routing checklist, `Use`/`Skip` sections, workflow names, or delivery-shape labels unless the user asks or needs an exact artifact name to continue.
-
-For example:
+Ask for approval in plain project language. Lead with the change and how you'll deliver it. Mention investigation, a decision, upfront design or sequencing only if it will happen before implementation. Don't list routine steps you'll skip. When a skipped step matters to the approval, say what you'll leave out and the boundary or risk that creates, not the process name. Don't show checklists, `Use`/`Skip` sections, workflow names or delivery-shape labels unless the user asks or needs an exact artifact name. For example:
 
 > The app already exposes both quantities, so I can add the preview in one frontend change and cover valid and invalid input with focused tests. No API change is needed. Shall I implement it?
 
-An exact instruction already approving that proposed route counts; a general request to implement does not. Fold the approval question into an existing plan or implementation confirmation when practical.
+An exact instruction approving that route counts; a general "implement it" does not. Fold the question into an existing plan or implementation confirmation when you can.
 
-Reuse the approval while the target outcome, boundaries, material constraints, omitted-step reasons, and delivery shape remain unchanged. Present it again when new evidence makes an omitted step plausible or changes the route. When work needs durable continuation, record the approval scope and the complete route accounting—each of Research, Align, Design Doc, and Delivery Plan as needed or not needed, with its reason—in the canonical `Current` document, such as an alignment, design, plan, milestone index, or handoff. Do not create a separate state file.
+The approval holds while the outcome, boundaries, material constraints, skip reasons and delivery shape stay the same. Ask again when new evidence makes a skipped step plausible or changes the route. When work must survive a fresh session, record the approval scope and the four needed/not-needed decisions with reasons in the workflow's current continuation document, such as an alignment, design, plan, milestone index or handoff. For vault-native work that is the document the work-item index's `Current` pointer names ([references/durable-context.md](references/durable-context.md)); a legacy workflow keeps its own convention. Don't create a separate state file.
 
 ## Complete a direct delivery
 
-Continue from the settled outcome or exact bounded request and any approved design. Do not reopen them merely to repeat alignment, design, or planning. Do not make production edits until the current implementation route is approved. Before substantial edits, verify:
+Continue from the settled outcome and any approved design without reopening them just to repeat alignment, design or planning. Make no production edits until the current route is approved. Before substantial edits, check:
 
-- the approved implementation route and its reasons for skipped steps
-- the authoritative intent, observable completion, and outcome boundaries
-- the next delivery change: one narrow observable outcome or justified enabler, plus the work deferred beyond it
-- the settled expected behavior and preservation boundaries still fit the change
-- the live repository, cwd, branch, and worktree
-- allowed scope and existing work to preserve
-- known sibling work
+- the approved route and why steps were skipped
+- the intent, observable completion and boundaries
+- the next change (one narrow outcome or justified enabler) and what is deferred past it
+- that the expected behavior and preservation boundaries still fit
+- the live repository, cwd, branch and worktree
+- allowed scope, existing work to preserve and known sibling work
 - validation that exercises the real behavior and an important failure path
 
-A gap warrants a question when it could materially change the settled value, behavior, scope, or risk.
+Ask about a gap only when it could materially change the settled value, behavior, scope or risk.
 
-On the default branch, propose a feature branch. Commit to the default branch only with explicit user approval. Use `ticket-workspace` when the work is durable or the current workspace is shared or dirty.
+On the default branch, propose a feature branch; commit to the default branch only with explicit approval. Use `ticket-workspace` when the work is durable or the workspace is shared or dirty.
 
-Once intent is settled, make ordinary repo-native interface, data, and structure choices directly within it. Use the shaping branch of the `architecture` skill when the user asks for shaping or a consequential local design choice needs its checkpoints. Before every implementation, apply its simplest-sufficient-change lens. Defer cleanup, optimization, generalization, and machinery that the current delivery does not need.
+Make ordinary repo-native interface, data and structure choices yourself. Use the shaping branch of the `architecture` skill when the user asks for shaping or a consequential local design choice needs its checkpoints, and apply its simplest-sufficient-change lens before every implementation. Defer cleanup, optimization, generalization and machinery this delivery doesn't need.
 
-Finish, validate, and present this delivery before starting another. Pause sooner if implementation exposes another independently reviewable delivery boundary, an unresolved consequential choice, or a conflict with authoritative intent. Use `delivery-plan` for the additional boundary and revisit `align` only when human judgment remains necessary.
+Finish, validate and present this delivery before starting another. Stop sooner if implementation reveals another independently reviewable change, an open consequential choice or a conflict with intent. Use `delivery-plan` for the extra change, and `align` only when human judgment is still needed.
 
-Do not create workflow files merely because a direct delivery lasts longer than expected. When it must survive a fresh session or context reset, read [references/durable-context.md](references/durable-context.md). Create only a minimal continuation record. Keep direct delivery unless the settled intent or delivery coherence changes.
+A long direct delivery doesn't need workflow files. When it must survive a fresh session or context reset, read [references/durable-context.md](references/durable-context.md) and create only a minimal continuation record. Keep it direct unless the intent or the coherence of the delivery changes.
 
 ## Resume after alignment
 
-Alignment helps settle a human choice that evidence cannot. Approval does not force design review or a delivery plan. Return here, decide whether design review is warranted, and then choose the delivery shape. Stay direct when one coherent change can deliver the result. Reach for `delivery-plan` when dependency or delivery boundaries make slicing useful.
+Alignment settles a human choice that evidence can't. Its approval doesn't require design review or a delivery plan: come back here, decide whether design review is warranted, then choose the delivery shape.
 
-A [`prototype`](../prototype/SKILL.md) can settle a choice at any point, with or without alignment. Its verdict settles that choice only. It does not authorize production implementation.
+A [`prototype`](../prototype/SKILL.md) can settle a choice at any point, with or without alignment. Its verdict settles only that choice and doesn't authorize production implementation.
 
 ## Execute a delivery plan
 
-Dependencies in `plan.md`, not section order, determine which delivery changes can start. Recommend the most useful ready change and why, then get human confirmation before starting or dispatching coordinated work. Include the implementation route in that confirmation when it is not already approved.
+Dependencies in `plan.md`, not section order, decide which changes can start. Recommend the most useful ready change and say why, then get confirmation before starting or dispatching it. Include the route in that confirmation if it isn't already approved.
 
-Run one delivery change synchronously unless it contains independent work units whose parallelism is worth the integration cost. For that case, read [references/implementation-wave.md](references/implementation-wave.md). The Ship coordinator owns concurrency and integration. After completing the delivery change, validate and present it before starting the next one.
+Run one change synchronously unless it holds independent work units worth the integration cost; then read [references/implementation-wave.md](references/implementation-wave.md). The Ship coordinator owns concurrency and integration. Validate and present each change before starting the next.
 
 ## Navigate a roadmap
 
-A roadmap coordinates human-centered milestones, not implementation tasks or PRs. Follow [references/roadmaps.md](references/roadmaps.md) to derive the ready milestones from their dependencies, recommend the next useful benefit, and preserve parent/child authority. Get confirmation before creating or materially changing a roadmap and before starting or dispatching a milestone.
-
-Each selected milestone returns to this router and follows the direct, aligned, or planned route it actually needs.
+A roadmap coordinates human-centered milestones, not tasks or PRs. Follow [references/roadmaps.md](references/roadmaps.md) to find ready milestones from their dependencies, recommend the next useful one, and keep parent and child authority separate. Get confirmation before creating or materially changing a roadmap, and before starting or dispatching a milestone. Each selected milestone comes back here and takes the route it needs.
 
 ## Choose the next checkpoint
 
-The live project and canonical work-item files decide current state. Conversation and other notes may locate context but do not override that evidence. Handle unresolved work in this order:
+The live project and the canonical work-item files decide the current state; conversation and notes only help find it. Take the first that applies:
 
-- A final code-bearing delivery lacks required independent review: apply [references/review-gate.md](references/review-gate.md).
-- Completed work has passed its required review gate and awaits approval: when the request is exact and may be routine enough for a discoverable First Mate, use [references/first-mate-escalation.md](references/first-mate-escalation.md); otherwise present the checkpoint and wait.
-- A decision-linked investigation remains: use `research`, then resume the checkpoint its result informs.
-- A consequential human decision remains: settle it with a question (`align`), a proposed design, or a `prototype`, whichever lets the user decide fastest.
-- Settled intent still has costly implicit solution choices: use `design-doc`.
-- Production implementation is ready but its used and skipped steps lack current route approval: present the implementation route and wait.
-- An approved outcome has a useful delivery plan: recommend a ready delivery change.
-- An approved roadmap has an unfinished ready milestone: recommend that milestone.
-- A direct continuation remains clear: resume it directly.
-- The work is complete or deliberately closed: follow [references/graduation.md](references/graduation.md) when a durable work item exists; otherwise report the result normally.
+1. A final code-bearing delivery lacks required independent review: apply [references/review-gate.md](references/review-gate.md).
+2. Completed work has passed any required review and awaits approval: present the checkpoint and wait.
+3. An investigation tied to a decision remains: use `research`, then return to the checkpoint it informs.
+4. A consequential human decision remains: bring it to the user as a question, a proposed design, a before/after sketch or a prototype, whichever settles it fastest.
+5. Settled intent still hides costly implicit solution choices: use `design-doc`.
+6. Implementation is ready but its route lacks current approval: present the route and wait.
+7. An approved outcome has a delivery plan with a ready change: recommend it.
+8. An approved roadmap has a ready milestone: recommend it.
+9. A direct continuation is clear: resume it.
+10. The work is done or closed: follow [references/graduation.md](references/graduation.md) if a durable work item exists; otherwise report the result.
 
-If state is truly ambiguous, give your interpretation and ask one direct question. Do not add tracking fields merely to avoid understanding the evidence.
+If the state is truly ambiguous, give your reading and ask one direct question. Don't add tracking fields to avoid reading the evidence.
 
 ## Record and present results
 
-Record material decisions, scope changes, approved implementation routes, implementation results, and validation evidence as they happen. Keep delivery-change evidence with its plan entry and milestone-specific evidence in the milestone work item. Do not report routine progress to First Mate; use [references/first-mate-escalation.md](references/first-mate-escalation.md) only for an exact approval request, cross-project blocker, or missing context.
+Record material decisions, scope changes, approved routes, results and validation as they happen. Keep a change's evidence with its plan entry, and a milestone's in its work item.
 
-Before presenting a final code-bearing delivery for approval, apply [references/review-gate.md](references/review-gate.md). Alignment, plans, and intermediate checkpoints do not require broad independent review by default.
+Before presenting a final code-bearing delivery for approval, apply [references/review-gate.md](references/review-gate.md). Alignment, plans and intermediate checkpoints don't need broad independent review by default.
 
-Start a human update with the result or decision in project language. Add only the validation, review status, or remaining risk needed to understand what happens next. Keep Ship's routing, artifact maintenance, and internal checks out of the update. End with one short action or question when the user must respond. When Markdown cannot make a consequential decision clear, read [references/review-artifacts.md](references/review-artifacts.md) and create the smallest useful review aid.
+Open a human update with the result or decision in project language. Add only the validation, review status or risk needed to understand what happens next. Leave out Ship's routing, file upkeep and internal checks. End with one short action or question when the user must respond. When Markdown can't make a consequential decision clear, read [references/review-artifacts.md](references/review-artifacts.md) and make the smallest useful review aid.

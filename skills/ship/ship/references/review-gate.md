@@ -6,9 +6,9 @@ Use independent review earlier only for a named uncertainty or risk that is chea
 
 ## Choose enough review
 
-Choose the lenses, reviewer count, model, reasoning depth, and order from how new, hard to reverse, wide-reaching, or visible the work is; what can fail; the strength of validation; and earlier findings. Load `agent-coordination` before choosing delegated routes. Do not hardcode model names here.
+Choose the lenses, reviewer count, model, reasoning depth, and order from how new, hard to reverse, wide-reaching, or visible the work is; what can fail; the strength of validation; and earlier findings.
 
-Delegated reviewers do not inherit ambient skills. Before each delegate call, choose the skills that define the review criteria and pass every applicable name through `delegate.skills`. Include `code-review` for a final code-bearing review. Add relevant language, framework, and lens-specific skills, such as `security-review` for a security lens, `frontend-hci-review` for a user flow, or `writing-for-agents` for agent instructions. Do not rely on task prose asking the reviewer to load a skill that was not provided.
+For every final code-bearing review, have the reviewer read `code-review` first. Suggest any language, framework or lens skills its assignment needs, such as `security-review` for a security lens, `frontend-hci-review` for a user flow, or `writing-for-agents` for agent instructions; it may consult others. In Pi, delegated agents get no skills unless named, so use `agent-coordination` to choose the route and pass every skill name in `delegate.skills`. On other hosts, use the native subagent tool. If you cannot start a fresh read-only reviewer for a required review, report the blocker and stop before delivery.
 
 Use the smallest review that can credibly challenge the result. Cover both final scope checks in `code-review`: unintended edits or removals, and unnecessary additions, including visible-text changes when present. One reviewer may cover both for a small, focused change. For a broad refactor, behavior removal, or substantial UI change, split the checks between fresh reviewers when independent scrutiny could change the result. If an earlier review missed a concern, use a fresh reviewer for that concern rather than relying only on the earlier reviewer's recheck.
 
