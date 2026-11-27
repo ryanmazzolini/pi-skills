@@ -42,7 +42,7 @@ Account for every changed file and any behavior that crosses file boundaries.
 
 Before returning a review of an open GitHub pull request, call `monitor_github_pr` with its canonical URL and `notifyExistingFeedback: false` when the tool is available. This records existing feedback without triggering another turn, then notifies the session only about later feedback. For a stack, register each open GitHub pull request in review order until the tool reports its session limit. Continue the review and identify any pull request that remains unmonitored. Monitoring belongs to the current session and does not publish GitHub changes.
 
-Reviews are read-only by default. Do not change the reviewed code or publish comments unless the user explicitly asks and the active workflow permits it.
+Reviews are read-only by default. Do not change the reviewed code unless the user explicitly asks and the active workflow permits it. Post comments or submit a review verdict only for an action the user has accepted, as [Publish](#publish) describes.
 
 ## Companion walkthrough
 
@@ -202,7 +202,7 @@ Show every proposed inline comment with its changed-line reference followed by a
 
 Use **Existing issue** as the comment's classification, state that it predates the reviewed change, and link its tracking item when available.
 
-The recommendation advises the human reviewer. Publishing, approving, and requesting changes remain separate actions that require their applicable authorization.
+The recommendation advises the human reviewer.
 
 When another skill supplies an output schema, follow its structure while preserving the change summary, issue validation, per-target separation, recommendation, finding, and publication requirements above.
 
@@ -235,12 +235,25 @@ Deep-link each referenced decision and defining change inside the discussion bod
 
 Reserve top-level comments for the qualifying PR-level discussion above.
 
-## Publish comments
+## Publish
+
+This section applies to a standalone review of an open pull request. For any other review, return the result and stop.
+
+Posting or editing a comment and submitting or changing a review verdict each need the user's acceptance. After the review result, ask one question that names the pull request and the whole action you propose, then stop:
+
+- **Approve** or **Approve with comments**: propose approving and posting any proposed comments.
+- **Wait before approving**: propose posting the proposed comments with no verdict. When there are none, propose nothing.
+
+For example: "May I approve #42 and post the two comments above?" For several pull requests, name each one and its action. Submit a request-changes review only when the user asks for one in those words.
+
+A bare "yes" accepts the whole proposal. A qualified reply accepts only the actions and targets it names: do those, then say which proposed actions remain undone.
 
 Before publishing:
 
-1. Show the exact destination and body unless the user already approved that text.
-2. If the host cannot attach a proposed comment to a relevant changed line, stop and explain that it cannot be published inline. Keep its destination on a changed line rather than moving it to unchanged code or a top-level comment.
-3. Publish a proposed **Discussion** only as the single top-level comment described above.
-4. If the host requires a review event to carry inline comments, use its neutral comment mode with an empty top-level body. Never approve or request changes.
-5. Read each published comment back and verify its target, content, and formatting.
+1. Post only text the user has seen with its destination. If a comment's text or destination changed after acceptance, show the change and get acceptance for it.
+2. Confirm the pull request's head is still the reviewed head. If it moved, stop and say what changed.
+3. If the host cannot attach a proposed comment to a relevant changed line, stop and explain that it cannot be published inline. Keep its destination on a changed line rather than moving it to unchanged code or a top-level comment.
+4. Post a proposed **Discussion** as the single separate top-level comment described above, not in the review body.
+5. Leave the review body empty unless the user accepted exact text for it. When the host requires a body, show the proposed text and wait for acceptance. For a review with no verdict, use the host's neutral comment mode.
+
+After publishing, read each comment back and verify its target, content, and formatting, and that the submitted review's state matches the accepted action. Then carry out each follow-up step the caller defines whose condition the published action now meets; the accepted action covers them.
