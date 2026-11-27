@@ -48,23 +48,23 @@ Before presenting the message, check that the subject identifies the concrete ch
 
 Show the destination branch, the commit split, and the checks you know ran on these changes with their results. Say so when you know of none. For each commit, show its `Subject:` and `Body:`. State when a trivial commit has no body.
 
-When the changes belong in separate commits, ask the user to confirm the split. When a decision has mutually exclusive choices, present each choice as a named option. Clarify any reply that does not select one.
+End the plan by asking whether to create the listed commits on the branch shown, with these changes and messages. When a decision has mutually exclusive choices, present each choice as a named option. Clarify any reply that does not select one.
 
 ## 5. Commit
 
-Ask for explicit approval before each commit. After approval, create the agreed branch if needed and commit only the agreed changes with the approved message. Pass the subject as the first `-m` flag and each body paragraph as a further `-m` flag.
+Commit only after the user approves the plan. That approval covers every listed commit as shown. Ask again before a commit the plan did not list, or one that differs from it. After approval, create the agreed branch if needed and commit only the agreed changes with the approved message. Pass the subject as the first `-m` flag and each body paragraph as a further `-m` flag.
 
 Commit approval does not include approval to push.
 
 ## 6. Push
 
-Offer to push after committing. Push only after explicit approval.
+If the user directly asked to push this branch, that request is push approval. Otherwise, offer to push after committing and push only after explicit approval.
 
 Before pushing directly to the default branch, apply the review gate in the `ship` skill's `references/review-gate.md` to the delivered diff.
 
 ## Cherry-picks
 
-Before cherry-picking, show the destination branch and exact commits in application order. If a requested commit depends on other commits, explain the expanded set and confirm the full set before applying it.
+Before cherry-picking, show the destination branch and exact commits in application order, and wait for approval. If a requested commit depends on other commits, explain the expanded set and confirm the full set before applying it.
 
 ## Pull requests
 
