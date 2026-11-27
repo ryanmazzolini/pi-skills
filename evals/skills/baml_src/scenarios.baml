@@ -21,7 +21,6 @@ function ScenarioSuites() -> ScenarioSuite[] {
         ScenarioSuite { id: "commit-pr", scenarios: pr_scenarios },
         ScenarioSuite { id: "code-review", scenarios: CodeReviewReaderContextScenarios() },
         ScenarioSuite { id: "shortcut", scenarios: ShortcutFramingScenarios() },
-        ScenarioSuite { id: "herdr", scenarios: HerdrScenarios() },
         ScenarioSuite { id: "design-doc", scenarios: DesignDocScenarios() },
     ]
 }

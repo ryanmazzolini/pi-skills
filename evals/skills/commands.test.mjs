@@ -54,7 +54,6 @@ process.exit(Number(process.env.FIXTURE_EXIT_CODE));
 
 for (const [script, args, expectedArgs] of [
   ["eval:skills", ["--suite_id", "research"], ["run", "RunEvals", "--", "--suite_id", "research"]],
-  ["eval:skills:judge:herdr", ["--json-args", '{"case_id":"valid"}'], ["run", "CheckHerdrJudge", "--", "--json-args", '{"case_id":"valid"}']],
   ["eval:skills:test", [], ["test", "-i", "root::skills::*"]],
 ]) {
   test(`${script} keeps direct OpenAI defaults and forwards arguments`, (t) => {
