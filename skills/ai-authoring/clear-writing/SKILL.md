@@ -1,6 +1,6 @@
 ---
 name: "clear-writing"
-description: "Write or rewrite human-facing text so it is direct, concrete, and easy to read. Use when drafting or rewording pull request descriptions, tickets, commit messages, review comments, documentation, or skills, and when the user asks to make text clearer. Pair with writing-for-agents when the text instructs an AI agent."
+description: "Write or rewrite human-facing text so it is direct, concrete, and easy to read. Use when drafting or rewording pull request descriptions, tickets, commit messages, review comments, documentation, user interface text, or skills, and when the user asks to make text clearer. Pair with writing-for-agents when the text instructs an AI agent."
 ---
 
 # Clear Writing
@@ -15,9 +15,9 @@ When drafting new text, the source is the work itself: the diff, ticket, notes, 
 
 Decide whether the reader needs clearer sentences or a fuller explanation. A draft can be accurate and grammatical while assuming the reader already knows the workflow, why it matters, or what a limitation prevents. When supporting sources are supplied, read the relevant parts before deciding the draft contains enough context. Use them to establish the missing facts, not to restart the investigation.
 
-When context is missing, rebuild the passage around the reader's question using the available evidence. Explain the situation and practical consequence before the mechanism. Preserve the source's meaning, not the draft's omissions or order. Add only context supported by the sources; if a material ambiguity remains, name it and ask one focused question rather than silently resolving it.
+When context is missing, rebuild the passage around the reader's question using the available evidence. Explain the situation and practical consequence before the mechanism. Preserve the source's meaning, not the draft's omissions or order. Add only context supported by the sources. Where they leave an ambiguity that would change the meaning, keep that uncertainty in the text rather than silently resolving it.
 
-Treat pasted text as output-only unless the user asks you to edit a file.
+When the user pastes text to rewrite, return the rewrite in the reply. Put it anywhere else, such as a file or a ticket, only when the user asks.
 
 ## Rewrite for the reader
 
@@ -47,7 +47,7 @@ For technical explanations, read [`explain-code`](../explain-code/SKILL.md) befo
 
 Before asking a question, explain the situation that makes the answer necessary. Then ask one short, focused question.
 
-When describing a change, state what changed, what happened before, and why the new behavior is better.
+When describing a change, state what changed, what happened before, and why the difference matters to the reader.
 
 Treat investigation notes as source material, not as the structure of the response. For a decision or update, state the conclusion, its practical effect, and what happens next. Include only the evidence the reader needs to understand or act; link the rest.
 
@@ -79,4 +79,4 @@ Confirm that:
 - the reader can understand and act without decoding unfamiliar terms or reconstructing the conclusion from supporting evidence;
 - the result is concise without hiding necessary context.
 
-Return the text first. Add commentary only for a material ambiguity, trade-off, or intentional change the reader needs to know about.
+Return the text first. After it, name any ambiguity that would change the meaning and ask one focused question about it. Add other commentary only for a trade-off or intentional change the reader needs to know about.
