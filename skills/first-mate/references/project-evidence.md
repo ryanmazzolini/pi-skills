@@ -15,7 +15,7 @@ Use the message, current peer evidence, and located repository files first. If t
 
 ## Follow an explicit work-item pointer
 
-A profile and path locate vault material; they do not establish project identity or authority. Only when a vault pointer is needed, follow the [named-profile read and vault-target checks](../../ship/ship/references/workflow-profiles.md): read the host routing data, select the explicit profile's readable vault, and verify each target with ordinary file tools. A profile-scoped read does not need an available workspace or Git root.
+A profile and path locate vault material; they do not establish project identity or authority. Only when a vault pointer is needed, follow the named-profile read and vault-target checks in the `ship` skill's `references/workflow-profiles.md`: read the host routing data, select the explicit profile's readable vault, and verify each target with ordinary file tools. A profile-scoped read does not need an available workspace or Git root.
 
 Read the selected vault's `AGENTS.md` and directed context before the work item. Open the supplied `index.md` first. Follow `Current` only when it is relevant, checking that its canonical relative path stays inside the work-item directory without traversing symlinks. Treat a recorded workspace as a locator when repository evidence is needed; confirm that the directory exists and read its repository instructions before using it.
 

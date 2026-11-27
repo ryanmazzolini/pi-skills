@@ -23,7 +23,7 @@ Prefer `-q` to suppress loading output when piping or parsing.
 
 ## Write team-readable stories
 
-Before drafting or changing story text, apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md). A Shortcut story is a team-facing description of what needs to become true, not an investigation log, implementation plan, or continuation record.
+Before drafting or changing story text, apply the `clear-writing` skill. A Shortcut story is a team-facing description of what needs to become true, not an investigation log, implementation plan, or continuation record.
 
 ### Title
 

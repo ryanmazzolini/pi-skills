@@ -51,7 +51,7 @@ Resolve `scripts/walkthrough.mjs` relative to this skill and call it with `node`
 
    Verify every claim in the guide against the code before rendering: `git show <head>:<path>` for the new side, `git show <base>:<path>` for the old. The walkthrough is only better than the diff if it is right.
 
-   Then read and apply [`clear-writing`](../../ai-authoring/clear-writing/SKILL.md) to the intent, every `why` and every note. Lead with the consequence, use plain words, and cut anything the diff already shows. A reviewer reads this text once, fast.
+   Then read and apply the `clear-writing` skill to the intent, every `why` and every note. Lead with the consequence, use plain words, and cut anything the diff already shows. A reviewer reads this text once, fast.
 
 4. **Render.**
 

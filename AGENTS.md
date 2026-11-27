@@ -20,6 +20,7 @@ This is a pi skills package. It is installed via `pi install` and should not be 
 - The frontmatter `name` must match the parent skill directory name
 - Descriptions should be specific about what the skill does and when to use it
 - Use relative paths to reference scripts or assets within a skill directory
+- Refer to a skill in another namespace by name, such as "the `hci` skill" or "the `ship` skill's `references/review-gate.md`", not by a relative link. Some machines install every skill folder at one level, where a link that climbs out of the namespace folder breaks. `npm run validate:skills` rejects such links
 
 ## Keep in agreement
 

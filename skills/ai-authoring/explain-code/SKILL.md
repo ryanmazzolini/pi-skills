@@ -34,8 +34,8 @@ Build a larger interactive explanation when the reader requests it, or when navi
 
 ### When building an interactive explanation
 
-- For a commit, commit range, or PR walkthrough, use [`change-walkthrough`](../../review/change-walkthrough/SKILL.md). It owns extraction, rendering, validation, and risk-ordered review steps. Do not duplicate its renderer or force a system explanation into a diff. If its requirements cannot be met, explain the limitation and give the useful chat explanation; do not create commits just to make a page possible.
+- For a commit, commit range, or PR walkthrough, use the `change-walkthrough` skill. It owns extraction, rendering, validation, and risk-ordered review steps. Do not duplicate its renderer or force a system explanation into a diff. If its requirements cannot be met, explain the limitation and give the useful chat explanation; do not create commits just to make a page possible.
 - For a system or execution trace, design the page for the question, following [`visuals`](../visuals/SKILL.md) for design and checking. Lead with the purpose, example, and small map; reveal steps and supporting code on demand. Order the page as the answer, then the picture, then the detail: two to four headline numbers when they help, one or two diagrams, then collapsible detail with only the most important card open. Use words as labels and move lists into the collapsible detail.
 - Check every claim and source reference against the code or supplied evidence, as well as the numbers and displayed states.
-- Apply [`hci`](../../ux-accessibility/hci/SKILL.md) to the page.
+- Apply the `hci` skill to the page.
 - Keep a saved page outside the explained repository, in the caller's work-item directory when supplied or a local artifact directory otherwise. Explaining code does not authorize source edits, commits, publishing, or renderer changes.

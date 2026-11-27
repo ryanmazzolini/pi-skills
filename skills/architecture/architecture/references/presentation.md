@@ -11,6 +11,6 @@ Name the decision and approval boundary first. Make the first view stand on its 
 
 Make the artifact drillable rather than dense. Use descriptive headings and links from the first view to evidence, alternatives, source paths, failure behavior, rollout, and operations. Keep implementation detail behind those sections.
 
-Read [`visuals`](../../../ai-authoring/visuals/SKILL.md) to choose between a table, a Mermaid diagram and inline HTML, and to design and check the result. Keep one reading direction and label relationships with actions or data.
+Read the `visuals` skill to choose between a table, a Mermaid diagram and inline HTML, and to design and check the result. Keep one reading direction and label relationships with actions or data.
 
 Temporary aids belong in the OS temp directory or the active workflow's approved working area, not the repository. Do not create a durable artifact or competing source of truth without approval.

@@ -9,7 +9,7 @@ Create one review thread per related ticket group in the selected workspace:
 3. Give each destination its exact review targets and checkout paths, related ticket context, approved scope, canonical report/evidence paths when available, and this skill. Identify it as the review owner, not another launcher. Preserve explicit launch options. The assigned task includes inspection, validation, reports, PR monitoring and follow-ups as applicable, plus the companion walkthrough only when the user asked for one, but no code changes or publication without their applicable approval.
 4. Verify that each destination thread exists and has received its assigned task before reporting dispatch. The owner performs the review itself, without subagents, and returns the complete result in its own thread.
 
-In Herdr (`HERDR_ENV=1`), a review thread is a named tab running a fresh Pi session. Use [`herdr`](../../../herdr/SKILL.md) and its [fresh-session procedure](../../../herdr/references/pi-session-transfer.md), including **Start the assigned review** after startup verification.
+In Herdr (`HERDR_ENV=1`), a review thread is a named tab running a fresh Pi session. Use the `herdr` skill and the fresh-session procedure in its `references/pi-session-transfer.md`, including **Start the assigned review** after startup verification.
 
 If the host does not expose thread creation or verification, explain the limitation and ask whether to review in the current thread. Do not invent host commands or silently substitute an in-place review or subagent.
 

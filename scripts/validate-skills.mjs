@@ -13,15 +13,15 @@ function fail(message) {
   errors.push(message);
 }
 
-async function findSkillFiles(dir) {
+async function findFiles(dir, matches) {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      files.push(...await findSkillFiles(fullPath));
-    } else if (entry.isFile() && entry.name === "SKILL.md") {
+      files.push(...await findFiles(fullPath, matches));
+    } else if (entry.isFile() && matches(entry.name)) {
       files.push(fullPath);
     }
   }
@@ -135,10 +135,96 @@ function validateMarketplace(skillFiles) {
   }
 }
 
-const skillFiles = await findSkillFiles(skillsDir);
+// Returns [lineNumber, target] for relative inline links, images and reference
+// definitions, skipping fenced code blocks and inline code spans.
+function relativeLinkTargets(text) {
+  const found = [];
+  let inFence = false;
+  text.split(/\r?\n/).forEach((rawLine, index) => {
+    if (/^\s*(```|~~~)/.test(rawLine)) {
+      inFence = !inFence;
+      return;
+    }
+    if (inFence) return;
+    const line = rawLine.replace(/(`+).*?\1/g, "");
+    const targets = [
+      ...[...line.matchAll(/\]\(\s*<?([^)\s>]+)>?(?:\s+["'(][^)]*)?\)/g)].map((match) => match[1]),
+      ...[...line.matchAll(/^\s*\[[^\]]+\]:\s*<?([^\s>]+)>?/g)].map((match) => match[1]),
+    ];
+    for (const target of targets) {
+      if (/^([a-z][a-z0-9+.-]*:|#|\/)/i.test(target)) continue;
+      found.push([index + 1, target.split("#")[0]]);
+    }
+  });
+  return found;
+}
+
+// True when a link climbs above its skill folder at any point, even if it
+// comes back in, because that path only works in the repo layout.
+function leavesSkill(file, skillRoot, target) {
+  let depth = path.relative(skillRoot, path.dirname(file)).split(path.sep).filter(Boolean).length;
+  for (const part of target.split("/")) {
+    if (part === "..") depth -= 1;
+    else if (part && part !== ".") depth += 1;
+    if (depth < 0) return true;
+  }
+  return false;
+}
+
+function owningSkillRoot(file, skillRoots) {
+  return skillRoots
+    .filter((skillRoot) => file === skillRoot || file.startsWith(skillRoot + path.sep))
+    .sort((a, b) => b.length - a.length)[0];
+}
+
+// This repo groups skills under namespace folders, but some machines install
+// every skill folder at one level (for example ~/.agents/skills/<name>/). Every
+// link that leaves its skill folder must resolve in both layouts.
+function validateCrossSkillLinks(skillFiles, markdownFiles) {
+  const skillRoots = skillFiles.map((file) => path.dirname(file));
+  const rootByName = new Map();
+  for (const skillRoot of skillRoots) {
+    const name = path.basename(skillRoot);
+    const existing = rootByName.get(name);
+    if (existing) {
+      fail(`${path.relative(root, skillRoot)}: skill name "${name}" is also used by ${path.relative(root, existing)}; the two collide where skills install flat`);
+    } else {
+      rootByName.set(name, skillRoot);
+    }
+  }
+  const flatRoot = path.join(path.sep, "flat", "skills");
+
+  const resolvesWhenFlat = (file, skillRoot, target) => {
+    const flatFile = path.join(flatRoot, path.basename(skillRoot), path.relative(skillRoot, file));
+    const resolved = path.resolve(path.dirname(flatFile), target);
+    const [name, ...rest] = path.relative(flatRoot, resolved).split(path.sep);
+    const targetRoot = rootByName.get(name);
+    return targetRoot !== undefined && existsSync(path.join(targetRoot, ...rest));
+  };
+
+  for (const file of markdownFiles) {
+    const skillRoot = owningSkillRoot(file, skillRoots);
+    if (!skillRoot) continue;
+
+    for (const [lineNumber, target] of relativeLinkTargets(readFileSync(file, "utf8"))) {
+      // Links that stay inside the skill include sample paths in templates; leave them alone.
+      if (!leavesSkill(file, skillRoot, target)) continue;
+      const where = `${path.relative(root, file)}:${lineNumber}`;
+      if (!existsSync(path.resolve(path.dirname(file), target))) {
+        fail(`${where}: link "${target}" does not resolve`);
+      } else if (!resolvesWhenFlat(file, skillRoot, target)) {
+        fail(`${where}: link "${target}" breaks where skills install flat, with every skill folder at one level. Name the other skill instead of linking to it`);
+      }
+    }
+  }
+}
+
+const skillFiles = await findFiles(skillsDir, (name) => name === "SKILL.md");
+const markdownFiles = await findFiles(skillsDir, (name) => name.endsWith(".md"));
 for (const file of skillFiles) validateSkillFile(file);
 validatePiLoader();
 validateMarketplace(skillFiles);
+validateCrossSkillLinks(skillFiles, markdownFiles);
 
 if (errors.length > 0) {
   console.error(`Skill validation failed (${errors.length}):`);

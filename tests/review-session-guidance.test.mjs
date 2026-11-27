@@ -58,9 +58,11 @@ test("Herdr remains a conditional implementation hint with resolving references"
   const hint = launching.match(/^In Herdr[^\n]+/m)?.[0];
   assert.ok(hint, "conditional Herdr hint exists");
   assert.match(hint, /a review thread is a named tab running a fresh Pi session/);
-  const references = [...hint.matchAll(/\]\(([^)]+)\)/g)].map((match) => match[1]);
-  assert.equal(references.length, 2);
-  await Promise.all(references.map((reference) => access(new URL(reference, LAUNCH_GUIDE))));
+  // Skills install flat on some machines, so the hint names the herdr skill and its file instead of linking.
+  assert.match(hint, /the `herdr` skill/);
+  assert.match(hint, /its `references\/pi-session-transfer\.md`/);
+  await access(new URL("../skills/herdr/SKILL.md", import.meta.url));
+  await access(TRANSFER_GUIDE);
   assert.doesNotMatch(launching.replace(hint, ""), /Herdr|HERDR_ENV|Pi session|herdr agent/);
   assert.match(transfer, /\[Start the assigned review\]\(#start-the-assigned-review\)/);
   assert.ok(assignedReview, "assigned-review anchor exists");

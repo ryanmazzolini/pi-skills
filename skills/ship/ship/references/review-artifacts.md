@@ -27,7 +27,7 @@ Do not default to slides or dashboards. Add a table or diagram when the answer h
 
 Make the artifact drillable instead of dense. The first view should stand alone; link from it to named sections for evidence, alternatives, source paths, risks, rollout, or other details the reviewer may need.
 
-Read [`visuals`](../../../ai-authoring/visuals/SKILL.md) to choose between a table, a Mermaid diagram and inline HTML, and to design and check the result. Use a project-native prototype only when the project toolchain is needed for fidelity.
+Read the `visuals` skill to choose between a table, a Mermaid diagram and inline HTML, and to design and check the result. Use a project-native prototype only when the project toolchain is needed for fidelity.
 
 Before presenting it, check that:
 

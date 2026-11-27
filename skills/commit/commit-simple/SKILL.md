@@ -62,7 +62,7 @@ Commit approval does not include approval to push.
 
 Offer to push after committing. Push only after explicit approval.
 
-Before pushing directly to the default branch, apply [the review gate](../../ship/ship/references/review-gate.md) to the delivered diff.
+Before pushing directly to the default branch, apply the review gate in the `ship` skill's `references/review-gate.md` to the delivered diff.
 
 ## Cherry-picks
 

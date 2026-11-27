@@ -11,7 +11,7 @@ description: Create or update a draft pull request from the current branch. Use 
 2. Confirm that the branch fits the [scope rules](#scope). Stop if it contains work that should be split or deferred.
 3. Run focused checks while diagnosing problems, then run the repository's expected regression checks. If a check is blocked or impractical, say what did not run and why, then ask how to handle the gap. This decision does not replace review or PR approval.
 4. For a change someone can see or call, such as a screen, a rendered document, an API, or a command, gather [captures](#captures) or a [worked example](#worked-examples) from the branch running. Reuse what you made while validating the change. If there is none and you cannot run the change, say so and ask how to handle the gap.
-5. Confirm that the final code-bearing branch diff has independent review under [the review gate](../../ship/ship/references/review-gate.md). Record changes made after review. Re-review when the gate requires it.
+5. Confirm that the final code-bearing branch diff has independent review under the review gate in the `ship` skill's `references/review-gate.md`. Record changes made after review. Re-review when the gate requires it.
 6. Understand why the change exists. If the diff and commits do not explain it, read the related issue or work item. Identify what happened before, why it was a problem, and what happens now.
 7. Draft the title and body using the guidance below. Follow the writing guidance in the active project and user instructions.
 8. Show the full title and body, any capture files, base branch, review evidence, and validation status. End the response by asking for confirmation or edits; do not stop after presenting the draft or status.

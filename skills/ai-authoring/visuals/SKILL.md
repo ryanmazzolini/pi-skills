@@ -58,4 +58,4 @@ Check every number, label and displayed state against the code or evidence. Then
 
 Show the visual in the chat. Save it to a file only when the reader will reuse it or it is a deliverable. Make a saved page one self-contained file with inline CSS, JavaScript and SVG, so it opens with no build step and no external assets. Put that file outside the repository under discussion: in the caller's work-item directory when one is supplied, otherwise in the OS temp directory. Report its path with one line on what it shows.
 
-For a commit, commit range or pull request walkthrough, use [`change-walkthrough`](../../review/change-walkthrough/SKILL.md) instead of building a page here.
+For a commit, commit range or pull request walkthrough, use the `change-walkthrough` skill instead of building a page here.
