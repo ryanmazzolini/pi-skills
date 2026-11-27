@@ -4,7 +4,7 @@ Read this only when creating, revising, splitting, or reviewing a skill.
 
 ## Choose invocation deliberately
 
-A model-invoked skill omits `disable-model-invocation`. Its description is always visible to the model, so it must name what the skill does and include one distinct trigger per branch. Keep it only when the model or another skill must find the behavior without the user naming it.
+A model-invoked skill omits `disable-model-invocation`. Its description is always visible to the model, so it must name what the skill does and include one distinct trigger per branch. Keep it only when the model or another skill must find the behavior without the user naming it. Put what the skill does and its most common trigger first, because some harnesses shorten descriptions when the skill list exceeds its budget. Name the outcome there, not the steps: an agent that reads the steps in the description may act on them and skip the body.
 
 A user-invoked skill sets `disable-model-invocation: true`. Its description is a short human-facing summary. Use this for behavior the user deliberately requests by name. If manual skills become hard to remember, prefer one user-invoked router over making every command model-invoked.
 
@@ -24,6 +24,7 @@ Before finishing, confirm:
 
 - the invocation choice matches who must find the skill;
 - each model-facing trigger represents a distinct branch;
+- for a model-invoked skill, the description matches a realistic request for each branch and does not match a similar request that belongs elsewhere;
 - steps are ordered and have checkable endpoints;
 - conditional detail sits behind a reliable pointer;
 - internal legwork is thorough while the user-facing result stays concise;
