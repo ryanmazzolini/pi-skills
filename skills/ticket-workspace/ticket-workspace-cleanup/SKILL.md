@@ -1,89 +1,101 @@
 ---
 name: "ticket-workspace-cleanup"
-description: "Remove completed ticket worktrees and local branches, optionally delete their upstream branches, and leave any Herdr pane open for manual closure."
+description: "Remove completed ticket worktrees and local branches, optionally delete their upstream branches, and leave the calling session open for manual closure."
 disable-model-invocation: true
 argument-hint: "ticket id, slug, or path"
 ---
 
 # Ticket Workspace Cleanup
 
-The user invoked this skill to retire a ticket workspace. Cleanup is destructive; run it like a lockout/tagout.
+The user invoked this skill to retire a ticket workspace. Cleanup deletes work; run it like a lockout/tagout.
 
 ## Scope
 
-A ticket workspace is the ticket folder used by `ticket-workspace`:
+A ticket workspace is a ticket folder created by `ticket-workspace`:
 
 ```text
 <workspace-root>/worktrees/<ticket-slug>/<pr-worktree>/
 ```
 
-Clean the ticket folder as the unit of work. Never broaden cleanup outside that folder unless the user explicitly asks.
+Cleanup covers that folder, the local branches checked out in its worktrees, processes running inside it and, if approved, those branches' upstream branches. Leave anything else alone unless the user names it, including other worktrees and branches in the same repositories.
 
-When `HERDR_ENV=1`, run cleanup in the calling pane and leave that pane open. Do not hand off cleanup, prompt another agent, focus another pane, or close any pane. Keep the calling pane's session spine—the pane shell, its Pi process, and the exact foreground command chain Pi launched for the current cleanup step. Never signal those processes. Do not exempt an older or unrelated descendant merely because the pane shell or Pi is its ancestor; classify it normally as safe to stop or as a blocker.
+Do the cleanup in this session. Do not hand it off, prompt another agent, change focus, or close any terminal, tab, pane or thread.
+
+Never signal this session's own processes: its shell, the agent, and the commands the agent launched for the current step. Other processes are not exempt just because the shell or the agent started them.
 
 ## 1. Pin the target
 
 Find exactly one ticket folder:
 
-- If the current path is inside `/worktrees/<ticket-slug>/...`, use that ticket folder as the first candidate.
-- If the user gave a path, resolve it and verify it is either the ticket folder or one repo folder inside it.
-- If the user gave a ticket id/slug, search only likely roots: nearest parent `worktrees`, `~/git/worktrees`, `~/personal/worktrees`, and any user-provided root.
+- If the current path is inside `/worktrees/<ticket-slug>/...`, start with that folder.
+- If the user gave a path, it must be the ticket folder or a repo folder inside it.
+- If the user gave a ticket id or slug, search only the nearest parent `worktrees`, `~/git/worktrees`, `~/personal/worktrees`, and roots the user names.
+- Every linked worktree in it must belong to this ticket. A folder that holds many tasks' worktrees, such as `~/.t3/worktrees/<project>/`, is not a ticket folder.
 
-Use shallow, targeted `find` commands. Do not scan the whole home directory. Do not read secrets, credential files, or `.env` files.
+Use shallow, targeted `find`. Do not scan all of home or read secrets, credential files or `.env` files.
 
-Completion: exactly one ticket folder is selected, or you stop and ask the user to choose.
+Completion: one ticket folder is selected, or you have stopped and asked the user to choose.
 
 ## 2. Take inventory
 
-For each immediate child directory of the ticket folder:
+For each child directory:
 
-- Classify it as a linked Git worktree, regular Git checkout, or non-repo directory.
-- Record branch, `git status --short --branch`, upstream/tracking state, and whether the path is the current working directory. Upstream deletion supports only a remote with exactly one fetch URL and one identical push URL, as reported by `git remote get-url --all <remote>` and `git remote get-url --push --all <remote>`; exclude custom or multi-destination push configurations. For each eligible upstream branch, query `git ls-remote --heads <remote> refs/heads/<branch>` and record its object ID or absence.
-- Record untracked/non-repo files that would remain if repo worktrees were removed.
-- Treat a regular Git checkout as a blocker outside the standard worktree cleanup. Do not reduce it to an approved leftover: removing it requires separate approval after inventorying unique refs, repository-local configuration, unpushed objects, and ignored files.
-- List complete process trees with a working directory inside the target, including every PID, command, and cwd. Identify the calling pane's session spine from current pane and process state: its pane shell, Pi process, and exact foreground command chain for the current cleanup step. Mark only that spine as expected self-processes. Classify every other descendant normally: clearly disposable dev servers or watchers are safe to stop; other Pi/agent, shell, editor, shared, or ambiguous processes are blockers. An incomplete scan is a blocker.
+- Classify it as a linked worktree, regular checkout, or non-repo directory. A regular checkout is a blocker; removing it needs its own approval after you inventory its unique refs, local config, unpushed objects and ignored files.
+- Record its branch, tip commit, upstream, `git status --short --branch --ignored`, and whether it contains this session's working directory. List ignored paths by name without reading them; `git worktree remove` deletes them silently.
+- After `git fetch <remote>`, record whether the branch is merged: its tip is an ancestor of the remote's default branch, or its pull request was merged at the same head commit. Merged only into its own upstream does not count.
+- Mark its upstream eligible for deletion only when it has the local branch's name, is not the remote's default branch, and the remote has one fetch URL and one identical push URL (`git remote get-url --all <remote>`, `git remote get-url --push --all <remote>`). Record that URL and the object ID from `git ls-remote --heads <remote> refs/heads/<branch>`, and whether that object ID is merged by the same test; someone may have pushed commits the local branch lacks. A branch already absent needs no deletion.
 
-Completion: every path and process is classified, and all dirty, unpushed, untracked, detached, non-repo, process, or calling-pane state is visible.
+Also record:
+
+- files that would remain after the worktrees are removed, including those directly inside the ticket folder
+- every process whose working directory is inside the ticket folder, with PID, command and cwd. Mark this session's own processes. Clearly disposable dev servers and watchers are safe to stop. Any other agent, shell, editor, shared or unclear process is a blocker, and so is an incomplete scan.
+
+Completion: every path and process is classified, and nothing dirty, unpushed, unmerged, untracked, ignored, detached or running is hidden.
 
 ## 3. Gate destructive work
 
-Before deleting anything, summarize:
+Show the user:
 
-- ticket folder path
-- repo worktree paths to remove
-- dirty/unpushed/detached blockers
-- leftover non-repo files or directories
-- expected self-processes, safe process trees, and process blockers
-- local branches eligible for deletion
-- upstream branches eligible for optional deletion, with exact remote names, branch names, and inventoried object IDs
-- whether the calling Herdr pane will remain open with its working directory removed
+- the ticket folder path
+- worktrees to remove, and the ignored paths each removal deletes
+- blockers: dirty, unpushed or detached worktrees, regular checkouts, and processes
+- leftover files and directories
+- processes: this session's own, safe to stop, and blockers
+- local branches to delete, with tip commit and merge evidence; unmerged ones listed separately as needing a named force-delete
+- upstream branches that may be deleted, with remote name, URL, branch, object ID and merge evidence; unmerged ones listed separately as needing a named force-delete
+- whether this session's working directory will be removed
 
-Ask the user to confirm the exact processes, worktrees, local branches, ticket-folder contents, and any upstream branches to remove. Upstream deletion is excluded unless the user explicitly approves the named remote branch at its inventoried object ID. If there are blockers, recommend the smallest safe next action instead of forcing. Do not signal a process or run `git worktree remove`, `rm -rf`, `git branch -d/-D`, `git push --delete`, or `git worktree prune` before confirmation.
+Ask once for approval of the exact list. Upstream branches stay unless the user names each one at its object ID; an approval that names none covers local cleanup only, so don't ask about upstream again. If there are blockers, recommend the smallest safe next step rather than forcing. Until approval, only read state and run `git fetch`: don't signal processes, delete files, change branches or push.
 
-Completion: the user has approved the exact local cleanup and separately chosen whether to delete each named upstream branch, or cleanup stops with unresolved blockers.
+Completion: the user approved the local cleanup and named which upstream branches to delete, if any; or cleanup stops at the blockers.
 
-## 4. Remove only what was approved
+## 4. Stop approved processes
 
-Execute exactly the approved list, nothing beside it:
+Re-scan, then `SIGTERM` only the approved PIDs, never a broad selector such as `pkill node`. If the processes changed or a blocker appeared, ask again. Confirm each PID exited, and ask before `SIGKILL`.
 
-1. Re-scan, then `SIGTERM` only confirmed safe PIDs; omit broad selectors such as `pkill node`. If the tree changed or a blocker appeared, ask again. Verify every PID exits and ask before `SIGKILL`. Never signal the calling pane's session spine, but do not protect an unrelated descendant based only on ancestry.
-2. Remove linked worktrees with `git worktree remove <path>`, run from a surviving worktree of the same repo, never from inside the path being removed.
-3. Delete approved local branches only after their worktrees are removed and only when they are merged. Force-delete a local branch only when the user named that exact action.
-4. Remove the emptied ticket folder with `rmdir`; use `rm -rf` only for approved leftovers.
-5. Delete an upstream branch only when the user approved that exact remote and branch. Immediately before deletion, verify the remote still has exactly one fetch URL and one identical push URL, then query it with `git ls-remote --heads <remote> refs/heads/<branch>`. Stop if its URL configuration changed, its object ID differs from the inventoried ID, or the branch is already absent. Guard the deletion against a later race with `git push --force-with-lease=refs/heads/<branch>:<inventoried-oid> <remote> :refs/heads/<branch>`; treat a rejected lease as changed state and stop.
+Completion: every approved process has exited, or the user has decided what to do about it.
 
-When the calling Pi's cwd is inside the target, run the approved mutations and verification as one final shell operation whose first action moves to a surviving repository path and that never returns to the target cwd. Perform local branch and ticket-folder cleanup before optional upstream deletion. Do not invoke another tool after that operation.
+## 5. Remove only what was approved
 
-Completion: approved processes have exited; approved worktrees, local branches, ticket-folder paths, and upstream branches are gone; skipped items are named with the reason; the calling pane is still open; and no unapproved process, path, branch, or pane was touched.
+Don't ask the user anything in this step. If something no longer matches what was approved, skip it rather than force it, and skip anything that depends on it.
 
-## 5. Verify
+If this session's working directory is inside the ticket folder, run this step and step 6 as one shell command, because nothing can run from a deleted directory. The command first moves to a surviving checkout of the repository, never moves back, and prints each action's result. Make no tool call after it.
 
-Run a final narrow check:
+1. **Worktrees.** Just before each removal, keep the worktree if any process except this session's own uses it, or if `git status --short --branch --ignored` no longer matches the inventory. Run `git worktree remove <path>` from a surviving worktree of the same repo. Add `--force` only if the user named that worktree for forced removal.
+2. **Local branches.** Delete one only if its worktree is gone, its tip still matches the approved commit, and it was merged or the user named a force-delete. Delete with `git update-ref -d refs/heads/<branch> <approved-commit>`, which refuses if the tip has moved. Do not use `git branch -d`: it accepts a branch merged only into its upstream and refuses a squash-merged one.
+3. **Ticket folder.** Remove it with `rmdir` once empty; use `rm -rf` only for approved leftovers.
+4. **Upstream branches.** Delete only an approved one whose local branch was deleted, and only if its object ID was merged or the user named its force-delete. Just before, check that the remote still has one fetch URL and one identical push URL equal to the recorded URL, and that `git ls-remote --heads <remote> refs/heads/<branch>` returns the recorded object ID. Otherwise skip it. Delete with `git push --force-with-lease=refs/heads/<branch>:<object-id> <remote> :refs/heads/<branch>`. If the lease is rejected, skip that branch and continue.
 
-- confirmed processes are gone
-- `git worktree list` in each affected repo no longer lists removed paths
-- deleted local branches no longer exist
-- the ticket folder is gone, or only approved/skipped leftovers remain
-- each approved upstream branch is absent, and no deletion was attempted for an unapproved upstream branch
+Completion: every approved item is gone or named as skipped with its reason, and nothing unapproved was touched.
 
-In Herdr, stop here. Report what changed, name any skipped item, identify the calling pane as ready for manual closure, and let the user close it. Do not hand off, prompt another Pi session, focus a pane, or close a pane.
+## 6. Verify and report
+
+Check, inside the same shell command when step 5 used one:
+
+- approved processes are gone
+- `git worktree list` in each repo no longer shows removed worktrees
+- deleted local branches are gone
+- the ticket folder is gone, or only approved or skipped leftovers remain
+- each approved upstream branch is gone, and no other upstream branch was touched
+
+Report what changed, what was skipped and why, and anything the user may still want to handle. If this session's working directory was removed, say the session is ready to close and leave closing it to the user. Then stop.
