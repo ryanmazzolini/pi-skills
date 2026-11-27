@@ -17,7 +17,7 @@ Decide whether the reader needs clearer sentences or a fuller explanation. A dra
 
 When context is missing, rebuild the passage around the reader's question using the available evidence. Explain the situation and practical consequence before the mechanism. Preserve the source's meaning, not the draft's omissions or order. Add only context supported by the sources. Where they leave an ambiguity that would change the meaning, keep that uncertainty in the text rather than silently resolving it.
 
-When the user pastes text to rewrite, return the rewrite in the reply. Put it anywhere else, such as a file or a ticket, only when the user asks.
+When the user pastes text to rewrite, return the rewrite in the reply unless they ask for it somewhere else. Put it anywhere else, such as a file or a ticket, only when the user asks.
 
 ## Rewrite for the reader
 
