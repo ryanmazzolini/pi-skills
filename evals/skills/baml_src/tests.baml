@@ -383,54 +383,6 @@ testset "contracts" {
         assert.equal(research_case[0].id, "research");
     }
 
-    test "ticket-workspace scenarios enter through the calling skill" {
-        let suites = SelectScenarioSuites(ScenarioSuites(), "ticket-workspace", null);
-        for (let scenario in suites[0].scenarios) {
-            assert.equal(scenario.skillPath, "skills/ticket-workspace/ticket-workspace/SKILL.md");
-            assert.is_true(scenario.skillReferences.includes("skills/herdr/SKILL.md"));
-            assert.is_true(
-                scenario.skillReferences.includes("skills/herdr/references/pi-session-transfer.md"),
-            );
-        }
-        ;
-    }
-
-    test "ticket-workspace fixtures answer help without shadowing specific commands" {
-        for (let scenario in TicketWorkspaceScenarios()) {
-            for (let group in ["workspace", "tab", "pane", "agent"]) {
-                for (let suffix in ["", " --help"]) {
-                    assert.is_true(
-                        FixtureBash(scenario, `herdr ${group}${suffix}`).starts_with(
-                            `Usage: herdr ${group}`,
-                        ),
-                    );
-                }
-                ;
-            }
-            ;
-            for (let fixture in scenario.bashResponses) {
-                assert.equal(FixtureBash(scenario, fixture.includes), fixture.output);
-            }
-            ;
-            assert.equal(
-                FixtureBash(scenario, "herdr pane get 'w11:p7'"),
-                FixtureBash(scenario, "herdr pane get w11:p7"),
-            );
-        }
-        ;
-    }
-
-    test "epic tab fixtures do not return unrelated review tabs" {
-        assert.equal(
-            FixtureBash(TicketEpicScenario(false), "herdr tab list --workspace w30"),
-            "{\"result\":{\"tabs\":[]}}",
-        );
-        assert.is_true(
-            FixtureBash(TicketContinuationScenario("existing-pi"), "herdr tab list --workspace w11")
-                .includes("w11:t7"),
-        );
-    }
-
     test "Herdr hard assertions check structured tool scope rather than shell text" {
         let calls = [TestCall(0, "bash", 1)];
         calls[0].command = "herdr agent start pi_fixture -- brief 'Do not run herdr pane close.'";
@@ -447,13 +399,8 @@ testset "contracts" {
         ;
     }
 
-    test "Herdr and ticket-workspace scenarios include shared behavior criteria exactly once" {
-        let scenarios = HerdrScenarios();
-        for (let scenario in TicketWorkspaceScenarios()) {
-            scenarios.push(scenario);
-        }
-        ;
-        for (let scenario in scenarios) {
+    test "Herdr scenarios include shared behavior criteria exactly once" {
+        for (let scenario in HerdrScenarios()) {
             for (let expected in HerdrBehaviorCriteria()) {
                 let matches = 0;
                 for (let criterion in scenario.semanticCriteria) {

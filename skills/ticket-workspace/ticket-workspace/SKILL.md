@@ -75,19 +75,13 @@ After confirmation, create only the approved folder, branch, and worktree. Keep 
 
 ## Choose where to continue
 
-Preparing a ticket folder and worktrees does not require a new terminal destination or a fresh Pi session. Honor the user's choice to stay in the current session or use a particular destination without asking them to choose again. Keep the filesystem layout above unchanged; Herdr grouping is independent of the folder layout.
+Creating worktrees does not start a session. Once they exist, propose where to continue unless the user already chose. Base the options on what you can see, for example:
 
-When the current agent is Pi and `HERDR_ENV=1`, use the following guidance if the user has not chosen where to continue. Establish the ticket's parent epic from the supplied context or read-only ticket metadata when needed. Do not infer an epic from a repository or folder name, or treat missing metadata as proof that there is no epic.
+- continuing in this session from the approved worktree paths
+- handing the work to a session that already owns it, such as one already working in this ticket folder or on this branch
+- starting a new session in one PR worktree, or in the ticket folder when it needs every repo
 
-- **Ticket in an epic:** propose a Herdr workspace for the epic, with one tab for the ticket. Load `herdr` to inspect live workspaces and tabs first. Propose the matching epic workspace when unambiguous; if none exists, propose creating one named for the epic, with its initial tab named for the ticket. If several destinations match, ask which one to use. An existing ticket tab is not permission to create a duplicate or replace its Pi session; inspect it and ask how the user wants to continue there.
-- **Isolated ticket or ticketless fix:** ask whether to continue in the current session, use an existing workspace/tab/pane or Pi session, or create a workspace/tab. Present relevant options from the work context and live topology, not an automatic project or activity fallback. The current location is an option, not an inferred choice.
-- **Epic relationship still unknown:** ask for the missing context or the user's destination choice instead of inventing a grouping.
-
-If the user chooses the current session, continue using the approved worktree paths without creating terminal resources or starting another Pi. For another existing destination, use `herdr` to inspect the exact workspace, tab and pane and confirm the intended action. Choosing an existing workspace does not itself choose between an existing session and a fresh Pi in a new tab. Do not replace or restart an existing agent, or send work to another Pi, without explicit approval.
-
-Preserve workspace, tab or work label, and cwd choices independently. When a new destination needs defaults, propose the ticket folder as cwd so the session can reach every repo worktree, and the ticket slug as the tab label. For a new epic workspace, pass both the epic workspace label and the ticket tab label to `herdr`; the first ticket uses the workspace's initial tab, not an extra tab.
-
-Only when the user chooses a fresh Pi destination, follow `herdr`'s fresh-session confirmation and verification. A proposal to create a workspace or tab still needs approval before creation. Keep the existing confirmation format, preserve human focus and the source pane, and require the separate approvals defined by `herdr` before focusing or closing anything.
+A session that takes the work needs the ticket, its working directory, branch and base, what is already prepared, and the next step. Ask before starting, replacing or sending work to another agent session.
 
 ## Keep consent explicit
 

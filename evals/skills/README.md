@@ -72,7 +72,7 @@ To run on your ChatGPT plan instead of an API key, sign in once, then use the pl
 
 ```bash
 npm run eval:skills:chatgpt:login
-npm run eval:skills:chatgpt -- --suite_id ticket-workspace
+npm run eval:skills:chatgpt -- --suite_id research
 ```
 
 Sign-in uses OpenAI's [Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source) plan-usage flow for local tools. It opens your browser and asks you to let `pi-skill-evals` use your plan. Credentials stay in `~/.config/pi-skill-evals/chatgpt-plan.json`, readable only by you. The sign-in lasts while it is used at least once every 30 days; review or limit the tool's usage under ChatGPT Settings → Usage.

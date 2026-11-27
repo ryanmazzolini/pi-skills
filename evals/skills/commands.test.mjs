@@ -53,7 +53,7 @@ process.exit(Number(process.env.FIXTURE_EXIT_CODE));
 }
 
 for (const [script, args, expectedArgs] of [
-  ["eval:skills", ["--suite_id", "ticket-workspace"], ["run", "RunEvals", "--", "--suite_id", "ticket-workspace"]],
+  ["eval:skills", ["--suite_id", "research"], ["run", "RunEvals", "--", "--suite_id", "research"]],
   ["eval:skills:judge:herdr", ["--json-args", '{"case_id":"valid"}'], ["run", "CheckHerdrJudge", "--", "--json-args", '{"case_id":"valid"}']],
   ["eval:skills:test", [], ["test", "-i", "root::skills::*"]],
 ]) {
@@ -72,7 +72,7 @@ test("direct evals still load a key from dotenv when none is exported", (t) => {
 });
 
 test("ChatGPT plan evals select the plan route, preserving spaced arguments", (t) => {
-  const args = ["--suite_id", "ticket-workspace", "--output_dir", "results with spaces"];
+  const args = ["--suite_id", "research", "--output_dir", "results with spaces"];
   const invocation = runCommand(t, "eval:skills:chatgpt", args);
   assert.equal(invocation.route, "chatgpt-plan");
   assert.equal(invocation.agentSkillCheck, "off");
