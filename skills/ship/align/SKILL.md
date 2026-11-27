@@ -15,9 +15,9 @@ Alignment is optional. Do not use it when the requested benefit, completion sign
 
 The **target outcome** is the smallest coherent human or caller benefit being aligned. **Deferred outcomes** name related benefits explicitly excluded from this change. If several independently useful benefits need durable coordination under one destination, return to Ship to propose a roadmap instead of forcing them through one alignment.
 
-Use a caller-supplied workflow directory only after [`durable-context.md`](../ship/references/durable-context.md) classifies it as a relevant legacy workflow or this workspace profile's canonical work item. Otherwise follow that reference to locate or create the workflow. Do not independently create a repository `.plans` workflow.
+Use a caller-supplied workflow directory only after [`durable-context.md`](../ship/references/durable-context.md) classifies it as a relevant `docs/plans/` workflow or this workspace profile's canonical work item. Otherwise follow that reference to locate or create the workflow. Do not create a workflow in the repository yourself.
 
-Use `{workflow-dir}/alignment.md` for new work. Keep a legacy `question.md` when it already holds the alignment. For vault-native work, apply the [vault-target checks](../ship/references/workflow-profiles.md) to the alignment and `index.md` before writing them with ordinary file tools, then set `Current` to the alignment.
+Use `{workflow-dir}/alignment.md` for new work. For vault-native work, apply the [vault-target checks](../ship/references/workflow-profiles.md) to the alignment and `index.md` before writing them with ordinary file tools, then set `Current` to the alignment.
 
 Before asking, compare the request with how the system works today. Read relevant docs, code, tests, history, conversation, and workflow files. Use project language and relevant `CONTEXT-MAP.md`, `CONTEXT.md`, and architecture decisions. Clarify important differences and terms that hide more than one concept.
 

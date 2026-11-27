@@ -48,4 +48,4 @@ Apply these checks to instruction files, work-item indexes, `Current` pointers, 
 - For a read, require an existing file. For a new write target, verify its existing parents before creating missing directories or the file. Writes require the workspace/profile validation above, not just a named-profile lookup.
 - Recheck after a relevant routing or filesystem change. If a target escapes its scope, is unavailable or cannot be verified, stop and ask for the smallest correction instead of trying another vault.
 
-These checks catch routing mistakes; they are not an atomic filesystem or authorization boundary. Keep existing approval, ownership and legacy-workflow rules in force.
+These checks catch routing mistakes; they are not an atomic filesystem or authorization boundary. Keep existing approval, ownership and `docs/plans/` workflow rules in force.

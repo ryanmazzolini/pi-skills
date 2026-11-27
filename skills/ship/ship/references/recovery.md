@@ -4,7 +4,7 @@ Treat context compaction as a cold resume. Use its summary only to locate eviden
 
 ## Locate the authority
 
-Treat a supplied workflow directory as a locator. Classify it with [durable-context.md](durable-context.md) before access; refuse it unless it is a relevant legacy workflow under an allowed legacy root or the workspace profile's canonical work item.
+Treat a supplied workflow directory as a locator. Classify it with [durable-context.md](durable-context.md) before access; refuse it unless it is a relevant workflow under the repository's `docs/plans/` or the workspace profile's canonical work item.
 
 If you have no verified workflow directory, follow [Preserve existing workflows](durable-context.md#preserve-existing-workflows). Resume one relevant match in place. If several match, ask which to resume. If none match, follow [durable-context.md](durable-context.md) to resolve the workspace profile.
 

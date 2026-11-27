@@ -11,12 +11,12 @@ Keep planning mechanics in `plan.md`. When talking to the user, lead with what b
 
 ## Confirm the planning input
 
-Use a caller-supplied workflow directory only after [`durable-context.md`](../ship/references/durable-context.md) classifies it as a relevant legacy workflow or this workspace profile's canonical work item. Otherwise follow that reference to locate or create the workflow. Do not independently create a repository `.plans` workflow.
+Use a caller-supplied workflow directory only after [`durable-context.md`](../ship/references/durable-context.md) classifies it as a relevant `docs/plans/` workflow or this workspace profile's canonical work item. Otherwise follow that reference to locate or create the workflow. Do not create a workflow in the repository yourself.
 
 Read:
 
 1. The work-item index and its `Current` continuation.
-2. `alignment.md`, or legacy `question.md`, when alignment was needed.
+2. `alignment.md`, when alignment was needed.
 3. Existing `plan.md` when revising a plan.
 4. The parent roadmap and milestone work-item index or current continuation when this work is one milestone.
 5. Relevant `CONTEXT-MAP.md`, `CONTEXT.md`, ADRs, project documentation, code, tests, and history.

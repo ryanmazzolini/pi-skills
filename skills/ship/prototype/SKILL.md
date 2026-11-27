@@ -12,7 +12,7 @@ Keep experiment bookkeeping and cleanup mechanics internal unless they change wh
 
 ## Bound the experiment
 
-A prototype needs no alignment or work item. When an alignment or work item already exists, record the experiment there. Treat a caller-supplied alignment as a locator: first use [`durable-context.md`](../ship/references/durable-context.md) to classify its workflow as verified legacy or the workspace profile's canonical work item. For vault-native work, apply the [vault-target checks](../ship/references/workflow-profiles.md) before reading or updating the alignment with ordinary file tools. Otherwise use the current verified `alignment.md` or legacy `question.md`. When none exists, keep the experiment's record in the conversation.
+A prototype needs no alignment or work item. When an alignment or work item already exists, record the experiment there. Treat a caller-supplied alignment as a locator: first use [`durable-context.md`](../ship/references/durable-context.md) to classify its workflow as a verified `docs/plans/` workflow or the workspace profile's canonical work item. For vault-native work, apply the [vault-target checks](../ship/references/workflow-profiles.md) before reading or updating the alignment with ordinary file tools. Otherwise use the current verified `alignment.md`. When none exists, keep the experiment's record in the conversation.
 
 Read the relevant product surface and any existing alignment. State:
 
@@ -31,7 +31,7 @@ Choose the smallest useful form. When comparison itself will answer an appearanc
 - For appearance or information hierarchy, create the smallest UI that can be judged in its real surrounding context.
 - For interaction, behavior, or state, create a tiny interactive application with representative in-memory data and make the relevant state visible after each action.
 
-Use the project's existing runtime, components, and task runner when they improve fidelity. Otherwise prefer a self-contained artifact under the vault-native work item's `working/` directory, beside a legacy workflow that remains in place, or in an OS temp directory when no work item exists. For a vault-native artifact, apply the [vault-target checks](../ship/references/workflow-profiles.md) before writing or cleaning it up with ordinary file tools. Clearly mark every prototype entry point as throwaway and provide one command or URL to run it.
+Use the project's existing runtime, components, and task runner when they improve fidelity. Otherwise prefer a self-contained artifact under the vault-native work item's `working/` directory, beside a `docs/plans/` workflow that remains in place, or in an OS temp directory when no work item exists. For a vault-native artifact, apply the [vault-target checks](../ship/references/workflow-profiles.md) before writing or cleaning it up with ordinary file tools. Clearly mark every prototype entry point as throwaway and provide one command or URL to run it.
 
 Before writing, inspect the working tree and record a baseline of the files and pre-existing changes that cleanup must preserve. Keep prototype work in clearly named new paths when practical. If meaningful fidelity requires changing an already-edited file, use precise prototype-only edits or ask before moving the experiment to an isolated workspace.
 

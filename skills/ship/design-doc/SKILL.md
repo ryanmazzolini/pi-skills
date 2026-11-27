@@ -24,7 +24,7 @@ Intent must be settled enough to design. Use [`research`](../research/SKILL.md) 
 
 ## Write the smallest useful design
 
-Follow [`durable-context.md`](../ship/references/durable-context.md) to choose one workflow home: reuse a verified legacy workflow in place, or locate or create the canonical vault work item, never both. Then read [design-format.md](design-format.md) and create or update `design.md` in that home. For vault-native work, set the work-item index's `Current` pointer to it; for legacy work, retain its existing continuation convention when present.
+Follow [`durable-context.md`](../ship/references/durable-context.md) to choose one workflow home: reuse a verified `docs/plans/` workflow in place, or locate or create the canonical vault work item, never both. Then read [design-format.md](design-format.md) and create or update `design.md` in that home. For vault-native work, set the work-item index's `Current` pointer to it; for a `docs/plans/` workflow, retain its existing continuation convention when present.
 
 1. **Lead with the future state.** In the first roughly 150 words, state the useful result in actor or caller language. Use one ordinary example to show the normal path and the most important failure or recovery behavior.
 2. **Include only costly choices.** State each decision heading as the proposed choice. Name what approved behavior, contract, migration, or substantial implementation work it would invalidate if wrong. Ground that reversal cost in the current scope and system. Settled requirements, routine local edits, and hypothetical future needs are supporting material, not decision headings. Every proposed element must support the settled outcome or a necessary risk control.

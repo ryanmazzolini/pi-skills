@@ -4,25 +4,13 @@ Read this when Ship creates or locates durable context for a direct continuation
 
 ## Preserve existing workflows
 
-Treat a workflow directory supplied by the caller as a locator, not authority. Before reading or writing it, prove that its canonical path is either one relevant existing legacy workflow under an allowed legacy root below, or the canonical work item returned by this workspace's resolved profile. Refuse an unclassified or symlink-escaped supplied path.
+Treat a workflow directory supplied by the caller as a locator, not authority. Before reading or writing it, prove that its canonical path is either one relevant workflow under the repository's `docs/plans/`, or the canonical work item returned by this workspace's resolved profile. Refuse an unclassified or symlink-escaped supplied path.
 
-Without a verified supplied work item, before creating anything look for one **relevant** existing workflow under:
+The repository's `docs/plans/` holds plans the user chose to share in the repository. Without a verified supplied work item, before creating anything look there for one **relevant** existing workflow. Relevance requires evidence such as the current ticket, work-item slug, explicit conversation pointer, or matching alignment goal. An unrelated plan does not make `docs/plans/` the home for new work. Reuse one relevant match in place, ask when several match, and do not move or copy it into the vault.
 
-1. `PI_SKILLS_PLANS_ROOT` when set
-2. repository `.plans/` or `.plan/`
-3. repository `docs/plans/`
+## Resolve a profile for new work
 
-Relevance requires evidence such as the current ticket, work-item slug, explicit conversation pointer, or matching alignment goal. An unrelated legacy directory does not make it the home for new work. Reuse one relevant match in place, ask when several match, and do not migrate or copy it merely to adopt the current convention.
-
-When a relevant legacy repository `.plans/` workflow is found, offer migration while continuing to treat it as the authority in place. If the human wants to consider migration, resolve a workspace profile as described below, determine the canonical vault project destination, and show it before asking for confirmation. Migrate only after the human confirms the destination and disposition of the old copy. If routing is unavailable or migration is declined, keep reusing the legacy workflow in place. Validate the destination before moving it, update references, and retire the old location so one workflow remains authoritative.
-
-When migrating an older plan, preserve its files and content. Use the evidence to propose how work should continue and which changes depend on others. Ask about unclear progress or dependencies before writing the migration. Migrate only the confirmed workflow, never several old workflows in bulk.
-
-A legacy workflow may use `question.md` instead of `alignment.md`. Keep that filename.
-
-## Resolve a profile for new work or migration
-
-For a new workflow, or after the human asks to consider migrating a relevant repository `.plans/` workflow, follow [workflow-profiles.md](workflow-profiles.md) to read the host routing config and select the vault for the approved ticket-workspace folder. When the session is inside one of that workspace's repository worktrees, use the enclosing `/worktrees/<work-item-slug>/` folder; without a ticket workspace, use the canonical repository root. Repository location alone does not select a profile.
+For a new workflow, follow [workflow-profiles.md](workflow-profiles.md) to read the host routing config and select the vault for the approved ticket-workspace folder. When the session is inside one of that workspace's repository worktrees, use the enclosing `/worktrees/<work-item-slug>/` folder; without a ticket workspace, use the canonical repository root. Repository location alone does not select a profile.
 
 Proceed automatically only when one profile matches. If configuration needs correction and the intended routing is established, edit it with ordinary file tools, preserve unrelated profiles, and verify the workspace against the result. Ask when the intended profile or paths are unclear. If several profiles match, ask the human to select one; that profile must still contain the workspace within a usable Git root. Carry the selected profile and canonical vault through later target checks.
 
@@ -30,7 +18,7 @@ Follow the selected vault's `AGENTS.md`, `CONTEXT.md`, and `README.md` instructi
 
 ## Find or create the work item
 
-New Ship workflows and approved migrations live at:
+New Ship workflows live at:
 
 ```text
 <vault>/projects/<project>/work/<work-item-slug>/

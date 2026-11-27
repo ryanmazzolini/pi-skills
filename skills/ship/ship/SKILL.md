@@ -62,7 +62,7 @@ Ask for approval in plain project language. Lead with the change and how you'll 
 
 An exact instruction approving that route counts; a general "implement it" does not. Fold the question into an existing plan or implementation confirmation when you can.
 
-The approval holds while the outcome, boundaries, material constraints, skip reasons and delivery shape stay the same. Ask again when new evidence makes a skipped step plausible or changes the route. When work must survive a fresh session, record the approval scope and the four needed/not-needed decisions with reasons in the workflow's current continuation document, such as an alignment, design, plan, milestone index or handoff. For vault-native work that is the document the work-item index's `Current` pointer names ([references/durable-context.md](references/durable-context.md)); a legacy workflow keeps its own convention. Don't create a separate state file.
+The approval holds while the outcome, boundaries, material constraints, skip reasons and delivery shape stay the same. Ask again when new evidence makes a skipped step plausible or changes the route. When work must survive a fresh session, record the approval scope and the four needed/not-needed decisions with reasons in the workflow's current continuation document, such as an alignment, design, plan, milestone index or handoff. For vault-native work that is the document the work-item index's `Current` pointer names ([references/durable-context.md](references/durable-context.md)); a `docs/plans/` workflow keeps its own convention. Don't create a separate state file.
 
 ## Complete a direct delivery
 

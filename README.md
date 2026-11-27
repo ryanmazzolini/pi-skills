@@ -27,7 +27,7 @@ See [the marketplace manifest](./.claude-plugin/marketplace.json) for every fami
 ## What to expect
 
 - [`ship`](./skills/ship/ship/SKILL.md) routes work through the lightest useful path: focused alignment, design review, or delivery planning when needed; one human route checkpoint approves skipped steps before production implementation; and milestone roadmaps remain reserved for work that benefits from durable coordination.
-- New Ship workflows use durable Markdown instead of hidden session state and live under `projects/<project>/work/<work-item>/` in the vault selected by `~/.config/pi-skills/workflows.json`. Agents read or edit the routing data with ordinary file tools and follow explicit vault-selection and path checks. Relevant existing `.plans`, `.plan`, `docs/plans`, and `PI_SKILLS_PLANS_ROOT` workflows are reused in place. See [workflow profiles](./skills/ship/ship/references/workflow-profiles.md) for routing and target checks.
+- New Ship workflows use durable Markdown instead of hidden session state and live under `projects/<project>/work/<work-item>/` in the vault selected by `~/.config/pi-skills/workflows.json`. Agents read or edit the routing data with ordinary file tools and follow explicit vault-selection and path checks. Relevant existing `docs/plans/` workflows are reused in place. See [workflow profiles](./skills/ship/ship/references/workflow-profiles.md) for routing and target checks.
 - Most skills are guidance, not a subscription to every tool I happen to like. Optional integrations only matter when you use their matching skills.
 
 ## What’s in the box

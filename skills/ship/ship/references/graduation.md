@@ -22,6 +22,6 @@ A completed delivery plan graduates when every required delivery change is compl
 
 Keep `Current` pointed at the most useful continuation or result document. Keep task history, review evidence, validation detail, and abandoned paths in their existing files. Do not delete, move, archive, or duplicate the work item during graduation.
 
-Leave a relevant legacy workflow in place and record completion using its established form. Do not create a vault copy solely for graduation.
+Leave a relevant `docs/plans/` workflow in place and record completion using its established form. Do not create a vault copy solely for graduation.
 
 Treat a requested public or cross-project summary as a separate artifact with its own destination and human approval. Do not add independent review by default.
