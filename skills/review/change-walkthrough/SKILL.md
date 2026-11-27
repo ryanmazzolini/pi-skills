@@ -1,6 +1,6 @@
 ---
 name: "change-walkthrough"
-description: "Build a single-file HTML walkthrough of a commit, commit range, or pull request: a map of changed entities and boundaries, risk-ordered steps with agent-written notes, call trees, and syntax-highlighted diffs shaded by importance. Use when asked for a walkthrough, guided tour, or visual explanation of a change, and as the companion page for a code review."
+description: "Build a single-file HTML walkthrough of a commit, commit range, or pull request: a map of changed entities and boundaries, risk-ordered steps with agent-written notes, call trees, and syntax-highlighted diffs shaded by importance. Use when asked for a walkthrough, guided tour, or visual explanation of a change."
 ---
 
 # Change Walkthrough

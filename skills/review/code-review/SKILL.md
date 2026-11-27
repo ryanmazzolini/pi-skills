@@ -17,7 +17,7 @@ Otherwise, create one review thread per related ticket group in the selected wor
 
 1. For PRs, read descriptions and linked ticket identities to establish the groups before dispatch. For commits, patches and local diffs, use the supplied work context. Keep the same ticket, an explicit stack, or documented review dependencies together; sharing a repository or author alone is not a reason to group changes. Keep unrelated tickets in separate threads. A target without a linked ticket can form its own group; do not require or invent a ticket. The launching thread gathers routing context, not a second review.
 2. Use the host's available workspace/thread tools and runtime instructions. Honor the user's workspace choice, or infer an unambiguous existing workspace. Obtain any missing creation approval; do not repeat approval for explicitly authorized launches. Preserve the source thread and human focus.
-3. Give each destination its exact review targets and checkout paths, related ticket context, approved scope, canonical report/evidence paths when available, and this skill. Identify it as the review owner, not another launcher. Preserve explicit launch options. The assigned task includes inspection, validation, reports, the companion walkthrough, PR monitoring and follow-ups as applicable, but no code changes or publication without their applicable approval.
+3. Give each destination its exact review targets and checkout paths, related ticket context, approved scope, canonical report/evidence paths when available, and this skill. Identify it as the review owner, not another launcher. Preserve explicit launch options. The assigned task includes inspection, validation, reports, PR monitoring and follow-ups as applicable, plus the companion walkthrough only when the user asked for one, but no code changes or publication without their applicable approval.
 4. Verify that each destination thread exists and has received its assigned task before reporting dispatch. The owner begins the already authorized review without asking again whether to start. It performs the review itself, without subagents, and returns the complete result in its own thread.
 
 In Herdr (`HERDR_ENV=1`), a review thread is a named tab running a fresh Pi session. Use [`herdr`](../../herdr/SKILL.md) and its [fresh-session procedure](../../herdr/references/pi-session-transfer.md), including **Start the assigned review** after startup verification.
@@ -46,7 +46,7 @@ Reviews are read-only by default. Do not change the reviewed code or publish com
 
 ## Companion walkthrough
 
-For a pull request, commit, or commit range, also build the walkthrough page with [`change-walkthrough`](../change-walkthrough/SKILL.md) while inspecting the change. Writing its guide checks that you understand the change, and its notes often become findings. Link the page in the review result. It lives outside the reviewed repository and stays after the review; it is not review infrastructure to remove. Skip it, and say so, when the renderer cannot run or the change has no supported code entities.
+Build a walkthrough page with [`change-walkthrough`](../change-walkthrough/SKILL.md) only when the user asks for one for a pull request, commit, or commit range. When requested, build it while inspecting the change. Writing its guide checks that you understand the change, and its notes often become findings. Link the page in the review result. It lives outside the reviewed repository and stays after the review; it is not review infrastructure to remove. Skip it, and say so, when the renderer cannot run or the change has no supported code entities.
 
 ## Review setup
 
@@ -93,7 +93,7 @@ Report a finding only when all of these are clear:
 - The consequence matters to a caller, user, operator, or maintainer.
 - The author can take a specific next step within the change's scope.
 
-Confirm suspected findings against the implementation and existing tests. When available, use a test, CI for the reviewed revision, or a focused reproduction. Complete required repository checks. Once the triggering path and consequence are established and required checks are complete, broaden or repeat verification only for a specific unresolved concern, a failure, or a changed revision.
+Cite CI for the exact reviewed revision. For a patch or working-tree diff that CI has not run on, say that CI has not checked the reviewed changes. Confirm suspected findings against the implementation and existing tests. Rely on CI instead of rerunning its checks. Run tests locally only to prove a suspected finding or resolve a specific concern, or when CI is missing or failing for that revision, and then run the narrowest relevant test, not the full suite. Once the triggering path and consequence are established, repeat verification only for a specific unresolved concern, a failure, or a changed revision.
 
 Treat deterministic check failures as evidence rather than duplicating them as comments. Include a material failed or unavailable check when it affects the decision; report the underlying defect only when it independently meets the requirements above.
 
@@ -194,7 +194,7 @@ Give each reviewed pull request, commit, or diff exactly one recommendation:
 
 Explain material limitations and business risks through their practical effects: what remains unavailable, whose work or data can be affected, and what detection or recovery involves where the evidence establishes it. Connect those consequences to the recommendation. Summarize the overall consequence when needed, while leaving each finding's triggering path and correction in its comment. A classification alone does not explain why the recommendation fits. Avoid speculative harms and routine risk paragraphs that add no useful context.
 
-Include validation when it changes confidence, explains uncertainty, or tells the reviewer what remains to verify. Routine successful checks can remain implicit; link evidence that materially changes confidence.
+Include validation when it changes confidence, explains uncertainty, or tells the reviewer what remains to verify. Other routine successful checks can remain implicit; link evidence that materially changes confidence.
 
 Return the complete review in the response. When the caller or a companion workflow saves a report file, the file is a copy for later reference, not a replacement. Do not shorten the summary, recommendation rationale, or comments in the response because a fuller version exists in a file or an earlier message.
 
